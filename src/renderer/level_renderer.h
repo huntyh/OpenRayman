@@ -183,6 +183,13 @@ namespace openrayman
 			glm::vec3 center; // drawn farthest first
 		};
 		std::vector<see_through> m_see_through; // of the static geometry, one per object and texture
+		struct see_through_triangle
+		{
+			glm::vec3 centre;
+			std::size_t object; // in m_see_through
+			GLint first;        // its first corner in the vertex buffer
+		};
+		std::vector<see_through_triangle> m_see_through_triangles; // sorted far to near every frame
 		std::vector<mesh> m_meshes;
 		std::vector<part> m_parts;
 		std::vector<part> m_level_cards; // the level's own cards that turn to the camera

@@ -376,6 +376,7 @@ namespace openrayman
 		m_textures.clear();
 		m_batches.clear();
 		m_see_through.clear();
+		m_see_through_triangles.clear();
 		m_sprites.clear();
 		m_meshes.clear();
 		m_parts.clear();
@@ -696,6 +697,15 @@ namespace openrayman
 				std::vector<batch> one;
 				append(by_texture{ { key, list } }, one);
 				m_see_through.push_back({ one.front(), (lo + hi) * 0.5f });
+				// Each triangle sorts on its own: big see-through objects (a light ray, a curtain of
+				// moss) cross each other, so no order of whole objects is right from everywhere.
+				const batch& b = one.front();
+				for(GLint t = 0; t + 2 < b.count; t += 3)
+				{
+					const std::size_t at = std::size_t(b.first + t);
+					glm::vec3 centre = (vertices[at].position + vertices[at + 1].position + vertices[at + 2].position) / 3.0f;
+					m_see_through_triangles.push_back({ centre, m_see_through.size() - 1, b.first + t });
+				}
 			}
 		}
 		append(level_triangles, m_batches);
@@ -1049,10 +1059,11 @@ namespace openrayman
 			float distance;
 			const batch* b;
 			std::size_t part;
+			GLint first = -1; // a single triangle of the level's, or the whole batch
 		};
 		std::vector<see_through_draw> order;
-		for(const see_through& s : m_see_through)
-			order.push_back({ glm::length(s.center - eye), &s.b, level });
+		for(const see_through_triangle& t : m_see_through_triangles)
+			order.push_back({ glm::length(t.centre - eye), &m_see_through[t.object].b, level, t.first });
 		for(std::size_t i = 0; i < parts.size(); i++)
 		{
 			float distance = glm::length(glm::vec3(parts[i].model[3]) - eye);
@@ -1064,8 +1075,9 @@ namespace openrayman
 		}
 		std::ranges::stable_sort(order, [](const see_through_draw& a, const see_through_draw& b) { return a.distance > b.distance; });
 		std::size_t placed = level - 1; // whose model and lights are set
-		for(const see_through_draw& d : order)
+		for(std::size_t k = 0; k < order.size(); k++)
 		{
+			const see_through_draw& d = order[k];
 			if(d.b->mode != current)
 				set_blend(current = d.b->mode);
 			if(d.part != placed)
@@ -1077,7 +1089,18 @@ namespace openrayman
 				if(!is_level)
 					use_lights(part_light[d.part]);
 			}
-			draw_batches(std::span(d.b, 1), d.b->mode);
+			if(d.first < 0)
+			{
+				draw_batches(std::span(d.b, 1), d.b->mode);
+				continue;
+			}
+			// Neighbours in the order that continue the same batch go in one draw call.
+			batch run = *d.b;
+			run.first = d.first;
+			run.count = 3;
+			while(k + 1 < order.size() && order[k + 1].b == d.b && order[k + 1].first == run.first + run.count)
+				run.count += 3, k++;
+			draw_batches(std::span(&run, 1), run.mode);
 		}
 		glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(identity));
 		// Sprites are glows and flames: they shine by themselves.
