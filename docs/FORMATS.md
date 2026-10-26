@@ -24,8 +24,10 @@ came from. Update this whenever a format is added or corrected.
 | DSB script | `Game.dsb`, `<Level>.dsb` | All sections in the game parsed; some meanings unknown | `dsb_script.cc` |
 | SNA memory blocks | `Fix.sna`, `<Level>.sna` | Block layout complete; contents not yet interpreted | `sna_file.cc`, `memory_image.cc` |
 | Relocation tables | `Fix.rtb/.rtp/.rtt/.rts` | Complete | `relocation.cc` |
-| LEVELS0.DAT | `World/Levels/LEVELS0.DAT` | Complete for SNA tables | `relocation.cc` |
-| GPT, PTX | `<Level>.gpt`, `.ptx` | Not started | |
+| LEVELS0.DAT | `World/Levels/LEVELS0.DAT` | Complete | `relocation.cc` |
+| GPT | `Fix.gpt`, `<Level>.gpt` | Level header (Fix actors, world roots); the rest unknown | `pointer_stream.cc`, `level_header.cc` |
+| Super objects | inside SNA | Tree links complete; engine objects not interpreted | `scene.cc` |
+| PTX | `Fix.ptx`, `<Level>.ptx` | Texture slots and names; trailing values unknown | `texture_table.cc` |
 | BNM sound banks | `World/Sound/*.bnm` | Not started | |
 | SND | `<Level>.snd` | Not started | |
 
@@ -93,3 +95,13 @@ hidden at computed positions in 150 MB of random filler.
 
 - Sources: own analysis, from studying how `Rayman2.exe` locates and decodes the tables. Verified on
   all 70 levels.
+
+## GPT, PTX and super objects
+
+See [formats/gpt.md](formats/gpt.md). Streams whose relocation tables list pointer values in file
+order; the level header with the world roots and how Fix's actors join a level; the scene tree;
+texture lists.
+
+- Sources: own analysis (stream model, header, Fix actor placements, PTX, texture descriptions);
+  super object layout and world root names from Raymap (reference only), every field confirmed by own
+  analysis across all 70 levels.

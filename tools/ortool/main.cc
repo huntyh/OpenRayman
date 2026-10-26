@@ -7,11 +7,16 @@
 #include <openrayman/game_data.h>
 #include <openrayman/gf_texture.h>
 #include <openrayman/memory_image.h>
+#include <openrayman/level_header.h>
+#include <openrayman/pointer_stream.h>
+#include <openrayman/scene.h>
+#include <openrayman/texture_table.h>
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 
 #include <cstdio>
+#include <cstring>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
@@ -35,6 +40,9 @@ static void usage()
 		"  textures <game folder> <out folder> Export every texture as PNG\n"
 		"  music <game folder> <out folder>    Export every APM music file as WAV\n"
 		"  level <game folder> <level|all>     Load a level's memory and check its pointers\n"
+		"  gpt <game folder> <level>           List the pointers in Fix.gpt and a level's GPT\n"
+		"  peek <game folder> <level> <block> <hex offset> <words>\n"
+		"                                      Print memory words, e.g. peek ... Learn_10 05/02 300 16\n"
 		"\n"
 		"<game folder> is the install folder (e.g. \"C:\\GOG Games\\Rayman 2\") or its Data folder.\n";
 }
@@ -193,15 +201,27 @@ static int cmd_level(const fs::path& folder, const std::string& name)
 	{
 		try
 		{
-			memory_image image = load_level_memory(game, level);
+			level_files files = load_level_files(game, level);
+			const memory_image& image = files.memory;
 			memory_image::statistics stats = image.check();
+			level_header header = read_level_header(files);
+			scene tree(image, header);
+			std::vector<texture_info> fix_textures = read_texture_table(files, false);
+			std::vector<texture_info> level_textures = read_texture_table(files, true);
+
 			if(levels.size() == 1)
 			{
 				for(const sna_block* block : image.blocks())
 					std::cout << "  block " << block->id.to_string() << std::format("  0x{:08X}  {:>9} bytes\n", block->base, block->data.size());
+				std::cout << std::format("  {} Fix actors, {} placed in this level\n", header.fix_actors.size(), header.placements.size());
+				for(const texture_info& t : level_textures)
+					std::cout << std::format("  texture {:>4}  {:>4}x{:<4}  {:08X}  {}\n", t.slot, t.width, t.height, t.flags, t.name);
 			}
 			std::cout << std::format("{:<10} {:>7} pointers: {} to data, {} to runtime memory, {} dangling\n",
 				level, stats.pointers, stats.into_data, stats.into_runtime, stats.dangling);
+			std::cout << std::format("{:<10} scene: {} super objects, {} actors in the dynamic world, {} in the sector tree; {} + {} textures\n",
+				"", tree.nodes().size(), tree.node(tree.dynamic_world()).children.size(), tree.subtree_size(tree.father_sector()),
+				fix_textures.size(), level_textures.size());
 			failed += stats.dangling > 0;
 		}
 		catch(const std::exception& e)
@@ -213,6 +233,63 @@ static int cmd_level(const fs::path& folder, const std::string& name)
 	if(levels.size() > 1)
 		std::cout << (levels.size() - failed) << " of " << levels.size() << " levels loaded cleanly\n";
 	return failed ? EXIT_FAILURE : EXIT_SUCCESS;
+}
+
+// Describes the first words of a structure: 'p' for a pointer, '.' for zero, 'x' for other data.
+static std::string shape(const memory_image& memory, memory_location at, std::uint32_t size)
+{
+	std::string out;
+	for(std::uint32_t o = 0; o < size && at.offset + o + 4 <= at.block->data.size(); o += 4)
+	{
+		memory_location word{ at.block, at.offset + o };
+		out += memory.is_pointer(word) ? 'p' : memory.read_u32(word) == 0 ? '.' : 'x';
+	}
+	return out;
+}
+
+static void dump_gpt(const memory_image& memory, std::span<const std::byte> data, const relocation_table& table, std::size_t file)
+{
+	pointer_stream stream(data, table, memory, file);
+	std::vector<std::size_t> offsets = stream.scan();
+	for(std::size_t offset : offsets)
+	{
+		stream.seek(offset);
+		memory_location target = *stream.pointer();
+		std::cout << std::format("  0x{:06X} -> {} +0x{:06X}  {}\n", offset, target.block->id.to_string(), target.offset, shape(memory, target, 0x40));
+	}
+}
+
+static int cmd_gpt(const fs::path& folder, const std::string& name)
+{
+	game_data game = require_game(folder);
+	level_files files = load_level_files(game, name);
+	std::cout << "Fix.gpt (" << files.fix_gpt.size() << " bytes)\n";
+	dump_gpt(files.memory, files.fix_gpt, files.fix_gpt_table, 0);
+	std::cout << files.name << ".gpt (" << files.level_gpt.size() << " bytes)\n";
+	dump_gpt(files.memory, files.level_gpt, files.level_gpt_table, 1);
+	return EXIT_SUCCESS;
+}
+
+static int cmd_peek(const fs::path& folder, const std::string& name, const std::string& block, const std::string& offset, const std::string& words)
+{
+	game_data game = require_game(folder);
+	memory_image memory = load_level_memory(game, name);
+	block_id id{ std::uint8_t(std::stoul(block.substr(0, 2), nullptr, 16)), std::uint8_t(std::stoul(block.substr(3, 2), nullptr, 16)) };
+	const sna_block* found = memory.find(id);
+	if(!found)
+		throw format_error("no block " + block);
+	memory_location at{ found, std::uint32_t(std::stoul(offset, nullptr, 16)) };
+	for(unsigned long i = 0; i < std::stoul(words) && at.offset + 4 <= found->data.size(); i++, at.offset += 4)
+	{
+		std::uint32_t value = memory.read_u32(at);
+		float f;
+		std::memcpy(&f, &value, 4);
+		std::cout << std::format("  +0x{:06X}  {:08X}  {:<12g}", at.offset, value, f);
+		if(auto target = memory.follow(at))
+			std::cout << std::format("  -> {} +0x{:06X}", target->block->id.to_string(), target->offset);
+		std::cout << "\n";
+	}
+	return EXIT_SUCCESS;
 }
 
 int main(int argc, char** argv)
@@ -239,6 +316,10 @@ int main(int argc, char** argv)
 			return cmd_music(args[1], args[2]);
 		if(cmd == "level" && args.size() == 3)
 			return cmd_level(args[1], args[2]);
+		if(cmd == "gpt" && args.size() == 3)
+			return cmd_gpt(args[1], args[2]);
+		if(cmd == "peek" && args.size() == 6)
+			return cmd_peek(args[1], args[2], args[3], args[4], args[5]);
 	}
 	catch(const std::exception& e)
 	{

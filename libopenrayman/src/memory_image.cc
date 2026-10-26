@@ -149,7 +149,7 @@ namespace openrayman
 		return *path;
 	}
 
-	memory_image load_level_memory(const game_data& game, const std::string& level)
+	level_files load_level_files(const game_data& game, const std::string& level)
 	{
 		const auto& levels = game.game_dsb().levels;
 		auto it = std::ranges::find_if(levels, [&](const std::string& name) {
@@ -157,17 +157,35 @@ namespace openrayman
 		});
 		if(it == levels.end())
 			throw format_error("unknown level " + level);
-		auto index = static_cast<std::uint32_t>(it - levels.begin());
+
+		level_files files;
+		files.name = *it;
+		files.index = static_cast<std::uint32_t>(it - levels.begin());
 
 		std::filesystem::path levels_dir = require(game.directory("levels"), "levels directory");
+		auto fix_file = [&](const std::string& name) { return read_file(require(find_case_insensitive(levels_dir, name), name)); };
+		auto level_file = [&](const std::string& ext) {
+			std::string name = files.name + "/" + files.name + ext;
+			return read_file(require(find_case_insensitive(levels_dir, name), files.name + ext));
+		};
 
-		memory_image image;
-		image.add(sna_file(read_file(require(find_case_insensitive(levels_dir, "Fix.sna"), "Fix.sna"))),
-			parse_relocation_table(read_file(require(find_case_insensitive(levels_dir, "Fix.rtb"), "Fix.rtb"))));
-
+		files.memory.add(sna_file(fix_file("Fix.sna")), parse_relocation_table(fix_file("Fix.rtb")));
 		levels_dat dat(require(find_case_insensitive(levels_dir, "LEVELS0.DAT"), "LEVELS0.DAT"));
-		std::filesystem::path sna = require(find_case_insensitive(levels_dir, *it + "/" + *it + ".sna"), *it + ".sna");
-		image.add(sna_file(read_file(sna)), dat.read(index, relocation_type::sna));
-		return image;
+		files.memory.add(sna_file(level_file(".sna")), dat.read(files.index, relocation_type::sna));
+
+		files.fix_gpt = fix_file("Fix.gpt");
+		files.fix_gpt_table = parse_relocation_table(fix_file("Fix.rtp"));
+		files.level_gpt = level_file(".gpt");
+		files.level_gpt_table = dat.read(files.index, relocation_type::gpt);
+		files.fix_ptx = fix_file("Fix.ptx");
+		files.fix_ptx_table = parse_relocation_table(fix_file("Fix.rtt"));
+		files.level_ptx = level_file(".ptx");
+		files.level_ptx_table = dat.read(files.index, relocation_type::ptx);
+		return files;
+	}
+
+	memory_image load_level_memory(const game_data& game, const std::string& level)
+	{
+		return std::move(load_level_files(game, level).memory);
 	}
 }

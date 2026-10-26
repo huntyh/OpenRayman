@@ -1,13 +1,21 @@
 #include "test_util.h"
 
+#include <openrayman/cnt_archive.h>
 #include <openrayman/error.h>
 #include <openrayman/game_data.h>
+#include <openrayman/gf_texture.h>
+#include <openrayman/level_header.h>
 #include <openrayman/mask.h>
 #include <openrayman/memory_image.h>
+#include <openrayman/pointer_stream.h>
 #include <openrayman/relocation.h>
+#include <openrayman/scene.h>
 #include <openrayman/sna_file.h>
+#include <openrayman/texture_table.h>
 
 #include <doctest/doctest.h>
+
+#include <map>
 
 using namespace openrayman;
 
@@ -140,6 +148,93 @@ TEST_CASE("memory image: each file's pointers use the addresses that file announ
 	CHECK(image.check().dangling == 0);
 }
 
+// One block 05/02 at 0x1000 holding a root super object with two children, at 0x00, 0x40, 0x80.
+// `break_link` leaves out the second child's back link to the first.
+static memory_image three_super_objects(bool break_link = false)
+{
+	const std::uint32_t base = 0x1000, root = base, a = base + 0x40, b = base + 0x80;
+	std::vector<std::uint32_t> words(0xC0 / 4, 0);
+	std::vector<std::pair<std::uint32_t, block_id>> pointers;
+	auto set = [&](std::uint32_t node, std::uint32_t field, std::uint32_t value, bool pointer) {
+		words[(node - base + field) / 4] = value;
+		if(pointer)
+			pointers.push_back({ node + field, { 0x05, 2 } });
+	};
+	set(root, 0x00, super_object_type::world, false);
+	set(root, 0x08, a, true);
+	set(root, 0x0C, b, true);
+	set(root, 0x10, 2, false);
+	set(a, 0x00, super_object_type::actor, false);
+	set(a, 0x14, b, true);
+	set(a, 0x1C, root, true);
+	set(b, 0x00, super_object_type::actor, false);
+	if(!break_link)
+		set(b, 0x18, a, true);
+	set(b, 0x1C, root, true);
+
+	bytes data;
+	for(std::uint32_t w : words)
+		data.u32(w);
+	sna_builder sna;
+	sna.block(0x05, 2, base, base + 0x1000, data);
+	bytes table;
+	table.u8(1).u32(0);
+	table_block(table, 0x05, 2, pointers);
+
+	memory_image image;
+	image.add(sna_file(sna.build()), parse_relocation_table(table.data));
+	return image;
+}
+
+TEST_CASE("pointer stream: pointers consume relocation entries in order")
+{
+	memory_image image = three_super_objects();
+	bytes stream;
+	stream.u32(0x1040).u32(0).u32(7).u32(0x1080);
+	bytes table;
+	table.u8(1).u32(0);
+	table_block(table, 0x0A, 0, { { 0x1040, { 0x05, 2 } }, { 0x1080, { 0x05, 2 } } });
+	relocation_table parsed = parse_relocation_table(table.data);
+
+	pointer_stream s(stream.data, parsed, image, 0);
+	CHECK(s.scan() == std::vector<std::size_t>{ 0, 12 });
+	CHECK(s.peek_pointer()->offset == 0x40);
+	CHECK(s.pointer()->offset == 0x40);
+	CHECK_FALSE(s.pointer().has_value()); // null takes no entry
+	CHECK(s.u32() == 7);
+	CHECK(s.pointer()->offset == 0x80);
+	CHECK(s.pointers_left() == 0);
+
+	// Reading a data word as a pointer gets out of step with the table and is caught.
+	pointer_stream wrong(stream.data, parsed, image, 0);
+	wrong.skip(8);
+	CHECK_THROWS_AS(wrong.pointer(), format_error);
+}
+
+TEST_CASE("scene: the super object tree is rebuilt and its links cross-checked")
+{
+	memory_image image = three_super_objects();
+	const sna_block* block = image.find({ 0x05, 2 });
+	REQUIRE(block);
+	level_header header;
+	header.actual_world = { block, 0x00 };
+	header.dynamic_world = { block, 0x40 };
+	header.inactive_dynamic_world = { block, 0x80 };
+	header.father_sector = { block, 0x80 };
+
+	scene tree(image, header);
+	REQUIRE(tree.nodes().size() == 3);
+	CHECK(tree.node(tree.actual_world()).children == std::vector<std::size_t>{ 1, 2 });
+	CHECK(tree.node(tree.dynamic_world()).type == super_object_type::actor);
+	CHECK(tree.node(2).parent == std::optional<std::size_t>(0));
+	CHECK(tree.subtree_size(0) == 3);
+
+	memory_image broken = three_super_objects(true);
+	const sna_block* broken_block = broken.find({ 0x05, 2 });
+	header.actual_world = { broken_block, 0x00 };
+	CHECK_THROWS_AS(scene(broken, header), format_error);
+}
+
 TEST_CASE("real data: every level loads with all pointers resolved")
 {
 	auto dir = real_game_dir();
@@ -151,12 +246,64 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 	auto game = game_data::locate(*dir);
 	REQUIRE(game.has_value());
 
+	// Texture sizes from the GF files, to check what the PTX entries claim against.
+	std::vector<cnt_archive> archives;
+	for(const auto& path : game->texture_archives())
+		archives.emplace_back(path);
+	std::map<std::string, std::pair<std::uint32_t, std::uint32_t>> gf_sizes;
+	auto gf_size = [&](const std::string& path) -> std::optional<std::pair<std::uint32_t, std::uint32_t>> {
+		if(auto it = gf_sizes.find(path); it != gf_sizes.end())
+			return it->second;
+		for(const cnt_archive& archive : archives)
+		{
+			if(const cnt_entry* entry = archive.find(path))
+			{
+				gf_texture t = decode_gf(archive.read(*entry));
+				return gf_sizes[path] = { t.width, t.height };
+			}
+		}
+		return std::nullopt;
+	};
+
+	std::size_t references = 0, exact = 0;
 	for(const std::string& level : game->game_dsb().levels)
 	{
 		INFO(level);
-		memory_image image = load_level_memory(*game, level);
-		memory_image::statistics stats = image.check();
+		level_files files = load_level_files(*game, level);
+		memory_image::statistics stats = files.memory.check();
 		CHECK(stats.pointers > 800);
 		CHECK(stats.dangling == 0);
+
+		// The same five Fix actors join every level.
+		level_header header = read_level_header(files);
+		CHECK(header.fix_actors.size() == 10);
+		CHECK(header.placements.size() == 5);
+
+		scene tree(files.memory, header);
+		CHECK(tree.node(tree.actual_world()).children.size() == 3);
+		CHECK(tree.node(tree.dynamic_world()).children.size() >= header.placements.size());
+		CHECK(tree.subtree_size(tree.father_sector()) >= 4);
+		for(const scene_node& node : tree.nodes())
+		{
+			if(node.placement)
+				CHECK(node.type == super_object_type::actor);
+		}
+
+		CHECK(read_texture_table(files, false).size() == 257);
+		std::vector<texture_info> textures = read_texture_table(files, true);
+		CHECK(!textures.empty());
+		for(const texture_info& t : textures)
+		{
+			INFO(t.name);
+			auto size = gf_size(t.cnt_path());
+			REQUIRE(size.has_value());
+			// Equal, or (for a few textures) the archive holds a version at twice or half the size.
+			auto close = [](std::uint32_t a, std::uint32_t b) { return a == b || a == 2 * b || 2 * a == b; };
+			CHECK(close(t.width, size->first));
+			CHECK(close(t.height, size->second));
+			references++;
+			exact += t.width == size->first && t.height == size->second;
+		}
 	}
+	CHECK(exact >= references * 95 / 100);
 }

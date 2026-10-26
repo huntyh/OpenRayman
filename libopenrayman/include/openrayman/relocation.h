@@ -20,8 +20,8 @@ namespace openrayman
 	{
 		sna = 0, // .rtb
 		gpt = 1, // .rtp
-		ptx = 2, // .rtt
-		snd = 3, // .rts
+		snd = 2, // .rts
+		ptx = 3, // .rtt
 	};
 
 	// One pointer slot: where the pointer is stored, and which block it points into.

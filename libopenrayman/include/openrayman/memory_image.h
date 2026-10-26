@@ -26,6 +26,8 @@ namespace openrayman
 		std::uint32_t offset = 0;
 
 		std::uint32_t address() const { return block->base + offset; }
+		memory_location operator+(std::uint32_t delta) const { return { block, offset + delta }; }
+		bool operator==(const memory_location&) const = default;
 	};
 
 	// Rebuilds the game's memory as it was after loading Fix and a level: all their blocks,
@@ -57,16 +59,18 @@ namespace openrayman
 		};
 		statistics check() const;
 
+		// Resolves a pointer value into `target`, as written by file `source` (index in the order
+		// of add(), 0 is Fix). Returns nullopt for null or an address outside the target.
+		std::optional<memory_location> resolve(std::size_t source, block_id target, std::uint32_t value) const;
+
+		// Reads a word from memory. Throws format_error past the end of the block's data.
+		std::uint32_t read_u32(const memory_location& at) const;
+
 	private:
 		static std::uint64_t key(block_id block, std::uint32_t address)
 		{
 			return std::uint64_t(block.module) << 40 | std::uint64_t(block.id) << 32 | address;
 		}
-
-		std::uint32_t read_u32(const memory_location& at) const;
-
-		// Resolves a pointer value written by a block from file `source` into `target`.
-		std::optional<memory_location> resolve(std::size_t source, block_id target, std::uint32_t value) const;
 
 		std::vector<std::unique_ptr<sna_block>> m_blocks;
 		std::map<block_id, sna_block*> m_by_id;
@@ -81,4 +85,19 @@ namespace openrayman
 
 	// Loads Fix and one level (by name, as listed in Game.dsb) with all their pointers.
 	memory_image load_level_memory(const game_data& game, const std::string& level);
+
+	// Everything a level is loaded from: the memory image, plus the GPT and PTX files that
+	// point into it.
+	struct level_files
+	{
+		std::string name;
+		std::uint32_t index = 0; // in the Game.dsb level list
+		memory_image memory;
+		std::vector<std::byte> fix_gpt, level_gpt;
+		relocation_table fix_gpt_table, level_gpt_table;
+		std::vector<std::byte> fix_ptx, level_ptx;
+		relocation_table fix_ptx_table, level_ptx_table;
+	};
+
+	level_files load_level_files(const game_data& game, const std::string& level);
 }

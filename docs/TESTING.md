@@ -68,3 +68,24 @@ any player (about 500 MB). Keep exports like this off the C: drive, and never co
 
 - [ ] Press O, pick a folder that is **not** Rayman 2: a clear error, and the old data stays loaded
 - [ ] Press O, pick the Rayman 2 folder or its `Data` subfolder: both work
+
+## Phase 1 checklist
+
+Nothing to look at in the engine yet: Phase 1 reads the level data that Phase 2 will draw. These
+checks show that every level reads cleanly. Run them from the OpenRayman folder as above.
+
+### All levels
+
+Run `.\build\windows-debug\bin\ortool.exe level "F:\Games\Rayman 2" all` (takes about a minute)
+
+- [ ] Each level prints two lines: a pointer count ending in `0 dangling`, and a `scene:` line
+- [ ] It ends with `70 of 70 levels loaded cleanly`
+- [ ] The level with the fewest super objects is the last one, `Raycap` (14)
+
+### One level in detail
+
+Run `.\build\windows-debug\bin\ortool.exe level "F:\Games\Rayman 2" Learn_10`
+
+- [ ] It says `10 Fix actors, 5 placed in this level`
+- [ ] It lists 112 textures with readable names, like `textures_vegetaux\...` and `effets_speciaux\...`
+- [ ] The `scene:` line shows 194 super objects, 83 actors and 108 nodes in the sector tree

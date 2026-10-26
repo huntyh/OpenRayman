@@ -33,8 +33,10 @@ so `value = (raw − (a + c·k)) XOR (b + d·k)`.
 
 ## Finding a table
 
-Inputs: level `L` (index in the Game.dsb level list), table type `T` (0 = rtb, 1 = rtp, 2 = rtt,
-3 = rts) and any copy `n` in `0..11`. All copies point at identical data.
+Inputs: level `L` (index in the Game.dsb level list), table type `T` (0 = rtb for the SNA, 1 = rtp
+for the GPT, 2 = rts for the SND, 3 = rtt for the PTX) and any copy `n` in `0..11`. All copies point at
+identical data. The type numbers were confirmed by matching each table's values against the file
+it describes; note they don't follow the alphabetical order of the extensions.
 
 1. `index = L·4 + T`
 2. `v = 1.06913`, then for `i` in `0..n-1`: `v = v + 0.69314·|sin(i²·1.69314)| + 0.52658`
