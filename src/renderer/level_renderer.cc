@@ -173,10 +173,8 @@ namespace openrayman
 			{
 				float lo = std::min({ uv[0][axis], uv[1][axis], uv[2][axis] });
 				float hi = std::max({ uv[0][axis], uv[1][axis], uv[2][axis] });
-				// Artists' UVs often overshoot an edge by a hair; those triangles still mean one copy.
-				constexpr float overshoot = 0.05f;
-				float tile = std::floor(lo + overshoot);
-				if(hi <= tile + 1 + overshoot)
+				float tile = std::floor(lo + 1e-4f);
+				if(hi <= tile + 1 + 1e-4f)
 				{
 					bounds[axis] = tile;
 					bounds[axis + 2] = tile + 1;
@@ -390,8 +388,18 @@ namespace openrayman
 					texture.id = upload_texture(gf.width, gf.height, gf.rgba.data());
 					texture.mirror_u = info.tiling & texture_tiling::mirror_u;
 					texture.mirror_v = info.tiling & texture_tiling::mirror_v;
-					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, texture.mirror_u ? GL_MIRRORED_REPEAT : GL_REPEAT);
-					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, texture.mirror_v ? GL_MIRRORED_REPEAT : GL_REPEAT);
+					// Cut-outs that aren't set to repeat at all (tiling 0, like the cliff-edge foliage
+					// foret_bordtri_nz, whose UVs run 6% past its edges) stop at their transparent edge
+					// instead of showing the opposite one. Solid textures repeat regardless: many use
+					// UVs outside 0..1 without the bits.
+					bool cut_out = false;
+					for(std::size_t i = 3; i < gf.rgba.size() && !cut_out; i += 4)
+						cut_out = gf.rgba[i] < 128;
+					GLint wrap_u = texture.mirror_u ? GL_MIRRORED_REPEAT : GL_REPEAT, wrap_v = texture.mirror_v ? GL_MIRRORED_REPEAT : GL_REPEAT;
+					if(info.tiling == 0 && cut_out)
+						wrap_u = wrap_v = GL_CLAMP_TO_EDGE;
+					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap_u);
+					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap_v);
 					if(info.flags & texture_flag::additive)
 						texture.mode = blend::additive;
 					else if(has_soft_alpha(gf))
