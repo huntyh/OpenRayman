@@ -50,6 +50,8 @@ static void usage()
 		"  scene <game folder> <level>         Print a level's super object tree\n"
 		"  peek <game folder> <level> <block> <hex offset> <words>\n"
 		"                                      Print memory words, e.g. peek ... Learn_10 05/02 300 16\n"
+		"  anim <game folder> <level> <index> <frame>\n"
+		"                                      Print the objects an animation shows at a frame\n"
 		"  refs <game folder> <level> <block> <hex offset>\n"
 		"                                      List the pointers that lead to a place in memory\n"
 		"\n"
@@ -566,6 +568,26 @@ static int cmd_peek(const fs::path& folder, const std::string& name, const std::
 	return EXIT_SUCCESS;
 }
 
+// Prints which objects each channel of an animation shows at a frame (an index into the actor's
+// object list; "-" means hidden).
+static int cmd_anim(const fs::path& folder, const std::string& name, const std::string& index, const std::string& frame)
+{
+	game_data game = require_game(folder);
+	level_files files = load_level_files(game, name);
+	animation_bank bank = read_animation_bank(files);
+	std::size_t a = std::stoul(index);
+	if(a >= bank.animations.size())
+		throw format_error(std::format("animation {} is beyond the bank's {}", a, bank.animations.size()));
+	std::cout << std::format("animation {}: {} frames, {} channels\n", a, bank.animations[a].frames, bank.animations[a].channels);
+	for(const channel_pose& c : pose(bank, a, std::uint32_t(std::stoul(frame))))
+	{
+		const auto& m = c.local.m;
+		std::cout << std::format("  channel {:>3} parent {:>3} object {:>3}  pos ({:.2f}, {:.2f}, {:.2f})\n", c.id,
+			c.parent ? std::to_string(*c.parent) : "-", c.object ? std::to_string(*c.object) : "-", m[0][3], m[1][3], m[2][3]);
+	}
+	return EXIT_SUCCESS;
+}
+
 // Lists every pointer in memory that leads to <block> <hex offset>, to find what uses a structure.
 static int cmd_refs(const fs::path& folder, const std::string& name, const std::string& block, const std::string& offset)
 {
@@ -622,6 +644,8 @@ int main(int argc, char** argv)
 			return cmd_actors(args[1], args[2]);
 		if(cmd == "scene" && args.size() == 3)
 			return cmd_scene(args[1], args[2]);
+		if(cmd == "anim" && args.size() == 5)
+			return cmd_anim(args[1], args[2], args[3], args[4]);
 		if(cmd == "refs" && args.size() == 5)
 			return cmd_refs(args[1], args[2], args[3], args[4]);
 		if(cmd == "peek" && args.size() == 6)

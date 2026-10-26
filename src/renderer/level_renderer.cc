@@ -7,6 +7,7 @@
 #include <SDL3/SDL_log.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <tuple>
 
@@ -180,8 +181,6 @@ namespace openrayman
 					texture.id = upload_texture(gf.width, gf.height, gf.rgba.data());
 					texture.mirror_u = info.tiling & texture_tiling::mirror_u;
 					texture.mirror_v = info.tiling & texture_tiling::mirror_v;
-					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, texture.mirror_u ? GL_MIRRORED_REPEAT : GL_REPEAT);
-					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, texture.mirror_v ? GL_MIRRORED_REPEAT : GL_REPEAT);
 					if(info.flags & texture_flag::additive)
 						texture.mode = blend::additive;
 					else if(has_soft_alpha(gf))
@@ -212,6 +211,9 @@ namespace openrayman
 		// Triangles grouped by texture. Corners are expanded into separate vertices, because a
 		// corner's UV is indexed separately from its position.
 		std::map<std::pair<blend, GLuint>, std::vector<vertex>> by_texture;
+		// Per texture and axis: whether any UV leaves the texture. Axes that never do are clamped,
+		// so bilinear filtering doesn't bleed the opposite edge in as a faint seam line.
+		std::map<GLuint, std::array<bool, 2>> wraps;
 		for(const placed_geometry& placed : geometry)
 		{
 			stats.meshes++;
@@ -226,6 +228,7 @@ namespace openrayman
 						texture = { m_white, blend::none };
 				}
 				std::vector<vertex>& out = by_texture[{ texture.mode, texture.id }];
+				std::array<bool, 2>& wrap = wraps[texture.id];
 				for(std::size_t t = 0; t < element.triangles.size(); t++)
 				{
 					for(int k = 0; k < 3; k++)
@@ -234,6 +237,8 @@ namespace openrayman
 						vec3 p = placed.world.apply(object.vertices[index]);
 						vec3 n = index < object.normals.size() ? object.normals[index] : vec3{ 0, 0, 1 };
 						vec2 uv = element.uvs[element.uv_triangles[t][k]];
+						for(int axis = 0; axis < 2; axis++)
+							wrap[axis] = wrap[axis] || uv[axis] < -0.01f || uv[axis] > 1.01f;
 						glm::vec3 position(p[0], p[1], p[2]);
 						stats.min = glm::min(stats.min, position);
 						stats.max = glm::max(stats.max, position);
@@ -266,6 +271,16 @@ namespace openrayman
 		});
 
 		std::vector<vertex> vertices;
+		for(const auto& [path, texture] : m_textures)
+		{
+			if(!texture.id)
+				continue;
+			const std::array<bool, 2>& wrap = wraps[texture.id];
+			glBindTexture(GL_TEXTURE_2D, texture.id);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, texture.mirror_u ? GL_MIRRORED_REPEAT : wrap[0] ? GL_REPEAT : GL_CLAMP_TO_EDGE);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, texture.mirror_v ? GL_MIRRORED_REPEAT : wrap[1] ? GL_REPEAT : GL_CLAMP_TO_EDGE);
+		}
+
 		for(const auto& [key, list] : by_texture)
 		{
 			// The map is ordered by blend mode first, so solid batches come first.

@@ -12,6 +12,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <cctype>
 
 using namespace openrayman;
 namespace fs = std::filesystem;
@@ -38,6 +39,7 @@ TEST_CASE("real data: Game.dsb lists every level, and each one exists")
 	const dsb_script& dsb = game->game_dsb();
 	CHECK(dsb.levels.size() == 70);
 	CHECK(dsb.levels.front() == "Menu");
+	CHECK(dsb.levels.back() == "Raycap");
 	CHECK(dsb.texture_archives.size() == 2);
 
 	auto levels = game->directory("levels");
@@ -63,6 +65,13 @@ TEST_CASE("real data: every texture decodes")
 	for(const fs::path& path : game->texture_archives())
 	{
 		cnt_archive archive(path);
+		INFO(path.filename().string());
+		std::string name = path.filename().string();
+		std::ranges::transform(name, name.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+		if(name == "vignette.cnt")
+			CHECK(archive.entries().size() == 35);
+		else
+			CHECK(archive.entries().size() == 1636);
 		for(const cnt_entry& entry : archive.entries())
 		{
 			INFO(entry.path);
@@ -94,5 +103,18 @@ TEST_CASE("real data: every music file decodes")
 		// constantly. Real tracks clip a handful of samples at most.
 		auto clipped = std::ranges::count_if(pcm, [](std::int16_t s) { return s == 32767 || s == -32768; });
 		CHECK(clipped * 1000 < static_cast<std::ptrdiff_t>(pcm.size()));
+
+		// No stereo track plays in only one ear (a channel pairing bug once silenced one side).
+		if(decoder.channels() == 2)
+		{
+			double energy[2] = {};
+			for(std::size_t i = 0; i < pcm.size(); i++)
+				energy[i % 2] += double(pcm[i]) * pcm[i];
+			if(energy[0] + energy[1] > 0)
+			{
+				CHECK(energy[0] > 0.01 * energy[1]);
+				CHECK(energy[1] > 0.01 * energy[0]);
+			}
+		}
 	}
 }

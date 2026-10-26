@@ -84,13 +84,20 @@ Texture description, as far as known:
 | 0x14 | u32 flags: 0x2 black is transparent ("_nz"), 0x8 alpha ("_aaa"), 0x20 additive ("_ad") |
 | 0x18 | u16 height, u16 width: often half of the size at 0x1C; meaning unknown |
 | 0x1C | u16 height, u16 width |
-| 0x45 | u8 tiling: 1 repeat U, 2 repeat V, 4 and 8 mirrored ("_txy" is 3, "_mxy" is 15) |
+| 0x45 | u8 tiling: bits 1 and 2 repeat, 4 and 8 mirror ("_txy" is 3, "_mxy" is 15); which axis each bit is, is not settled (below) |
 | 0x46 | file name, NUL terminated, Latin-1, e.g. `textures_foret\foret_bordtri_nz.tga` |
 
 The file named is in Textures.cnt with a `.gf` extension instead of `.tga`. Every one of the 7,570
 texture references in the 70 levels exists there. The size at 0x1C matches the GF file for 97% of
 them; the rest are off by exactly a factor of two, presumably textures replaced at another
 resolution after the levels were built. The GF file's own size is what counts.
+
+Which axis each tiling bit belongs to isn't clear. Across every level, textures with bit 2 (named
+"_ty") use UVs beyond 0..1 along the first UV coordinate, which suggests bit 2 repeats that axis and
+bit 1 the second, against what the names suggest. But dozens of textures with neither bit also
+use UVs outside 0..1 (rocks, planks, lamps), so the bits can't be used to decide clamping. The
+renderer instead clamps an axis only when no UV in the level leaves the texture on it, which
+removes the bleed lines at texture edges without changing anything else.
 
 ## Where this came from
 

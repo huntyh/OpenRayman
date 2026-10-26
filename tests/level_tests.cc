@@ -18,6 +18,8 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
+#include <cstdint>
 #include <map>
 
 using namespace openrayman;
@@ -271,6 +273,8 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 	std::size_t references = 0, exact = 0;
 	std::map<std::uint16_t, std::size_t> skipped_types;
 	std::map<std::uint32_t, std::size_t> transform_types;
+	std::pair<std::size_t, std::string> smallest_scene{ SIZE_MAX, "" };
+	std::size_t levels_loaded = 0;
 	for(const std::string& level : game->game_dsb().levels)
 	{
 		INFO(level);
@@ -285,6 +289,13 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 		CHECK(header.placements.size() == 5);
 
 		scene tree(files.memory, header);
+		smallest_scene = std::min(smallest_scene, std::pair(tree.nodes().size(), level));
+		if(level == "Learn_10")
+		{
+			CHECK(tree.nodes().size() == 194);
+			CHECK(tree.node(tree.dynamic_world()).children.size() == 83);
+			CHECK(tree.subtree_size(tree.father_sector()) == 108);
+		}
 		CHECK(tree.node(tree.actual_world()).children.size() == 3);
 		CHECK(tree.node(tree.dynamic_world()).children.size() >= header.placements.size());
 		CHECK(tree.subtree_size(tree.father_sector()) >= 4);
@@ -365,6 +376,9 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 		CHECK(read_texture_table(files, false).size() == 257);
 		std::vector<texture_info> textures = read_texture_table(files, true);
 		CHECK(!textures.empty());
+		if(level == "Learn_10")
+			CHECK(textures.size() == 112);
+		levels_loaded++;
 		for(const texture_info& t : textures)
 		{
 			INFO(t.name);
@@ -378,6 +392,8 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 			exact += t.width == size->first && t.height == size->second;
 		}
 	}
+	CHECK(levels_loaded == 70);
+	CHECK(smallest_scene == std::pair<std::size_t, std::string>(14, "Raycap"));
 	CHECK(exact >= references * 95 / 100);
 	CHECK(transform_types == std::map<std::uint32_t, std::size_t>{ { 1, 6951 }, { 2, 3109 }, { 3, 1256 }, { 4, 290 } });
 	// Every element type in the game is decoded: triangles and sprites.

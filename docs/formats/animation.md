@@ -9,10 +9,22 @@ where each part goes from an animation.
 ```
 actor super object → actor (perso)
   +0x00 → 3D data
+           +0x00 initial state
            +0x04 current state → +0x04 animation reference
            +0x0C object list
+           +0x10 initial object list
            +0x14 family
 ```
+
+**Family**: what all actors of one kind share. +0x10 first state, +0x14 last state, +0x18 u32
+number of states; +0x1C onwards, the object lists its actors use. **State**: +0x00 next state,
++0x04 animation reference. Several states can share an animation reference.
+
+The saved state is only where an actor starts: the game's scripts usually pick another one as the
+level begins. The breakable cages in The Woods of Light are an example: their family (14 states,
+animations 427–437) has hanging poses that show the cage under three chain links (427, 436, 437),
+but every cage is saved in the standing pose (433, one channel, the cage alone), so until scripts
+run they're drawn without their chains. `ortool anim` prints what an animation shows.
 
 **Object list**: +0x04 entries, +0x0C u16 number of entries. Each entry is 0x14 bytes: +0x00
 optional scale (3 floats), +0x04 physical object (the same structure static geometry uses, see
