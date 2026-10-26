@@ -127,7 +127,23 @@ actor of that family), and `--actor-state <node>:<state>` does it from the comma
 - Blending: a unit test with a hand-made two-keyframe animation (halfway positions, the shorter
   rotation, holding after the last keyframe, wrapping around).
 
+## Shadows
+
+An actor's 3D data holds its shadow: +0xCC a game material (null for no shadow), +0xD4 and +0xD8
+two floats, its size along the actor's X and Y. In all 70 levels 152 of 5,107 actors have one, and
+every one uses the same Fix material with the texture `effets_speciaux\shadow1_mxy_aaa`: a 32×32
+quarter of a black blob (up to 49% opaque), its centre in a corner, mirrored into a whole one. Fix's
+Rayman has 0.8 by 0.8; in Learn_10 the three Globox kids (one actor) have 3 by 1.
+
+The game projects the blob onto the ground below the actor. Without collision yet, OpenRayman finds
+the ground with a ray straight down onto the level's solid triangles and lays the blob there,
+turned with the actor, the size being half its extent. Actors with nothing visible (scripts give
+them a look later) get no shadow yet.
+
 ## Where this came from
+
+- Own analysis: the shadow fields of the 3D data, followed back from the shadow texture through
+  its visual and game material; checked across all 70 levels by the tests.
 
 - Own analysis: the speed as frames per second and the keyframe order (surveyed on all levels), the
   states the scripts choose, and that the level GPT's tail is the animation bank, the 4-byte alignment of every

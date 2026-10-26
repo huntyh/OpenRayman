@@ -546,3 +546,46 @@ TEST_CASE("real data: every sector's static lights")
 	CHECK(vertices == 102016);
 	CHECK(outside == 605);
 }
+
+TEST_CASE("real data: actor shadows")
+{
+	auto dir = real_game_dir();
+	if(!dir)
+	{
+		MESSAGE("OPENRAYMAN_GAME_DIR not set, skipping");
+		return;
+	}
+	auto game = game_data::locate(*dir);
+	REQUIRE(game.has_value());
+
+	std::size_t with_shadow = 0, actors = 0;
+	std::map<std::string, std::size_t> textures;
+	for(const std::string& level : game->game_dsb().levels)
+	{
+		INFO(level);
+		level_files files = load_level_files(*game, level);
+		level_header header = read_level_header(files);
+		scene tree(files.memory, header);
+		animation_bank bank = read_animation_bank(files);
+		actor_set set = read_actors(files.memory, tree, bank);
+		std::size_t here = 0;
+		for(const actor_set::entry& a : set.actors)
+		{
+			actors++;
+			if(!a.shadow)
+				continue;
+			here++;
+			CHECK(a.shadow->width > 0);
+			CHECK(a.shadow->length > 0);
+			REQUIRE(a.shadow->material.texture.has_value());
+			textures[a.shadow->material.texture->name]++;
+		}
+		with_shadow += here;
+		if(level == "Learn_10")
+			CHECK(here == 4); // three of the level's, and one of Fix's (Rayman's, 0.8 by 0.8)
+	}
+	// Every shadow uses the same blob texture from Fix.
+	CHECK(with_shadow == 152);
+	CHECK(actors == 5107);
+	CHECK(textures == std::map<std::string, std::size_t>{ { "effets_speciaux\\shadow1_mxy_aaa.tga", 152 } });
+}

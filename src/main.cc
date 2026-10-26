@@ -277,6 +277,23 @@ namespace
 		}
 		a.level->set_parts(std::move(out));
 		a.level->set_time(a.animation_time);
+
+		std::vector<level_renderer::shadow> shadows;
+		for(const actor_set::entry& actor : a.actors.actors)
+		{
+			// Actors with nothing to show (set up by scripts later) don't get a shadow yet either.
+			bool visible = std::ranges::any_of(actor.meshes, [](const auto& mesh) { return mesh.has_value(); });
+			if(!actor.shadow || !visible)
+				continue;
+			glm::mat4 model(1.0f);
+			for(int r = 0; r < 3; r++)
+			{
+				for(int c = 0; c < 4; c++)
+					model[c][r] = actor.world.m[r][c];
+			}
+			shadows.push_back({ model, glm::vec2(actor.shadow->width, actor.shadow->length) });
+		}
+		a.level->set_shadows(std::move(shadows));
 	}
 
 	// Debug: puts the actor you're looking at (the one nearest the middle of the view, within 150
@@ -359,7 +376,14 @@ namespace
 			std::vector<std::optional<std::size_t>> sectors;
 			for(const placed_geometry& placed : geometry)
 				sectors.push_back(lights.sector_of(tree, placed.node));
-			a.level_stats = a.level->load(geometry, a.actors.meshes, a.archives, std::move(lights), sectors);
+			// Every shadow in the game uses the same blob material, from Fix.
+			const visual_material* shadow_material = nullptr;
+			for(const actor_set::entry& actor : a.actors.actors)
+			{
+				if(actor.shadow && !shadow_material)
+					shadow_material = &actor.shadow->material;
+			}
+			a.level_stats = a.level->load(geometry, a.actors.meshes, a.archives, std::move(lights), sectors, shadow_material);
 			a.animation_time = a.start_time.value_or(0.0);
 			a.start_time.reset();
 			for(const auto& [node, state] : a.start_states)

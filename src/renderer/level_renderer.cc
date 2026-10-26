@@ -385,6 +385,43 @@ namespace openrayman
 		m_lights = {};
 		m_skies.clear();
 		m_solid_cores.clear();
+		m_floor.clear();
+		m_shadow_texture = 0;
+		m_shadows.clear();
+	}
+
+	std::optional<std::pair<glm::vec3, glm::vec3>> level_renderer::ground_below(const glm::vec3& from) const
+	{
+		// A ray straight down from a little above the point, against every solid triangle.
+		const glm::vec3 start = from + glm::vec3(0, 0, 1);
+		constexpr float reach = 20;
+		std::optional<std::pair<glm::vec3, glm::vec3>> best;
+		float nearest = reach;
+		for(std::size_t i = 0; i + 2 < m_floor.size(); i += 3)
+		{
+			const glm::vec3 &a = m_floor[i], &b = m_floor[i + 1], &c = m_floor[i + 2];
+			if(std::min({ a.x, b.x, c.x }) > start.x || std::max({ a.x, b.x, c.x }) < start.x ||
+				std::min({ a.y, b.y, c.y }) > start.y || std::max({ a.y, b.y, c.y }) < start.y)
+				continue;
+			// Where the vertical line through the start crosses the triangle, by barycentric coordinates.
+			glm::vec2 p(start), v0(b - a), v1(c - a), v2 = p - glm::vec2(a);
+			float d = v0.x * v1.y - v1.x * v0.y;
+			if(std::abs(d) < 1e-8f)
+				continue;
+			float s = (v2.x * v1.y - v1.x * v2.y) / d, t = (v0.x * v2.y - v2.x * v0.y) / d;
+			if(s < 0 || t < 0 || s + t > 1)
+				continue;
+			float z = a.z + s * (b.z - a.z) + t * (c.z - a.z);
+			float depth = start.z - z;
+			if(depth < 0 || depth >= nearest)
+				continue;
+			glm::vec3 n = glm::normalize(glm::cross(b - a, c - a));
+			if(n.z < 0)
+				n = -n;
+			nearest = depth;
+			best = { glm::vec3(start.x, start.y, z), n };
+		}
+		return best;
 	}
 
 	void level_renderer::set_blend(blend mode) const
@@ -519,7 +556,8 @@ namespace openrayman
 	}
 
 	level_renderer::statistics level_renderer::load(std::span<const placed_geometry> geometry, std::span<const geometric_object> meshes,
-		std::span<const std::unique_ptr<cnt_archive>> archives, level_lights lights, std::span<const std::optional<std::size_t>> sectors)
+		std::span<const std::unique_ptr<cnt_archive>> archives, level_lights lights, std::span<const std::optional<std::size_t>> sectors,
+		const visual_material* shadow_material)
 	{
 		clear();
 		m_lights = std::move(lights);
@@ -661,6 +699,22 @@ namespace openrayman
 			}
 		}
 		append(level_triangles, m_batches);
+		for(const batch& b : m_batches)
+		{
+			for(GLint i = b.first; i < b.first + b.count; i++)
+				m_floor.push_back(vertices[std::size_t(i)].position);
+		}
+		if(shadow_material && shadow_material->texture)
+		{
+			// A quarter of a blob (its centre in a corner), mirrored into a whole one.
+			m_shadow_texture = texture_for(*shadow_material->texture, archives, stats).id;
+			if(m_shadow_texture)
+			{
+				glBindTexture(GL_TEXTURE_2D, m_shadow_texture);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
+			}
+		}
 		// Meshes placed per frame are in their own space, so they don't count towards the level's bounds.
 		glm::vec3 level_min = stats.min, level_max = stats.max;
 		auto add_mesh = [&](const geometric_object& object) {
@@ -924,6 +978,50 @@ namespace openrayman
 			glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(parts[i].model));
 			use_lights(part_light[i]);
 			draw_cores(m_meshes[parts[i].mesh].batches);
+		}
+
+		// Shadows: blobs laid on the ground below the actors that cast them, over the solid surfaces.
+		if(m_shadow_texture && !m_shadows.empty())
+		{
+			std::vector<vertex> quads;
+			for(const shadow& s : m_shadows)
+			{
+				auto ground = ground_below(glm::vec3(s.actor[3]));
+				if(!ground)
+					continue;
+				const auto& [at, n] = *ground;
+				// The actor's X along the ground, and the ground's other direction.
+				glm::vec3 x = glm::vec3(s.actor[0]) - glm::dot(glm::vec3(s.actor[0]), n) * n;
+				if(glm::length(x) < 1e-4f)
+					x = glm::abs(n.x) < 0.9f ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0);
+				x = glm::normalize(x);
+				glm::vec3 y = glm::cross(n, x);
+				glm::vec3 c = at + n * 0.02f;
+				glm::vec3 dx = x * s.size.x, dy = y * s.size.y;
+				glm::vec4 bounds{ -1e6f, -1e6f, 1e6f, 1e6f };
+				// u 0..2 and v -1..1: the blob's centre (u 1, v 0) in the middle, mirrored outwards.
+				vertex v00{ c - dx - dy, { 0, -1 }, n, bounds }, v10{ c + dx - dy, { 2, -1 }, n, bounds };
+				vertex v01{ c - dx + dy, { 0, 1 }, n, bounds }, v11{ c + dx + dy, { 2, 1 }, n, bounds };
+				quads.insert(quads.end(), { v00, v10, v11, v00, v11, v01 });
+			}
+			if(!quads.empty())
+			{
+				set_blend(current = blend::alpha);
+				glUniform1i(m_u_lighting, 3);
+				glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(identity));
+				glUniform2f(m_u_uv_offset, 0, 0);
+				glUniform1f(m_u_edge_clamp, 0.0f);
+				glEnable(GL_POLYGON_OFFSET_FILL);
+				glPolygonOffset(-1, -1);
+				glBindVertexArray(m_sprite_vao);
+				glBindBuffer(GL_ARRAY_BUFFER, m_sprite_vbo);
+				glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(quads.size() * sizeof(vertex)), quads.data(), GL_STREAM_DRAW);
+				glBindTexture(GL_TEXTURE_2D, m_shadow_texture);
+				glDrawArrays(GL_TRIANGLES, 0, GLsizei(quads.size()));
+				glDisable(GL_POLYGON_OFFSET_FILL);
+				glUniform1f(m_u_edge_clamp, m_edge_clamp ? 1.0f : 0.0f);
+				glBindVertexArray(m_vao);
+			}
 		}
 
 		// Then the see-through ones over them, soft and glowing alike, farthest first: a leaf in front

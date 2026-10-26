@@ -46,7 +46,7 @@ namespace openrayman
 		// `sectors` gives the sector of each piece of geometry, whose lights shine on it.
 		statistics load(std::span<const placed_geometry> geometry, std::span<const geometric_object> meshes,
 			std::span<const std::unique_ptr<cnt_archive>> archives, level_lights lights = {},
-			std::span<const std::optional<std::size_t>> sectors = {});
+			std::span<const std::optional<std::size_t>> sectors = {}, const visual_material* shadow_material = nullptr);
 
 		// A mesh given to load(), placed in the world.
 		struct part
@@ -58,6 +58,14 @@ namespace openrayman
 
 		// What to draw of the actors this frame. Parts naming a mesh that wasn't loaded are skipped.
 		void set_parts(std::vector<part> parts) { m_parts = std::move(parts); }
+
+		// An actor's shadow this frame: a blob on the ground below it, turned with it.
+		struct shadow
+		{
+			glm::mat4 actor{ 1 };
+			glm::vec2 size{ 1 }; // half its extent along the actor's X and Y
+		};
+		void set_shadows(std::vector<shadow> shadows) { m_shadows = std::move(shadows); }
 
 		// The clock for animated textures, in seconds.
 		void set_time(double seconds) { m_time = seconds; }
@@ -178,6 +186,12 @@ namespace openrayman
 		std::vector<mesh> m_meshes;
 		std::vector<part> m_parts;
 		std::vector<part> m_level_cards; // the level's own cards that turn to the camera
+		// The level's solid triangles, three corners each, for finding the ground below a shadow.
+		std::vector<glm::vec3> m_floor;
+		// The nearest ground straight below a point (within a few units): where, and which way it faces.
+		std::optional<std::pair<glm::vec3, glm::vec3>> ground_below(const glm::vec3& from) const;
+		GLuint m_shadow_texture = 0;
+		std::vector<shadow> m_shadows;
 		std::set<GLuint> m_solid_cores; // soft textures whose nearly opaque middle is drawn solid
 		std::map<std::size_t, batch> m_skies; // by sector: the sky's texture and where the dome is
 		std::vector<texture_animation> m_animations;

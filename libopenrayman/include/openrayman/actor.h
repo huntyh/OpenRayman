@@ -20,6 +20,13 @@ namespace openrayman
 		std::optional<vec3> scale;
 	};
 
+	// The dark blob an actor casts on the ground below it.
+	struct actor_shadow
+	{
+		visual_material material; // Fix's shadow1_mxy_aaa in every case seen
+		float width = 1, length = 1;  // the blob's size along the actor's X and Y
+	};
+
 	// An actor ("perso"): what it looks like and which animation its current state plays.
 	// See docs/formats/animation.md.
 	struct actor
@@ -32,6 +39,7 @@ namespace openrayman
 		std::optional<memory_location> family;
 		std::vector<std::optional<std::uint16_t>> states;
 		std::optional<std::size_t> state;
+		std::optional<actor_shadow> shadow;
 	};
 
 	// Reads the actor behind a super object of type actor. Throws format_error.
@@ -55,6 +63,7 @@ namespace openrayman
 			std::optional<std::size_t> state;
 			std::vector<std::optional<std::size_t>> meshes; // per object list entry, if it has one
 			std::vector<std::optional<vec3>> scales;        // per object list entry
+			std::optional<actor_shadow> shadow;
 		};
 		std::vector<geometric_object> meshes;
 		std::vector<entry> actors;

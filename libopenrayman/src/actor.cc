@@ -17,6 +17,8 @@ namespace openrayman
 		constexpr std::uint32_t data_current_state = 0x04;
 		constexpr std::uint32_t data_object_list = 0x0C;
 		constexpr std::uint32_t data_family = 0x14;
+		constexpr std::uint32_t data_shadow_material = 0xCC; // a game material
+		constexpr std::uint32_t data_shadow_size = 0xD4;     // 2 floats
 		constexpr std::uint32_t family_first_state = 0x10;
 		constexpr std::uint32_t family_state_count = 0x18; // u32
 		constexpr std::uint32_t state_next = 0x00;
@@ -98,6 +100,20 @@ namespace openrayman
 		if(current)
 			result.animation = animation_of(*current);
 
+		// Its shadow: a game material (whose first field is the visual material) and a size.
+		if(auto game_material = memory.follow(*data + data_shadow_material))
+		{
+			if(auto visual = memory.follow(*game_material))
+			{
+				actor_shadow shadow;
+				shadow.material = read_visual_material(memory, *visual);
+				binary_reader size = reader_at(*data + data_shadow_size, 8);
+				shadow.width = size.f32();
+				shadow.length = size.f32();
+				result.shadow = shadow;
+			}
+		}
+
 		// The family's states: a list linked through each state's first word.
 		if(auto family = memory.follow(*data + data_family))
 		{
@@ -146,6 +162,7 @@ namespace openrayman
 			e.family = a.family;
 			e.states = a.states;
 			e.state = a.state;
+			e.shadow = a.shadow;
 			for(const actor_object& object : a.objects)
 			{
 				std::optional<std::size_t> mesh;

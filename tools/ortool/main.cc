@@ -238,6 +238,8 @@ static int cmd_level(const fs::path& folder, const std::string& name)
 						p.matrix.position[0], p.matrix.position[1], p.matrix.position[2]);
 				for(const texture_info& t : level_textures)
 					std::cout << std::format("  texture {:>4}  {} +0x{:06X}  {:>4}x{:<4}  {:08X} {:02X}  {}\n", t.slot, t.at.block->id.to_string(), t.at.offset, t.width, t.height, t.flags, t.tiling, t.name);
+				for(const texture_info& t : fix_textures)
+					std::cout << std::format("  fix texture {:>4}  {} +0x{:06X}  {:>4}x{:<4}  {:08X} {:02X}  {}\n", t.slot, t.at.block->id.to_string(), t.at.offset, t.width, t.height, t.flags, t.tiling, t.name);
 			}
 			std::cout << std::format("{:<10} {:>7} pointers: {} to data, {} to runtime memory, {} dangling\n",
 				level, stats.pointers, stats.into_data, stats.into_runtime, stats.dangling);

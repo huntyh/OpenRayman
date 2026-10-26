@@ -58,7 +58,7 @@ yet: everything that moves on its own moves, but nothing reacts to Rayman.
 - Moved to Phase 3: the fireflies. They come from invisible emitter actors whose scripts spawn
   particles while the game runs, so there is no particle data to draw yet
 
-**Milestone 2c: the game's light and sky ⬅ we are here**
+**Milestone 2c: the game's light and sky ⬅ we are here (all done, being checked)**
 
 - ✅ The game's own lighting: each sector's lights, combined with the materials exactly as
   `Rayman2.exe` does (read from the exe): colours, red glows and blue tints match side by side
@@ -67,7 +67,7 @@ yet: everything that moves on its own moves, but nothing reacts to Rayman.
   edges; soft and glowing surfaces are drawn back to front
 - ✅ The sky: the fog's background colour behind everything, and each sector's sky material (the
   scrolling clouds of The Woods of Light) on a dome around the camera
-- Shadows under characters
+- ✅ Shadows under characters: the actor's shadow blob, laid on the ground below it
 - Moved to Later: a modern lighting mode that keeps the art direction, together with HDR, since
   HDR changes how lights have to work anyway
 
