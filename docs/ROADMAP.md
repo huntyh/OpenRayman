@@ -43,10 +43,10 @@ yet: everything that moves on its own moves, but nothing reacts to Rayman.
 - ✅ Sprites (Lums and other glows), and textures' see-through, glowing and mirrored modes
 - ✅ No seams at texture edges; P copies the camera position for bug reports
 
-**Milestone 2b: things move ⬅ we are here**
+**Milestone 2b: things move ✅ (merged into master, 2026-10-26)**
 
-- ✅ Animation playback: every actor loops its current animation, blending between keyframes
-  (built, waiting for your check). Many actors are saved in a still or placeholder state (Lums
+- ✅ Animation playback: every actor loops its current animation, blending between keyframes.
+  Many actors are saved in a still or placeholder state (Lums
   without flapping wings, mushroom clusters with 3 of their 5 mushrooms, cages without chains); the
   scripts pick their real state, so those come with Phase 3
 - ✅ Cards that turn to the camera: mushrooms, flowers, flames, chain links
@@ -55,9 +55,10 @@ yet: everything that moves on its own moves, but nothing reacts to Rayman.
   scripts would pick (the yellow Lum is state 4 of the Lum family)
 - ✅ Moving textures: the water stream, waterfall, mist, fog and clouds scroll at the game's
   speeds (assuming its 60 frames per second: compare the speed with the game)
-- Effects: the drifting fireflies and other particles
+- Moved to Phase 3: the fireflies. They come from invisible emitter actors whose scripts spawn
+  particles while the game runs, so there is no particle data to draw yet
 
-**Milestone 2c: the game's light and sky**
+**Milestone 2c: the game's light and sky ⬅ we are here**
 
 - The game's own lighting: per-vertex colours baked into the level, and sector lights
 - Fog: the blue-green haze of The Woods of Light that gives the waterfall its misty look (part of
@@ -74,6 +75,8 @@ that need gameplay.
 - BNM sound banks: sound effects, voices, and the adaptive music sequencing
 - Actor behaviour: states and transitions (e.g. the cages hang from their chains once their
   scripts pick the hanging state)
+- Particles: the fireflies of The Woods of Light (emitter actors such as nodes 31 and 32, whose
+  scripts spawn them; their settings are probably in the scripts' variables)
 - Collision and physics
 - The AI bytecode interpreter: behaviours, macros, reflexes, DsgVars
 - Input mapped to the game's controls (keyboard, gamepad, touch)

@@ -138,7 +138,7 @@ Don't report these as bugs, they're the next steps:
   So Lums hang still without flapping their wings, the mushroom clusters show 3 of their 5
   mushrooms, the breakable cages stand without their chains, and the butterfly flies its loop
   instead of its real path
-- Particles (fireflies) don't move yet
+- No fireflies or other particles yet: scripts spawn them (Phase 3)
 - The start view uses the game camera's saved position, which can be an odd spot (e.g. among the
   treetops in The Woods of Light); press R after flying off to get back there
 - The lighting is a simple stand-in, not the game's own; the sky is a plain colour
