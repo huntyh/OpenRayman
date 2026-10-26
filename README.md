@@ -8,7 +8,7 @@ This continues [imaginaryPineapple's OpenRayman](https://github.com/imaginaryPin
 
 > **OpenRayman is an unofficial fan project. It is not affiliated with, endorsed by, or connected to
 > Ubisoft in any way.** Rayman and Rayman 2: The Great Escape are trademarks of Ubisoft
-> Entertainment. You need your own legally obtained copy of the game to use OpenRayman.
+> Entertainment. You need your own legally obtained copy of the game (GOG) to use OpenRayman.
 
 **Status: Phase 2.** The engine opens the original levels and lets you fly through them, with the
 game's textures, characters and objects. Nothing moves yet, and the game's lighting, sky and
@@ -123,8 +123,7 @@ This continuation of OpenRayman is written by AI. The code, the reverse engineer
 formats and the documentation are done by Claude, an AI model by Anthropic, working in Claude Code,
 with a smaller local model drafting some routine pieces (always reviewed before use).
 **huntyh** runs the project: deciding what to build, testing every step against the real game and
-reporting what looks wrong, and keeping the project's rules, such as never including Ubisoft data
-and never copying code from leaked or unlicensed sources.
+reporting what looks wrong, and keeping the project's rules.
 
 Every commit made this way says so in its message ("Co-Authored-By: Claude"), so the history shows
 exactly which work came from where.
@@ -163,7 +162,7 @@ documented this game over two decades. Thank you.
 
 ### This continuation
 
-- **huntyh**: project lead, testing and bug reports (the upside-down crowns were spotted here).
+- **huntyh**: project lead, testing and bug reports (Teensies aren't upside-down anymore)
 - **Claude** (Anthropic): code, format research and documentation, see [How this is made](#how-this-is-made).
 
 ### Rayman 2 research
