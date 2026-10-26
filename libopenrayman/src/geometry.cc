@@ -159,6 +159,40 @@ namespace openrayman
 		return e;
 	}
 
+	// Sprite element: a list of sprites, each 0x30 bytes (info, a size, more fields not used yet, the
+	// centre vertex). The info holds the half size actually drawn and, two steps away, the material.
+	static void read_sprites(const memory_image& memory, const memory_location& at, std::size_t vertex_count, std::vector<sprite>& out)
+	{
+		constexpr std::uint32_t sprite_size = 0x30;
+		std::uint16_t count = reader_at(at + 4, 2).u16();
+		if(count == 0)
+			return;
+		memory_location list = require(memory.follow(at), at, "sprite list");
+		reader_at(list, std::size_t(count) * sprite_size); // bounds check
+		for(std::uint16_t i = 0; i < count; i++)
+		{
+			memory_location entry = list + i * sprite_size;
+			sprite s;
+			s.vertex = reader_at(entry + 0x28, 2).u16();
+			if(s.vertex >= vertex_count)
+				throw format_error(std::format("sprite at {} is centred on vertex {} of {}", describe(entry), s.vertex, vertex_count));
+			if(auto info = memory.follow(entry))
+			{
+				if(auto scale = memory.follow(*info + 0x0C))
+				{
+					binary_reader r = reader_at(*scale, 8);
+					float x = r.f32();
+					s.half_size = { x, r.f32() };
+				}
+				if(auto material_pointer = memory.follow(*info + 0x14))
+					if(auto game_material = memory.follow(*material_pointer))
+						if(auto visual = memory.follow(*game_material))
+							s.material = read_visual_material(memory, *visual);
+			}
+			out.push_back(s);
+		}
+	}
+
 	geometric_object read_geometric_object(const memory_image& memory, const memory_location& at)
 	{
 		geometric_object object;
@@ -188,12 +222,12 @@ namespace openrayman
 			{
 				std::uint16_t type = types.u16();
 				memory_location slot = elements + i * 4u;
-				if(type != element_type::triangles)
-				{
+				if(type == element_type::triangles)
+					object.elements.push_back(read_triangles(memory, require(memory.follow(slot), slot, "element"), vertex_count));
+				else if(type == element_type::sprites)
+					read_sprites(memory, require(memory.follow(slot), slot, "element"), vertex_count, object.sprites);
+				else
 					object.skipped_types.push_back(type);
-					continue;
-				}
-				object.elements.push_back(read_triangles(memory, require(memory.follow(slot), slot, "element"), vertex_count));
 			}
 		}
 		return object;

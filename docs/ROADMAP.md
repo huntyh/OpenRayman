@@ -36,7 +36,7 @@ Once the VM works, the game's own logic runs from your data files.
 - ✅ Level picker for all 70 levels (Page Up / Page Down)
 - ✅ Actors: characters, props and platforms, posed at the first frame of their animation
   ([format notes](formats/animation.md))
-- Sprites (Lums and other glows)
+- ✅ Sprites (Lums and other glows), and textures' see-through, glowing and mirrored modes
 - Lighting, transparency and sky
 
 ## Phase 3: make it a game
@@ -56,5 +56,8 @@ Once the VM works, the game's own logic runs from your data files.
 
 ## Later
 
+- A modern renderer: Vulkan or Direct3D 12, keeping OpenGL (3.3 / ES 3.0) for older devices. The
+  current OpenGL renderer is the first step and the fallback.
 - Save games, menus, cutscenes and the remaining levels
-- Widescreen, high resolutions, modern quality-of-life options
+- Widescreen, high resolutions, HDR, modern quality-of-life options
+- Controller support with the right button icons

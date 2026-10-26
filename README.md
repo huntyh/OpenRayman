@@ -11,8 +11,9 @@ This continues [imaginaryPineapple's OpenRayman](https://github.com/imaginaryPin
 > Entertainment. You need your own legally obtained copy of the game (GOG) to use OpenRayman.
 
 **Status: Phase 2.** The engine opens the original levels and lets you fly through them, with the
-game's textures, characters and objects. Nothing moves yet, and the game's lighting, sky and
-glowing sprites (like Lums) aren't drawn: it's a viewer, not a game, for now.
+game's textures, characters, objects and glowing Lums. Nothing moves yet, and the game's lighting
+and sky aren't drawn: it's a viewer, not a game, for now. It renders with OpenGL today; the plan is
+Vulkan or Direct3D 12, keeping OpenGL for older devices.
 
 ## You need the game
 

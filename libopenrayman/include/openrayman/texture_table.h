@@ -20,6 +20,17 @@ namespace openrayman
 		constexpr std::uint32_t additive = 0x20; // "_ad": added to what's behind, like light
 	}
 
+	// Bits of texture_info::tiling, matched against name suffixes: "_txy" is 3, "_mxy" is 15.
+	namespace texture_tiling
+	{
+		constexpr std::uint8_t repeat_u = 0x1;
+		constexpr std::uint8_t repeat_v = 0x2;
+		// Repeats mirrored: the file holds half (or a quarter) of the image. Which bit is which
+		// axis follows Raymap; the artists' "_mx"/"_my" suffixes suggest the opposite naming.
+		constexpr std::uint8_t mirror_u = 0x4;
+		constexpr std::uint8_t mirror_v = 0x8;
+	}
+
 	// A texture as the engine describes it in memory. Materials point at these.
 	struct texture_info
 	{
@@ -29,6 +40,7 @@ namespace openrayman
 		// is in a CNT archive with a .gf extension, see cnt_path().
 		std::string name;
 		std::uint32_t flags = 0;
+		std::uint8_t tiling = 0; // the byte before the name; see texture_tiling
 		// The size the engine expects. For about 3% of textures the GF file in the archive is
 		// half or double this in some direction; the GF file's own size is what to render with.
 		std::uint16_t width = 0, height = 0;

@@ -53,8 +53,12 @@ switching distances (floats), +0x0C list of geometric object pointers. OpenRayma
 | 0x10 | face normals: 3 floats each |
 | 0x14 | UVs: 2 floats each, origin at the bottom left of the texture (v = 0 is the bottom row) |
 
-Type 3 elements exist too (22 in the whole game, none in Learn_10, probably sprites); not decoded
-yet.
+**Element, type 3 (sprites)**: images that always face the camera (Lums, glows, sparkles).
++0x00 list of sprites, +0x04 u16 count, u16 −1. Each sprite is 0x30 bytes: +0x00 info, +0x04 a
+size (2 floats, not used), then more fields not used yet, +0x28 u16 the vertex it's centred on.
+The info: +0x0C pointer to the half width and half height actually drawn (2 floats), +0x14 pointer
+to a pointer to the game material. A sprite's object usually has a single vertex at its origin.
+Learn_10 has 31 of them, all on actors.
 
 **Game material**: +0x00 visual material.
 
@@ -73,5 +77,7 @@ specular's fourth may be an exponent), +0x48 texture description (see [gpt.md](g
 
 - The chain of structures (IPO, physical object, visual set, geometric object, element, game and
   visual material) follows the usual OpenSpace model as documented by Raymap (reference only).
+- Sprites: structure from Raymap (reference only), checked against the data (centre vertices in
+  range in all 70 levels) and by eye.
 - The Rayman 2 PC field offsets and sizes: own analysis, by following pointers with
   `ortool peek` and checking counts against array sizes, then verified over all 70 levels.

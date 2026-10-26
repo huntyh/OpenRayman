@@ -81,9 +81,10 @@ Texture description, as far as known:
 
 | Offset | Field |
 | --- | --- |
-| 0x14 | u32 flags |
+| 0x14 | u32 flags: 0x2 black is transparent ("_nz"), 0x8 alpha ("_aaa"), 0x20 additive ("_ad") |
 | 0x18 | u16 height, u16 width: often half of the size at 0x1C; meaning unknown |
 | 0x1C | u16 height, u16 width |
+| 0x45 | u8 tiling: 1 repeat U, 2 repeat V, 4 and 8 mirrored ("_txy" is 3, "_mxy" is 15) |
 | 0x46 | file name, NUL terminated, Latin-1, e.g. `textures_foret\foret_bordtri_nz.tga` |
 
 The file named is in Textures.cnt with a `.gf` extension instead of `.tga`. Every one of the 7,570

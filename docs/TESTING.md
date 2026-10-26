@@ -147,17 +147,27 @@ In the engine, fly around near the start of The Woods of Light:
       apart or piled up in one spot
 - [ ] Sizes look right next to the scenery, and textures look right (Rayman's purple top, orange hair)
 
+### Fixes and sprites
+
+These came out of the first round of testing.
+
+- [ ] Rayman's red collar is at his neck, not his waist
+- [ ] The Teensies (small blue-faced characters with long noses, near the golden cage) have eyes
+- [ ] One Teensie wears a crown that sits upright on its head, points up, with no black outline
+- [ ] The shafts of sunlight between the trees look like soft light, not black panels
+- [ ] Lums glow and keep facing you as you fly around them
+- [ ] A yellow Lum looks yellow. If ours look white, write that down (each Lum is two glows on top
+      of each other, and adding them may be wrong)
+
 ### Known limitations
 
 Don't report these as bugs, they're the next steps:
 
 - Nothing moves: actors are frozen, and some are invisible on purpose (triggers, waypoints)
-- Lums and other glowing sprites aren't drawn yet
 - The start view uses the game camera's saved position, which can be an odd spot (e.g. among the
   treetops in The Woods of Light); press R after flying off to get back there
 - The lighting is a simple stand-in, not the game's own
 - The sky is a plain colour
-- Some black patches, probably shadows, which the game blends differently
-- Water and glass look solid instead of see-through
+- Water and glass may look too solid
 
 Tip: compare with the real game at the same spot.

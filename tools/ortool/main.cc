@@ -213,6 +213,7 @@ static int cmd_level(const fs::path& folder, const std::string& name)
 			memory_image::statistics stats = image.check();
 			level_header header = read_level_header(files);
 			scene tree(image, header);
+			std::vector<placed_geometry> static_geo = static_geometry(image, tree);
 			std::vector<texture_info> fix_textures = read_texture_table(files, false);
 			std::vector<texture_info> level_textures = read_texture_table(files, true);
 
@@ -225,7 +226,7 @@ static int cmd_level(const fs::path& folder, const std::string& name)
 					std::cout << std::format("    actor at {} +0x{:X}: position {} {} {}\n", p.actor.block->id.to_string(), p.actor.offset,
 						p.matrix.position[0], p.matrix.position[1], p.matrix.position[2]);
 				for(const texture_info& t : level_textures)
-					std::cout << std::format("  texture {:>4}  {:>4}x{:<4}  {:08X}  {}\n", t.slot, t.width, t.height, t.flags, t.name);
+					std::cout << std::format("  texture {:>4}  {:>4}x{:<4}  {:08X} {:02X}  {}\n", t.slot, t.width, t.height, t.flags, t.tiling, t.name);
 			}
 			std::cout << std::format("{:<10} {:>7} pointers: {} to data, {} to runtime memory, {} dangling\n",
 				level, stats.pointers, stats.into_data, stats.into_runtime, stats.dangling);
@@ -240,6 +241,24 @@ static int cmd_level(const fs::path& folder, const std::string& name)
 					actor_triangles += e.triangles.size();
 			std::cout << std::format("{:<10} actors: {} animations ({} in Fix), {} meshes and {} triangles at frame 0\n",
 				"", bank.animations.size(), bank.fix_animations, actors.size(), actor_triangles);
+			std::size_t sprites = 0;
+			for(const auto* list : { &actors, &static_geo })
+			{
+				for(const placed_geometry& p : *list)
+				{
+					for(const sprite& s : p.object.sprites)
+					{
+						sprites++;
+						if(levels.size() == 1)
+						{
+							vec3 c = p.world.apply(p.object.vertices[s.vertex]);
+							std::cout << std::format("  sprite at ({:.1f}, {:.1f}, {:.1f}) half size {:.2f} x {:.2f}  {}\n", c[0], c[1], c[2],
+								s.half_size[0], s.half_size[1], s.material && s.material->texture ? s.material->texture->name : "untextured");
+						}
+					}
+				}
+			}
+			std::cout << std::format("{:<10} sprites: {}\n", "", sprites);
 			failed += stats.dangling > 0;
 		}
 		catch(const std::exception& e)
@@ -497,7 +516,12 @@ static int cmd_pose(const fs::path& folder, const std::string& name)
 							std::cout << std::format(" [{:08X} {}]", e.material->flags, e.material->texture ? e.material->texture->name : "untextured");
 					}
 					if(!g.skipped_types.empty())
+					{
 						std::cout << std::format(", {} skipped (type {})", g.skipped_types.size(), g.skipped_types.front());
+						if(auto list = files.memory.follow(*geo + 0x14))
+							if(auto element = files.memory.follow(*list))
+								std::cout << std::format(" first element at {} +0x{:X}", element->block->id.to_string(), element->offset);
+					}
 				}
 				if(a.objects[*c.object].scale)
 				{

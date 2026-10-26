@@ -410,7 +410,7 @@ namespace
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		if(level_view && w > 0 && h > 0)
-			a.level->draw(a.camera.projection(float(w) / float(h)) * a.camera.view());
+			a.level->draw(a.camera.view(), a.camera.projection(float(w) / float(h)));
 		else if(a.texture && w > 0 && h > 0)
 		{
 			// Fit inside the window with a margin. Scale up by whole steps so pixels stay crisp.

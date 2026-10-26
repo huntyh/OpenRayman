@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <tuple>
 
 namespace openrayman
 {
@@ -91,17 +92,21 @@ namespace openrayman
 		glUseProgram(m_program);
 		glUniform1i(glGetUniformLocation(m_program, "u_texture"), 0);
 
-		glGenVertexArrays(1, &m_vao);
-		glGenBuffers(1, &m_vbo);
-		glBindVertexArray(m_vao);
-		glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
-		glEnableVertexAttribArray(0);
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), reinterpret_cast<void*>(offsetof(vertex, position)));
-		glEnableVertexAttribArray(1);
-		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(vertex), reinterpret_cast<void*>(offsetof(vertex, uv)));
-		glEnableVertexAttribArray(2);
-		glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), reinterpret_cast<void*>(offsetof(vertex, normal)));
-		glBindVertexArray(0);
+		auto vertex_layout = [](GLuint& vao, GLuint& vbo) {
+			glGenVertexArrays(1, &vao);
+			glGenBuffers(1, &vbo);
+			glBindVertexArray(vao);
+			glBindBuffer(GL_ARRAY_BUFFER, vbo);
+			glEnableVertexAttribArray(0);
+			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), reinterpret_cast<void*>(offsetof(vertex, position)));
+			glEnableVertexAttribArray(1);
+			glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(vertex), reinterpret_cast<void*>(offsetof(vertex, uv)));
+			glEnableVertexAttribArray(2);
+			glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), reinterpret_cast<void*>(offsetof(vertex, normal)));
+			glBindVertexArray(0);
+		};
+		vertex_layout(m_vao, m_vbo);
+		vertex_layout(m_sprite_vao, m_sprite_vbo);
 
 		const std::uint8_t white[4] = { 255, 255, 255, 255 };
 		m_white = upload_texture(1, 1, white);
@@ -113,6 +118,8 @@ namespace openrayman
 		glDeleteTextures(1, &m_white);
 		glDeleteBuffers(1, &m_vbo);
 		glDeleteVertexArrays(1, &m_vao);
+		glDeleteBuffers(1, &m_sprite_vbo);
+		glDeleteVertexArrays(1, &m_sprite_vao);
 		glDeleteProgram(m_program);
 	}
 
@@ -125,6 +132,26 @@ namespace openrayman
 		}
 		m_textures.clear();
 		m_batches.clear();
+		m_sprites.clear();
+	}
+
+	void level_renderer::set_blend(blend mode) const
+	{
+		// See-through surfaces go over the solid scene, without hiding each other.
+		if(mode == blend::none)
+		{
+			glDisable(GL_BLEND);
+			glDepthMask(GL_TRUE);
+			glUniform1f(m_u_alpha_cut, 0.5f);
+			return;
+		}
+		glEnable(GL_BLEND);
+		glDepthMask(GL_FALSE);
+		glUniform1f(m_u_alpha_cut, 0.01f);
+		if(mode == blend::additive)
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+		else
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	}
 
 	level_renderer::gpu_texture level_renderer::texture_for(const texture_info& info, std::span<const std::unique_ptr<cnt_archive>> archives, statistics& stats)
@@ -151,6 +178,10 @@ namespace openrayman
 						}
 					}
 					texture.id = upload_texture(gf.width, gf.height, gf.rgba.data());
+					texture.mirror_u = info.tiling & texture_tiling::mirror_u;
+					texture.mirror_v = info.tiling & texture_tiling::mirror_v;
+					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, texture.mirror_u ? GL_MIRRORED_REPEAT : GL_REPEAT);
+					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, texture.mirror_v ? GL_MIRRORED_REPEAT : GL_REPEAT);
 					if(info.flags & texture_flag::additive)
 						texture.mode = blend::additive;
 					else if(has_soft_alpha(gf))
@@ -212,7 +243,25 @@ namespace openrayman
 					stats.triangles++;
 				}
 			}
+
+			for(const sprite& sp : object.sprites)
+			{
+				gpu_texture texture{ m_white, blend::alpha };
+				if(sp.material && sp.material->texture)
+				{
+					texture = texture_for(*sp.material->texture, archives, stats);
+					if(!texture.id)
+						continue;
+				}
+				vec3 c = placed.world.apply(object.vertices[sp.vertex]);
+				m_sprites.push_back({ glm::vec3(c[0], c[1], c[2]), glm::vec2(sp.half_size[0], sp.half_size[1]), texture.id, texture.mode,
+					glm::vec2(texture.mirror_u ? 2.0f : 1.0f, texture.mirror_v ? 2.0f : 1.0f) });
+				stats.sprites++;
+			}
 		}
+		std::ranges::sort(m_sprites, [](const sprite_instance& a, const sprite_instance& b) {
+			return std::tie(a.mode, a.texture) < std::tie(b.mode, b.texture);
+		});
 
 		std::vector<vertex> vertices;
 		for(const auto& [key, list] : by_texture)
@@ -228,35 +277,61 @@ namespace openrayman
 		return stats;
 	}
 
-	void level_renderer::draw(const glm::mat4& view_projection) const
+	void level_renderer::draw(const glm::mat4& view, const glm::mat4& projection) const
 	{
 		glEnable(GL_DEPTH_TEST);
 		glDisable(GL_CULL_FACE); // which faces are double sided isn't decoded yet
 		glUseProgram(m_program);
+		glm::mat4 view_projection = projection * view;
 		glUniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(view_projection));
-		glBindVertexArray(m_vao);
 		glActiveTexture(GL_TEXTURE0);
+
+		glBindVertexArray(m_vao);
 		blend current = blend::none;
-		glUniform1f(m_u_alpha_cut, 0.5f);
+		set_blend(current);
 		for(const batch& b : m_batches)
 		{
 			if(b.mode != current)
-			{
-				// See-through surfaces go over the solid scene, without hiding each other.
-				current = b.mode;
-				glEnable(GL_BLEND);
-				glDepthMask(GL_FALSE);
-				glUniform1f(m_u_alpha_cut, 0.01f);
-				if(current == blend::additive)
-					glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-				else
-					glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-			}
+				set_blend(current = b.mode);
 			glBindTexture(GL_TEXTURE_2D, b.texture);
 			glDrawArrays(GL_TRIANGLES, b.first, b.count);
 		}
-		glDisable(GL_BLEND);
-		glDepthMask(GL_TRUE);
+
+		// Sprites: squares facing the camera, built from its right and up directions. Their normal
+		// points at the stand-in sun so they come out fully lit.
+		if(!m_sprites.empty())
+		{
+			glm::vec3 right(view[0][0], view[1][0], view[2][0]);
+			glm::vec3 up(view[0][1], view[1][1], view[2][1]);
+			glm::vec3 lit = glm::normalize(glm::vec3(0.3f, 0.2f, 0.9f));
+			std::vector<vertex> quads;
+			quads.reserve(m_sprites.size() * 6);
+			for(const sprite_instance& s : m_sprites)
+			{
+				glm::vec3 x = right * s.half_size.x, y = up * s.half_size.y;
+				// v counts up in the game; our textures are uploaded top row first.
+				const float u = s.uv_extent.x, v = s.uv_extent.y;
+				vertex bl{ s.center - x - y, { 0, v }, lit }, br{ s.center + x - y, { u, v }, lit };
+				vertex tl{ s.center - x + y, { 0, 0 }, lit }, tr{ s.center + x + y, { u, 0 }, lit };
+				quads.insert(quads.end(), { bl, tl, br, br, tl, tr });
+			}
+			glBindVertexArray(m_sprite_vao);
+			glBindBuffer(GL_ARRAY_BUFFER, m_sprite_vbo);
+			glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(quads.size() * sizeof(vertex)), quads.data(), GL_STREAM_DRAW);
+			for(std::size_t first = 0; first < m_sprites.size();)
+			{
+				std::size_t last = first;
+				while(last < m_sprites.size() && m_sprites[last].texture == m_sprites[first].texture && m_sprites[last].mode == m_sprites[first].mode)
+					last++;
+				if(m_sprites[first].mode != current)
+					set_blend(current = m_sprites[first].mode);
+				glBindTexture(GL_TEXTURE_2D, m_sprites[first].texture);
+				glDrawArrays(GL_TRIANGLES, GLint(first * 6), GLsizei((last - first) * 6));
+				first = last;
+			}
+		}
+
+		set_blend(blend::none);
 		glBindVertexArray(0);
 		glDisable(GL_DEPTH_TEST);
 	}

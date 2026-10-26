@@ -40,6 +40,7 @@ namespace openrayman
 		texture_info info;
 		info.at = at;
 		info.flags = memory.read_u32(at + field::flags);
+		info.tiling = std::uint8_t(data[at.offset + field::name - 1]);
 		std::uint32_t size = memory.read_u32(at + field::size);
 		info.height = std::uint16_t(size);
 		info.width = std::uint16_t(size >> 16);

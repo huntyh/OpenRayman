@@ -28,10 +28,11 @@ namespace openrayman
 		std::optional<texture_info> texture;
 	};
 
-	// Element types inside a geometric object. Only indexed triangles are decoded so far.
+	// Element types inside a geometric object.
 	namespace element_type
 	{
 		constexpr std::uint16_t triangles = 1;
+		constexpr std::uint16_t sprites = 3;
 	}
 
 	// A set of triangles sharing one material. Triangle corners index the object's vertices, and
@@ -45,6 +46,14 @@ namespace openrayman
 		std::vector<vec2> uvs;
 	};
 
+	// A flat image that always faces the camera (Lums, glows, sparkles), centred on a vertex.
+	struct sprite
+	{
+		std::uint16_t vertex = 0;
+		vec2 half_size{ 1, 1 }; // half the width and height, in world units
+		std::optional<visual_material> material;
+	};
+
 	// A mesh: vertices plus elements. See docs/formats/geometry.md.
 	struct geometric_object
 	{
@@ -52,6 +61,7 @@ namespace openrayman
 		std::vector<vec3> vertices;
 		std::vector<vec3> normals;
 		std::vector<triangle_element> elements;
+		std::vector<sprite> sprites;
 		std::vector<std::uint16_t> skipped_types; // elements of types not decoded yet
 	};
 

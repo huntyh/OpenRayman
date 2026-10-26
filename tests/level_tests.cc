@@ -324,10 +324,22 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 		CHECK(bank.fix_animations == 289);
 		CHECK(bank.animations.size() >= bank.fix_animations);
 		std::vector<placed_geometry> actors = actor_geometry(files.memory, tree, bank);
-		std::size_t actor_triangles = 0;
+		std::size_t actor_triangles = 0, actor_sprites = 0;
 		for(const placed_geometry& p : actors)
+		{
+			for(std::uint16_t type : p.object.skipped_types)
+				skipped_types[type]++;
 			for(const triangle_element& e : p.object.elements)
 				actor_triangles += e.triangles.size();
+			for(const sprite& s : p.object.sprites)
+			{
+				actor_sprites++;
+				if(s.material && s.material->texture)
+					CHECK(gf_size(s.material->texture->cnt_path()).has_value());
+			}
+		}
+		if(level == "Learn_10")
+			CHECK(actor_sprites == 31); // the Lums and other glows, checked by eye
 		if(level == "Learn_10")
 		{
 			// Recorded from a render checked by eye: Rayman, Lums and props correctly posed.
@@ -353,7 +365,6 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 		}
 	}
 	CHECK(exact >= references * 95 / 100);
-	// Only one element type isn't decoded yet: type 3, 22 elements in all, none in Learn_10.
-	for(auto [type, count] : skipped_types)
-		CHECK(type == 3);
+	// Every element type in the game is decoded: triangles and sprites.
+	CHECK(skipped_types.empty());
 }
