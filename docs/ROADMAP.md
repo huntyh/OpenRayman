@@ -90,7 +90,17 @@ that need gameplay (2026-10-26).
   handling: half-built cutscene sets (e.g. above the waterfall in The Woods of Light,
   `--camera 36.2,328.9,-3.7,-50.1,24.2`) and painted "paper" trees that simply end
 
-## Phase 4: Android
+## Phase 4: the whole game
+
+Everything the PC game has, working before we port it anywhere:
+
+- Save games
+- Menus
+- Cutscenes
+- All the levels, from start to end
+- Widescreen and high resolutions, plus modern quality-of-life options
+
+## Phase 5: Android
 
 - SDL3 Android project, touch controls overlay
 - Picking the game data folder via Android's storage access framework
@@ -100,8 +110,6 @@ that need gameplay (2026-10-26).
 
 - A modern renderer: Vulkan or Direct3D 12, keeping OpenGL (3.3 / ES 3.0) for older devices. The
   current OpenGL renderer is the first step and the fallback.
-- Save games, menus, cutscenes and the remaining levels
-- Widescreen, high resolutions, modern quality-of-life options
 - A modern lighting mode that keeps the art direction, and HDR, designed together (both change how
   the lights are used)
 - Controller support with the right button icons

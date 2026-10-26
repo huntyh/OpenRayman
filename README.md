@@ -21,8 +21,9 @@ real thing. You can't play yet: making it a game is the current phase.
 | 1. Level data | Reading the levels: scenery, scene tree, pointers, all 70 levels | ✅ Done |
 | 2. Looking like the game | Characters, animation, the game's lighting, fog and sky | ✅ Done |
 | 3. Making it a game | Sounds, collision, the game's scripts, Rayman walking around | ⬅ **We are here** |
-| 4. Android | Touch controls, phone performance | Planned |
-| Later | Vulkan or Direct3D 12, saves, menus, cutscenes, widescreen and HDR | Planned |
+| 4. The whole game | Saves, menus, cutscenes, every level, widescreen | Planned |
+| 5. Android | Touch controls, phone performance | Planned |
+| Later | Vulkan or Direct3D 12, modern lighting and HDR, controller icons | Planned |
 
 What works today:
 
@@ -145,7 +146,7 @@ runs the unit tests against your real game files.
 | `tools/ortool/` | Data inspection tool | GPLv3 |
 | `tests/` | Unit tests (doctest) | GPLv3 |
 | `lib/` | Vendored glad (OpenGL loader) and stb_image_write | their own, see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) |
-| `android/` | The 2016 Android launcher, kept for reference until the Android port (Phase 4) | GPLv3 |
+| `android/` | The 2016 Android launcher, kept for reference until the Android port (Phase 5) | GPLv3 |
 | `docs/` | Roadmap, testing guide, [file format notes](docs/FORMATS.md) | GPLv3 |
 
 ## How this is made
