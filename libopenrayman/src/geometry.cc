@@ -39,6 +39,7 @@ namespace openrayman
 		constexpr std::uint32_t diffuse = 0x14;
 		constexpr std::uint32_t specular = 0x24;
 		constexpr std::uint32_t texture = 0x48;
+		constexpr std::uint32_t scroll = 0x4C;        // 2 floats per frame, repeated at 0x54, then u32 1 if scrolling
 		constexpr std::uint32_t first_frame = 0x64;   // animated texture: first frame, then the current one
 		constexpr std::uint32_t frame_count = 0x6C;   // u32
 		constexpr std::uint32_t size = 0x70;
@@ -114,6 +115,10 @@ namespace openrayman
 		m.specular = read_rgba(r);
 		if(auto texture = memory.follow(at + material_field::texture))
 			m.texture = read_texture_info(memory, *texture);
+
+		r.seek(material_field::scroll);
+		m.scroll[0] = r.f32();
+		m.scroll[1] = r.f32();
 
 		r.seek(material_field::frame_count);
 		std::uint32_t count = r.u32();

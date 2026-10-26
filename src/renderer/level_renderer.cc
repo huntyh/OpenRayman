@@ -47,6 +47,7 @@ namespace openrayman
 			uniform sampler2D u_texture;
 			uniform float u_alpha_cut;
 			uniform float u_edge_clamp;
+			uniform vec2 u_uv_offset; // scrolling textures (water, mist, clouds)
 			void main()
 			{
 				// A triangle that stays within one copy of its texture keeps half a texel inside
@@ -65,7 +66,8 @@ namespace openrayman
 					uv = clamp(uv, v_uv_bounds.xy + half_texel, v_uv_bounds.zw - half_texel);
 				}
 				// The level of detail comes from the unclamped coordinates, so clamping doesn't change it.
-				vec4 texel = textureGrad(u_texture, uv, uv_dx, uv_dy);
+				// Scrolling textures tile seamlessly, so their offset goes on after the clamp.
+				vec4 texel = textureGrad(u_texture, uv + u_uv_offset, uv_dx, uv_dy);
 				if(texel.a < u_alpha_cut)
 					discard;
 				o_color = vec4(texel.rgb * v_light, u_alpha_cut > 0.25 ? 1.0 : texel.a);
@@ -110,6 +112,10 @@ namespace openrayman
 			}
 			return bounds;
 		}
+
+		// The game's scroll speeds are per frame; its clock runs at 60 frames per second (assumed,
+		// compare with the game).
+		constexpr float scroll_frames_per_second = 60.0f;
 
 		glm::mat4 to_mat4(const affine& a)
 		{
@@ -177,6 +183,7 @@ namespace openrayman
 		m_program = gl::create_program(api, vertex_shader, fragment_shader);
 		m_u_view_projection = glGetUniformLocation(m_program, "u_view_projection");
 		m_u_model = glGetUniformLocation(m_program, "u_model");
+		m_u_uv_offset = glGetUniformLocation(m_program, "u_uv_offset");
 		m_u_alpha_cut = glGetUniformLocation(m_program, "u_alpha_cut");
 		m_u_edge_clamp = glGetUniformLocation(m_program, "u_edge_clamp");
 		glUseProgram(m_program);
@@ -344,21 +351,23 @@ namespace openrayman
 
 		// Triangles grouped by texture. Corners are expanded into separate vertices, because a
 		// corner's UV is indexed separately from its position.
-		using by_texture = std::map<std::tuple<blend, GLuint, int>, std::vector<vertex>>;
+		using by_texture = std::map<std::tuple<blend, GLuint, int, std::array<float, 2>>, std::vector<vertex>>;
 		auto add = [&](const geometric_object& object, const affine& world, by_texture& triangles, std::vector<sprite_instance>& sprites) {
 			stats.meshes++;
 			for(const triangle_element& element : object.elements)
 			{
 				gpu_texture texture{ m_white, blend::none };
 				int animation = -1;
+				std::array<float, 2> scroll{};
 				if(element.material && element.material->texture)
 				{
 					texture = texture_for(*element.material->texture, archives, stats);
 					if(!texture.id)
 						texture = { m_white, blend::none };
 					animation = animation_for(*element.material, archives, stats);
+					scroll = element.material->scroll;
 				}
-				std::vector<vertex>& out = triangles[{ texture.mode, texture.id, animation }];
+				std::vector<vertex>& out = triangles[{ texture.mode, texture.id, animation, scroll }];
 				for(std::size_t t = 0; t < element.triangles.size(); t++)
 				{
 					// The game's v runs up from the bottom row; our textures are uploaded top row first.
@@ -408,7 +417,10 @@ namespace openrayman
 		auto append = [&](const by_texture& triangles, std::vector<batch>& batches) {
 			for(const auto& [key, list] : triangles)
 			{
-				batches.push_back({ std::get<1>(key), GLint(vertices.size()), GLsizei(list.size()), std::get<0>(key), std::get<2>(key) });
+				// The game scrolls per frame of its 60 Hz clock; our v runs the other way.
+				const std::array<float, 2>& scroll = std::get<3>(key);
+				glm::vec2 per_second(scroll[0] * scroll_frames_per_second, -scroll[1] * scroll_frames_per_second);
+				batches.push_back({ std::get<1>(key), GLint(vertices.size()), GLsizei(list.size()), std::get<0>(key), std::get<2>(key), per_second });
 				vertices.insert(vertices.end(), list.begin(), list.end());
 			}
 		};
@@ -480,6 +492,9 @@ namespace openrayman
 				if(b.mode != mode)
 					continue;
 				glBindTexture(GL_TEXTURE_2D, texture_at(b.animation, b.texture));
+				// Wrapped every 2 widths, which keeps mirrored textures the same and the numbers small.
+				glm::vec2 offset(std::fmod(double(b.scroll.x) * m_time, 2.0), std::fmod(double(b.scroll.y) * m_time, 2.0));
+				glUniform2f(m_u_uv_offset, offset.x, offset.y);
 				glDrawArrays(GL_TRIANGLES, b.first, b.count);
 			}
 		};
@@ -497,6 +512,7 @@ namespace openrayman
 			}
 		}
 		glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(identity));
+		glUniform2f(m_u_uv_offset, 0, 0);
 
 		// The level's sprites, and the actors' where their parts are now.
 		std::vector<sprite_instance> sprites = m_sprites;

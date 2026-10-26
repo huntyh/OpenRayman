@@ -335,6 +335,7 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 		// Static geometry: every mesh decodes, with indices in range (checked while reading), and
 		// every textured material names a texture that exists.
 		std::size_t meshes = 0, level_triangles = 0;
+		bool stream_scrolls = false;
 		for(const placed_geometry& placed : static_geometry(files.memory, tree))
 		{
 			meshes++;
@@ -344,12 +345,17 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 			{
 				level_triangles += e.triangles.size();
 				CHECK(e.uv_triangles.size() == e.triangles.size());
+				// The Woods of Light's stream slides along v (0.0065 texture heights per frame).
+				if(level == "Learn_10" && e.material && e.material->texture && e.material->texture->name.find("eau_eau") != std::string::npos)
+					stream_scrolls = stream_scrolls || (e.material->scroll[0] == 0 && e.material->scroll[1] == doctest::Approx(0.0065f));
 				if(e.material && e.material->texture)
 					CHECK(gf_size(e.material->texture->cnt_path()).has_value());
 			}
 		}
 		CHECK(meshes > 0);
 		CHECK(level_triangles > 0);
+		if(level == "Learn_10")
+			CHECK(stream_scrolls);
 		if(level == "Learn_10")
 		{
 			// Recorded from the export checked by eye (top and side views of the whole level).

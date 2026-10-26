@@ -36,6 +36,9 @@ namespace openrayman
 		// An animated texture: images shown in turn, looping (e.g. the flapping wings of Lums).
 		// Empty for a still texture.
 		std::vector<texture_frame> frames;
+		// How far the texture slides each frame, in texture widths along u and v as the game
+		// stores them (v up from the bottom): water, mist, clouds. Zero for most materials.
+		std::array<float, 2> scroll{};
 	};
 
 	// Element types inside a geometric object.

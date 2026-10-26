@@ -80,6 +80,7 @@ namespace openrayman
 			GLsizei count = 0;
 			blend mode = blend::none;
 			int animation = -1; // an animated texture, which replaces `texture` frame by frame
+			glm::vec2 scroll{ 0 }; // texture widths per second, in our UV space
 		};
 
 		// An animated texture: each frame's texture, and when it ends within one loop (seconds).
@@ -128,6 +129,7 @@ namespace openrayman
 		GLint m_u_model = -1;
 		GLint m_u_alpha_cut = -1;
 		GLint m_u_edge_clamp = -1;
+		GLint m_u_uv_offset = -1;
 		GLuint m_vao = 0, m_vbo = 0;
 		GLuint m_sprite_vao = 0, m_sprite_vbo = 0; // rebuilt every frame
 		std::vector<sprite_instance> m_sprites;     // of the static geometry, in world space

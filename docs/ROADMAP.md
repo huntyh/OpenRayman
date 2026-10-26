@@ -53,7 +53,8 @@ yet: everything that moves on its own moves, but nothing reacts to Rayman.
 - ✅ Animated textures: Lums' wings flap, cage lights blink, flames flicker
 - ✅ State preview (F4/F5): step an actor through its family's states, to check the animations the
   scripts would pick (the yellow Lum is state 4 of the Lum family)
-- Moving textures: the water stream, waterfall and mist scroll the way the game scrolls them
+- ✅ Moving textures: the water stream, waterfall, mist, fog and clouds scroll at the game's
+  speeds (assuming its 60 frames per second: compare the speed with the game)
 - Effects: the drifting fireflies and other particles
 
 **Milestone 2c: the game's light and sky**
