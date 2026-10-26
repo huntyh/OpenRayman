@@ -167,7 +167,7 @@ namespace
 				title += std::format(" ({} triangles)", a.level_stats.triangles);
 			else
 				title += " (ERROR: " + a.level_error + ")";
-			title += " | WASD move, hold right mouse to look, PgUp/PgDn level, T textures";
+			title += " | WASD move, hold right mouse to look, PgUp/PgDn level, T textures, P copy position";
 		}
 		else if(!a.textures.empty())
 		{
@@ -522,6 +522,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 		}
 		else if(arg == "--level")
 			a->start_level = argv[n + 1];
+		else if(arg == "--edge-clamp") // on (default) or off, to compare texture edges; F2 in the viewer
+			a->level->set_edge_clamp(std::string(argv[n + 1]) != "off");
 		else if(arg == "--camera")
 		{
 			// x,y,z,yaw,pitch with angles in degrees, for reproducible screenshots.
@@ -579,6 +581,24 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 					case SDLK_PAGEUP: step_level(a, -1); return SDL_APP_CONTINUE;
 					case SDLK_HOME: step_level(a, -static_cast<long>(a.level_index)); return SDL_APP_CONTINUE;
 					case SDLK_R: load_level(a, a.level_index); return SDL_APP_CONTINUE; // back to the start position
+					case SDLK_F2:
+						// Debug: compare texture edges with and without clamping.
+						if(a.level)
+						{
+							a.level->set_edge_clamp(!a.level->edge_clamp());
+							SDL_Log("Texture edge clamp %s", a.level->edge_clamp() ? "on" : "off");
+						}
+						return SDL_APP_CONTINUE;
+					case SDLK_P:
+					{
+						// Copy where we are, as --camera arguments, for bug reports and screenshots.
+						const fly_camera& c = a.camera;
+						std::string where = std::format("--level {} --camera {:.1f},{:.1f},{:.1f},{:.1f},{:.1f}", a.game->game_dsb().levels[a.level_index],
+							c.position.x, c.position.y, c.position.z, glm::degrees(c.yaw), glm::degrees(c.pitch));
+						SDL_SetClipboardText(where.c_str());
+						SDL_Log("Camera: %s (copied to the clipboard)", where.c_str());
+						return SDL_APP_CONTINUE;
+					}
 				}
 			}
 			switch(event->key.key)

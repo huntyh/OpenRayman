@@ -72,6 +72,7 @@ In a level:
 | Page Down / Page Up | Next / previous level |
 | Home | First level |
 | R | Back to the start position |
+| P | Copy the current position (as `--level ... --camera ...`) to the clipboard, for bug reports |
 | T | Switch to the texture browser and back |
 
 In the texture browser:

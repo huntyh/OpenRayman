@@ -90,6 +90,13 @@ Drawn frozen in the first frame of their current animation. Near the start of Th
       no line across its middle and no seams along its top and bottom edges
 - [ ] Places where two textures meet show the change of texture, like the real game, but no thin
       bright or dark line along the edge. Compare a few spots with the game
+- [ ] The painted jungle walls with sky above them: no thin line running through the sky from the
+      top of a wall, and no light crack between the wall's strips. A good spot:
+      `--level Learn_10 --camera 17.0,344.4,13.5,137.8,5.2`
+
+If you find a spot that looks wrong, press **P**: it copies the position as `--level ... --camera ...`
+to the clipboard, ready to paste into a report. **F2** switches the edge fix off and on, to see
+whether a line comes from it.
 
 ## Known limitations
 

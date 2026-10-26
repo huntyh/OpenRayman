@@ -96,8 +96,10 @@ Which axis each tiling bit belongs to isn't clear. Across every level, textures 
 "_ty") use UVs beyond 0..1 along the first UV coordinate, which suggests bit 2 repeats that axis and
 bit 1 the second, against what the names suggest. But dozens of textures with neither bit also
 use UVs outside 0..1 (rocks, planks, lamps), so the bits can't be used to decide clamping. The
-renderer instead clamps an axis only when no UV in the level leaves the texture on it, which
-removes the bleed lines at texture edges without changing anything else.
+renderer instead looks at each triangle: when its UVs stay within one copy of the texture, lookups
+are kept half a texel inside that copy, so filtering doesn't bring in the opposite edge as a thin
+line (in the sky above the painted jungle walls, or as a crack between strips); triangles that
+tile across copies are left alone.
 
 ## Where this came from
 

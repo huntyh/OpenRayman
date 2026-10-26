@@ -8,6 +8,7 @@
 #include <glm/glm.hpp>
 
 #include <cstddef>
+#include <array>
 #include <map>
 #include <memory>
 #include <span>
@@ -41,6 +42,11 @@ namespace openrayman
 
 		// Sprites turn to face the camera, so this needs the view on its own.
 		void draw(const glm::mat4& view, const glm::mat4& projection) const;
+
+		// Keep each triangle's texture lookups inside the copy of the texture it uses (on by
+		// default), or not, for comparing edge seams.
+		void set_edge_clamp(bool clamp) { m_edge_clamp = clamp; }
+		bool edge_clamp() const { return m_edge_clamp; }
 
 	private:
 		// Drawn in this order: solid surfaces first, then see-through ones over them.
@@ -82,11 +88,13 @@ namespace openrayman
 		GLuint m_program = 0;
 		GLint m_u_view_projection = -1;
 		GLint m_u_alpha_cut = -1;
+		GLint m_u_edge_clamp = -1;
 		GLuint m_vao = 0, m_vbo = 0;
 		GLuint m_sprite_vao = 0, m_sprite_vbo = 0; // rebuilt every frame
 		std::vector<sprite_instance> m_sprites;     // sorted by blend mode, then texture
 		GLuint m_white = 0; // for untextured materials
 		std::map<std::string, gpu_texture> m_textures; // by CNT path, id 0 if missing
 		std::vector<batch> m_batches;
+		bool m_edge_clamp = true;
 	};
 }

@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <tuple>
 
@@ -19,8 +20,10 @@ namespace openrayman
 			layout(location = 0) in vec3 a_position;
 			layout(location = 1) in vec2 a_uv;
 			layout(location = 2) in vec3 a_normal;
+			layout(location = 3) in vec4 a_uv_bounds;
 			uniform mat4 u_view_projection;
 			out vec2 v_uv;
+			flat out vec4 v_uv_bounds;
 			out float v_light;
 			void main()
 			{
@@ -29,6 +32,7 @@ namespace openrayman
 				vec3 sun = normalize(vec3(0.3, 0.2, 0.9));
 				v_light = 0.6 + 0.4 * abs(dot(normalize(a_normal), sun));
 				v_uv = a_uv;
+				v_uv_bounds = a_uv_bounds;
 				gl_Position = u_view_projection * vec4(a_position, 1.0);
 			}
 		)";
@@ -37,12 +41,22 @@ namespace openrayman
 		const char* fragment_shader = R"(
 			in vec2 v_uv;
 			in float v_light;
+			flat in vec4 v_uv_bounds;
 			out vec4 o_color;
 			uniform sampler2D u_texture;
 			uniform float u_alpha_cut;
+			uniform float u_edge_clamp;
 			void main()
 			{
-				vec4 texel = texture(u_texture, v_uv);
+				// A triangle that stays within one copy of its texture keeps half a texel inside
+				// that copy's edges, so filtering doesn't bring in the opposite edge as a line.
+				vec2 uv = v_uv;
+				if(u_edge_clamp > 0.5)
+				{
+					vec2 half_texel = 0.5 / vec2(textureSize(u_texture, 0));
+					uv = clamp(uv, v_uv_bounds.xy + half_texel, v_uv_bounds.zw - half_texel);
+				}
+				vec4 texel = texture(u_texture, uv);
 				if(texel.a < u_alpha_cut)
 					discard;
 				o_color = vec4(texel.rgb * v_light, u_alpha_cut > 0.25 ? 1.0 : texel.a);
@@ -66,7 +80,27 @@ namespace openrayman
 			glm::vec3 position;
 			glm::vec2 uv;
 			glm::vec3 normal;
+			glm::vec4 uv_bounds{ -1e6f, -1e6f, 1e6f, 1e6f }; // min u, v, max u, v: see the fragment shader
 		};
+
+		// The copy of the texture a triangle's UVs stay within, per axis, or no bounds if they cross
+		// from one copy into the next (the texture tiles across the triangle).
+		glm::vec4 uv_bounds(const glm::vec2 (&uv)[3])
+		{
+			glm::vec4 bounds{ -1e6f, -1e6f, 1e6f, 1e6f };
+			for(int axis = 0; axis < 2; axis++)
+			{
+				float lo = std::min({ uv[0][axis], uv[1][axis], uv[2][axis] });
+				float hi = std::max({ uv[0][axis], uv[1][axis], uv[2][axis] });
+				float tile = std::floor(lo + 1e-4f);
+				if(hi <= tile + 1 + 1e-4f)
+				{
+					bounds[axis] = tile;
+					bounds[axis + 2] = tile + 1;
+				}
+			}
+			return bounds;
+		}
 
 		GLuint upload_texture(std::uint32_t width, std::uint32_t height, const std::uint8_t* rgba)
 		{
@@ -90,6 +124,7 @@ namespace openrayman
 		m_program = gl::create_program(api, vertex_shader, fragment_shader);
 		m_u_view_projection = glGetUniformLocation(m_program, "u_view_projection");
 		m_u_alpha_cut = glGetUniformLocation(m_program, "u_alpha_cut");
+		m_u_edge_clamp = glGetUniformLocation(m_program, "u_edge_clamp");
 		glUseProgram(m_program);
 		glUniform1i(glGetUniformLocation(m_program, "u_texture"), 0);
 
@@ -104,6 +139,8 @@ namespace openrayman
 			glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(vertex), reinterpret_cast<void*>(offsetof(vertex, uv)));
 			glEnableVertexAttribArray(2);
 			glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), reinterpret_cast<void*>(offsetof(vertex, normal)));
+			glEnableVertexAttribArray(3);
+			glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(vertex), reinterpret_cast<void*>(offsetof(vertex, uv_bounds)));
 			glBindVertexArray(0);
 		};
 		vertex_layout(m_vao, m_vbo);
@@ -181,6 +218,8 @@ namespace openrayman
 					texture.id = upload_texture(gf.width, gf.height, gf.rgba.data());
 					texture.mirror_u = info.tiling & texture_tiling::mirror_u;
 					texture.mirror_v = info.tiling & texture_tiling::mirror_v;
+					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, texture.mirror_u ? GL_MIRRORED_REPEAT : GL_REPEAT);
+					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, texture.mirror_v ? GL_MIRRORED_REPEAT : GL_REPEAT);
 					if(info.flags & texture_flag::additive)
 						texture.mode = blend::additive;
 					else if(has_soft_alpha(gf))
@@ -211,9 +250,6 @@ namespace openrayman
 		// Triangles grouped by texture. Corners are expanded into separate vertices, because a
 		// corner's UV is indexed separately from its position.
 		std::map<std::pair<blend, GLuint>, std::vector<vertex>> by_texture;
-		// Per texture and axis: whether any UV leaves the texture. Axes that never do are clamped,
-		// so bilinear filtering doesn't bleed the opposite edge in as a faint seam line.
-		std::map<GLuint, std::array<bool, 2>> wraps;
 		for(const placed_geometry& placed : geometry)
 		{
 			stats.meshes++;
@@ -228,22 +264,25 @@ namespace openrayman
 						texture = { m_white, blend::none };
 				}
 				std::vector<vertex>& out = by_texture[{ texture.mode, texture.id }];
-				std::array<bool, 2>& wrap = wraps[texture.id];
 				for(std::size_t t = 0; t < element.triangles.size(); t++)
 				{
+					// The game's v runs up from the bottom row; our textures are uploaded top row first.
+					glm::vec2 uvs[3];
+					for(int k = 0; k < 3; k++)
+					{
+						vec2 uv = element.uvs[element.uv_triangles[t][k]];
+						uvs[k] = glm::vec2(uv[0], 1.0f - uv[1]);
+					}
+					glm::vec4 bounds = uv_bounds(uvs);
 					for(int k = 0; k < 3; k++)
 					{
 						std::uint16_t index = element.triangles[t][k];
 						vec3 p = placed.world.apply(object.vertices[index]);
 						vec3 n = index < object.normals.size() ? object.normals[index] : vec3{ 0, 0, 1 };
-						vec2 uv = element.uvs[element.uv_triangles[t][k]];
-						for(int axis = 0; axis < 2; axis++)
-							wrap[axis] = wrap[axis] || uv[axis] < -0.01f || uv[axis] > 1.01f;
 						glm::vec3 position(p[0], p[1], p[2]);
 						stats.min = glm::min(stats.min, position);
 						stats.max = glm::max(stats.max, position);
-						// The game's v runs up from the bottom row; our textures are uploaded top row first.
-						out.push_back({ position, glm::vec2(uv[0], 1.0f - uv[1]), glm::vec3(n[0], n[1], n[2]) });
+						out.push_back({ position, uvs[k], glm::vec3(n[0], n[1], n[2]), bounds });
 					}
 					stats.triangles++;
 				}
@@ -271,16 +310,6 @@ namespace openrayman
 		});
 
 		std::vector<vertex> vertices;
-		for(const auto& [path, texture] : m_textures)
-		{
-			if(!texture.id)
-				continue;
-			const std::array<bool, 2>& wrap = wraps[texture.id];
-			glBindTexture(GL_TEXTURE_2D, texture.id);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, texture.mirror_u ? GL_MIRRORED_REPEAT : wrap[0] ? GL_REPEAT : GL_CLAMP_TO_EDGE);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, texture.mirror_v ? GL_MIRRORED_REPEAT : wrap[1] ? GL_REPEAT : GL_CLAMP_TO_EDGE);
-		}
-
 		for(const auto& [key, list] : by_texture)
 		{
 			// The map is ordered by blend mode first, so solid batches come first.
@@ -301,6 +330,7 @@ namespace openrayman
 		glUseProgram(m_program);
 		glm::mat4 view_projection = projection * view;
 		glUniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(view_projection));
+		glUniform1f(m_u_edge_clamp, m_edge_clamp ? 1.0f : 0.0f);
 		glActiveTexture(GL_TEXTURE0);
 
 		glBindVertexArray(m_vao);
@@ -328,8 +358,14 @@ namespace openrayman
 				glm::vec3 x = right * s.half_size.x, y = up * s.half_size.y;
 				// v counts up in the game; our textures are uploaded top row first.
 				const float u = s.uv_extent.x, v = s.uv_extent.y;
-				vertex bl{ s.center - x - y, { 0, v }, lit }, br{ s.center + x - y, { u, v }, lit };
-				vertex tl{ s.center - x + y, { 0, 0 }, lit }, tr{ s.center + x + y, { u, 0 }, lit };
+				// A plain sprite shows its texture once; a mirrored one spans two copies, unbounded.
+				glm::vec4 bounds{ -1e6f, -1e6f, 1e6f, 1e6f };
+				if(u <= 1)
+					bounds.x = 0, bounds.z = 1;
+				if(v <= 1)
+					bounds.y = 0, bounds.w = 1;
+				vertex bl{ s.center - x - y, { 0, v }, lit, bounds }, br{ s.center + x - y, { u, v }, lit, bounds };
+				vertex tl{ s.center - x + y, { 0, 0 }, lit, bounds }, tr{ s.center + x + y, { u, 0 }, lit, bounds };
 				quads.insert(quads.end(), { bl, tl, br, br, tl, tr });
 			}
 			glBindVertexArray(m_sprite_vao);
