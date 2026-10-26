@@ -29,7 +29,7 @@ Once the VM works, the game's own logic runs from your data files.
 - ✅ Static geometry: sectors, meshes, UVs, materials and their textures
   ([format notes](formats/geometry.md)); `ortool obj` exports a level for any 3D viewer
 
-## Phase 2: one level, looking and moving like the game (in progress)
+## Phase 2: one level, looking and moving like the game ✅
 
 Goal: The Woods of Light (`Learn_10`) looks like the real game and comes alive, without gameplay
 yet: everything that moves on its own moves, but nothing reacts to Rayman.
@@ -58,7 +58,7 @@ yet: everything that moves on its own moves, but nothing reacts to Rayman.
 - Moved to Phase 3: the fireflies. They come from invisible emitter actors whose scripts spawn
   particles while the game runs, so there is no particle data to draw yet
 
-**Milestone 2c: the game's light and sky ⬅ we are here (all done, being checked)**
+**Milestone 2c: the game's light and sky ✅** (merged 2026-10-26)
 
 - ✅ The game's own lighting: each sector's lights, combined with the materials exactly as
   `Rayman2.exe` does (read from the exe): colours, red glows and blue tints match side by side
@@ -71,10 +71,10 @@ yet: everything that moves on its own moves, but nothing reacts to Rayman.
 - Moved to Later: a modern lighting mode that keeps the art direction, together with HDR, since
   HDR changes how lights have to work anyway
 
-Phase 2 ends when Learn_10 side by side with the real game looks the same, apart from the parts
-that need gameplay.
+Phase 2 ended when Learn_10 side by side with the real game looked the same, apart from the parts
+that need gameplay (2026-10-26).
 
-## Phase 3: make it a game
+## Phase 3: make it a game ⬅ we are here
 
 - BNM sound banks: sound effects, voices, and the adaptive music sequencing
 - Actor behaviour: states and transitions (e.g. the cages hang from their chains once their
@@ -86,7 +86,9 @@ that need gameplay.
 - Input mapped to the game's controls (keyboard, gamepad, touch)
 - Rayman himself walking around a level
 - An optional modern camera, turned freely with the right stick like in today's platformers, next
-  to the game's own guided camera
+  to the game's own guided camera. It will see what the guided camera never shows, which needs
+  handling: half-built cutscene sets (e.g. above the waterfall in The Woods of Light,
+  `--camera 36.2,328.9,-3.7,-50.1,24.2`) and painted "paper" trees that simply end
 
 ## Phase 4: Android
 
