@@ -8,6 +8,7 @@
 #include <openrayman/geometry.h>
 #include <openrayman/gf_texture.h>
 #include <openrayman/level_header.h>
+#include <openrayman/light.h>
 #include <openrayman/mask.h>
 #include <openrayman/memory_image.h>
 #include <openrayman/pointer_stream.h>
@@ -20,6 +21,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <format>
 #include <cstdint>
 #include <map>
 
@@ -480,4 +482,67 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 	CHECK(transform_types == std::map<std::uint32_t, std::size_t>{ { 1, 6951 }, { 2, 3109 }, { 3, 1256 }, { 4, 290 } });
 	// Every element type in the game is decoded: triangles and sprites.
 	CHECK(skipped_types.empty());
+}
+
+TEST_CASE("real data: every sector's static lights")
+{
+	auto dir = real_game_dir();
+	if(!dir)
+	{
+		MESSAGE("OPENRAYMAN_GAME_DIR not set, skipping");
+		return;
+	}
+	auto game = game_data::locate(*dir);
+	REQUIRE(game.has_value());
+
+	std::map<light_type, std::size_t> types;
+	std::map<int, std::size_t> targets;
+	std::size_t most_in_a_sector = 0, levels_with_fog = 0, vertices = 0, outside = 0;
+	for(const std::string& level : game->game_dsb().levels)
+	{
+		INFO(level);
+		level_files files = load_level_files(*game, level);
+		level_header header = read_level_header(files);
+		scene tree(files.memory, header);
+		level_lights lights = read_lights(files.memory, tree);
+		bool fog = false;
+		for(const light& l : lights.lights)
+		{
+			types[l.type]++;
+			targets[l.targets]++;
+			fog = fog || l.type == light_type::fog;
+		}
+		levels_with_fog += fog;
+		for(const sector& s : lights.sectors)
+			most_in_a_sector = std::max(most_in_a_sector, s.lights.size());
+
+		// Each piece of static geometry belongs to a sector, and lies (nearly) inside its box.
+		for(const placed_geometry& placed : static_geometry(files.memory, tree))
+		{
+			auto s = lights.sector_of(tree, placed.node);
+			REQUIRE(s.has_value());
+			sector box = lights.sectors[*s];
+			for(int axis = 0; axis < 3; axis++)
+				box.min[axis] -= 1, box.max[axis] += 1;
+			for(const vec3& v : placed.object.vertices)
+			{
+				vertices++;
+				outside += !box.contains(placed.world.apply(v));
+			}
+		}
+		if(level == "Learn_10")
+		{
+			CHECK(lights.sectors.size() == 20);
+			CHECK(lights.lights.size() == 225);
+		}
+	}
+	// Every light type in the game is known (the reader throws otherwise).
+	CHECK(types == std::map<light_type, std::size_t>{ { light_type::parallel, 189 }, { light_type::spherical, 10214 },
+		{ light_type::ambient, 198 }, { light_type::parallel_other, 11 }, { light_type::fog, 128 } });
+	CHECK(targets == std::map<int, std::size_t>{ { 0, 10 }, { 1, 9727 }, { 2, 736 }, { 3, 267 } });
+	CHECK(most_in_a_sector == 299);
+	CHECK(levels_with_fog == 62);
+	// The sector boxes: all but a few vertices (0.6%) lie inside their sector's box, give or take a unit.
+	CHECK(vertices == 102016);
+	CHECK(outside == 605);
 }

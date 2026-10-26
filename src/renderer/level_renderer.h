@@ -4,6 +4,7 @@
 
 #include <openrayman/cnt_archive.h>
 #include <openrayman/geometry.h>
+#include <openrayman/light.h>
 
 #include <glm/glm.hpp>
 
@@ -11,6 +12,7 @@
 #include <array>
 #include <map>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -40,14 +42,17 @@ namespace openrayman
 
 		// Replaces what's on the GPU with this level's static geometry and the meshes its actors
 		// use (in their own space, placed by set_parts). Textures are looked up in `archives`.
+		// `sectors` gives the sector of each piece of geometry, whose lights shine on it.
 		statistics load(std::span<const placed_geometry> geometry, std::span<const geometric_object> meshes,
-			std::span<const std::unique_ptr<cnt_archive>> archives);
+			std::span<const std::unique_ptr<cnt_archive>> archives, level_lights lights = {},
+			std::span<const std::optional<std::size_t>> sectors = {});
 
 		// A mesh given to load(), placed in the world.
 		struct part
 		{
 			std::size_t mesh = 0;
 			glm::mat4 model{ 1 };
+			std::optional<std::size_t> sector; // whose lights shine on it; found from where it is if not set
 		};
 
 		// What to draw of the actors this frame. Parts naming a mesh that wasn't loaded are skipped.
@@ -63,6 +68,10 @@ namespace openrayman
 		// default), or not, for comparing edge seams.
 		void set_edge_clamp(bool clamp) { m_edge_clamp = clamp; }
 		bool edge_clamp() const { return m_edge_clamp; }
+
+		// The game's lights and fog (on by default), or a plain stand-in light for comparing.
+		void set_lighting(bool on) { m_lighting = on; }
+		bool lighting() const { return m_lighting; }
 
 	private:
 		// Drawn in this order: solid surfaces first, then see-through ones over them.
@@ -81,6 +90,7 @@ namespace openrayman
 			blend mode = blend::none;
 			int animation = -1; // an animated texture, which replaces `texture` frame by frame
 			glm::vec2 scroll{ 0 }; // texture widths per second, in our UV space
+			glm::vec3 ambient{ 0 }, diffuse{ 1 }; // the material's colours, for lighting actors
 		};
 
 		// An animated texture: each frame's texture, and when it ends within one loop (seconds).
@@ -116,6 +126,17 @@ namespace openrayman
 			look_at look = look_at::none;
 		};
 
+		// The lights a part is drawn with, as the shader takes them.
+		static constexpr int max_part_lights = 8;
+		struct part_lights
+		{
+			int count = 0;
+			std::array<GLint, max_part_lights> kind{};
+			std::array<glm::vec3, max_part_lights> vector{}, color{};
+			std::array<glm::vec2, max_part_lights> range{};
+		};
+		part_lights lights_for(const part& p) const;
+
 		void clear();
 		void set_blend(blend mode) const;
 		gpu_texture texture_for(const texture_info& info, std::span<const std::unique_ptr<cnt_archive>> archives, statistics& stats);
@@ -130,6 +151,10 @@ namespace openrayman
 		GLint m_u_alpha_cut = -1;
 		GLint m_u_edge_clamp = -1;
 		GLint m_u_uv_offset = -1;
+		GLint m_u_camera = -1, m_u_lighting = -1;
+		GLint m_u_light_count = -1, m_u_light_kind = -1, m_u_light_vector = -1, m_u_light_color = -1, m_u_light_range = -1;
+		GLint m_u_material_ambient = -1, m_u_material_diffuse = -1;
+		GLint m_u_fog_color = -1, m_u_fog = -1, m_u_additive = -1;
 		GLuint m_vao = 0, m_vbo = 0;
 		GLuint m_sprite_vao = 0, m_sprite_vbo = 0; // rebuilt every frame
 		std::vector<sprite_instance> m_sprites;     // of the static geometry, in world space
@@ -143,5 +168,7 @@ namespace openrayman
 		std::map<std::uint32_t, int> m_animation_by_material; // by visual material address
 		double m_time = 0;
 		bool m_edge_clamp = true;
+		bool m_lighting = true;
+		level_lights m_lights;
 	};
 }

@@ -11,6 +11,7 @@
 #include <openrayman/gf_texture.h>
 #include <openrayman/memory_image.h>
 #include <openrayman/level_header.h>
+#include <openrayman/light.h>
 #include <openrayman/pointer_stream.h>
 #include <openrayman/scene.h>
 #include <openrayman/texture_table.h>
@@ -48,6 +49,7 @@ static void usage()
 		"  gpt <game folder> <level>           List the pointers in Fix.gpt and a level's GPT\n"
 		"  obj <game folder> <level> <out>     Export a level's static geometry as OBJ with textures\n"
 		"  scene <game folder> <level>         Print a level's super object tree\n"
+		"  lights <game folder> <level>        Sectors (box, light kinds), every static light, each actor's sector\n"
 		"  peek <game folder> <level> <block> <hex offset> <words>\n"
 		"                                      Print memory words, e.g. peek ... Learn_10 05/02 300 16\n"
 		"  motion <game folder> <level>       For each actor: its animation and how far its parts move\n"
@@ -686,6 +688,61 @@ static int cmd_states(const fs::path& folder, const std::string& name, const std
 	return EXIT_SUCCESS;
 }
 
+// Every sector with its box and lights, and which sector each actor stands in.
+static int cmd_lights(const fs::path& folder, const std::string& name)
+{
+	game_data game = require_game(folder);
+	level_files files = load_level_files(game, name);
+	level_header header = read_level_header(files);
+	scene tree(files.memory, header);
+	level_lights lights = read_lights(files.memory, tree);
+	for(std::size_t s = 0; s < lights.sectors.size(); s++)
+	{
+		const sector& c = lights.sectors[s];
+		std::cout << std::format("sector {:>2} node {:>3}{} ({:.0f},{:.0f},{:.0f})..({:.0f},{:.0f},{:.0f})", s, c.node, c.is_virtual ? " virtual" : "",
+			c.min[0], c.min[1], c.min[2], c.max[0], c.max[1], c.max[2]);
+		std::map<std::pair<int, int>, int> kinds;
+		for(std::size_t i : c.lights)
+			kinds[{ int(lights.lights[i].type), lights.lights[i].targets }]++;
+		for(auto [k, n] : kinds)
+			std::cout << std::format(" t{}/{}x{}", k.first, k.second, n);
+		std::cout << '\n';
+	}
+	for(std::size_t i = 0; i < lights.lights.size(); i++)
+	{
+		const light& l = lights.lights[i];
+		vec3 p = l.position();
+		std::cout << std::format("light {:>3} type {} targets {} on {} ({:.1f},{:.1f},{:.1f}) near {:.2f} far {:.2f} color {:.2f},{:.2f},{:.2f},{:.2f}\n", i, int(l.type), l.targets, l.on,
+			p[0], p[1], p[2], l.near, l.far, l.color[0], l.color[1], l.color[2], l.color[3]);
+	}
+	for(std::size_t n = 0; n < tree.nodes().size(); n++)
+	{
+		if(tree.node(n).type != super_object_type::actor)
+			continue;
+		affine world = world_transform(files.memory, tree, n);
+		vec3 p{ world.m[0][3], world.m[1][3], world.m[2][3] };
+		auto s = lights.sector_at(p);
+		std::cout << std::format("actor node {:>3} at ({:.1f},{:.1f},{:.1f}) sector {}\n", n, p[0], p[1], p[2], s ? std::to_string(*s) : "none");
+	}
+	// The static geometry's material colours, which the lights are combined with.
+	std::map<std::string, std::size_t> colors;
+	for(const placed_geometry& placed : static_geometry(files.memory, tree))
+	{
+		for(const triangle_element& e : placed.object.elements)
+		{
+			if(e.material)
+			{
+				const visual_material& m = *e.material;
+				colors[std::format("ambient {:.2f},{:.2f},{:.2f},{:.2f} diffuse {:.2f},{:.2f},{:.2f},{:.2f}", m.ambient[0], m.ambient[1], m.ambient[2], m.ambient[3],
+					m.diffuse[0], m.diffuse[1], m.diffuse[2], m.diffuse[3])] += e.triangles.size();
+			}
+		}
+	}
+	for(const auto& [text, triangles] : colors)
+		std::cout << "material " << text << ": " << triangles << " triangles\n";
+	return EXIT_SUCCESS;
+}
+
 int main(int argc, char** argv)
 {
 	std::vector<std::string> args(argv + 1, argv + argc);
@@ -728,6 +785,8 @@ int main(int argc, char** argv)
 			return cmd_anim(args[1], args[2], args[3], args[4]);
 		if(cmd == "refs" && args.size() == 5)
 			return cmd_refs(args[1], args[2], args[3], args[4]);
+		if(cmd == "lights" && args.size() == 3)
+			return cmd_lights(args[1], args[2]);
 		if(cmd == "peek" && args.size() == 6)
 			return cmd_peek(args[1], args[2], args[3], args[4], args[5]);
 	}

@@ -11,6 +11,7 @@ add_library(libopenrayman STATIC
 	src/geometry.cc
 	src/gf_texture.cc
 	src/level_header.cc
+	src/light.cc
 	src/memory_image.cc
 	src/pointer_stream.cc
 	src/relocation.cc
