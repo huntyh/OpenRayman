@@ -44,7 +44,7 @@ in the gap between two boxes takes the nearest.
 | 0xA4 | u8 send: 0 switches the light off |
 | 0xA5 | u8 what it lights: bit 1 the scenery, bit 2 actors |
 | 0xA6 | u8 painting: lights surfaces whichever way they face |
-| 0xA7 | u8 alpha flag: whether the light also changes transparency (not used yet) |
+| 0xA7 | u8 channels: 0 colour and alpha, 1 alpha only, 2 colour only |
 | 0xE8 | f32 fog: how much fog covers at `far`, out of 255 |
 | 0xF0 | fog: background colour, 4 floats |
 | 0x104 | a second transform, the same as the first in every light seen |
@@ -75,8 +75,9 @@ them, spherical lights by their falloff and how much it faces them (painting lig
 The material then decides the result:
 
 ```
-colour = clamp(L + material ambient + sum × (L + material diffuse), 0, 1)
-pixel  = texture × 2 × colour
+colour = clamp(L + material ambient + sum × (L + material diffuse), 0, 1)     (red, green, blue)
+alpha  = clamp(material ambient alpha + sum alpha × material diffuse alpha, 0, 1)
+pixel  = texture × 2 × colour, its alpha times `alpha` on see-through surfaces
 ```
 
 where L is the game's luminosity setting as an offset from neutral (0.5). Most scenery in Learn_10
@@ -84,6 +85,12 @@ has material ambient 0.1 and diffuse 0.5. Multiplying the texture by the colour 
 far too dark; raising L to 0.5 instead brightened it but washed it out. Doubling (what Direct3D calls
 "modulate 2×") matched the game by eye: the red glow at the foot of the stone doors, dark tops, the
 blue waterfall and teal stream. So L defaults to 0 (luminosity 0.5) for now.
+
+**Alpha**: lights whose channels byte is 0 or 1 also add their colour's alpha (times their strength)
+to the alpha sum. Many Learn_10 lights carry alpha −1 or −0.22 near the water: they make the stream
+and the waterfall more see-through close to them, fading out with distance, which gives the
+waterfall its soft edges and lets the dark riverbed show through the stream. The water's material
+has ambient alpha 0, so it's only as opaque as its lights make it. Solid surfaces ignore alpha.
 
 Static geometry is lit once when the level loads. Actors move between lights, so they're lit every
 frame by the strongest 8 lights of the sector they stand in.
@@ -102,4 +109,5 @@ mixed towards the fog colour by that much. Glows (additive surfaces) fade instea
   blends, the four flag bytes after the colour, the background colour), the type names, and how its
   viewer combines lights with the material's ambient and diffuse colours and the luminosity offset.
   The engine's own code in `Rayman2.exe` hasn't been checked yet.
-- By eye against the real game (Learn_10): the doubling and the default luminosity.
+- By eye against the real game (Learn_10): the doubling and the default luminosity, and the light
+  alpha (the waterfall's soft edges and the darker stream match the game once it's applied).

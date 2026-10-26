@@ -93,7 +93,7 @@ namespace openrayman
 			blend mode = blend::none;
 			int animation = -1; // an animated texture, which replaces `texture` frame by frame
 			glm::vec2 scroll{ 0 }; // texture widths per second, in our UV space
-			glm::vec3 ambient{ 0 }, diffuse{ 1 }; // the material's colours, for lighting actors
+			glm::vec4 ambient{ 0 }, diffuse{ 1 }; // the material's colours and alpha
 		};
 
 		// An animated texture: each frame's texture, and when it ends within one loop (seconds).
@@ -135,7 +135,8 @@ namespace openrayman
 		{
 			int count = 0;
 			std::array<GLint, max_part_lights> kind{};
-			std::array<glm::vec3, max_part_lights> vector{}, color{};
+			std::array<glm::vec3, max_part_lights> vector{};
+			std::array<glm::vec4, max_part_lights> color{};
 			std::array<glm::vec2, max_part_lights> range{};
 		};
 		part_lights lights_for(const part& p) const;
@@ -156,7 +157,7 @@ namespace openrayman
 		GLint m_u_uv_offset = -1;
 		GLint m_u_camera = -1, m_u_lighting = -1;
 		GLint m_u_light_count = -1, m_u_light_kind = -1, m_u_light_vector = -1, m_u_light_color = -1, m_u_light_range = -1;
-		GLint m_u_material_ambient = -1, m_u_material_diffuse = -1, m_u_luminosity = -1;
+		GLint m_u_material_ambient = -1, m_u_material_diffuse = -1, m_u_luminosity = -1, m_u_light_alpha = -1;
 		GLint m_u_fog_color = -1, m_u_fog = -1, m_u_additive = -1;
 		GLuint m_vao = 0, m_vbo = 0;
 		GLuint m_sprite_vao = 0, m_sprite_vbo = 0; // rebuilt every frame

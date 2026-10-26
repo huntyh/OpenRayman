@@ -141,6 +141,10 @@ it darker or brighter (the title bar shows the luminosity; it starts at 0.50).
       and the hanging leaves in front of the waterfall cover it and the light ray cleanly (no box
       around them)
 - [ ] Which luminosity matches the game best? Note the value from the title bar
+- [ ] The stream is about as dark as in the game, and the waterfall see-through with soft edges
+      (`--level Learn_10 --camera -92.7,223.0,3.5,345.5,-23.5`)
+- [ ] Known difference: the Murfy tablet there lacks the game's red hint (its light is tiny and its
+      corners face partly down; open question)
 - [ ] Near the waterfall, distant things fade into a teal haze like in the game
 - [ ] Characters (Lums, mushrooms, the Globox kids) are lit like the scenery around them, not
       black and not glowing

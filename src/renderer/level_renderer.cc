@@ -21,7 +21,7 @@ namespace openrayman
 			layout(location = 1) in vec2 a_uv;
 			layout(location = 2) in vec3 a_normal;
 			layout(location = 3) in vec4 a_uv_bounds;
-			layout(location = 4) in vec3 a_color; // the game's lights summed, worked out at load (static geometry)
+			layout(location = 4) in vec4 a_color; // the game's lights summed, worked out at load (static geometry)
 			uniform mat4 u_view_projection;
 			uniform mat4 u_model;
 			uniform vec3 u_camera;
@@ -31,34 +31,37 @@ namespace openrayman
 			const int max_lights = 8;
 			uniform int u_light_count;
 			uniform int u_light_kind[max_lights];    // 0 ambient, 1 parallel, 2 spherical, 3 spherical painting
-			uniform vec3 u_material_ambient, u_material_diffuse; // the surface's own colours
+			uniform vec4 u_material_ambient, u_material_diffuse; // the surface's own colours and alpha
 			// The game's luminosity setting, as an offset from its middle (0.5): it brightens surfaces
 			// and strengthens the lights on them.
 			uniform float u_luminosity;
-			vec3 lit(vec3 sum)
+			vec4 lit(vec4 sum)
 			{
 				// Doubled, as the texture is modulated by twice the light (compared with the game by eye):
 				// coloured lights tint strongly and unlit places stay dark.
-				return 2.0 * clamp(u_luminosity + u_material_ambient + sum * (u_luminosity + u_material_diffuse), 0.0, 1.0);
+				vec3 color = 2.0 * clamp(u_luminosity + u_material_ambient.rgb + sum.rgb * (u_luminosity + u_material_diffuse.rgb), 0.0, 1.0);
+				// Lights also make surfaces more or less see-through (water, the waterfall's edges).
+				float alpha = clamp(u_material_ambient.a + sum.a * u_material_diffuse.a, 0.0, 1.0);
+				return vec4(color, alpha);
 			}
 			uniform vec3 u_light_vector[max_lights]; // parallel: the way it shines; spherical: its position
-			uniform vec3 u_light_color[max_lights];
+			uniform vec4 u_light_color[max_lights];
 			uniform vec2 u_light_range[max_lights];  // spherical: near, far
 			out vec2 v_uv;
 			flat out vec4 v_uv_bounds;
-			out vec3 v_light;
+			out vec4 v_light;
 			out float v_distance;
 			void main()
 			{
 				vec4 world = u_model * vec4(a_position, 1.0);
 				vec3 normal = normalize(mat3(u_model) * a_normal);
 				if(u_lighting == 3)
-					v_light = vec3(1.0);
+					v_light = vec4(1.0);
 				else if(u_lighting == 1)
 					v_light = lit(a_color);
 				else if(u_lighting == 2)
 				{
-					vec3 sum = vec3(0.0);
+					vec4 sum = vec4(0.0);
 					for(int i = 0; i < u_light_count; i++)
 					{
 						float strength = 1.0;
@@ -80,7 +83,7 @@ namespace openrayman
 				{
 					// Stand-in lighting, to compare with: a soft light from above, so shapes are readable.
 					vec3 sun = normalize(vec3(0.3, 0.2, 0.9));
-					v_light = vec3(0.6 + 0.4 * abs(dot(normal, sun)));
+					v_light = vec4(vec3(0.6 + 0.4 * abs(dot(normal, sun))), 1.0);
 				}
 				v_uv = a_uv;
 				v_uv_bounds = a_uv_bounds;
@@ -92,7 +95,7 @@ namespace openrayman
 		// Hard-edged alpha (leaves, ferns) is cut out; soft alpha is blended in a second pass.
 		const char* fragment_shader = R"(
 			in vec2 v_uv;
-			in vec3 v_light;
+			in vec4 v_light;
 			in float v_distance;
 			flat in vec4 v_uv_bounds;
 			out vec4 o_color;
@@ -103,6 +106,7 @@ namespace openrayman
 			uniform vec4 u_fog_color;
 			uniform vec4 u_fog;       // near, far, how much fog covers at near and at far (0..1)
 			uniform float u_additive; // additive surfaces fade out in fog instead of taking its colour
+			uniform float u_light_alpha; // see-through surfaces: the lights' alpha counts
 			void main()
 			{
 				// A triangle that stays within one copy of its texture keeps half a texel inside
@@ -123,15 +127,16 @@ namespace openrayman
 				// The level of detail comes from the unclamped coordinates, so clamping doesn't change it.
 				// Scrolling textures tile seamlessly, so their offset goes on after the clamp.
 				vec4 texel = textureGrad(u_texture, uv + u_uv_offset, uv_dx, uv_dy);
-				if(texel.a < u_alpha_cut)
+				float alpha = texel.a * (u_light_alpha > 0.5 ? v_light.a : 1.0);
+				if(alpha < u_alpha_cut)
 					discard;
-				vec3 color = texel.rgb * v_light;
+				vec3 color = texel.rgb * v_light.rgb;
 				if(u_fog.y > u_fog.x)
 				{
 					float fog = mix(u_fog.z, u_fog.w, clamp((v_distance - u_fog.x) / (u_fog.y - u_fog.x), 0.0, 1.0));
 					color = u_additive > 0.5 ? color * (1.0 - fog) : mix(color, u_fog_color.rgb, fog);
 				}
-				o_color = vec4(color, u_alpha_cut > 0.25 ? 1.0 : texel.a);
+				o_color = vec4(color, u_alpha_cut > 0.25 ? 1.0 : alpha);
 			}
 		)";
 
@@ -153,7 +158,7 @@ namespace openrayman
 			glm::vec2 uv;
 			glm::vec3 normal;
 			glm::vec4 uv_bounds{ -1e6f, -1e6f, 1e6f, 1e6f }; // min u, v, max u, v: see the fragment shader
-			glm::vec3 color{ 1.0f };                          // the game's light on this corner
+			glm::vec4 color{ 1.0f };                          // the game's light on this corner
 		};
 
 		// The copy of the texture a triangle's UVs stay within, per axis, or no bounds if they cross
@@ -258,6 +263,7 @@ namespace openrayman
 		m_u_material_ambient = glGetUniformLocation(m_program, "u_material_ambient");
 		m_u_material_diffuse = glGetUniformLocation(m_program, "u_material_diffuse");
 		m_u_luminosity = glGetUniformLocation(m_program, "u_luminosity");
+		m_u_light_alpha = glGetUniformLocation(m_program, "u_light_alpha");
 		m_u_fog_color = glGetUniformLocation(m_program, "u_fog_color");
 		m_u_fog = glGetUniformLocation(m_program, "u_fog");
 		m_u_additive = glGetUniformLocation(m_program, "u_additive");
@@ -278,7 +284,7 @@ namespace openrayman
 			glEnableVertexAttribArray(3);
 			glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(vertex), reinterpret_cast<void*>(offsetof(vertex, uv_bounds)));
 			glEnableVertexAttribArray(4);
-			glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), reinterpret_cast<void*>(offsetof(vertex, color)));
+			glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(vertex), reinterpret_cast<void*>(offsetof(vertex, color)));
 			glBindVertexArray(0);
 		};
 		vertex_layout(m_vao, m_vbo);
@@ -327,12 +333,14 @@ namespace openrayman
 			glDepthMask(GL_TRUE);
 			glUniform1f(m_u_alpha_cut, 0.5f);
 			glUniform1f(m_u_additive, 0.0f);
+			glUniform1f(m_u_light_alpha, 0.0f);
 			return;
 		}
 		glEnable(GL_BLEND);
 		glDepthMask(GL_FALSE);
 		glUniform1f(m_u_alpha_cut, 0.01f);
 		glUniform1f(m_u_additive, mode == blend::additive ? 1.0f : 0.0f);
+		glUniform1f(m_u_light_alpha, 1.0f);
 		if(mode == blend::additive)
 			glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 		else
@@ -433,7 +441,7 @@ namespace openrayman
 
 		// Triangles grouped by texture. Corners are expanded into separate vertices, because a
 		// corner's UV is indexed separately from its position.
-		using by_texture = std::map<std::tuple<blend, GLuint, int, std::array<float, 2>, std::array<float, 6>>, std::vector<vertex>>;
+		using by_texture = std::map<std::tuple<blend, GLuint, int, std::array<float, 2>, std::array<float, 8>>, std::vector<vertex>>;
 		// Static geometry is lit once here, by the lights its sector lists for scenery; meshes placed
 		// per frame (`lit` empty) are lit as they're drawn.
 		auto add = [&](const geometric_object& object, const affine& world, by_texture& triangles, std::vector<sprite_instance>& sprites,
@@ -445,11 +453,11 @@ namespace openrayman
 				int animation = -1;
 				std::array<float, 2> scroll{};
 				// The material's ambient colour is its least light; lights add on top, times its diffuse colour.
-				std::array<float, 6> colors{ 0, 0, 0, 1, 1, 1 };
+				std::array<float, 8> colors{ 0, 0, 0, 1, 1, 1, 1, 1 };
 				if(element.material)
 				{
 					const visual_material& m = *element.material;
-					colors = { m.ambient[0], m.ambient[1], m.ambient[2], m.diffuse[0], m.diffuse[1], m.diffuse[2] };
+					colors = { m.ambient[0], m.ambient[1], m.ambient[2], m.ambient[3], m.diffuse[0], m.diffuse[1], m.diffuse[2], m.diffuse[3] };
 				}
 				if(element.material && element.material->texture)
 				{
@@ -478,14 +486,14 @@ namespace openrayman
 						glm::vec3 position(p[0], p[1], p[2]);
 						stats.min = glm::min(stats.min, position);
 						stats.max = glm::max(stats.max, position);
-						glm::vec3 color(1.0f);
+						glm::vec4 color(0.0f, 0.0f, 0.0f, 0.0f);
 						if(!lit.empty())
 						{
 							// The normal turns with the object, without moving.
 							vec3 origin = world.apply({ 0, 0, 0 }), tip = world.apply(n);
 							glm::vec3 turned = glm::normalize(glm::vec3(tip[0] - origin[0], tip[1] - origin[1], tip[2] - origin[2]));
-							vec3 sum = light_at(lit, light_target::scenery, p, { turned.x, turned.y, turned.z });
-							color = glm::vec3(sum[0], sum[1], sum[2]);
+							rgba sum = light_at(lit, light_target::scenery, p, { turned.x, turned.y, turned.z });
+							color = glm::vec4(sum[0], sum[1], sum[2], sum[3]);
 						}
 						out.push_back({ position, uvs[k], glm::vec3(n[0], n[1], n[2]), bounds, color });
 					}
@@ -521,9 +529,9 @@ namespace openrayman
 				// The game scrolls per frame of its 60 Hz clock; our v runs the other way.
 				const std::array<float, 2>& scroll = std::get<3>(key);
 				glm::vec2 per_second(scroll[0] * scroll_frames_per_second, -scroll[1] * scroll_frames_per_second);
-				const std::array<float, 6>& c = std::get<4>(key);
+				const std::array<float, 8>& c = std::get<4>(key);
 				batches.push_back({ std::get<1>(key), GLint(vertices.size()), GLsizei(list.size()), std::get<0>(key), std::get<2>(key), per_second,
-					glm::vec3(c[0], c[1], c[2]), glm::vec3(c[3], c[4], c[5]) });
+					glm::vec4(c[0], c[1], c[2], c[3]), glm::vec4(c[4], c[5], c[6], c[7]) });
 				vertices.insert(vertices.end(), list.begin(), list.end());
 			}
 		};
@@ -627,7 +635,11 @@ namespace openrayman
 			vec3 v = l->type == light_type::spherical ? l->position() : l->direction();
 			out.kind[i] = l->type == light_type::ambient ? 0 : l->type != light_type::spherical ? 1 : l->painting ? 3 : 2;
 			out.vector[i] = glm::vec3(v[0], v[1], v[2]);
-			out.color[i] = glm::vec3(l->color[0], l->color[1], l->color[2]);
+			out.color[i] = glm::vec4(l->color[0], l->color[1], l->color[2], l->color[3]);
+			if(l->channels == light::affects::alpha)
+				out.color[i].r = out.color[i].g = out.color[i].b = 0;
+			else if(l->channels == light::affects::color)
+				out.color[i].a = 0;
 			out.range[i] = glm::vec2(l->near, l->far);
 		}
 		return out;
@@ -689,7 +701,7 @@ namespace openrayman
 				return;
 			glUniform1iv(m_u_light_kind, l.count, l.kind.data());
 			glUniform3fv(m_u_light_vector, l.count, glm::value_ptr(l.vector[0]));
-			glUniform3fv(m_u_light_color, l.count, glm::value_ptr(l.color[0]));
+			glUniform4fv(m_u_light_color, l.count, glm::value_ptr(l.color[0]));
 			glUniform2fv(m_u_light_range, l.count, glm::value_ptr(l.range[0]));
 		};
 		auto draw_batches = [this](std::span<const batch> batches, blend mode) {
@@ -701,8 +713,8 @@ namespace openrayman
 				// Wrapped every 2 widths, which keeps mirrored textures the same and the numbers small.
 				glm::vec2 offset(std::fmod(double(b.scroll.x) * m_time, 2.0), std::fmod(double(b.scroll.y) * m_time, 2.0));
 				glUniform2f(m_u_uv_offset, offset.x, offset.y);
-				glUniform3fv(m_u_material_ambient, 1, glm::value_ptr(b.ambient));
-				glUniform3fv(m_u_material_diffuse, 1, glm::value_ptr(b.diffuse));
+				glUniform4fv(m_u_material_ambient, 1, glm::value_ptr(b.ambient));
+				glUniform4fv(m_u_material_diffuse, 1, glm::value_ptr(b.diffuse));
 				glDrawArrays(GL_TRIANGLES, b.first, b.count);
 			}
 		};
@@ -722,6 +734,7 @@ namespace openrayman
 		// The nearly opaque middle of soft surfaces (a leaf, not its fringe) is solid too: it hides
 		// whatever see-through things lie behind it, however they're sorted (sprites come last).
 		glUniform1f(m_u_alpha_cut, 0.9f);
+		glUniform1f(m_u_light_alpha, 1.0f);
 		glUniform1i(m_u_lighting, m_lighting ? 1 : 0);
 		glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(identity));
 		for(const see_through& s : m_see_through)

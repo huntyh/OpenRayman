@@ -28,7 +28,7 @@ namespace openrayman
 			constexpr std::uint32_t far = 0x0C, near = 0x10;
 			constexpr std::uint32_t placement = 0x24; // a transform
 			constexpr std::uint32_t color = 0x94;
-			constexpr std::uint32_t send = 0xA4, targets = 0xA5, painting = 0xA6; // u8 each
+			constexpr std::uint32_t send = 0xA4, targets = 0xA5, painting = 0xA6, channels = 0xA7; // u8 each
 			constexpr std::uint32_t fog_near_blend = 0x18, fog_far_blend = 0xE8; // out of 255
 			constexpr std::uint32_t background = 0xF0;
 			constexpr std::uint32_t size = 0x160;
@@ -82,6 +82,10 @@ namespace openrayman
 			l.on = l.on && r.u8() != 0;
 			l.targets = r.u8();
 			l.painting = r.u8() != 0;
+			std::uint8_t channels = r.u8();
+			if(channels > 2)
+				throw format_error(std::format("light at {} +0x{:X} has unknown channels {}", at.block->id.to_string(), at.offset, channels));
+			l.channels = light::affects(channels);
 			if(l.type == light_type::fog)
 			{
 				r.seek(light_field::fog_near_blend);
@@ -204,9 +208,9 @@ namespace openrayman
 		return out;
 	}
 
-	vec3 light_at(std::span<const light* const> lights, std::uint8_t target, const vec3& position, const vec3& normal)
+	rgba light_at(std::span<const light* const> lights, std::uint8_t target, const vec3& position, const vec3& normal)
 	{
-		vec3 sum{};
+		rgba sum{};
 		for(const light* l : lights)
 		{
 			if(!l->on || !(l->targets & target))
@@ -239,8 +243,13 @@ namespace openrayman
 			case light_type::fog:
 				break;
 			}
-			for(int c = 0; c < 3; c++)
-				sum[c] += l->color[c] * strength;
+			if(l->channels != light::affects::alpha)
+			{
+				for(int c = 0; c < 3; c++)
+					sum[c] += l->color[c] * strength;
+			}
+			if(l->channels != light::affects::color)
+				sum[3] += l->color[3] * strength;
 		}
 		return sum;
 	}

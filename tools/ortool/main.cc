@@ -49,7 +49,8 @@ static void usage()
 		"  gpt <game folder> <level>           List the pointers in Fix.gpt and a level's GPT\n"
 		"  obj <game folder> <level> <out>     Export a level's static geometry as OBJ with textures\n"
 		"  scene <game folder> <level>         Print a level's super object tree\n"
-		"  lights <game folder> <level>        Sectors (box, light kinds), every static light, each actor's sector\n"
+		"  lights <game folder> <level> [x,y,z] Sectors (box, light kinds), every static light, each actor's sector;\n"
+		"                                      with a point: the static vertices near it and their light\n"
 		"  peek <game folder> <level> <block> <hex offset> <words>\n"
 		"                                      Print memory words, e.g. peek ... Learn_10 05/02 300 16\n"
 		"  motion <game folder> <level>       For each actor: its animation and how far its parts move\n"
@@ -689,7 +690,7 @@ static int cmd_states(const fs::path& folder, const std::string& name, const std
 }
 
 // Every sector with its box and lights, and which sector each actor stands in.
-static int cmd_lights(const fs::path& folder, const std::string& name)
+static int cmd_lights(const fs::path& folder, const std::string& name, std::optional<vec3> probe)
 {
 	game_data game = require_game(folder);
 	level_files files = load_level_files(game, name);
@@ -712,7 +713,7 @@ static int cmd_lights(const fs::path& folder, const std::string& name)
 	{
 		const light& l = lights.lights[i];
 		vec3 p = l.position();
-		std::cout << std::format("light {:>3} type {} targets {} on {} ({:.1f},{:.1f},{:.1f}) near {:.2f} far {:.2f} color {:.2f},{:.2f},{:.2f},{:.2f}\n", i, int(l.type), l.targets, l.on,
+		std::cout << std::format("light {:>3} type {} targets {} on {} painting {} channels {} ({:.1f},{:.1f},{:.1f}) near {:.2f} far {:.2f} color {:.2f},{:.2f},{:.2f},{:.2f}\n", i, int(l.type), l.targets, l.on, l.painting, int(l.channels),
 			p[0], p[1], p[2], l.near, l.far, l.color[0], l.color[1], l.color[2], l.color[3]);
 	}
 	for(std::size_t n = 0; n < tree.nodes().size(); n++)
@@ -723,6 +724,29 @@ static int cmd_lights(const fs::path& folder, const std::string& name)
 		vec3 p{ world.m[0][3], world.m[1][3], world.m[2][3] };
 		auto s = lights.sector_at(p);
 		std::cout << std::format("actor node {:>3} at ({:.1f},{:.1f},{:.1f}) sector {}\n", n, p[0], p[1], p[2], s ? std::to_string(*s) : "none");
+	}
+	// With a point: the static vertices within 3 units of it, their sector and the light on them.
+	if(probe)
+	{
+		for(const placed_geometry& placed : static_geometry(files.memory, tree))
+		{
+			auto s = lights.sector_of(tree, placed.node);
+			for(std::size_t v = 0; v < placed.object.vertices.size(); v++)
+			{
+				vec3 p = placed.world.apply(placed.object.vertices[v]);
+				float d = std::sqrt((p[0] - (*probe)[0]) * (p[0] - (*probe)[0]) + (p[1] - (*probe)[1]) * (p[1] - (*probe)[1]) + (p[2] - (*probe)[2]) * (p[2] - (*probe)[2]));
+				if(d > 3 || !s)
+					continue;
+				std::vector<const light*> list;
+				for(std::size_t i : lights.sectors[*s].lights)
+					list.push_back(&lights.lights[i]);
+				vec3 n = v < placed.object.normals.size() ? placed.object.normals[v] : vec3{ 0, 0, 1 };
+				rgba sum = light_at(list, light_target::scenery, p, n);
+				std::cout << std::format("vertex node {} ({:.2f},{:.2f},{:.2f}) d {:.2f} sector {} normal ({:.2f},{:.2f},{:.2f}) light {:.2f},{:.2f},{:.2f},{:.2f}\n",
+					placed.node, p[0], p[1], p[2], d, *s, n[0], n[1], n[2], sum[0], sum[1], sum[2], sum[3]);
+			}
+		}
+		return EXIT_SUCCESS;
 	}
 	// The static geometry's material colours, which the lights are combined with.
 	std::map<std::string, std::size_t> colors;
@@ -786,7 +810,13 @@ int main(int argc, char** argv)
 		if(cmd == "refs" && args.size() == 5)
 			return cmd_refs(args[1], args[2], args[3], args[4]);
 		if(cmd == "lights" && args.size() == 3)
-			return cmd_lights(args[1], args[2]);
+			return cmd_lights(args[1], args[2], std::nullopt);
+		if(cmd == "lights" && args.size() == 4)
+		{
+			vec3 p{};
+			std::sscanf(args[3].c_str(), "%f,%f,%f", &p[0], &p[1], &p[2]);
+			return cmd_lights(args[1], args[2], p);
+		}
 		if(cmd == "peek" && args.size() == 6)
 			return cmd_peek(args[1], args[2], args[3], args[4], args[5]);
 	}

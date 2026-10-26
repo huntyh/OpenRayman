@@ -43,6 +43,9 @@ namespace openrayman
 		std::array<float, 4> color{}; // can go above 1, or below 0 to darken
 		std::uint8_t targets = 0;     // light_target bits
 		bool painting = false;        // lights surfaces whichever way they face
+		// Whether the light changes colour, how see-through a surface is (its alpha), or both.
+		enum class affects : std::uint8_t { both = 0, alpha = 1, color = 2 };
+		affects channels = affects::both;
 		// Fog only: how much of the fog colour covers a surface at `near` and at `far` (0..1).
 		float fog_near_blend = 0, fog_far_blend = 0;
 		std::array<float, 4> background{}; // fog only: the colour behind everything
@@ -82,6 +85,6 @@ namespace openrayman
 	level_lights read_lights(const memory_image& memory, const scene& tree);
 
 	// The light falling on a surface point with this normal (both in world space): the sum of every
-	// light in the list that's on and shines on `target`, per colour channel, not clamped.
-	vec3 light_at(std::span<const light* const> lights, std::uint8_t target, const vec3& position, const vec3& normal);
+	// light in the list that's on and shines on `target`, per colour channel and alpha, not clamped.
+	rgba light_at(std::span<const light* const> lights, std::uint8_t target, const vec3& position, const vec3& normal);
 }
