@@ -613,6 +613,17 @@ namespace openrayman
 		return stats;
 	}
 
+	std::optional<glm::vec3> level_renderer::background(const glm::vec3& eye) const
+	{
+		if(!m_lighting)
+			return std::nullopt;
+		auto s = m_lights.sector_at({ eye.x, eye.y, eye.z });
+		const light* fog = s ? m_lights.fog(*s) : nullptr;
+		if(!fog)
+			return std::nullopt;
+		return glm::vec3(fog->background[0], fog->background[1], fog->background[2]);
+	}
+
 	level_renderer::part_lights level_renderer::lights_for(const part& p) const
 	{
 		part_lights out;

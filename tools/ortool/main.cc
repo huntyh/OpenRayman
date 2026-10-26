@@ -328,7 +328,7 @@ static int cmd_gpt(const fs::path& folder, const std::string& name)
 static void dump_node(const memory_image& memory, const scene& tree, std::size_t index, int depth)
 {
 	const scene_node& node = tree.node(index);
-	std::cout << std::format("{:{}}type 0x{:X} at {} +0x{:X}", "", depth * 2, node.type, node.at.block->id.to_string(), node.at.offset);
+	std::cout << std::format("{:{}}[{}] type 0x{:X} at {} +0x{:X} flags {:08X}", "", depth * 2, index, node.type, node.at.block->id.to_string(), node.at.offset, node.draw_flags);
 	if(node.data)
 		std::cout << std::format("  data {} +0x{:X} {}", node.data->block->id.to_string(), node.data->offset, shape(memory, *node.data, 0x40));
 	if(node.matrix && node.matrix->offset + 0x58 <= node.matrix->block->data.size())

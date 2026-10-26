@@ -72,6 +72,9 @@ namespace openrayman
 		// The game's lights and fog (on by default), or a plain stand-in light for comparing.
 		void set_lighting(bool on) { m_lighting = on; }
 		bool lighting() const { return m_lighting; }
+		// What the game clears the screen with: the background colour of the fog in the camera's
+		// sector, if it has fog (and the game's lighting is on).
+		std::optional<glm::vec3> background(const glm::vec3& eye) const;
 		// The game's luminosity setting: 0.5 is neutral, higher is brighter.
 		void set_luminosity(float luminosity) { m_luminosity = luminosity; }
 		float luminosity() const { return m_luminosity; }

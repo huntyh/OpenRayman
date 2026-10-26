@@ -531,7 +531,13 @@ namespace
 		glViewport(0, 0, w, h);
 		bool level_view = a.game && a.mode == app::view::level;
 		if(level_view)
-			glClearColor(0.43f, 0.59f, 0.78f, 1.0f); // a plain sky until the real one is drawn
+		{
+			// Like the game: the background colour of the fog where the camera is; a plain sky elsewhere.
+			glm::vec3 sky(0.43f, 0.59f, 0.78f);
+			if(auto background = a.level->background(a.camera.position))
+				sky = *background;
+			glClearColor(sky.r, sky.g, sky.b, 1.0f);
+		}
 		else
 			glClearColor(0.08f, 0.08f, 0.1f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
