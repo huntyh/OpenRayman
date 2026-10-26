@@ -16,6 +16,10 @@ namespace openrayman
 		constexpr std::uint32_t actor_3d_data = 0x00;
 		constexpr std::uint32_t data_current_state = 0x04;
 		constexpr std::uint32_t data_object_list = 0x0C;
+		constexpr std::uint32_t data_family = 0x14;
+		constexpr std::uint32_t family_first_state = 0x10;
+		constexpr std::uint32_t family_state_count = 0x18; // u32
+		constexpr std::uint32_t state_next = 0x00;
 		constexpr std::uint32_t state_animation = 0x04;
 		constexpr std::uint32_t object_list_entries = 0x04;
 		constexpr std::uint32_t object_list_count = 0x0C; // u16
@@ -68,10 +72,11 @@ namespace openrayman
 			}
 		}
 
-		auto state = memory.follow(*data + data_current_state);
-		auto reference = state ? memory.follow(*state + state_animation) : std::nullopt;
-		if(reference)
-		{
+		// The animation a state plays, if it has one.
+		auto animation_of = [&](const memory_location& state) -> std::optional<std::uint16_t> {
+			auto reference = memory.follow(state + state_animation);
+			if(!reference)
+				return std::nullopt;
 			// u16 frames, u8 speed, u8 channels, events, 3 floats, morph data, u16 animation index
 			binary_reader r = reader_at(*reference, 0x1C);
 			std::uint16_t frames = r.u16();
@@ -86,7 +91,25 @@ namespace openrayman
 			if(a.frames != frames || a.channels != channels)
 				throw format_error(std::format("actor at {}: animation {} has {} frames and {} channels, its reference says {} and {}",
 					describe(n.at), index, a.frames, a.channels, frames, channels));
-			result.animation = index;
+			return index;
+		};
+
+		auto current = memory.follow(*data + data_current_state);
+		if(current)
+			result.animation = animation_of(*current);
+
+		// The family's states: a list linked through each state's first word.
+		if(auto family = memory.follow(*data + data_family))
+		{
+			result.family = family;
+			std::uint32_t count = reader_at(*family + family_state_count, 4).u32();
+			auto state = memory.follow(*family + family_first_state);
+			for(std::uint32_t i = 0; state && i < count; i++, state = memory.follow(*state + state_next))
+			{
+				if(current && *state == *current)
+					result.state = result.states.size();
+				result.states.push_back(animation_of(*state));
+			}
 		}
 		return result;
 	}
@@ -120,6 +143,9 @@ namespace openrayman
 			e.node = node;
 			e.world = world_transform(memory, tree, node);
 			e.animation = a.animation;
+			e.family = a.family;
+			e.states = a.states;
+			e.state = a.state;
 			for(const actor_object& object : a.objects)
 			{
 				std::optional<std::size_t> mesh;

@@ -109,6 +109,17 @@ Start at the Globox kids: `--level Learn_10 --camera -67.1,205.8,1.9,321.0,-11.7
       upright from every side as you fly around them, with no flickering where two overlap
 - [ ] Flames, sparks and chain links in other levels face you from every side
 
+**Actor states.** Most actors are saved in a placeholder state that the game's scripts replace. Look
+at an actor and press **F5** / **F4** to step it through its family's states (hold **Shift** to
+change every actor of that family); the title bar shows the node and state. Compare with the game:
+
+- [ ] Lums: `--level Learn_10 --camera -100.0,280.4,-12.6,169.0,-2.1`, state 4 is the yellow Lum
+      with wings. Do its wings flap and does it bob like the game's?
+- [ ] Mushroom clusters: the other states show 5 mushrooms. Which one matches the game, and do
+      they move like the game's (e.g. when Rayman walks by)?
+- [ ] Cages: find a state where the cage hangs from its chains
+- [ ] Anything that animates wrongly in some state: press P and note the node and state from the title
+
 ## Known limitations
 
 Don't report these as bugs, they're the next steps:

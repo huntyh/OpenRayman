@@ -104,12 +104,16 @@ Learn_10:
 
 - The mushroom clusters' saved state plays animation 312, which shows 3 mushrooms (a stem and a cap
   each). Every other state of the family shows 5 (10 channels), as the real game does.
-- Lums are saved in a still pose (animation 276, 2 frames). Their flying loops are states 5–10
-  (animations 281–285, 38 frames).
+- One family in Fix covers every kind of Lum, and they're saved in a placeholder (animation 276, 2
+  frames that swap a glow and an eye 30 times a second). Its 15 states, checked by eye: 1 and 12 a
+  purple ring Lum, 2 red, 3 blue, 4 the yellow Lum with wings, 5–10 a blue bubble effect, 11 a
+  star, 13 another yellow Lum, 14 green.
 - The cages are saved standing, without their chains (see above).
 
-These need the script interpreter (Phase 3). `ortool motion <game> <level>` lists each actor's
-animation and how far its parts move over a loop.
+These need the script interpreter (Phase 3). Until then the viewer can show any state: F5 / F4 put
+the actor in the middle of the view into its family's next / previous state (with Shift, every
+actor of that family), and `--actor-state <node>:<state>` does it from the command line.
+`ortool motion <game> <level>` lists each actor's animation and how far its parts move over a loop.
 
 ## Checks
 

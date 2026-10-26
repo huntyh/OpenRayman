@@ -119,6 +119,8 @@ namespace
 		double animation_time = 0;        // seconds; --time <seconds> starts there
 		std::optional<double> start_time;
 		bool animating = true;            // F3 pauses
+		std::string actor_note;           // the state last picked with F4/F5, shown in the title
+		std::vector<std::pair<std::size_t, std::size_t>> start_states; // --actor-state <node>:<state>
 		float speed = 15.0f;                     // units per second
 		bool looking = false;
 		Uint64 last_frame = 0;
@@ -173,7 +175,9 @@ namespace
 				title += std::format(" ({} triangles)", a.level_stats.triangles);
 			else
 				title += " (ERROR: " + a.level_error + ")";
-			title += " | WASD move, hold right mouse to look, PgUp/PgDn level, T textures, P copy position";
+			title += " | WASD move, hold right mouse to look, PgUp/PgDn level, T textures, P copy position, F4/F5 actor state";
+			if(!a.actor_note.empty())
+				title += " | " + a.actor_note;
 		}
 		else if(!a.textures.empty())
 		{
@@ -273,6 +277,62 @@ namespace
 		a.level->set_parts(std::move(out));
 	}
 
+	// Debug: puts the actor you're looking at (the one nearest the middle of the view, within 150
+	// units) into the next or previous state of its family; with `whole_family`, every actor of
+	// that family. Saved states are often placeholders the game's scripts replace, so this shows
+	// the animations the game really plays.
+	void step_actor_state(app& a, int delta, bool whole_family)
+	{
+		const glm::vec3 eye = a.camera.position, forward = a.camera.forward();
+		actor_set::entry* best = nullptr;
+		float best_angle = 0;
+		for(actor_set::entry& actor : a.actors.actors)
+		{
+			if(actor.states.size() < 2)
+				continue;
+			glm::vec3 to(actor.world.m[0][3] - eye.x, actor.world.m[1][3] - eye.y, actor.world.m[2][3] - eye.z);
+			float distance = glm::length(to);
+			if(distance < 1e-3f || distance > 150)
+				continue;
+			float angle = std::acos(std::clamp(glm::dot(to / distance, forward), -1.0f, 1.0f));
+			if(angle < glm::radians(30.0f) && (!best || angle < best_angle))
+			{
+				best = &actor;
+				best_angle = angle;
+			}
+		}
+		if(!best)
+		{
+			a.actor_note = "no actor with states in view";
+			update_title(a);
+			return;
+		}
+		const long count = static_cast<long>(best->states.size());
+		const std::size_t state = static_cast<std::size_t>((static_cast<long>(best->state.value_or(0)) + delta % count + count) % count);
+		const auto family = best->family;
+		const std::size_t node = best->node;
+		std::size_t changed = 0;
+		for(actor_set::entry& actor : a.actors.actors)
+		{
+			if(&actor != best && !(whole_family && actor.family == family))
+				continue;
+			if(state >= actor.states.size())
+				continue;
+			actor.state = state;
+			actor.animation = actor.states[state];
+			changed++;
+		}
+		a.actor_note = std::format("node {} state {}/{}", node, state, count);
+		if(best->animation)
+			a.actor_note += std::format(" (animation {})", *best->animation);
+		else
+			a.actor_note += " (no animation)";
+		if(whole_family)
+			a.actor_note += std::format(", {} actors", changed);
+		SDL_Log("%s", a.actor_note.c_str());
+		update_title(a);
+	}
+
 	void load_level(app& a, std::size_t index)
 	{
 		const auto& levels = a.game->game_dsb().levels;
@@ -281,6 +341,7 @@ namespace
 		a.level_index = index;
 		a.level_error.clear();
 		a.level_stats = {};
+		a.actor_note.clear();
 		try
 		{
 			Uint64 start = SDL_GetTicks();
@@ -294,6 +355,18 @@ namespace
 			a.level_stats = a.level->load(geometry, a.actors.meshes, a.archives);
 			a.animation_time = a.start_time.value_or(0.0);
 			a.start_time.reset();
+			for(const auto& [node, state] : a.start_states)
+			{
+				for(actor_set::entry& actor : a.actors.actors)
+				{
+					if(actor.node == node && state < actor.states.size())
+					{
+						actor.state = state;
+						actor.animation = actor.states[state];
+					}
+				}
+			}
+			a.start_states.clear();
 			update_actors(a);
 			SDL_Log("%s: %zu meshes, %zu triangles, %zu textures (%zu missing), %llu ms", levels[index].c_str(),
 				a.level_stats.meshes, a.level_stats.triangles, a.level_stats.textures, a.level_stats.missing_textures,
@@ -569,6 +642,13 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 		}
 		else if(arg == "--level")
 			a->start_level = argv[n + 1];
+		else if(arg == "--actor-state") // <node>:<state>, as F4/F5 show them; may be repeated
+		{
+			char* end = nullptr;
+			unsigned long node = std::strtoul(argv[n + 1], &end, 10);
+			if(end && *end == ':')
+				a->start_states.push_back({ node, std::strtoul(end + 1, nullptr, 10) });
+		}
 		else if(arg == "--time") // seconds into the actors' animations, for screenshots
 			a->start_time = std::strtod(argv[n + 1], nullptr);
 		else if(arg == "--edge-clamp") // on (default) or off, to compare texture edges; F2 in the viewer
@@ -637,6 +717,10 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 							a.level->set_edge_clamp(!a.level->edge_clamp());
 							SDL_Log("Texture edge clamp %s", a.level->edge_clamp() ? "on" : "off");
 						}
+						return SDL_APP_CONTINUE;
+					case SDLK_F4:
+					case SDLK_F5:
+						step_actor_state(a, event->key.key == SDLK_F5 ? 1 : -1, (event->key.mod & SDL_KMOD_SHIFT) != 0);
 						return SDL_APP_CONTINUE;
 					case SDLK_F3:
 						a.animating = !a.animating;

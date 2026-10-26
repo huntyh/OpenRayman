@@ -50,6 +50,8 @@ yet: everything that moves on its own moves, but nothing reacts to Rayman.
   without flapping wings, mushroom clusters with 3 of their 5 mushrooms, cages without chains); the
   scripts pick their real state, so those come with Phase 3
 - ✅ Cards that turn to the camera: mushrooms, flowers, flames, chain links
+- ✅ State preview (F4/F5): step an actor through its family's states, to check the animations the
+  scripts would pick (the yellow Lum is state 4 of the Lum family)
 - Moving textures: the water stream, waterfall and mist scroll the way the game scrolls them
 - Effects: the drifting fireflies and other particles
 

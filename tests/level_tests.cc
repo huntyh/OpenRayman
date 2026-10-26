@@ -405,6 +405,25 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 		}
 		CHECK(pose_failures == 0);
 		CHECK(posed_frames > 0);
+
+		// Every actor with a family is in one of its states, and each state's animation reference
+		// agrees with the bank (read_actors checks the counts).
+		std::size_t without_state = 0;
+		for(const actor_set::entry& actor : set.actors)
+		{
+			if(actor.family && !actor.state)
+				without_state++;
+		}
+		CHECK(without_state == 0);
+		if(level == "Learn_10")
+		{
+			// The Lums' family (in Fix): saved in a placeholder, state 4 is the yellow Lum with wings.
+			auto lum = std::ranges::find(set.actors, std::size_t(12), &actor_set::entry::node);
+			REQUIRE(lum != set.actors.end());
+			CHECK(lum->states.size() == 15);
+			CHECK(lum->state == std::optional<std::size_t>(0));
+			CHECK(lum->states[4] == std::optional<std::uint16_t>(std::uint16_t(280)));
+		}
 		if(level == "Learn_10")
 			CHECK(set.meshes.size() == 113); // distinct meshes, shared between actors
 		if(level == "Learn_10")
