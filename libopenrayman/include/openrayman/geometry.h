@@ -83,11 +83,12 @@ namespace openrayman
 	{
 		std::array<std::array<float, 4>, 3> m{ { { 1, 0, 0, 0 }, { 0, 1, 0, 0 }, { 0, 0, 1, 0 } } };
 
-		// rotation * scale, then the position. The order is an assumption: every static object
-		// seen so far has an identity transform, so it isn't confirmed yet.
+		// The transform's combined rotation and scale matrix, then its position.
 		static affine from(const transform& t);
 		affine operator*(const affine& other) const;
 		vec3 apply(const vec3& v) const;
+		// How much the matrix scales sizes, on average over the three axes: sprites are sized by it.
+		float uniform_scale() const;
 		bool operator==(const affine&) const = default;
 	};
 

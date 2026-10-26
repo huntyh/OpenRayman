@@ -12,14 +12,14 @@
 
 namespace openrayman
 {
-	// A position and orientation as the engine stores it (0x58 bytes). Field names follow the
-	// usual OpenSpace layout; what `type` selects isn't confirmed yet.
+	// A position and orientation as the engine stores it (0x58 bytes). Type 1 is the identity, 2 a
+	// translation, 3 adds a rotation, 4 a rotation and scale (checked on every transform of every level).
 	struct transform
 	{
 		std::uint32_t type = 0;
 		std::array<float, 3> position{};
-		std::array<float, 9> rotation{}; // row major
-		std::array<float, 9> scale{};    // row major
+		std::array<float, 9> rotation{}; // row major, rotation only
+		std::array<float, 9> matrix{};   // row major: rotation and scale together, what places the object
 	};
 
 	// Where an actor stored in Fix (Rayman, the camera, ...) sits in this level. Fix is saved

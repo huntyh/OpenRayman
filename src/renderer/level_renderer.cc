@@ -254,7 +254,9 @@ namespace openrayman
 						continue;
 				}
 				vec3 c = placed.world.apply(object.vertices[sp.vertex]);
-				m_sprites.push_back({ glm::vec3(c[0], c[1], c[2]), glm::vec2(sp.half_size[0], sp.half_size[1]), texture.id, texture.mode,
+				// Sprites scale with the part they belong to (a Lum's blue core is about half its glow).
+				float scale = placed.world.uniform_scale();
+				m_sprites.push_back({ glm::vec3(c[0], c[1], c[2]), glm::vec2(sp.half_size[0], sp.half_size[1]) * scale, texture.id, texture.mode,
 					glm::vec2(texture.mirror_u ? 2.0f : 1.0f, texture.mirror_v ? 2.0f : 1.0f) });
 				stats.sprites++;
 			}

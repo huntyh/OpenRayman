@@ -50,6 +50,8 @@ static void usage()
 		"  scene <game folder> <level>         Print a level's super object tree\n"
 		"  peek <game folder> <level> <block> <hex offset> <words>\n"
 		"                                      Print memory words, e.g. peek ... Learn_10 05/02 300 16\n"
+		"  refs <game folder> <level> <block> <hex offset>\n"
+		"                                      List the pointers that lead to a place in memory\n"
 		"\n"
 		"<game folder> is the install folder (e.g. \"C:\\GOG Games\\Rayman 2\") or its Data folder.\n";
 }
@@ -226,7 +228,7 @@ static int cmd_level(const fs::path& folder, const std::string& name)
 					std::cout << std::format("    actor at {} +0x{:X}: position {} {} {}\n", p.actor.block->id.to_string(), p.actor.offset,
 						p.matrix.position[0], p.matrix.position[1], p.matrix.position[2]);
 				for(const texture_info& t : level_textures)
-					std::cout << std::format("  texture {:>4}  {:>4}x{:<4}  {:08X} {:02X}  {}\n", t.slot, t.width, t.height, t.flags, t.tiling, t.name);
+					std::cout << std::format("  texture {:>4}  {} +0x{:06X}  {:>4}x{:<4}  {:08X} {:02X}  {}\n", t.slot, t.at.block->id.to_string(), t.at.offset, t.width, t.height, t.flags, t.tiling, t.name);
 			}
 			std::cout << std::format("{:<10} {:>7} pointers: {} to data, {} to runtime memory, {} dangling\n",
 				level, stats.pointers, stats.into_data, stats.into_runtime, stats.dangling);
@@ -253,7 +255,14 @@ static int cmd_level(const fs::path& folder, const std::string& name)
 						{
 							vec3 c = p.world.apply(p.object.vertices[s.vertex]);
 							std::cout << std::format("  sprite at ({:.1f}, {:.1f}, {:.1f}) half size {:.2f} x {:.2f}  {}\n", c[0], c[1], c[2],
-								s.half_size[0], s.half_size[1], s.material && s.material->texture ? s.material->texture->name : "untextured");
+								s.half_size[0] * p.world.uniform_scale(), s.half_size[1] * p.world.uniform_scale(), s.material && s.material->texture ? s.material->texture->name : "untextured");
+							if(s.material)
+							{
+								const visual_material& m = *s.material;
+								std::cout << std::format("    material {:08X} ambient {:.2f} {:.2f} {:.2f} {:.2f} diffuse {:.2f} {:.2f} {:.2f} {:.2f} specular {:.2f} {:.2f} {:.2f} {:.2f}\n",
+									m.flags, m.ambient[0], m.ambient[1], m.ambient[2], m.ambient[3], m.diffuse[0], m.diffuse[1], m.diffuse[2], m.diffuse[3],
+									m.specular[0], m.specular[1], m.specular[2], m.specular[3]);
+							}
 						}
 					}
 				}
@@ -557,6 +566,28 @@ static int cmd_peek(const fs::path& folder, const std::string& name, const std::
 	return EXIT_SUCCESS;
 }
 
+// Lists every pointer in memory that leads to <block> <hex offset>, to find what uses a structure.
+static int cmd_refs(const fs::path& folder, const std::string& name, const std::string& block, const std::string& offset)
+{
+	game_data game = require_game(folder);
+	memory_image memory = load_level_memory(game, name);
+	block_id id{ std::uint8_t(std::stoul(block.substr(0, 2), nullptr, 16)), std::uint8_t(std::stoul(block.substr(3, 2), nullptr, 16)) };
+	const sna_block* target = memory.find(id);
+	if(!target)
+		throw format_error("no block " + block);
+	std::uint32_t wanted = std::uint32_t(std::stoul(offset, nullptr, 16));
+	for(const sna_block* b : memory.blocks())
+	{
+		for(std::uint32_t o = 0; o + 4 <= b->data.size(); o += 4)
+		{
+			auto to = memory.follow({ b, o });
+			if(to && to->block == target && to->offset == wanted)
+				std::cout << std::format("  {} +0x{:06X}\n", b->id.to_string(), o);
+		}
+	}
+	return EXIT_SUCCESS;
+}
+
 int main(int argc, char** argv)
 {
 	std::vector<std::string> args(argv + 1, argv + argc);
@@ -591,6 +622,8 @@ int main(int argc, char** argv)
 			return cmd_actors(args[1], args[2]);
 		if(cmd == "scene" && args.size() == 3)
 			return cmd_scene(args[1], args[2]);
+		if(cmd == "refs" && args.size() == 5)
+			return cmd_refs(args[1], args[2], args[3], args[4]);
 		if(cmd == "peek" && args.size() == 6)
 			return cmd_peek(args[1], args[2], args[3], args[4], args[5]);
 	}

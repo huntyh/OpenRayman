@@ -22,8 +22,19 @@ coordinates are Z up.
 
 ## Structures
 
-**Transform** (0x58 bytes): u32 type (1 = identity), 3 floats position, 3×3 floats rotation, 3×3
-floats scale. How rotation and scale combine isn't confirmed yet (all static geometry is identity).
+**Transform** (0x58 bytes): u32 type, 3 floats position, a 3×3 float rotation, then a 3×3 float
+matrix combining rotation and scale, which is the one that places the object. Types, checked on all
+11,606 transforms of the 70 levels:
+
+| Type | Count | Matrices |
+| --- | --- | --- |
+| 1 | 6,951 | identity |
+| 2 | 3,109 | identity: a translation only |
+| 3 | 1,256 | the rotation, repeated in the second matrix |
+| 4 | 290 | a rotation, and the rotation times a scale (e.g. 0.4) |
+
+Multiplying the two matrices (as an earlier version did) rotates type 3 objects twice: the swirl in
+front of the stone in The Woods of Light lay flat instead of facing out.
 
 **IPO data**: +0x00 physical object.
 

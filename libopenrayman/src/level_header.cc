@@ -20,7 +20,7 @@ namespace openrayman
 			f = reader.f32();
 		for(float& f : t.rotation)
 			f = reader.f32();
-		for(float& f : t.scale)
+		for(float& f : t.matrix)
 			f = reader.f32();
 		return t;
 	}

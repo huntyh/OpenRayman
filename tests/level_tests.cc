@@ -270,6 +270,7 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 
 	std::size_t references = 0, exact = 0;
 	std::map<std::uint16_t, std::size_t> skipped_types;
+	std::map<std::uint32_t, std::size_t> transform_types;
 	for(const std::string& level : game->game_dsb().levels)
 	{
 		INFO(level);
@@ -291,6 +292,19 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 		{
 			if(node.placement)
 				CHECK(node.type == super_object_type::actor);
+			if(!node.matrix)
+				continue;
+			// Transform types: 1 and 2 have identity matrices, 3 repeats its rotation in the
+			// combined matrix (no scale), 4 differs.
+			transform t = read_transform(files.memory, *node.matrix);
+			constexpr std::array<float, 9> identity{ 1, 0, 0, 0, 1, 0, 0, 0, 1 };
+			CHECK(t.type >= 1);
+			CHECK(t.type <= 4);
+			if(t.type <= 2)
+				CHECK((t.rotation == identity && t.matrix == identity));
+			if(t.type == 3)
+				CHECK(t.rotation == t.matrix);
+			transform_types[t.type]++;
 		}
 
 		// Static geometry: every mesh decodes, with indices in range (checked while reading), and
@@ -365,6 +379,7 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 		}
 	}
 	CHECK(exact >= references * 95 / 100);
+	CHECK(transform_types == std::map<std::uint32_t, std::size_t>{ { 1, 6951 }, { 2, 3109 }, { 3, 1256 }, { 4, 290 } });
 	// Every element type in the game is decoded: triangles and sprites.
 	CHECK(skipped_types.empty());
 }

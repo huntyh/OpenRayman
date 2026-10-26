@@ -34,7 +34,7 @@ reader that gets out of step with the real layout fails immediately instead of r
 
 A **placement** follows an actor if the next pointer is a super object whose data pointer leads back
 to that actor. It holds: the super object, a transform (0x58 bytes: u32 type, 3 floats position, two
-3×3 float matrices), u32 draw flags, f32 transparency, then the next, previous and parent pointers.
+3×3 float matrices, see [geometry.md](geometry.md#structures)), u32 draw flags, f32 transparency, then the next, previous and parent pointers.
 Fix's own super objects are saved without links, because Fix doesn't know the level it will join;
 these records supply them. In every level the same 5 of the 10 actors are placed this way; the other
 5 have no super object in the level. The first two look like Rayman and the game camera: in

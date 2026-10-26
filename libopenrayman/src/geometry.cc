@@ -5,6 +5,7 @@
 #include <openrayman/binary_reader.h>
 #include <openrayman/error.h>
 
+#include <cmath>
 #include <format>
 
 namespace openrayman
@@ -81,7 +82,7 @@ namespace openrayman
 			f = r.f32();
 		for(float& f : t.rotation)
 			f = r.f32();
-		for(float& f : t.scale)
+		for(float& f : t.matrix)
 			f = r.f32();
 		return t;
 	}
@@ -235,16 +236,13 @@ namespace openrayman
 
 	affine affine::from(const transform& t)
 	{
+		// The second matrix already combines rotation and scale (type 3 repeats the rotation there,
+		// type 4 holds rotation times scale), so it alone places the object.
 		affine a;
 		for(int r = 0; r < 3; r++)
 		{
 			for(int c = 0; c < 3; c++)
-			{
-				float sum = 0;
-				for(int k = 0; k < 3; k++)
-					sum += t.rotation[r * 3 + k] * t.scale[k * 3 + c];
-				a.m[r][c] = sum;
-			}
+				a.m[r][c] = t.matrix[r * 3 + c];
 			a.m[r][3] = t.position[r];
 		}
 		return a;
@@ -272,6 +270,13 @@ namespace openrayman
 		for(int r = 0; r < 3; r++)
 			out[r] = m[r][0] * v[0] + m[r][1] * v[1] + m[r][2] * v[2] + m[r][3];
 		return out;
+	}
+
+	float affine::uniform_scale() const
+	{
+		float det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+			+ m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+		return std::cbrt(std::abs(det));
 	}
 
 	std::vector<placed_geometry> static_geometry(const memory_image& memory, const scene& tree)
