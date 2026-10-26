@@ -14,6 +14,11 @@ writes there.
 
 Without step 1 the tests still pass, but only check synthetic data.
 
+With step 1 they also compare a few decoded textures and music tracks against checksums of
+known-good decodes (`tests/checksum_tests.cc`). Only the checksums are stored, never game data. If
+one fails after an intentional decoder change, check the new output by eye or ear before updating
+the value.
+
 ## Phase 0 checklist
 
 Programs are in `build\windows-debug\bin`. They aren't installed anywhere, so typing just `ortool` won't
