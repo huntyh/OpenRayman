@@ -33,8 +33,16 @@ matrix combining rotation and scale, which is the one that places the object. Ty
 | 3 | 1,256 | the rotation, repeated in the second matrix |
 | 4 | 290 | a rotation, and the rotation times a scale (e.g. 0.4) |
 
-Multiplying the two matrices (as an earlier version did) rotates type 3 objects twice: the swirl in
-front of the stone in The Woods of Light lay flat instead of facing out.
+The matrices are stored for row vectors (the game computes v × M), so for the usual M × v they
+need transposing. The proof is in type 4: wherever the scale is uneven, the second matrix equals the
+rotation with each **row** scaled (to 1e-4 in every case, with designer-looking factors like 1.7,
+1.5, 1.5), never each column. This matches the animation quaternions, which also come out transposed
+compared with the textbook formula ([animation.md](animation.md)).
+
+Two earlier mistakes, both visible in The Woods of Light: multiplying the two matrices rotated type
+3 objects twice (the swirl in front of the stone lay flat instead of facing out), and reading them
+untransposed turned objects the wrong way (the three Globox kids faced the wall instead of the
+stream).
 
 **IPO data**: +0x00 physical object.
 

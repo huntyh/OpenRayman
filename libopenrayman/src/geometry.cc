@@ -237,12 +237,14 @@ namespace openrayman
 	affine affine::from(const transform& t)
 	{
 		// The second matrix already combines rotation and scale (type 3 repeats the rotation there,
-		// type 4 holds rotation times scale), so it alone places the object.
+		// type 4 holds rotation times scale), so it alone places the object. The game multiplies
+		// row vectors (v * M), so ours (M * v) is its transpose: a scale along the object's own
+		// axes shows up in the stored matrix's rows, never its columns (checked on every level).
 		affine a;
 		for(int r = 0; r < 3; r++)
 		{
 			for(int c = 0; c < 3; c++)
-				a.m[r][c] = t.matrix[r * 3 + c];
+				a.m[r][c] = t.matrix[c * 3 + r];
 			a.m[r][3] = t.position[r];
 		}
 		return a;

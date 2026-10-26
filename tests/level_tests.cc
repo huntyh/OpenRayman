@@ -19,6 +19,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <map>
 
@@ -315,6 +316,19 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 				CHECK((t.rotation == identity && t.matrix == identity));
 			if(t.type == 3)
 				CHECK(t.rotation == t.matrix);
+			if(t.type == 4)
+			{
+				// Each row of the combined matrix is the rotation's row times a scale: the game
+				// multiplies row vectors, so the matrices are stored transposed (see affine::from).
+				for(int r = 0; r < 3; r++)
+				{
+					float dot = 0, rr = 0;
+					for(int k = 0; k < 3; k++)
+						dot += t.matrix[r * 3 + k] * t.rotation[r * 3 + k], rr += t.rotation[r * 3 + k] * t.rotation[r * 3 + k];
+					for(int k = 0; k < 3; k++)
+						CHECK(std::abs(t.matrix[r * 3 + k] - dot / rr * t.rotation[r * 3 + k]) < 1e-3f);
+				}
+			}
 			transform_types[t.type]++;
 		}
 
