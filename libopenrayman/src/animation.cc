@@ -238,7 +238,10 @@ namespace openrayman
 			p.id = channel.id;
 			if(!object.invisible())
 				p.object = object.object;
-			std::array<float, 9> rotation = quaternion_to_matrix(q[0], q[1], q[2], q[3]);
+			// The game's quaternions rotate the other way round from the textbook formula (its own
+			// matrix is the transpose), so use the inverse. Checked by eye: with the textbook
+			// rotation, characters' heads and crowns end up sideways or upside down.
+			std::array<float, 9> rotation = quaternion_to_matrix(-q[0], -q[1], -q[2], q[3]);
 			for(int r = 0; r < 3; r++)
 			{
 				for(int k = 0; k < 3; k++)

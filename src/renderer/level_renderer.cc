@@ -141,8 +141,20 @@ namespace openrayman
 				try
 				{
 					gf_texture gf = decode_gf(archive->read(*entry));
+					if(info.flags & texture_flag::color_key)
+					{
+						// Black is transparent: these textures have no alpha of their own.
+						for(std::size_t i = 0; i < gf.rgba.size(); i += 4)
+						{
+							if(gf.rgba[i] < 8 && gf.rgba[i + 1] < 8 && gf.rgba[i + 2] < 8)
+								gf.rgba[i + 3] = 0;
+						}
+					}
 					texture.id = upload_texture(gf.width, gf.height, gf.rgba.data());
-					texture.blended = has_soft_alpha(gf);
+					if(info.flags & texture_flag::additive)
+						texture.mode = blend::additive;
+					else if(has_soft_alpha(gf))
+						texture.mode = blend::alpha;
 				}
 				catch(const std::exception& e)
 				{
@@ -168,21 +180,21 @@ namespace openrayman
 
 		// Triangles grouped by texture. Corners are expanded into separate vertices, because a
 		// corner's UV is indexed separately from its position.
-		std::map<std::pair<GLuint, bool>, std::vector<vertex>> by_texture;
+		std::map<std::pair<blend, GLuint>, std::vector<vertex>> by_texture;
 		for(const placed_geometry& placed : geometry)
 		{
 			stats.meshes++;
 			const geometric_object& object = placed.object;
 			for(const triangle_element& element : object.elements)
 			{
-				gpu_texture texture{ m_white, false };
+				gpu_texture texture{ m_white, blend::none };
 				if(element.material && element.material->texture)
 				{
 					texture = texture_for(*element.material->texture, archives, stats);
 					if(!texture.id)
-						texture = { m_white, false };
+						texture = { m_white, blend::none };
 				}
-				std::vector<vertex>& out = by_texture[{ texture.id, texture.blended }];
+				std::vector<vertex>& out = by_texture[{ texture.mode, texture.id }];
 				for(std::size_t t = 0; t < element.triangles.size(); t++)
 				{
 					for(int k = 0; k < 3; k++)
@@ -194,7 +206,8 @@ namespace openrayman
 						glm::vec3 position(p[0], p[1], p[2]);
 						stats.min = glm::min(stats.min, position);
 						stats.max = glm::max(stats.max, position);
-						out.push_back({ position, glm::vec2(uv[0], uv[1]), glm::vec3(n[0], n[1], n[2]) });
+						// The game's v runs up from the bottom row; our textures are uploaded top row first.
+						out.push_back({ position, glm::vec2(uv[0], 1.0f - uv[1]), glm::vec3(n[0], n[1], n[2]) });
 					}
 					stats.triangles++;
 				}
@@ -204,11 +217,10 @@ namespace openrayman
 		std::vector<vertex> vertices;
 		for(const auto& [key, list] : by_texture)
 		{
-			m_batches.push_back({ key.first, GLint(vertices.size()), GLsizei(list.size()), key.second });
+			// The map is ordered by blend mode first, so solid batches come first.
+			m_batches.push_back({ key.second, GLint(vertices.size()), GLsizei(list.size()), key.first });
 			vertices.insert(vertices.end(), list.begin(), list.end());
 		}
-		// Solid batches first, blended ones after them.
-		std::ranges::stable_partition(m_batches, [](const batch& b) { return !b.blended; });
 		glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
 		glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(vertices.size() * sizeof(vertex)), vertices.data(), GL_STATIC_DRAW);
 		if(vertices.empty())
@@ -224,18 +236,21 @@ namespace openrayman
 		glUniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(view_projection));
 		glBindVertexArray(m_vao);
 		glActiveTexture(GL_TEXTURE0);
-		bool blending = false;
+		blend current = blend::none;
 		glUniform1f(m_u_alpha_cut, 0.5f);
 		for(const batch& b : m_batches)
 		{
-			if(b.blended && !blending)
+			if(b.mode != current)
 			{
-				// Soft effects: blended over the solid scene, without hiding each other.
-				blending = true;
+				// See-through surfaces go over the solid scene, without hiding each other.
+				current = b.mode;
 				glEnable(GL_BLEND);
-				glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 				glDepthMask(GL_FALSE);
 				glUniform1f(m_u_alpha_cut, 0.01f);
+				if(current == blend::additive)
+					glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+				else
+					glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 			}
 			glBindTexture(GL_TEXTURE_2D, b.texture);
 			glDrawArrays(GL_TRIANGLES, b.first, b.count);

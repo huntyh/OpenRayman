@@ -51,7 +51,7 @@ switching distances (floats), +0x0C list of geometric object pointers. OpenRayma
 | 0x08 | triangles: 3 u16 vertex indices each |
 | 0x0C | the same triangles as 3 u16 UV indices each |
 | 0x10 | face normals: 3 floats each |
-| 0x14 | UVs: 2 floats each, origin at the top left of the texture |
+| 0x14 | UVs: 2 floats each, origin at the bottom left of the texture (v = 0 is the bottom row) |
 
 Type 3 elements exist too (22 in the whole game, none in Learn_10, probably sprites); not decoded
 yet.

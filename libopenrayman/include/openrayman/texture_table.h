@@ -11,6 +11,15 @@
 
 namespace openrayman
 {
+	// Bits of texture_info::flags, matched against the suffixes artists put in texture names (over
+	// all 975 textures the levels use). Other bits aren't identified yet.
+	namespace texture_flag
+	{
+		constexpr std::uint32_t color_key = 0x2; // "_nz": black pixels are transparent
+		constexpr std::uint32_t alpha = 0x8;     // "_aaa", "_anu": uses its alpha channel
+		constexpr std::uint32_t additive = 0x20; // "_ad": added to what's behind, like light
+	}
+
 	// A texture as the engine describes it in memory. Materials point at these.
 	struct texture_info
 	{

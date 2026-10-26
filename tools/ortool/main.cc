@@ -393,7 +393,7 @@ static int cmd_obj(const fs::path& folder, const std::string& name, const fs::pa
 		for(const triangle_element& e : geo.elements)
 		{
 			for(const vec2& uv : e.uvs)
-				obj << std::format("vt {} {}\n", uv[0], 1 - uv[1]);
+				obj << std::format("vt {} {}\n", uv[0], uv[1]); // OBJ counts v up from the bottom too
 			obj << "usemtl " << material_name(e.material) << "\n";
 			for(std::size_t t = 0; t < e.triangles.size(); t++)
 			{
@@ -441,6 +441,72 @@ static int cmd_actors(const fs::path& folder, const std::string& name)
 				std::cout << "  " << where(memory.follow(*p3d + o));
 		}
 		std::cout << "\n";
+	}
+	return EXIT_SUCCESS;
+}
+
+// Prints each visible actor's animation and the pose of its channels at frame 0.
+static int cmd_pose(const fs::path& folder, const std::string& name)
+{
+	game_data game = require_game(folder);
+	level_files files = load_level_files(game, name);
+	level_header header = read_level_header(files);
+	scene tree(files.memory, header);
+	animation_bank bank = read_animation_bank(files);
+	for(std::size_t node : tree.node(tree.dynamic_world()).children)
+	{
+		if(tree.node(node).type != super_object_type::actor)
+			continue;
+		actor a = read_actor(files.memory, tree, bank, node);
+		if(!a.animation || a.objects.empty())
+			continue;
+		vec3 at = world_transform(files.memory, tree, node).apply({ 0, 0, 0 });
+		std::cout << std::format("actor 0x{:X} at ({:.1f}, {:.1f}, {:.1f}): animation {}, {} objects\n",
+			tree.node(node).at.address(), at[0], at[1], at[2], *a.animation, a.objects.size());
+		for(const channel_pose& c : pose(bank, *a.animation, 0))
+		{
+			const auto& m = c.local.m;
+			float det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+				+ m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+			// Rotation as axis and angle, scale as the column lengths.
+			float sx = std::sqrt(m[0][0] * m[0][0] + m[1][0] * m[1][0] + m[2][0] * m[2][0]);
+			float sy = std::sqrt(m[0][1] * m[0][1] + m[1][1] * m[1][1] + m[2][1] * m[2][1]);
+			float sz = std::sqrt(m[0][2] * m[0][2] + m[1][2] * m[1][2] + m[2][2] * m[2][2]);
+			float trace = m[0][0] / sx + m[1][1] / sy + m[2][2] / sz;
+			float angle = std::acos(std::clamp((trace - 1) / 2, -1.0f, 1.0f)) * 57.29578f;
+			float ax = m[2][1] / sy - m[1][2] / sz, ay = m[0][2] / sz - m[2][0] / sx, az = m[1][0] / sx - m[0][1] / sy;
+			float al = std::sqrt(ax * ax + ay * ay + az * az);
+			if(al > 0)
+				ax /= al, ay /= al, az /= al;
+			std::cout << std::format("  channel {:>3} parent {:>3} object {:>3}  pos ({:.2f}, {:.2f}, {:.2f})  det {:.2f}  rot {:.0f} deg about ({:.2f}, {:.2f}, {:.2f})  scale ({:.2f}, {:.2f}, {:.2f})",
+				c.id, c.parent ? std::to_string(*c.parent) : "-", c.object ? std::to_string(*c.object) : "-",
+				m[0][3], m[1][3], m[2][3], det, angle, ax, ay, az, sx, sy, sz);
+			if(c.object && *c.object < a.objects.size() && a.objects[*c.object].physical_object)
+			{
+				if(auto geo = physical_object_geometry(files.memory, *a.objects[*c.object].physical_object))
+				{
+					geometric_object g = read_geometric_object(files.memory, *geo);
+					std::cout << std::format("  {} vertices, {} elements", g.vertices.size(), g.elements.size());
+					float lo = 1e9f, hi = -1e9f;
+					for(const vec3& v : g.vertices)
+						lo = std::min(lo, v[2]), hi = std::max(hi, v[2]);
+					std::cout << std::format(" z {:.2f}..{:.2f}", lo, hi);
+					for(const triangle_element& e : g.elements)
+					{
+						if(e.material)
+							std::cout << std::format(" [{:08X} {}]", e.material->flags, e.material->texture ? e.material->texture->name : "untextured");
+					}
+					if(!g.skipped_types.empty())
+						std::cout << std::format(", {} skipped (type {})", g.skipped_types.size(), g.skipped_types.front());
+				}
+				if(a.objects[*c.object].scale)
+				{
+					const vec3& s = *a.objects[*c.object].scale;
+					std::cout << std::format("  entry scale ({:.2f}, {:.2f}, {:.2f})", s[0], s[1], s[2]);
+				}
+			}
+			std::cout << "\n";
+		}
 	}
 	return EXIT_SUCCESS;
 }
@@ -495,6 +561,8 @@ int main(int argc, char** argv)
 			return cmd_gpt(args[1], args[2]);
 		if(cmd == "obj" && args.size() == 4)
 			return cmd_obj(args[1], args[2], args[3]);
+		if(cmd == "pose" && args.size() == 3)
+			return cmd_pose(args[1], args[2]);
 		if(cmd == "actors" && args.size() == 3)
 			return cmd_actors(args[1], args[2]);
 		if(cmd == "scene" && args.size() == 3)

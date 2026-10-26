@@ -41,18 +41,26 @@ namespace openrayman
 		void draw(const glm::mat4& view_projection) const;
 
 	private:
+		// Drawn in this order: solid surfaces first, then see-through ones over them.
+		enum class blend
+		{
+			none,     // opaque, hard-edged alpha cut out
+			alpha,    // soft alpha (mist, clouds)
+			additive, // glows and light
+		};
+
 		struct batch
 		{
 			GLuint texture = 0;
 			GLint first = 0;
 			GLsizei count = 0;
-			bool blended = false;
+			blend mode = blend::none;
 		};
 
 		struct gpu_texture
 		{
 			GLuint id = 0;
-			bool blended = false; // soft alpha (mist, light shafts): drawn blended, after the rest
+			blend mode = blend::none;
 		};
 
 		void clear();
