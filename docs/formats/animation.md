@@ -143,8 +143,9 @@ Globox kids' (byte 0x0A), which indeed have no shadow in the game. OpenRayman dr
 shadow anyway, a deliberate improvement.
 
 The game projects the blob onto the ground below the actor. Without collision yet, OpenRayman finds
-the ground with a ray straight down onto the level's solid triangles and lays the blob there,
-turned with the actor, the size being half its extent. Actors with nothing visible (scripts give
+the ground with a ray straight down onto the level's solid triangles, then projects the blob
+straight down onto every solid, not too steep triangle around that height, turned with the actor,
+the size being half its extent. So it follows creases and steps instead of sinking into them. Actors with nothing visible (scripts give
 them a look later) get no shadow yet.
 
 ## Where this came from

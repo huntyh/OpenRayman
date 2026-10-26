@@ -990,19 +990,36 @@ namespace openrayman
 				if(!ground)
 					continue;
 				const auto& [at, n] = *ground;
-				// The actor's X along the ground, and the ground's other direction.
-				glm::vec3 x = glm::vec3(s.actor[0]) - glm::dot(glm::vec3(s.actor[0]), n) * n;
-				if(glm::length(x) < 1e-4f)
-					x = glm::abs(n.x) < 0.9f ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0);
-				x = glm::normalize(x);
-				glm::vec3 y = glm::cross(n, x);
-				glm::vec3 c = at + n * 0.02f;
-				glm::vec3 dx = x * s.size.x, dy = y * s.size.y;
-				glm::vec4 bounds{ -1e6f, -1e6f, 1e6f, 1e6f };
-				// u 0..2 and v -1..1: the blob's centre (u 1, v 0) in the middle, mirrored outwards.
-				vertex v00{ c - dx - dy, { 0, -1 }, n, bounds }, v10{ c + dx - dy, { 2, -1 }, n, bounds };
-				vertex v01{ c - dx + dy, { 0, 1 }, n, bounds }, v11{ c + dx + dy, { 2, 1 }, n, bounds };
-				quads.insert(quads.end(), { v00, v10, v11, v00, v11, v01 });
+				// Projected straight down like the game's: the actor's X and Y, flattened.
+				glm::vec2 x(s.actor[0]), y;
+				x = glm::length(x) < 1e-4f ? glm::vec2(1, 0) : glm::normalize(x);
+				y = glm::vec2(-x.y, x.x);
+				const glm::vec2 c(at);
+				const float reach = std::max(s.size.x, s.size.y);
+				// u 0..2 and v -1..1 across the blob, its centre (u 1, v 0) in the middle, mirrored
+				// outwards; the bounds keep everything outside it on the texture's clear edge.
+				const glm::vec4 bounds{ 0, -1, 2, 1 };
+				auto uv = [&](const glm::vec3& p) {
+					glm::vec2 d = glm::vec2(p) - c;
+					return glm::vec2(1 + glm::dot(d, x) / s.size.x, glm::dot(d, y) / s.size.y);
+				};
+				// Every solid triangle under the blob, near the ground's height, gets a copy lifted a
+				// little along its normal: the blob follows the ground over creases and steps.
+				for(std::size_t i = 0; i + 2 < m_floor.size(); i += 3)
+				{
+					const glm::vec3 &a = m_floor[i], &b = m_floor[i + 1], &d = m_floor[i + 2];
+					if(std::min({ a.x, b.x, d.x }) > c.x + reach || std::max({ a.x, b.x, d.x }) < c.x - reach ||
+						std::min({ a.y, b.y, d.y }) > c.y + reach || std::max({ a.y, b.y, d.y }) < c.y - reach)
+						continue;
+					if(std::min({ a.z, b.z, d.z }) > at.z + 1.5f || std::max({ a.z, b.z, d.z }) < at.z - 1.5f)
+						continue;
+					glm::vec3 face = glm::cross(b - a, d - a);
+					if(glm::length(face) < 1e-8f || std::abs(glm::normalize(face).z) < 0.3f)
+						continue; // walls catch no shadow
+					glm::vec3 lift = glm::normalize(face.z < 0 ? -face : face) * 0.02f;
+					for(const glm::vec3* p : { &a, &b, &d })
+						quads.push_back({ *p + lift, uv(*p), n, bounds });
+				}
 			}
 			if(!quads.empty())
 			{
@@ -1010,7 +1027,7 @@ namespace openrayman
 				glUniform1i(m_u_lighting, 3);
 				glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(identity));
 				glUniform2f(m_u_uv_offset, 0, 0);
-				glUniform1f(m_u_edge_clamp, 0.0f);
+				glUniform1f(m_u_edge_clamp, 1.0f);
 				glEnable(GL_POLYGON_OFFSET_FILL);
 				glPolygonOffset(-1, -1);
 				glBindVertexArray(m_sprite_vao);
