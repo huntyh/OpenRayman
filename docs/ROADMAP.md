@@ -60,6 +60,8 @@ yet: everything that moves on its own moves, but nothing reacts to Rayman.
 **Milestone 2c: the game's light and sky**
 
 - The game's own lighting: per-vertex colours baked into the level, and sector lights
+- Fog: the blue-green haze of The Woods of Light that gives the waterfall its misty look (part of
+  the sector lights)
 - The sky and the distant background
 - Shadows under characters, water and glass transparency done the game's way
 - Later, as an option: a modern lighting mode that keeps the art direction
