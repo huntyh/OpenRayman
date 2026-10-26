@@ -237,6 +237,16 @@ namespace openrayman
 			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, GLsizei(width), GLsizei(height), 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
 			glGenerateMipmap(GL_TEXTURE_2D);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+			// Anisotropic filtering, where the driver has it, keeps surfaces seen at a slant sharp
+			// (the game's look from afar) instead of blurring them with smaller mipmaps.
+			constexpr GLenum max_anisotropy = 0x84FF, texture_max_anisotropy = 0x84FE; // EXT_texture_filter_anisotropic
+			static const float anisotropy = [] {
+				float most = 1;
+				glGetFloatv(max_anisotropy, &most);
+				return glGetError() == GL_NO_ERROR ? std::min(most, 16.0f) : 1.0f;
+			}();
+			if(anisotropy > 1)
+				glTexParameterf(GL_TEXTURE_2D, texture_max_anisotropy, anisotropy);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 			// Level UVs run past 0..1 to tile textures across large surfaces.
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);

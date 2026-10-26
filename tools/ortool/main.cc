@@ -21,6 +21,7 @@
 
 #include <array>
 #include <cstdio>
+#include <cctype>
 #include <cstring>
 #include <cstdlib>
 #include <exception>
@@ -689,6 +690,39 @@ static int cmd_states(const fs::path& folder, const std::string& name, const std
 	return EXIT_SUCCESS;
 }
 
+// The static objects whose textures' names contain some text: where they are and their textures.
+static int cmd_textured(const fs::path& folder, const std::string& name, const std::string& text)
+{
+	game_data game = require_game(folder);
+	level_files files = load_level_files(game, name);
+	level_header header = read_level_header(files);
+	scene tree(files.memory, header);
+	for(const placed_geometry& placed : static_geometry(files.memory, tree))
+	{
+		std::string names;
+		bool match = false;
+		for(const triangle_element& e : placed.object.elements)
+		{
+			if(e.material && e.material->texture)
+			{
+				names += std::format(" {} flags {:08X} ambient {:.2f} diffuse {:.2f}", e.material->texture->name, e.material->flags, e.material->ambient[0], e.material->diffuse[0]);
+				match = match || e.material->texture->name.find(text) != std::string::npos;
+			}
+		}
+		if(!match)
+			continue;
+		vec3 lo{ 1e30f, 1e30f, 1e30f }, hi{ -1e30f, -1e30f, -1e30f };
+		for(const vec3& v : placed.object.vertices)
+		{
+			vec3 p = placed.world.apply(v);
+			for(int a = 0; a < 3; a++)
+				lo[a] = std::min(lo[a], p[a]), hi[a] = std::max(hi[a], p[a]);
+		}
+		std::cout << std::format("node {} ({:.1f},{:.1f},{:.1f})..({:.1f},{:.1f},{:.1f}){}\n", placed.node, lo[0], lo[1], lo[2], hi[0], hi[1], hi[2], names);
+	}
+	return EXIT_SUCCESS;
+}
+
 // Every sector with its box and lights, and which sector each actor stands in.
 static int cmd_lights(const fs::path& folder, const std::string& name, std::optional<vec3> probe)
 {
@@ -811,6 +845,8 @@ int main(int argc, char** argv)
 			return cmd_refs(args[1], args[2], args[3], args[4]);
 		if(cmd == "lights" && args.size() == 3)
 			return cmd_lights(args[1], args[2], std::nullopt);
+		if(cmd == "lights" && args.size() == 4 && !args[3].empty() && std::isalpha((unsigned char)args[3][0]))
+			return cmd_textured(args[1], args[2], args[3]);
 		if(cmd == "lights" && args.size() == 4)
 		{
 			vec3 p{};
