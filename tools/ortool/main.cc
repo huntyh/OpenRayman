@@ -4,6 +4,8 @@
 #include <openrayman/animation.h>
 #include <openrayman/apm_audio.h>
 #include <openrayman/brain.h>
+#include <openrayman/game/interpreter.h>
+#include <openrayman/game/live_memory.h>
 #include <openrayman/cnt_archive.h>
 #include <openrayman/dsb_script.h>
 #include <openrayman/file.h>
@@ -954,6 +956,77 @@ static int cmd_brain(const fs::path& folder, const std::string& name, std::optio
 	return EXIT_SUCCESS;
 }
 
+// Runs the level's scripts for a number of frames, without drawing anything, and reports what
+// changed and which handlers the scripts reached that don't exist yet.
+static int cmd_run(const fs::path& folder, const std::string& name, int frames)
+{
+	game_data game = require_game(folder);
+	level_files files = load_level_files(game, name);
+	level_header header = read_level_header(files);
+	scene tree(files.memory, header);
+	level_brains brains = read_brains(files.memory, tree);
+	game::live_memory memory(files.memory);
+	std::cout << std::format("{} pointers relocated, {} moved\n", memory.relocated(), memory.moved());
+	std::uint32_t main_actor = header.placements.empty() ? 0 : header.placements[0].super_object.address();
+	std::cout << std::format("main actor's super object 0x{:08X}:", main_actor);
+	for(std::uint32_t i = 0; main_actor && i < 10; i++)
+		std::cout << std::format(" {:08X}", memory.u32(main_actor + i * 4));
+	std::cout << "\n";
+	game::interpreter vm(memory, main_actor);
+
+	auto snapshot = [&](const actor_brain& b) {
+		std::uint32_t actor = tree.node(b.node).data->address();
+		std::uint32_t mind = memory.u32(memory.u32(actor + 0x0C));
+		std::uint32_t normal = memory.u32(mind + 4);
+		std::uint32_t data = memory.u32(actor);
+		return std::pair{ normal ? memory.u32(normal + 8) : 0u, data ? memory.u32(data + 4) : 0u };
+	};
+	std::vector<std::pair<std::uint32_t, std::uint32_t>> before;
+	for(const actor_brain& b : brains.actors)
+		before.push_back(snapshot(b));
+	std::map<std::size_t, std::string> errors;
+	for(int f = 0; f < frames; f++)
+		for(const actor_brain& b : brains.actors)
+		{
+			if(errors.contains(b.node))
+				continue;
+			try
+			{
+				vm.think(tree.node(b.node).at.address());
+			}
+			catch(const std::exception& e)
+			{
+				errors[b.node] = std::format("frame {}, node 0x{:08X}: {}", f, vm.last_node(), e.what());
+			}
+		}
+	for(std::size_t i = 0; i < brains.actors.size(); i++)
+	{
+		const actor_brain& b = brains.actors[i];
+		const ai_model& m = brains.model(b);
+		auto after = snapshot(b);
+		auto behaviour_index = [&](std::uint32_t at) -> std::string {
+			for(std::size_t k = 0; k < m.behaviours.size(); k++)
+				if(m.behaviours[k].at.address() == at)
+					return std::to_string(k);
+			return std::format("0x{:X}", at);
+		};
+		if(after != before[i])
+			std::cout << std::format("node {:>4}: behaviour {} -> {}, state 0x{:X} -> 0x{:X}\n", b.node,
+				behaviour_index(before[i].first), behaviour_index(after.first), before[i].second, after.second);
+	}
+	for(const auto& [node, e] : errors)
+		std::cout << std::format("node {:>4} stopped: {}\n", node, e);
+	std::vector<std::pair<std::size_t, std::string>> missing;
+	for(const auto& [what, n] : vm.missing)
+		missing.push_back({ n, what });
+	std::ranges::sort(missing, std::greater<>());
+	std::cout << std::format("{} handlers missing:", missing.size());
+	for(std::size_t i = 0; i < missing.size(); i++)
+		std::cout << std::format("{}{} x{}", i % 6 ? ", " : "\n  ", missing[i].second, missing[i].first);
+	std::cout << "\n";
+	return EXIT_SUCCESS;
+}
+
 int main(int argc, char** argv)
 {
 	std::vector<std::string> args(argv + 1, argv + argc);
@@ -1010,6 +1083,8 @@ int main(int argc, char** argv)
 			return cmd_brain(args[1], args[2], std::nullopt);
 		if(cmd == "brain" && args.size() == 4)
 			return cmd_brain(args[1], args[2], std::stoul(args[3]));
+		if(cmd == "run" && args.size() == 4)
+			return cmd_run(args[1], args[2], std::stoi(args[3]));
 		if(cmd == "peek" && args.size() == 6)
 			return cmd_peek(args[1], args[2], args[3], args[4], args[5]);
 	}

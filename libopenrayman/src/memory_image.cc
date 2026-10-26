@@ -142,6 +142,21 @@ namespace openrayman
 		return stats;
 	}
 
+	std::vector<std::pair<memory_location, memory_location>> memory_image::pointers() const
+	{
+		std::vector<std::pair<memory_location, memory_location>> result;
+		result.reserve(m_pointers.size());
+		for(const auto& [slot, target_id] : m_pointers)
+		{
+			block_id source{ std::uint8_t(slot >> 40), std::uint8_t(slot >> 32) };
+			const sna_block* block = find(source);
+			memory_location at{ block, std::uint32_t(slot) - block->base };
+			if(auto target = resolve(m_source.at(source), target_id, read_u32(at)))
+				result.emplace_back(at, *target);
+		}
+		return result;
+	}
+
 	static std::filesystem::path require(const std::optional<std::filesystem::path>& path, const std::string& what)
 	{
 		if(!path)

@@ -63,6 +63,9 @@ namespace openrayman
 		// of add(), 0 is Fix). Returns nullopt for null or an address outside the target.
 		std::optional<memory_location> resolve(std::size_t source, block_id target, std::uint32_t value) const;
 
+		// Every pointer slot whose target resolves: (slot, target). Dangling ones are left out.
+		std::vector<std::pair<memory_location, memory_location>> pointers() const;
+
 		// Reads a word from memory. Throws format_error past the end of the block's data.
 		std::uint32_t read_u32(const memory_location& at) const;
 

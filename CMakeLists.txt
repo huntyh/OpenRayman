@@ -30,6 +30,7 @@ include(cmake/Dependencies.cmake)
 
 add_subdirectory(lib)
 add_subdirectory(libopenrayman)
+add_subdirectory(game)
 
 if(OPENRAYMAN_BUILD_ENGINE)
 	add_subdirectory(src)
