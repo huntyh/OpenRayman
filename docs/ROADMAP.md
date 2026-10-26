@@ -29,20 +29,42 @@ Once the VM works, the game's own logic runs from your data files.
 - ✅ Static geometry: sectors, meshes, UVs, materials and their textures
   ([format notes](formats/geometry.md)); `ortool obj` exports a level for any 3D viewer
 
-## Phase 2: render one level (in progress)
+## Phase 2: one level, looking and moving like the game (in progress)
 
-- ✅ Static geometry with textures, a free-fly camera, starting with The Woods of Light (`Learn_10`),
-  from where the game's camera starts
+Goal: The Woods of Light (`Learn_10`) looks like the real game and comes alive, without gameplay
+yet: everything that moves on its own moves, but nothing reacts to Rayman.
+
+**Milestone 2a: the viewer ✅ (merged into master, 2026-10-26)**
+
+- ✅ Static geometry with textures, a free-fly camera, starting from where the game's camera starts
 - ✅ Level picker for all 70 levels (Page Up / Page Down)
-- ✅ Actors: characters, props and platforms, posed at the first frame of their animation
-  ([format notes](formats/animation.md))
+- ✅ Actors (characters, props, platforms) posed at the first frame of their animation
+  ([format notes](formats/animation.md)), placed with the game's own transforms
 - ✅ Sprites (Lums and other glows), and textures' see-through, glowing and mirrored modes
-- Lighting, transparency and sky
+- ✅ No seams at texture edges; P copies the camera position for bug reports
+
+**Milestone 2b: things move ⬅ we are here**
+
+- Animation playback: every actor loops its current animation (Lums bobbing, Teensies, Rayman
+  idling), interpolating between keyframes
+- Moving textures: the water stream, waterfall and mist scroll the way the game scrolls them
+- Effects: the drifting fireflies and other particles
+
+**Milestone 2c: the game's light and sky**
+
+- The game's own lighting: per-vertex colours baked into the level, and sector lights
+- The sky and the distant background
+- Shadows under characters, water and glass transparency done the game's way
+- Later, as an option: a modern lighting mode that keeps the art direction
+
+Phase 2 ends when Learn_10 side by side with the real game looks the same, apart from the parts
+that need gameplay.
 
 ## Phase 3: make it a game
 
 - BNM sound banks: sound effects, voices, and the adaptive music sequencing
-- Actors with animation (families, states, channels)
+- Actor behaviour: states and transitions (e.g. the cages hang from their chains once their
+  scripts pick the hanging state)
 - Collision and physics
 - The AI bytecode interpreter: behaviours, macros, reflexes, DsgVars
 - Input mapped to the game's controls (keyboard, gamepad, touch)
