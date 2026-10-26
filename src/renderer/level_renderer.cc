@@ -719,6 +719,20 @@ namespace openrayman
 			use_lights(part_light[i]);
 			draw_batches(m_meshes[parts[i].mesh].batches, blend::none);
 		}
+		// The nearly opaque middle of soft surfaces (a leaf, not its fringe) is solid too: it hides
+		// whatever see-through things lie behind it, however they're sorted (sprites come last).
+		glUniform1f(m_u_alpha_cut, 0.9f);
+		glUniform1i(m_u_lighting, m_lighting ? 1 : 0);
+		glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(identity));
+		for(const see_through& s : m_see_through)
+			draw_batches(std::span(&s.b, 1), blend::alpha);
+		glUniform1i(m_u_lighting, m_lighting ? 2 : 0);
+		for(std::size_t i = 0; i < parts.size(); i++)
+		{
+			glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(parts[i].model));
+			use_lights(part_light[i]);
+			draw_batches(m_meshes[parts[i].mesh].batches, blend::alpha);
+		}
 
 		// Then the see-through ones over them, soft and glowing alike, farthest first: a leaf in front
 		// of the waterfall goes over it. The level's are sorted per object, the actors' per part.
