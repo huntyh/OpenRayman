@@ -51,13 +51,21 @@ namespace openrayman
 			{
 				// A triangle that stays within one copy of its texture keeps half a texel inside
 				// that copy's edges, so filtering doesn't bring in the opposite edge as a line.
+				// From afar the smaller mipmap copies are used, whose texels are larger, so the margin
+				// follows the mip level in use (rounded up, as trilinear filtering blends two levels).
 				vec2 uv = v_uv;
+				vec2 uv_dx = dFdx(v_uv), uv_dy = dFdy(v_uv);
 				if(u_edge_clamp > 0.5)
 				{
-					vec2 half_texel = 0.5 / vec2(textureSize(u_texture, 0));
+					vec2 size = vec2(textureSize(u_texture, 0));
+					vec2 dx = uv_dx * size, dy = uv_dy * size;
+					float lod = max(0.0, ceil(0.5 * log2(max(max(dot(dx, dx), dot(dy, dy)), 1e-8))));
+					vec2 extent = v_uv_bounds.zw - v_uv_bounds.xy;
+					vec2 half_texel = min(0.5 * exp2(lod) / size, 0.5 * extent);
 					uv = clamp(uv, v_uv_bounds.xy + half_texel, v_uv_bounds.zw - half_texel);
 				}
-				vec4 texel = texture(u_texture, uv);
+				// The level of detail comes from the unclamped coordinates, so clamping doesn't change it.
+				vec4 texel = textureGrad(u_texture, uv, uv_dx, uv_dy);
 				if(texel.a < u_alpha_cut)
 					discard;
 				o_color = vec4(texel.rgb * v_light, u_alpha_cut > 0.25 ? 1.0 : texel.a);
