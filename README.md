@@ -117,6 +117,18 @@ runs the unit tests against your real game files.
 | `android/` | The 2016 Android launcher, kept for reference until the Android port (Phase 4) | GPLv3 |
 | `docs/` | Roadmap, testing guide, [file format notes](docs/FORMATS.md) | GPLv3 |
 
+## How this is made
+
+This continuation of OpenRayman is written by AI. The code, the reverse engineering of the file
+formats and the documentation are done by Claude, an AI model by Anthropic, working in Claude Code,
+with a smaller local model drafting some routine pieces (always reviewed before use).
+**huntyh** runs the project: deciding what to build, testing every step against the real game and
+reporting what looks wrong, and keeping the project's rules, such as never including Ubisoft data
+and never copying code from leaked or unlicensed sources.
+
+Every commit made this way says so in its message ("Co-Authored-By: Claude"), so the history shows
+exactly which work came from where.
+
 ## Contributing
 
 Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) first: it covers how we
@@ -148,6 +160,11 @@ documented this game over two decades. Thank you.
 - **imaginaryPineapple** (Hannes Mann): created [OpenRayman](https://github.com/imaginaryPineapple/OpenRayman)
   in 2016, including the first open decoders for CNT, GF, APM and DSB files and the original Android
   launcher. This project continues that work under the same licenses.
+
+### This continuation
+
+- **huntyh**: project lead, testing and bug reports (the upside-down crowns were spotted here).
+- **Claude** (Anthropic): code, format research and documentation, see [How this is made](#how-this-is-made).
 
 ### Rayman 2 research
 
