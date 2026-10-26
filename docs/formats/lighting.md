@@ -129,7 +129,9 @@ of that each sector can name a **sky material** (+0x80): in Learn_10 the 11 open
 point to the same one, `foret_sky_txy`, white swirling clouds on cyan that scroll slowly (0.002 per
 frame). How the game maps it onto the sky wasn't found yet; OpenRayman draws it on a dome around the
 camera (from a little below the horizon to the top, repeating 4 times around), unlit and unfogged,
-which looks like the game's from the one spot compared so far.
+which looks like the game's from the one spot compared so far. In the game the sky also jumps when
+the camera moves up and down (a parallax glitch, visible when Rayman jumps); OpenRayman leaves that
+out on purpose.
 
 ## Where this came from
 

@@ -173,8 +173,10 @@ namespace openrayman
 			{
 				float lo = std::min({ uv[0][axis], uv[1][axis], uv[2][axis] });
 				float hi = std::max({ uv[0][axis], uv[1][axis], uv[2][axis] });
-				float tile = std::floor(lo + 1e-4f);
-				if(hi <= tile + 1 + 1e-4f)
+				// Artists' UVs often overshoot an edge by a hair; those triangles still mean one copy.
+				constexpr float overshoot = 0.05f;
+				float tile = std::floor(lo + overshoot);
+				if(hi <= tile + 1 + overshoot)
 				{
 					bounds[axis] = tile;
 					bounds[axis + 2] = tile + 1;
