@@ -60,12 +60,15 @@ yet: everything that moves on its own moves, but nothing reacts to Rayman.
 
 **Milestone 2c: the game's light and sky ⬅ we are here**
 
-- The game's own lighting: per-vertex colours baked into the level, and sector lights
-- Fog: the blue-green haze of The Woods of Light that gives the waterfall its misty look (part of
-  the sector lights)
+- ✅ The game's own lighting: each sector's lights, combined with the materials exactly as
+  `Rayman2.exe` does (read from the exe): colours, red glows and blue tints match side by side
+- ✅ Fog: the blue-green haze of The Woods of Light, by depth like the game's Glide fog table
+- ✅ Water and glass: lights also set how see-through they are, which gives the waterfall its soft
+  edges; soft and glowing surfaces are drawn back to front
 - The sky and the distant background
-- Shadows under characters, water and glass transparency done the game's way
-- Later, as an option: a modern lighting mode that keeps the art direction
+- Shadows under characters
+- Moved to Later: a modern lighting mode that keeps the art direction, together with HDR, since
+  HDR changes how lights have to work anyway
 
 Phase 2 ends when Learn_10 side by side with the real game looks the same, apart from the parts
 that need gameplay.
@@ -93,5 +96,7 @@ that need gameplay.
 - A modern renderer: Vulkan or Direct3D 12, keeping OpenGL (3.3 / ES 3.0) for older devices. The
   current OpenGL renderer is the first step and the fallback.
 - Save games, menus, cutscenes and the remaining levels
-- Widescreen, high resolutions, HDR, modern quality-of-life options
+- Widescreen, high resolutions, modern quality-of-life options
+- A modern lighting mode that keeps the art direction, and HDR, designed together (both change how
+  the lights are used)
 - Controller support with the right button icons

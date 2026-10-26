@@ -155,7 +155,7 @@ namespace openrayman
 		GLint m_u_alpha_cut = -1;
 		GLint m_u_edge_clamp = -1;
 		GLint m_u_uv_offset = -1;
-		GLint m_u_camera = -1, m_u_lighting = -1;
+		GLint m_u_camera = -1, m_u_camera_forward = -1, m_u_lighting = -1;
 		GLint m_u_light_count = -1, m_u_light_kind = -1, m_u_light_vector = -1, m_u_light_color = -1, m_u_light_range = -1;
 		GLint m_u_material_ambient = -1, m_u_material_diffuse = -1, m_u_luminosity = -1, m_u_light_alpha = -1;
 		GLint m_u_fog_color = -1, m_u_fog = -1, m_u_additive = -1;

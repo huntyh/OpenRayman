@@ -109,9 +109,16 @@ lights make it. Solid surfaces ignore alpha.
 Static geometry is lit once when the level loads. Actors move between lights, so they're lit every
 frame by the strongest 8 lights of the sector they stand in.
 
-**Fog**: the fog light of the sector the camera is in. A surface's fog cover rises linearly with its
-distance from the camera, from the near blend at `near` to the far blend at `far`, and its colour is
-mixed towards the fog colour by that much. Glows (additive surfaces) fade instead.
+**Fog**: the fog light of the sector the camera is in. A surface's fog cover goes by its depth along
+the view direction (not its straight-line distance): the near blend up to `near`, rising linearly to
+the far blend at `far`, staying there up to the "infinite" distance, and full beyond it. Its colour
+is mixed towards the fog colour by that much. Glows (additive surfaces) fade instead. Objects past
+the infinite distance aren't drawn at all.
+
+The game hands the fog light's values (blends clamped to 0..255, near/far ordered) to its 3dfx
+driver, `GliVd1vf.dll`, which builds a Glide fog table: 64 entries indexed by W, Glide's depth, filled
+as above (0x10007BA0). Using straight-line distance instead gave slightly too much fog away from the
+middle of the screen.
 
 ## Where this came from
 
@@ -125,6 +132,9 @@ mixed towards the fog colour by that much. Glows (additive surfaces) fade instea
   (0x428CB0: types 4, 2, 1, 5, 3), the point light with and without painting (0x427400, 0x427720:
   squared falloff, Lambert facing), the parallel light (0x4284C0), the channels byte, the material
   setup with the luminosity offset (0x42A580: default 0.5 at 0x4A0488), and the float to byte
-  conversion that doubles and clamps (0x42D520 and its variants, constant −24576.0).
+  conversion that doubles and clamps (0x42D520 and its variants, constant −24576.0). Fog: the setup
+  that picks the first fog light (0x44AE80, getters at 0x4270E0..0x427110), the fog record
+  (0x424010), object culling past the infinite distance (0x42AF80), and the Glide fog table in
+  `GliVd1vf.dll` (0x10007BA0; its exported GLI_DRV_vComputeFogEffect is an empty stub).
 - By eye against the real game (Learn_10): the river tablet, the stone doors, the mushroom cave and
   the stream, which is how the earlier guesses were found wrong.

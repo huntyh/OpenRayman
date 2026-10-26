@@ -25,6 +25,7 @@ namespace openrayman
 			uniform mat4 u_view_projection;
 			uniform mat4 u_model;
 			uniform vec3 u_camera;
+			uniform vec3 u_camera_forward; // fog goes by depth along the view, like the game's (Glide's W)
 			// 0: a soft stand-in light from above. 1: the game's lights, from a_color. 2: the game's
 			// lights, from the u_light_* list below (actors, which move between lights). 3: unlit.
 			uniform int u_lighting;
@@ -88,7 +89,7 @@ namespace openrayman
 				}
 				v_uv = a_uv;
 				v_uv_bounds = a_uv_bounds;
-				v_distance = length(world.xyz - u_camera);
+				v_distance = dot(world.xyz - u_camera, u_camera_forward);
 				gl_Position = u_view_projection * world;
 			}
 		)";
@@ -265,6 +266,7 @@ namespace openrayman
 		m_u_alpha_cut = glGetUniformLocation(m_program, "u_alpha_cut");
 		m_u_edge_clamp = glGetUniformLocation(m_program, "u_edge_clamp");
 		m_u_camera = glGetUniformLocation(m_program, "u_camera");
+		m_u_camera_forward = glGetUniformLocation(m_program, "u_camera_forward");
 		m_u_lighting = glGetUniformLocation(m_program, "u_lighting");
 		m_u_light_count = glGetUniformLocation(m_program, "u_light_count");
 		m_u_light_kind = glGetUniformLocation(m_program, "u_light_kind");
@@ -670,6 +672,8 @@ namespace openrayman
 		const glm::mat4 camera = glm::inverse(view);
 		const glm::vec3 eye(camera[3]);
 		glUniform3f(m_u_camera, eye.x, eye.y, eye.z);
+		const glm::vec3 forward = -glm::normalize(glm::vec3(camera[2]));
+		glUniform3f(m_u_camera_forward, forward.x, forward.y, forward.z);
 		glUniform1f(m_u_luminosity, m_luminosity - 0.5f);
 		std::vector<part> parts;
 		parts.reserve(m_level_cards.size() + m_parts.size());
