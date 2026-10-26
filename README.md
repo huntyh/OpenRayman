@@ -137,7 +137,10 @@ ortool cnt <file.cnt>                       List a texture archive
 ## Testing
 
 See [docs/TESTING.md](docs/TESTING.md). Setting `OPENRAYMAN_GAME_DIR` to your install folder also
-runs the unit tests against your real game files.
+runs the unit tests against your real game files, and checks `ortool`'s output for a few commands
+against pinned checksums (only the checksums are in the repository). After a deliberate change, the
+failing check saves the new output in `build/<preset>/tests/ortool_output` and prints its checksum to
+pin in `tests/CMakeLists.txt`.
 
 ## Layout
 
