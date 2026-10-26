@@ -89,5 +89,10 @@ TEST_CASE("real data: every music file decodes")
 		CHECK(decoder.frames() > 0);
 		auto pcm = decoder.decode_all();
 		CHECK(pcm.size() == decoder.frames() * decoder.channels());
+
+		// A channel decoded from the wrong starting state drifts into the rails and clips
+		// constantly. Real tracks clip a handful of samples at most.
+		auto clipped = std::ranges::count_if(pcm, [](std::int16_t s) { return s == 32767 || s == -32768; });
+		CHECK(clipped * 1000 < static_cast<std::ptrdiff_t>(pcm.size()));
 	}
 }

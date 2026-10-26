@@ -11,8 +11,11 @@
 // 0x14  "vs12"
 // 0x2C  right channel: i32 initial predictor, i32 initial step index
 // 0x38  left channel:  i32 initial predictor, i32 initial step index
-// 0x60  "DATA", followed by the nibbles. Each byte pair holds (right, left),
+// 0x60  "DATA", followed by the nibbles. Each byte pair holds (left, right),
 //       high nibble first, so one byte pair covers two stereo frames.
+//
+// Pairing the first byte with the 0x2C state (as the old decoder did) starts that channel
+// from the wrong predictor, which shows up as heavy clipping on one side of some tracks.
 
 namespace openrayman
 {
@@ -112,8 +115,8 @@ namespace openrayman
 		{
 			// Frames 2k and 2k+1 share the byte pair at 2k.
 			std::size_t pair = m_audio_offset + (m_position & ~std::size_t(1));
-			auto right_byte = static_cast<std::uint8_t>(m_data[pair]);
-			auto left_byte = pair + 1 < m_data.size() ? static_cast<std::uint8_t>(m_data[pair + 1]) : std::uint8_t(0);
+			auto left_byte = static_cast<std::uint8_t>(m_data[pair]);
+			auto right_byte = pair + 1 < m_data.size() ? static_cast<std::uint8_t>(m_data[pair + 1]) : std::uint8_t(0);
 			int shift = (m_position & 1) ? 0 : 4;
 
 			out[n * 2 + 0] = decode_nibble((left_byte >> shift) & 0xF, m_state[0]);

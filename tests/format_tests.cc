@@ -54,8 +54,9 @@ static bytes apm_header(std::uint16_t channels, std::int32_t first_predictor, st
 	return b;
 }
 
-TEST_CASE("APM: stereo IMA ADPCM, (right, left) byte pairs, high nibble first")
+TEST_CASE("APM: stereo IMA ADPCM, (left, right) byte pairs, high nibble first")
 {
+	// The right channel's state comes first in the header (0x2C), the left one second (0x38).
 	bytes b = apm_header(2, 100, -100);
 	b.u8(0x77).u8(0x08);
 
@@ -64,9 +65,9 @@ TEST_CASE("APM: stereo IMA ADPCM, (right, left) byte pairs, high nibble first")
 	CHECK(decoder.sample_rate() == 22050);
 	REQUIRE(decoder.frames() == 2);
 
-	// Right: nibble 7 at step 7 adds 11, the index jumps by 8 (step 16), then adds 30.
-	// Left: nibble 0 and 8 at step 7 both round to no change.
-	const std::vector<std::int16_t> expected = { -100, 111, -100, 141 };
+	// Left: nibble 7 at step 7 adds 11, the index jumps by 8 (step 16), then adds 30.
+	// Right: nibble 0 and 8 at step 7 both round to no change.
+	const std::vector<std::int16_t> expected = { -89, 100, -59, 100 };
 	CHECK(decoder.decode_all() == expected);
 	CHECK(decoder.frames_left() == 0);
 

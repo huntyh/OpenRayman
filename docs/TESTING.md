@@ -16,7 +16,8 @@ Without step 1 the tests still pass, but only check synthetic data.
 
 ## Phase 0 checklist
 
-Programs are in `build\windows-debug\bin`.
+Programs are in `build\windows-debug\bin`. They aren't installed anywhere, so typing just `ortool` won't
+find them: open PowerShell **in the OpenRayman folder** and type the path as shown below.
 
 ### Game data summary
 
@@ -43,8 +44,13 @@ Start `.\build\windows-debug\bin\openrayman.exe --game "F:\Games\Rayman 2"`
 
 In the engine, press M.
 
+Most files are 2–3 second pieces: Rayman 2's music is adaptive, and the game stitches these pieces
+together as you play. Until that sequencing is implemented (Phase 1), M plays one raw piece on a loop.
+Longer complete tracks to try: `main title`, `Jail10`.
+
 - [ ] Music plays; the title shows the track name and a running clock
 - [ ] It sounds clean: no hiss, crackle, clicks or chipmunk/slow-motion speed
+- [ ] No track plays in only one ear (fixed after the first round of testing, e.g. BA102, BA1r03)
 - [ ] **Left/right check:** with headphones, compare a track against the original game. If instruments
       sit on the wrong side, the channels are swapped. This is the one thing the automated checks can't verify.
 - [ ] Space pauses and resumes, M/N switch tracks, short tracks loop
