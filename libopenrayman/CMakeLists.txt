@@ -7,6 +7,9 @@ add_library(libopenrayman STATIC
 	src/file.cc
 	src/game_data.cc
 	src/gf_texture.cc
+	src/memory_image.cc
+	src/relocation.cc
+	src/sna_file.cc
 )
 add_library(openrayman::lib ALIAS libopenrayman)
 target_include_directories(libopenrayman PUBLIC include)

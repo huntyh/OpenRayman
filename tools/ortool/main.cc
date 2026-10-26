@@ -6,6 +6,7 @@
 #include <openrayman/file.h>
 #include <openrayman/game_data.h>
 #include <openrayman/gf_texture.h>
+#include <openrayman/memory_image.h>
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
@@ -14,6 +15,7 @@
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -32,6 +34,7 @@ static void usage()
 		"  cnt <file.cnt>                      List the files in a CNT archive\n"
 		"  textures <game folder> <out folder> Export every texture as PNG\n"
 		"  music <game folder> <out folder>    Export every APM music file as WAV\n"
+		"  level <game folder> <level|all>     Load a level's memory and check its pointers\n"
 		"\n"
 		"<game folder> is the install folder (e.g. \"C:\\GOG Games\\Rayman 2\") or its Data folder.\n";
 }
@@ -180,6 +183,38 @@ static int cmd_music(const fs::path& folder, const fs::path& out)
 	return failed ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
+static int cmd_level(const fs::path& folder, const std::string& name)
+{
+	game_data game = require_game(folder);
+	std::vector<std::string> levels = name == "all" ? game.game_dsb().levels : std::vector<std::string>{ name };
+
+	int failed = 0;
+	for(const std::string& level : levels)
+	{
+		try
+		{
+			memory_image image = load_level_memory(game, level);
+			memory_image::statistics stats = image.check();
+			if(levels.size() == 1)
+			{
+				for(const sna_block* block : image.blocks())
+					std::cout << "  block " << block->id.to_string() << std::format("  0x{:08X}  {:>9} bytes\n", block->base, block->data.size());
+			}
+			std::cout << std::format("{:<10} {:>7} pointers: {} to data, {} to runtime memory, {} dangling\n",
+				level, stats.pointers, stats.into_data, stats.into_runtime, stats.dangling);
+			failed += stats.dangling > 0;
+		}
+		catch(const std::exception& e)
+		{
+			std::cout << level << ": FAILED: " << e.what() << "\n";
+			failed++;
+		}
+	}
+	if(levels.size() > 1)
+		std::cout << (levels.size() - failed) << " of " << levels.size() << " levels loaded cleanly\n";
+	return failed ? EXIT_FAILURE : EXIT_SUCCESS;
+}
+
 int main(int argc, char** argv)
 {
 	std::vector<std::string> args(argv + 1, argv + argc);
@@ -202,6 +237,8 @@ int main(int argc, char** argv)
 			return cmd_textures(args[1], args[2]);
 		if(cmd == "music" && args.size() == 3)
 			return cmd_music(args[1], args[2]);
+		if(cmd == "level" && args.size() == 3)
+			return cmd_level(args[1], args[2]);
 	}
 	catch(const std::exception& e)
 	{

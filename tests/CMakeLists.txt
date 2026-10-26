@@ -3,6 +3,7 @@ add_executable(openrayman_tests
 	binary_reader_tests.cc
 	format_tests.cc
 	game_data_tests.cc
+	level_tests.cc
 )
 target_link_libraries(openrayman_tests PRIVATE openrayman::lib doctest::doctest)
 openrayman_warnings(openrayman_tests)

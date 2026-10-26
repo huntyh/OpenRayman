@@ -1,6 +1,7 @@
 #include <openrayman/dsb_script.h>
 #include <openrayman/binary_reader.h>
 #include <openrayman/error.h>
+#include <openrayman/mask.h>
 
 #include <format>
 
@@ -15,14 +16,10 @@ namespace openrayman
 	std::vector<std::byte> decode_dsb(std::span<const std::byte> data)
 	{
 		binary_reader reader(data);
-		std::uint32_t key = reader.u32();
+		openrayman::mask key(reader.u32());
 
 		std::vector<std::byte> result(data.begin() + 4, data.end());
-		for(std::byte& b : result)
-		{
-			b ^= static_cast<std::byte>((key >> 8) & 0xFF);
-			key = 16807 * (key ^ 0x75BD924u) - 0x7FFFFFFFu * ((key ^ 0x75BD924u) / 0x1F31Du);
-		}
+		key.decode(result);
 		return result;
 	}
 

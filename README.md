@@ -6,8 +6,9 @@ targeting Windows, Linux and Android.
 This continues [imaginaryPineapple's OpenRayman](https://github.com/imaginaryPineapple/OpenRayman)
 (2016), rebuilt on a current toolchain. See [docs/ROADMAP.md](docs/ROADMAP.md) for where it's heading.
 
-**Status: Phase 0.** The engine reads the original game files and can show every texture and play
-every music track. Levels don't load yet.
+**Status: Phase 1.** The engine reads the original game files and can show every texture and play
+every music track. All 70 levels load into memory with every pointer resolved; nothing is drawn
+from them yet.
 
 ## You need the game
 
@@ -73,6 +74,7 @@ The window title shows the current texture and music track.
 ortool info "<game folder>"                 Summary: levels, archives, music
 ortool textures "<game folder>" <out>       Export every texture as PNG
 ortool music "<game folder>" <out>          Export every music file as WAV
+ortool level "<game folder>" <name|all>     Load a level and check all its pointers
 ortool dsb <file.dsb>                       Print a DSB script
 ortool cnt <file.cnt>                       List a texture archive
 ```

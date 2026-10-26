@@ -6,8 +6,8 @@ as plain files next to it (`Fix.rtb`, `.rtp`, `.rtt`, `.rts`); the levels don't.
 inside — a copy protection measure.
 
 Worked out from `Rayman2.exe` (GOG release): parameter setup at `0x44de60`, lookup at `0x44eb40`,
-table stream setup at `0x44e8a0`. Status: lookup and decoding verified by hand on one level; not yet
-implemented in libopenrayman.
+table stream setup at `0x44e8a0`. Implemented in `libopenrayman/src/relocation.cc` (`levels_dat`);
+verified on all 70 levels, every pointer resolves.
 
 ## Encoded values
 

@@ -17,12 +17,15 @@ Once the VM works, the game's own logic runs from your data files.
 - Texture browser and music player as an end-to-end check; `ortool` for exporting data
 - Unit tests, plus checks against a real installation
 
-## Phase 1: level data
+## Phase 1: level data (in progress)
 
-- BNM sound banks (sound effects and voices)
-- SNA/GPT/PTX/RT* level files: block decoding, pointer relocation, then the object graph
-  (sectors, geometric objects, materials, "super objects" hierarchy)
-- `ortool level <name>` to dump a level's contents
+- ✅ SNA block decoding, relocation tables, the hidden tables in LEVELS0.DAT
+  ([format notes](formats/levels0-dat.md)), and a memory image where every pointer of all 70
+  levels resolves ([format notes](formats/sna.md))
+- ✅ `ortool level <name|all>` loads levels and checks their pointers
+- GPT and PTX files: the entry points into a level's data and its texture list
+- The object graph: sectors, geometric objects, materials, the "super object" hierarchy
+- BNM sound banks (sound effects, voices, and the music sequencing)
 
 ## Phase 2: render one level
 
