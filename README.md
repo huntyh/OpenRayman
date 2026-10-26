@@ -10,9 +10,9 @@ This continues [imaginaryPineapple's OpenRayman](https://github.com/imaginaryPin
 > Ubisoft in any way.** Rayman and Rayman 2: The Great Escape are trademarks of Ubisoft
 > Entertainment. You need your own legally obtained copy of the game to use OpenRayman.
 
-**Status: Phase 1.** The engine reads the original game files and can show every texture and play
-every music track. All 70 levels load into memory with every pointer resolved; nothing is drawn
-from them yet.
+**Status: Phase 2.** The engine opens the original levels and lets you fly through their scenery,
+with the game's textures. Characters, objects, the game's lighting and the sky aren't drawn yet,
+and nothing moves: it's a viewer, not a game, for now.
 
 ## You need the game
 
@@ -52,23 +52,38 @@ Dependencies (SDL3, glm, doctest) are downloaded automatically during the first 
 ## Running
 
 ```
-openrayman [--game "<Rayman 2 folder>"]
+openrayman [--game "<Rayman 2 folder>"] [--level <name>]
 ```
 
 On first start without `--game`, a folder picker asks for your Rayman 2 folder and remembers it.
+It opens The Woods of Light (`Learn_10`), or the level given with `--level`, seen from where the
+game's camera starts.
+
+In a level:
+
+| Key | Action |
+| --- | --- |
+| W A S D | Move |
+| Hold right mouse button | Look around |
+| Space or E / Ctrl or Q | Up / down |
+| Shift | Move 4× faster |
+| Mouse wheel | Change movement speed |
+| Page Down / Page Up | Next / previous level |
+| Home | First level |
+| R | Back to the start position |
+| T | Switch to the texture browser and back |
+
+In the texture browser:
 
 | Key | Action |
 | --- | --- |
 | Left / Right, mouse wheel | Previous / next texture |
 | Up / Down, Page Up / Page Down | Jump 25 textures |
 | Home / End | First / last texture |
-| M / N | Next / previous music track |
-| Space | Pause / resume music |
-| O | Choose a different game folder |
-| F11 | Fullscreen |
-| Esc | Quit |
 
-The window title shows the current texture and music track.
+Anywhere: M / N for the next / previous music track, Space to pause it (in the texture browser),
+O to choose a different game folder, F11 for fullscreen, Esc to quit. The window title shows where
+you are.
 
 ### ortool
 
@@ -79,6 +94,8 @@ ortool info "<game folder>"                 Summary: levels, archives, music
 ortool textures "<game folder>" <out>       Export every texture as PNG
 ortool music "<game folder>" <out>          Export every music file as WAV
 ortool level "<game folder>" <name|all>     Load a level and check all its pointers
+ortool obj "<game folder>" <level> <out>    Export a level's scenery as OBJ with textures
+ortool scene "<game folder>" <level>        Print a level's scene tree
 ortool dsb <file.dsb>                       Print a DSB script
 ortool cnt <file.cnt>                       List a texture archive
 ```

@@ -1,22 +1,28 @@
 // OpenRayman engine entry point.
 //
-// Phase 0: opens a window, finds the Rayman 2 data, and lets you browse every texture
-// and listen to every music track. This proves the data readers, renderer and audio
-// work end to end on each platform before level rendering starts.
+// Phase 2: opens a window, finds the Rayman 2 data and shows a level's static geometry with a
+// free-fly camera. The Phase 0 texture browser and music player are still there (T, M).
 
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
 #include <audio/music_player.h>
+#include <camera.h>
 #include <info.h>
 #include <renderer/gl.h>
+#include <renderer/level_renderer.h>
 
 #include <openrayman/cnt_archive.h>
 #include <openrayman/game_data.h>
+#include <openrayman/geometry.h>
 #include <openrayman/gf_texture.h>
+#include <openrayman/level_header.h>
+#include <openrayman/memory_image.h>
+#include <openrayman/scene.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -94,6 +100,20 @@ namespace
 
 		// --screenshot <file>: render one frame, save it as BMP and quit. Used for smoke tests.
 		std::optional<fs::path> screenshot;
+
+		// Level view, the default once a game folder is open.
+		enum class view { level, textures };
+		view mode = view::level;
+		std::unique_ptr<level_renderer> level;
+		std::size_t level_index = 0;
+		std::string start_level = "Learn_10"; // --level <name>
+		level_renderer::statistics level_stats;
+		std::string level_error;
+		fly_camera camera;
+		std::optional<fly_camera> start_camera; // --camera x,y,z,yaw,pitch (degrees)
+		float speed = 15.0f;                     // units per second
+		bool looking = false;
+		Uint64 last_frame = 0;
 	};
 
 	fs::path settings_file()
@@ -137,6 +157,16 @@ namespace
 		std::string title = std::format("OpenRayman {}", version);
 		if(!a.game)
 			title += " - press O to choose your Rayman 2 folder";
+		else if(a.mode == app::view::level)
+		{
+			const auto& levels = a.game->game_dsb().levels;
+			title += std::format(" - [{}/{}] {}", a.level_index + 1, levels.size(), levels[a.level_index]);
+			if(a.level_error.empty())
+				title += std::format(" ({} triangles)", a.level_stats.triangles);
+			else
+				title += " (ERROR: " + a.level_error + ")";
+			title += " | WASD move, hold right mouse to look, PgUp/PgDn level, T textures";
+		}
 		else if(!a.textures.empty())
 		{
 			const texture_ref& ref = a.textures[a.texture_index];
@@ -198,6 +228,65 @@ namespace
 		update_title(a);
 	}
 
+	void load_level(app& a, std::size_t index)
+	{
+		const auto& levels = a.game->game_dsb().levels;
+		if(levels.empty())
+			return;
+		a.level_index = index;
+		a.level_error.clear();
+		a.level_stats = {};
+		try
+		{
+			Uint64 start = SDL_GetTicks();
+			level_files files = load_level_files(*a.game, levels[index]);
+			level_header header = read_level_header(files);
+			scene tree(files.memory, header);
+			std::vector<placed_geometry> geometry = static_geometry(files.memory, tree);
+			a.level_stats = a.level->load(geometry, a.archives);
+			SDL_Log("%s: %zu meshes, %zu triangles, %zu textures (%zu missing), %llu ms", levels[index].c_str(),
+				a.level_stats.meshes, a.level_stats.triangles, a.level_stats.textures, a.level_stats.missing_textures,
+				static_cast<unsigned long long>(SDL_GetTicks() - start));
+
+			// Start where the game does. The first two Fix actors look like Rayman and the game camera
+			// (placed above and behind him), so look from the camera at Rayman. Levels without them
+			// start in the middle, looking along +X.
+			auto position = [&](std::size_t i) {
+				const auto& p = header.placements[i].matrix.position;
+				return glm::vec3(p[0], p[1], p[2]);
+			};
+			a.camera = fly_camera{};
+			a.camera.position = (a.level_stats.min + a.level_stats.max) * 0.5f;
+			if(header.placements.size() >= 2 && position(0) != glm::vec3(0) && position(1) != position(0))
+			{
+				a.camera.position = position(1);
+				glm::vec3 to = glm::normalize(position(0) - position(1));
+				a.camera.yaw = std::atan2(to.y, to.x);
+				a.camera.pitch = std::asin(to.z);
+			}
+			if(a.start_camera)
+			{
+				a.camera = *a.start_camera;
+				a.start_camera.reset();
+			}
+		}
+		catch(const std::exception& e)
+		{
+			a.level_error = e.what();
+			a.level->load({}, a.archives);
+			SDL_Log("Could not load %s: %s", levels[index].c_str(), e.what());
+		}
+		update_title(a);
+	}
+
+	void step_level(app& a, long delta)
+	{
+		if(!a.game || a.game->game_dsb().levels.empty())
+			return;
+		long count = static_cast<long>(a.game->game_dsb().levels.size());
+		load_level(a, static_cast<std::size_t>((static_cast<long>(a.level_index) + delta % count + count) % count));
+	}
+
 	bool open_game(app& a, const fs::path& folder)
 	{
 		try
@@ -228,6 +317,12 @@ namespace
 				a.music->stop();
 			save_folder(folder);
 			show_texture(a, 0);
+
+			const auto& levels = a.game->game_dsb().levels;
+			auto start = std::ranges::find_if(levels, [&](const std::string& name) {
+				return std::ranges::equal(name, a.start_level, [](unsigned char x, unsigned char y) { return std::tolower(x) == std::tolower(y); });
+			});
+			load_level(a, start == levels.end() ? 0 : static_cast<std::size_t>(start - levels.begin()));
 			return true;
 		}
 		catch(const std::exception& e)
@@ -262,6 +357,7 @@ namespace
 #else
 		const gl::api attempts[] = { gl::api::desktop_gl33, gl::api::gles30 };
 #endif
+		SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 		for(gl::api api : attempts)
 		{
 			if(api == gl::api::desktop_gl33)
@@ -300,10 +396,16 @@ namespace
 		int w = 0, h = 0;
 		SDL_GetWindowSizeInPixels(a.window, &w, &h);
 		glViewport(0, 0, w, h);
-		glClearColor(0.08f, 0.08f, 0.1f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT);
+		bool level_view = a.game && a.mode == app::view::level;
+		if(level_view)
+			glClearColor(0.43f, 0.59f, 0.78f, 1.0f); // a plain sky until the real one is drawn
+		else
+			glClearColor(0.08f, 0.08f, 0.1f, 1.0f);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		if(a.texture && w > 0 && h > 0)
+		if(level_view && w > 0 && h > 0)
+			a.level->draw(a.camera.projection(float(w) / float(h)) * a.camera.view());
+		else if(a.texture && w > 0 && h > 0)
 		{
 			// Fit inside the window with a margin. Scale up by whole steps so pixels stay crisp.
 			float fit = std::min((w * 0.9f) / a.texture_width, (h * 0.9f) / a.texture_height);
@@ -385,6 +487,15 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 	glUseProgram(a->program);
 	glUniform1i(glGetUniformLocation(a->program, "u_texture"), 0);
 	glGenVertexArrays(1, &a->vao);
+	try
+	{
+		a->level = std::make_unique<level_renderer>(a->api);
+	}
+	catch(const std::exception& e)
+	{
+		show_error(*a, e.what());
+		return SDL_APP_FAILURE;
+	}
 
 	a->music = std::make_unique<music_player>();
 
@@ -399,7 +510,34 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 		else if(arg == "--screenshot")
 			a->screenshot = fs::path(reinterpret_cast<const char8_t*>(argv[n + 1]));
 		else if(arg == "--texture")
+		{
 			start_texture = std::strtol(argv[n + 1], nullptr, 10);
+			a->mode = app::view::textures;
+		}
+		else if(arg == "--level")
+			a->start_level = argv[n + 1];
+		else if(arg == "--camera")
+		{
+			// x,y,z,yaw,pitch with angles in degrees, for reproducible screenshots.
+			float v[5] = {};
+			int parsed = 0;
+			for(char* p = argv[n + 1]; parsed < 5 && *p; parsed++)
+			{
+				char* end = nullptr;
+				v[parsed] = std::strtof(p, &end);
+				if(end == p)
+					break;
+				p = *end == ',' ? end + 1 : end;
+			}
+			if(parsed == 5)
+			{
+				fly_camera camera;
+				camera.position = glm::vec3(v[0], v[1], v[2]);
+				camera.yaw = glm::radians(v[3]);
+				camera.pitch = glm::radians(v[4]);
+				a->start_camera = camera;
+			}
+		}
 	}
 	if(!folder)
 		folder = load_saved_folder();
@@ -427,9 +565,23 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 			return SDL_APP_SUCCESS;
 
 		case SDL_EVENT_KEY_DOWN:
+			if(a.mode == app::view::level)
+			{
+				switch(event->key.key)
+				{
+					case SDLK_PAGEDOWN: step_level(a, 1); return SDL_APP_CONTINUE;
+					case SDLK_PAGEUP: step_level(a, -1); return SDL_APP_CONTINUE;
+					case SDLK_HOME: step_level(a, -static_cast<long>(a.level_index)); return SDL_APP_CONTINUE;
+					case SDLK_R: load_level(a, a.level_index); return SDL_APP_CONTINUE; // back to the start position
+				}
+			}
 			switch(event->key.key)
 			{
 				case SDLK_ESCAPE: return SDL_APP_SUCCESS;
+				case SDLK_T:
+					a.mode = a.mode == app::view::level ? app::view::textures : app::view::level;
+					update_title(a);
+					break;
 				case SDLK_RIGHT: step_texture(a, 1); break;
 				case SDLK_LEFT: step_texture(a, -1); break;
 				case SDLK_PAGEDOWN: case SDLK_DOWN: step_texture(a, 25); break;
@@ -438,7 +590,7 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 				case SDLK_END: if(!a.textures.empty()) show_texture(a, a.textures.size() - 1); break;
 				case SDLK_M: step_music(a, 1); break;
 				case SDLK_N: step_music(a, -1); break;
-				case SDLK_SPACE: if(a.music && a.music_index) { a.music->set_paused(!a.music->paused()); update_title(a); } break;
+				case SDLK_SPACE: if(a.mode == app::view::textures && a.music && a.music_index) { a.music->set_paused(!a.music->paused()); update_title(a); } break;
 				case SDLK_O: pick_folder(a); break;
 				case SDLK_F11:
 					SDL_SetWindowFullscreen(a.window, !(SDL_GetWindowFlags(a.window) & SDL_WINDOW_FULLSCREEN));
@@ -446,8 +598,25 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 			}
 			break;
 
+		case SDL_EVENT_MOUSE_BUTTON_DOWN:
+		case SDL_EVENT_MOUSE_BUTTON_UP:
+			if(a.mode == app::view::level && event->button.button == SDL_BUTTON_RIGHT)
+			{
+				a.looking = event->type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+				SDL_SetWindowRelativeMouseMode(a.window, a.looking);
+			}
+			break;
+
+		case SDL_EVENT_MOUSE_MOTION:
+			if(a.mode == app::view::level && a.looking)
+				a.camera.look(event->motion.xrel, event->motion.yrel);
+			break;
+
 		case SDL_EVENT_MOUSE_WHEEL:
-			step_texture(a, event->wheel.y > 0 ? -1 : 1);
+			if(a.mode == app::view::level)
+				a.speed = std::clamp(a.speed * (event->wheel.y > 0 ? 1.25f : 0.8f), 1.0f, 200.0f);
+			else
+				step_texture(a, event->wheel.y > 0 ? -1 : 1);
 			break;
 
 		case SDL_EVENT_FINGER_UP:
@@ -470,8 +639,21 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 	if(picked)
 		open_game(a, *picked);
 
-	// Keep the music clock in the title ticking.
 	Uint64 now = SDL_GetTicks();
+	float dt = a.last_frame ? std::min((now - a.last_frame) / 1000.0f, 0.1f) : 0.0f;
+	a.last_frame = now;
+	if(a.mode == app::view::level)
+	{
+		// WASD to move, Space/E up, Ctrl/Q down, Shift for faster.
+		const bool* keys = SDL_GetKeyboardState(nullptr);
+		float forward = float(keys[SDL_SCANCODE_W]) - float(keys[SDL_SCANCODE_S]);
+		float right = float(keys[SDL_SCANCODE_D]) - float(keys[SDL_SCANCODE_A]);
+		float up = float(keys[SDL_SCANCODE_SPACE] || keys[SDL_SCANCODE_E]) - float(keys[SDL_SCANCODE_LCTRL] || keys[SDL_SCANCODE_Q]);
+		float step = a.speed * dt * (keys[SDL_SCANCODE_LSHIFT] ? 4.0f : 1.0f);
+		a.camera.move(forward * step, right * step, up * step);
+	}
+
+	// Keep the music clock in the title ticking.
 	if(a.music_index && now - a.last_title_update > 500)
 	{
 		a.last_title_update = now;

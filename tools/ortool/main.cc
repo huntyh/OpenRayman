@@ -219,6 +219,9 @@ static int cmd_level(const fs::path& folder, const std::string& name)
 				for(const sna_block* block : image.blocks())
 					std::cout << "  block " << block->id.to_string() << std::format("  0x{:08X}  {:>9} bytes\n", block->base, block->data.size());
 				std::cout << std::format("  {} Fix actors, {} placed in this level\n", header.fix_actors.size(), header.placements.size());
+				for(const fix_actor_placement& p : header.placements)
+					std::cout << std::format("    actor at {} +0x{:X}: position {} {} {}\n", p.actor.block->id.to_string(), p.actor.offset,
+						p.matrix.position[0], p.matrix.position[1], p.matrix.position[2]);
 				for(const texture_info& t : level_textures)
 					std::cout << std::format("  texture {:>4}  {:>4}x{:<4}  {:08X}  {}\n", t.slot, t.width, t.height, t.flags, t.name);
 			}
@@ -281,8 +284,14 @@ static void dump_node(const memory_image& memory, const scene& tree, std::size_t
 	std::cout << std::format("{:{}}type 0x{:X} at {} +0x{:X}", "", depth * 2, node.type, node.at.block->id.to_string(), node.at.offset);
 	if(node.data)
 		std::cout << std::format("  data {} +0x{:X} {}", node.data->block->id.to_string(), node.data->offset, shape(memory, *node.data, 0x40));
-	if(node.matrix)
-		std::cout << std::format("  matrix {} +0x{:X}", node.matrix->block->id.to_string(), node.matrix->offset);
+	if(node.matrix && node.matrix->offset + 0x58 <= node.matrix->block->data.size())
+	{
+		transform t = read_transform(memory, *node.matrix);
+		std::cout << std::format("  matrix {} +0x{:X} at ({:.1f}, {:.1f}, {:.1f})", node.matrix->block->id.to_string(), node.matrix->offset,
+			t.position[0], t.position[1], t.position[2]);
+	}
+	else if(node.matrix)
+		std::cout << std::format("  matrix {} +0x{:X} (runtime)", node.matrix->block->id.to_string(), node.matrix->offset);
 	std::cout << "\n";
 	for(std::size_t child : node.children)
 		dump_node(memory, tree, child, depth + 1);

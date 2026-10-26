@@ -4,6 +4,7 @@ add_executable(openrayman WIN32
 	main.cc
 	audio/music_player.cc
 	renderer/gl.cc
+	renderer/level_renderer.cc
 )
 target_include_directories(openrayman PRIVATE .)
 target_compile_definitions(openrayman PRIVATE OPENRAYMAN_VERSION="${PROJECT_VERSION}")

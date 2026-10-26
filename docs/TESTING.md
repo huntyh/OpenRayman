@@ -100,3 +100,45 @@ Run `.\build\windows-debug\bin\ortool.exe obj "F:\Games\Rayman 2" Learn_10 H:\r2
 - [ ] Try a level you remember well the same way (replace `Learn_10` in both places)
 
 Only the level's static scenery is exported. Characters, Lums and other objects come later.
+
+## Phase 2 checklist
+
+The engine now shows levels. Start `.\build\windows-debug\bin\openrayman.exe --game "F:\Games\Rayman 2"`
+
+### First level
+
+- [ ] It opens straight into The Woods of Light instead of the texture browser
+- [ ] The window title shows `[5/70] Learn_10 (2604 triangles)` followed by a short controls reminder
+- [ ] You see the level's scenery with its textures: grass and jungle walls, tree trunks, ferns and
+      leaves with see-through edges, the waterfall, soft clouds and mist
+- [ ] Textures are not upside down or mirrored compared to the real game. Signs or anything with text
+      are a good check, and so is which side of the waterfall things are on
+
+### Controls
+
+- [ ] W/A/S/D move, holding the right mouse button and moving the mouse looks around
+- [ ] Space or E goes up, Ctrl or Q goes down, Shift moves 4x faster
+- [ ] The mouse wheel changes the movement speed
+- [ ] R goes back to the start position
+- [ ] T switches to the texture browser and back; in the browser the old keys still work
+- [ ] F11 fullscreen and resizing the window keep the picture undistorted
+- [ ] Looking around and moving are smooth
+
+### All levels
+
+- [ ] PgDn steps through all 70 levels, PgUp goes back, Home goes to the first one (Menu)
+- [ ] No level shows "ERROR" in the title
+- [ ] Try a few levels you remember: do they look like the real game's scenery?
+
+### Known limitations
+
+Don't report these as bugs, they're the next steps:
+
+- No characters, enemies, Lums, platforms or other moving objects. Some places look like they
+  float in the air because their ground is one of those objects (e.g. right where you start)
+- The lighting is a simple stand-in, not the game's own
+- The sky is a plain colour
+- Some black patches, probably shadows, which the game blends differently
+- Water and glass look solid instead of see-through
+
+Tip: compare with the real game at the same spot.

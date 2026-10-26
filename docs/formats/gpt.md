@@ -37,7 +37,9 @@ to that actor. It holds: the super object, a transform (0x58 bytes: u32 type, 3 
 3×3 float matrices), u32 draw flags, f32 transparency, then the next, previous and parent pointers.
 Fix's own super objects are saved without links, because Fix doesn't know the level it will join;
 these records supply them. In every level the same 5 of the 10 actors are placed this way; the other
-5 have no super object in the level.
+5 have no super object in the level. The first two look like Rayman and the game camera: in
+Learn_10 the second sits about 11 units above and slightly behind the first, and the engine starts
+its view from there. Not confirmed beyond that.
 
 The world roots sit at the same offsets in every level (block `05/02`, +0x108, +0x1B0, +0x258,
 +0x300), and the actual world's 3 children are the other three.

@@ -17,7 +17,7 @@ Once the VM works, the game's own logic runs from your data files.
 - Texture browser and music player as an end-to-end check; `ortool` for exporting data
 - Unit tests, plus checks against a real installation
 
-## Phase 1: level data (in progress)
+## Phase 1: level data ✅
 
 - ✅ SNA block decoding, relocation tables, the hidden tables in LEVELS0.DAT
   ([format notes](formats/levels0-dat.md)), and a memory image where every pointer of all 70
@@ -28,16 +28,18 @@ Once the VM works, the game's own logic runs from your data files.
 - ✅ The super object hierarchy: every level's scene tree rebuilt, with all links cross-checked
 - ✅ Static geometry: sectors, meshes, UVs, materials and their textures
   ([format notes](formats/geometry.md)); `ortool obj` exports a level for any 3D viewer
-- BNM sound banks (sound effects, voices, and the music sequencing)
 
-## Phase 2: render one level
+## Phase 2: render one level (in progress)
 
-- Static geometry with textures, a free-fly camera, starting with The Woods of Light (`Learn_10`)
-- Level picker for all 70 levels
+- ✅ Static geometry with textures, a free-fly camera, starting with The Woods of Light (`Learn_10`),
+  from where the game's camera starts
+- ✅ Level picker for all 70 levels (Page Up / Page Down)
+- Actors' geometry: platforms, bridges, characters, Lums
 - Lighting, transparency and sky
 
 ## Phase 3: make it a game
 
+- BNM sound banks: sound effects, voices, and the adaptive music sequencing
 - Actors with animation (families, states, channels)
 - Collision and physics
 - The AI bytecode interpreter: behaviours, macros, reflexes, DsgVars
