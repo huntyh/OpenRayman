@@ -37,11 +37,11 @@ namespace openrayman
 			uniform float u_luminosity;
 			vec4 lit(vec4 sum)
 			{
-				// Doubled, as the texture is modulated by twice the light (compared with the game by eye):
-				// coloured lights tint strongly and unlit places stay dark.
-				vec3 color = 2.0 * clamp(u_luminosity + u_material_ambient.rgb + sum.rgb * (u_luminosity + u_material_diffuse.rgb), 0.0, 1.0);
+				// As the game turns light into vertex colours: doubled, then clamped, so a surface is
+				// fully lit at half and never brighter than its texture.
+				vec3 color = clamp(2.0 * (u_luminosity + u_material_ambient.rgb + sum.rgb * (u_luminosity + u_material_diffuse.rgb)), 0.0, 1.0);
 				// Lights also make surfaces more or less see-through (water, the waterfall's edges).
-				float alpha = clamp(u_material_ambient.a + sum.a * u_material_diffuse.a, 0.0, 1.0);
+				float alpha = clamp(2.0 * (u_material_ambient.a + sum.a * u_material_diffuse.a), 0.0, 1.0);
 				return vec4(color, alpha);
 			}
 			uniform vec3 u_light_vector[max_lights]; // parallel: the way it shines; spherical: its position
@@ -72,7 +72,8 @@ namespace openrayman
 							vec3 to = u_light_vector[i] - world.xyz;
 							float d = length(to);
 							vec2 range = u_light_range[i];
-							float falloff = d <= range.x || range.y <= range.x ? 1.0 : clamp((range.y - d) / (range.y - range.x), 0.0, 1.0);
+							vec2 range2 = range * range;
+							float falloff = d <= range.x || range2.y <= range2.x ? 1.0 : clamp((range2.y - d * d) / (range2.y - range2.x), 0.0, 1.0);
 							strength = falloff * (d > 1e-5 && u_light_kind[i] == 2 ? max(0.0, dot(normal, to / d)) : 1.0);
 						}
 						sum += u_light_color[i] * strength;
@@ -630,7 +631,7 @@ namespace openrayman
 			{
 				vec3 c = l.position();
 				float d = glm::length(glm::vec3(c[0], c[1], c[2]) - at);
-				reach = d <= l.near ? 1.0f : d >= l.far ? 0.0f : (l.far - d) / (l.far - l.near);
+				reach = d <= l.near ? 1.0f : d >= l.far ? 0.0f : (l.far * l.far - d * d) / (l.far * l.far - l.near * l.near);
 			}
 			float size = std::abs(l.color[0]) + std::abs(l.color[1]) + std::abs(l.color[2]);
 			if(reach > 0 && size > 0)

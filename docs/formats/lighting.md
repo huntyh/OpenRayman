@@ -69,28 +69,42 @@ waterfall.
 
 ## Lighting a surface
 
-For each corner, the lights of its sector that are on and shine on its kind (scenery or actors) are
-summed per colour channel: ambient at full strength, parallel lights by how much the surface faces
-them, spherical lights by their falloff and how much it faces them (painting lights skip the facing).
-The material then decides the result:
+As `Rayman2.exe` does it (see "Where this came from"). For each corner, the lights of its sector that
+are on (+0x00 and +0xA4 both set) and shine on its kind (scenery or actors) are summed per channel,
+red, green, blue and alpha; the channels byte leaves out the colour (1) or the alpha (2):
+
+| Type | Strength |
+| --- | --- |
+| ambient | 1, summed separately and folded into the material's ambient colour (below) |
+| parallel | max(0, −N·D), D the direction it shines |
+| spherical | falloff × max(0, N·L), L towards the light; painting lights leave out the facing |
+| 5 (box) | not used for lighting yet |
+
+The falloff runs over the **squared** distance: 1 within `near`, then (far² − d²) / (far² − near²),
+nothing beyond `far`. The engine also scales it by a factor from the object's matrix (its scale, 1
+for the level's own geometry).
+
+The material then turns the sums into a vertex colour:
 
 ```
-colour = clamp(L + material ambient + sum × (L + material diffuse), 0, 1)     (red, green, blue)
-alpha  = clamp(material ambient alpha + sum alpha × material diffuse alpha, 0, 1)
-pixel  = texture × 2 × colour, its alpha times `alpha` on see-through surfaces
+ambient' = L + material ambient + ambient lights × material diffuse      (alpha: no L)
+diffuse' = L + material diffuse                                          (alpha: no L)
+colour   = clamp(2 × (ambient' + sum × diffuse'), 0, 1)
+pixel    = texture × colour
 ```
 
-where L is the game's luminosity setting as an offset from neutral (0.5). Most scenery in Learn_10
-has material ambient 0.1 and diffuse 0.5. Multiplying the texture by the colour alone left the level
-far too dark; raising L to 0.5 instead brightened it but washed it out. Doubling (what Direct3D calls
-"modulate 2×") matched the game by eye: the red glow at the foot of the stone doors, dark tops, the
-blue waterfall and teal stream. So L defaults to 0 (luminosity 0.5) for now.
+L is the luminosity option minus 0.5; the exe's default is 0.5, so L = 0. The doubling and the
+clamp happen together when the engine converts the colour to a byte: it adds 24576.0 to the float,
+which leaves the value times 512 in the low bits, and clamps that to 0..255. So a surface is fully
+lit at half and never brighter than its texture. (An earlier version of ours doubled after clamping,
+which let strong lights such as Learn_10's 8.0 pink and 5.0 teal ones by the river tablet glow white,
+where the game shows the plain texture.)
 
-**Alpha**: lights whose channels byte is 0 or 1 also add their colour's alpha (times their strength)
-to the alpha sum. Many Learn_10 lights carry alpha −1 or −0.22 near the water: they make the stream
-and the waterfall more see-through close to them, fading out with distance, which gives the
-waterfall its soft edges and lets the dark riverbed show through the stream. The water's material
-has ambient alpha 0, so it's only as opaque as its lights make it. Solid surfaces ignore alpha.
+**Alpha**: the same sum over the lights' alpha, through the same conversion. Many Learn_10 lights
+carry alpha −1 or −0.22 near the water: they make the stream and the waterfall more see-through close
+to them, fading out with distance, which gives the waterfall its soft edges and lets the riverbed
+show through the stream. The water's material has ambient alpha 0, so it's only as opaque as its
+lights make it. Solid surfaces ignore alpha.
 
 Static geometry is lit once when the level loads. Actors move between lights, so they're lit every
 frame by the strongest 8 lights of the sector they stand in.
@@ -106,8 +120,11 @@ mixed towards the fog colour by that much. Glows (additive surfaces) fade instea
   all 70 levels), the virtual flag at 0x7C (set on exactly the sectors that have no actors or actor
   lights), the type counts, the direction of parallel lights.
 - Confirmed from Raymap (reference only): the names and meanings of the fields (on, far/near, the fog
-  blends, the four flag bytes after the colour, the background colour), the type names, and how its
-  viewer combines lights with the material's ambient and diffuse colours and the luminosity offset.
-  The engine's own code in `Rayman2.exe` hasn't been checked yet.
-- By eye against the real game (Learn_10): the doubling and the default luminosity, and the light
-  alpha (the waterfall's soft edges and the darker stream match the game once it's applied).
+  blends, the four flag bytes after the colour, the background colour) and the type names.
+- Own study of `Rayman2.exe` (disassembled with capstone, read, not copied): the per-type dispatch
+  (0x428CB0: types 4, 2, 1, 5, 3), the point light with and without painting (0x427400, 0x427720:
+  squared falloff, Lambert facing), the parallel light (0x4284C0), the channels byte, the material
+  setup with the luminosity offset (0x42A580: default 0.5 at 0x4A0488), and the float to byte
+  conversion that doubles and clamps (0x42D520 and its variants, constant −24576.0).
+- By eye against the real game (Learn_10): the river tablet, the stone doors, the mushroom cave and
+  the stream, which is how the earlier guesses were found wrong.

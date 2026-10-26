@@ -235,7 +235,9 @@ namespace openrayman
 				float distance = std::sqrt(dot(to, to));
 				if(distance >= l->far)
 					break;
-				float falloff = distance <= l->near || l->far <= l->near ? 1.0f : (l->far - distance) / (l->far - l->near);
+				// The game fades over the squared distance: full up to `near`, nothing at `far`.
+				float d2 = distance * distance, near2 = l->near * l->near, far2 = l->far * l->far;
+				float falloff = d2 <= near2 || far2 <= near2 ? 1.0f : (far2 - d2) / (far2 - near2);
 				float facing = distance > 1e-5f && !l->painting ? std::max(0.0f, dot(normal, to) / distance) : 1.0f;
 				strength = falloff * facing;
 				break;
