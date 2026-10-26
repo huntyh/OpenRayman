@@ -1,5 +1,7 @@
 #include "test_util.h"
 
+#include <openrayman/actor.h>
+#include <openrayman/animation.h>
 #include <openrayman/cnt_archive.h>
 #include <openrayman/error.h>
 #include <openrayman/game_data.h>
@@ -314,6 +316,24 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 			// Recorded from the export checked by eye (top and side views of the whole level).
 			CHECK(meshes == 87);
 			CHECK(level_triangles == 2604);
+		}
+
+		// Animations: Fix's 289 plus the level's. Reading actors cross-checks each one's animation
+		// reference against the bank (frame and channel counts), and posing checks every index.
+		animation_bank bank = read_animation_bank(files);
+		CHECK(bank.fix_animations == 289);
+		CHECK(bank.animations.size() >= bank.fix_animations);
+		std::vector<placed_geometry> actors = actor_geometry(files.memory, tree, bank);
+		std::size_t actor_triangles = 0;
+		for(const placed_geometry& p : actors)
+			for(const triangle_element& e : p.object.elements)
+				actor_triangles += e.triangles.size();
+		if(level == "Learn_10")
+		{
+			// Recorded from a render checked by eye: Rayman, Lums and props correctly posed.
+			CHECK(bank.animations.size() == 450);
+			CHECK(actors.size() == 176);
+			CHECK(actor_triangles == 3838);
 		}
 
 		CHECK(read_texture_table(files, false).size() == 257);

@@ -262,9 +262,12 @@ namespace openrayman
 	{
 		// IPO -> physical object -> visual set -> list of levels of detail.
 		auto physical = memory.follow(ipo);
-		if(!physical)
-			return std::nullopt;
-		auto visual_set = memory.follow(*physical);
+		return physical ? physical_object_geometry(memory, *physical) : std::nullopt;
+	}
+
+	std::optional<memory_location> physical_object_geometry(const memory_image& memory, const memory_location& physical)
+	{
+		auto visual_set = memory.follow(physical);
 		if(!visual_set)
 			return std::nullopt;
 		binary_reader header = reader_at(*visual_set, 0x10);

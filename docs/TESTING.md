@@ -130,12 +130,31 @@ The engine now shows levels. Start `.\build\windows-debug\bin\openrayman.exe --g
 - [ ] No level shows "ERROR" in the title
 - [ ] Try a few levels you remember: do they look like the real game's scenery?
 
+### Actors
+
+Characters and objects are drawn frozen in the first frame of their current animation.
+
+Run `.\build\windows-debug\bin\ortool.exe level "F:\Games\Rayman 2" Learn_10`
+
+- [ ] The last line reads `actors: 450 animations (289 in Fix), 176 meshes and 3838 triangles at frame 0`
+
+In the engine, fly around near the start of The Woods of Light:
+
+- [ ] Rayman stands on a ledge near where the view starts
+- [ ] Another Rayman stands near a golden cage with a group of small hooded characters (the game
+      keeps extra copies of characters for its cutscenes)
+- [ ] Characters stand upright and aren't twisted; arms, legs and heads are attached, not floating
+      apart or piled up in one spot
+- [ ] Sizes look right next to the scenery, and textures look right (Rayman's purple top, orange hair)
+
 ### Known limitations
 
 Don't report these as bugs, they're the next steps:
 
-- No characters, enemies, Lums, platforms or other moving objects. Some places look like they
-  float in the air because their ground is one of those objects (e.g. right where you start)
+- Nothing moves: actors are frozen, and some are invisible on purpose (triggers, waypoints)
+- Lums and other glowing sprites aren't drawn yet
+- The start view uses the game camera's saved position, which can be an odd spot (e.g. among the
+  treetops in The Woods of Light); press R after flying off to get back there
 - The lighting is a simple stand-in, not the game's own
 - The sky is a plain colour
 - Some black patches, probably shadows, which the game blends differently

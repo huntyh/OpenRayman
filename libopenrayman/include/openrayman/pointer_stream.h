@@ -43,6 +43,10 @@ namespace openrayman
 		// For exploring files whose layout isn't known yet.
 		std::vector<std::size_t> scan() const;
 
+		// Jumps ahead over fields not decoded yet, skipping the relocation entries of any pointers
+		// in between so the stream stays in step.
+		void skip_to(std::size_t position);
+
 	private:
 		std::vector<relocation> m_entries;
 		std::size_t m_next = 0;

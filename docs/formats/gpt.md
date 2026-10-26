@@ -44,8 +44,9 @@ its view from there. Not confirmed beyond that.
 The world roots sit at the same offsets in every level (block `05/02`, +0x108, +0x1B0, +0x258,
 +0x300), and the actual world's 3 children are the other three.
 
-After the header comes about 1.8 MB (in Learn_10) without a single pointer, then a few hundred
-pointers into `04/01`. Both parts are still unknown.
+After more header fields (including the 70 level names) comes the animation bank: about 1.8 MB
+without pointers in Learn_10, then its events (a few hundred pointers into `04/01`) and morph data.
+See [animation.md](animation.md).
 
 ## Super objects
 

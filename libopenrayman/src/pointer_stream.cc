@@ -54,6 +54,16 @@ namespace openrayman
 		return *result;
 	}
 
+	void pointer_stream::skip_to(std::size_t target)
+	{
+		if(target < position())
+			throw format_error("pointer stream can't skip backwards");
+		std::vector<std::size_t> offsets = scan();
+		while(m_next < offsets.size() && offsets[m_next] < target)
+			m_next++;
+		seek(target);
+	}
+
 	std::vector<std::size_t> pointer_stream::scan() const
 	{
 		std::vector<std::size_t> offsets;

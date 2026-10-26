@@ -25,8 +25,9 @@ came from. Update this whenever a format is added or corrected.
 | SNA memory blocks | `Fix.sna`, `<Level>.sna` | Block layout complete; contents not yet interpreted | `sna_file.cc`, `memory_image.cc` |
 | Relocation tables | `Fix.rtb/.rtp/.rtt/.rts` | Complete | `relocation.cc` |
 | LEVELS0.DAT | `World/Levels/LEVELS0.DAT` | Complete | `relocation.cc` |
-| GPT | `Fix.gpt`, `<Level>.gpt` | Level header (Fix actors, world roots); the rest unknown | `pointer_stream.cc`, `level_header.cc` |
+| GPT | `Fix.gpt`, `<Level>.gpt` | Level header (Fix actors, world roots) and the animation bank; some header fields unknown | `pointer_stream.cc`, `level_header.cc` |
 | Super objects | inside SNA | Tree links complete | `scene.cc` |
+| Actors, animations | inside SNA, GPT | Object lists, animation bank, posing a frame; interpolation, events and morphs not yet | `actor.cc`, `animation.cc` |
 | Static geometry | inside SNA | Meshes, triangles, UVs, materials; sprites (type 3) and collision not yet | `geometry.cc` |
 | PTX | `Fix.ptx`, `<Level>.ptx` | Texture slots and names; trailing values unknown | `texture_table.cc` |
 | BNM sound banks | `World/Sound/*.bnm` | Not started | |
@@ -114,3 +115,12 @@ materials.
 
 - Sources: structure chain from Raymap (reference only); Rayman 2 PC offsets and sizes from own
   analysis, verified over all 70 levels and by eye on Learn_10.
+
+## Actors and animations
+
+See [formats/animation.md](formats/animation.md). Actors' object lists, and the animation bank shared
+by Fix and the level, which turned out to be the large pointer-free part of each level GPT.
+
+- Sources: own analysis (where the bank lives, the Fix/level split, alignment, actor offsets);
+  animation structures and posing from Raymap (reference only), checked across all 70 levels and by
+  eye on Learn_10.

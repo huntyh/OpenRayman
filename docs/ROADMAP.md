@@ -34,7 +34,9 @@ Once the VM works, the game's own logic runs from your data files.
 - ✅ Static geometry with textures, a free-fly camera, starting with The Woods of Light (`Learn_10`),
   from where the game's camera starts
 - ✅ Level picker for all 70 levels (Page Up / Page Down)
-- Actors' geometry: platforms, bridges, characters, Lums
+- ✅ Actors: characters, props and platforms, posed at the first frame of their animation
+  ([format notes](formats/animation.md))
+- Sprites (Lums and other glows)
 - Lighting, transparency and sky
 
 ## Phase 3: make it a game

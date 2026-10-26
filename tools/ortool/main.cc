@@ -1,5 +1,7 @@
 // ortool: inspects and exports Rayman 2 data, mainly for checking that the readers work.
 
+#include <openrayman/actor.h>
+#include <openrayman/animation.h>
 #include <openrayman/apm_audio.h>
 #include <openrayman/cnt_archive.h>
 #include <openrayman/dsb_script.h>
@@ -230,6 +232,14 @@ static int cmd_level(const fs::path& folder, const std::string& name)
 			std::cout << std::format("{:<10} scene: {} super objects, {} actors in the dynamic world, {} in the sector tree; {} + {} textures\n",
 				"", tree.nodes().size(), tree.node(tree.dynamic_world()).children.size(), tree.subtree_size(tree.father_sector()),
 				fix_textures.size(), level_textures.size());
+			animation_bank bank = read_animation_bank(files);
+			std::vector<placed_geometry> actors = actor_geometry(image, tree, bank);
+			std::size_t actor_triangles = 0;
+			for(const placed_geometry& p : actors)
+				for(const triangle_element& e : p.object.elements)
+					actor_triangles += e.triangles.size();
+			std::cout << std::format("{:<10} actors: {} animations ({} in Fix), {} meshes and {} triangles at frame 0\n",
+				"", bank.animations.size(), bank.fix_animations, actors.size(), actor_triangles);
 			failed += stats.dangling > 0;
 		}
 		catch(const std::exception& e)
@@ -363,11 +373,17 @@ static int cmd_obj(const fs::path& folder, const std::string& name, const fs::pa
 		return id;
 	};
 
-	for(const placed_geometry& placed : static_geometry(files.memory, tree))
+	// Scenery, then actors at the first frame of their animation.
+	std::vector<placed_geometry> geometry = static_geometry(files.memory, tree);
+	std::size_t scenery = geometry.size();
+	std::vector<placed_geometry> actors = actor_geometry(files.memory, tree, read_animation_bank(files));
+	geometry.insert(geometry.end(), std::make_move_iterator(actors.begin()), std::make_move_iterator(actors.end()));
+	for(std::size_t index = 0; index < geometry.size(); index++)
 	{
+		const placed_geometry& placed = geometry[index];
 		const geometric_object& geo = placed.object;
 		moved += placed.world != affine{};
-		obj << std::format("o ipo_{:X}\n", tree.node(placed.node).at.address());
+		obj << std::format("o {}_{:X}\n", index < scenery ? "ipo" : "actor", tree.node(placed.node).at.address());
 		for(const vec3& v : geo.vertices)
 		{
 			vec3 p = placed.world.apply(v);
@@ -398,6 +414,34 @@ static int cmd_obj(const fs::path& folder, const std::string& name, const fs::pa
 	std::cout << std::format("{} objects, {} triangles, {} materials, {} not at the origin, {} elements of other types skipped, {} textures missing\n",
 		objects, triangles, materials.size(), moved, skipped, missing_textures);
 	std::cout << "Written to " << (out / (files.name + ".obj")).string() << "\n";
+	return EXIT_SUCCESS;
+}
+
+// Lists the level's actors with the pointers of their 3D data, for exploring.
+static int cmd_actors(const fs::path& folder, const std::string& name)
+{
+	game_data game = require_game(folder);
+	level_files files = load_level_files(game, name);
+	level_header header = read_level_header(files);
+	scene tree(files.memory, header);
+	const memory_image& memory = files.memory;
+	auto where = [](const std::optional<memory_location>& at) {
+		return at ? std::format("{} +0x{:X}", at->block->id.to_string(), at->offset) : std::string("null");
+	};
+	for(std::size_t child : tree.node(tree.dynamic_world()).children)
+	{
+		const scene_node& node = tree.node(child);
+		if(!node.data)
+			continue;
+		auto p3d = memory.follow(*node.data);
+		std::cout << std::format("actor {} +0x{:X}  3d {}", node.at.block->id.to_string(), node.at.offset, where(p3d));
+		if(p3d)
+		{
+			for(std::uint32_t o = 0; o < 0x20 && p3d->offset + o + 4 <= p3d->block->data.size(); o += 4)
+				std::cout << "  " << where(memory.follow(*p3d + o));
+		}
+		std::cout << "\n";
+	}
 	return EXIT_SUCCESS;
 }
 
@@ -451,6 +495,8 @@ int main(int argc, char** argv)
 			return cmd_gpt(args[1], args[2]);
 		if(cmd == "obj" && args.size() == 4)
 			return cmd_obj(args[1], args[2], args[3]);
+		if(cmd == "actors" && args.size() == 3)
+			return cmd_actors(args[1], args[2]);
 		if(cmd == "scene" && args.size() == 3)
 			return cmd_scene(args[1], args[2]);
 		if(cmd == "peek" && args.size() == 6)

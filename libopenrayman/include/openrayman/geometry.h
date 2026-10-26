@@ -62,6 +62,9 @@ namespace openrayman
 	// geometry): the geometric object of its most detailed level of detail, if it has one.
 	std::optional<memory_location> ipo_geometry(const memory_image& memory, const memory_location& ipo);
 
+	// The same for a physical object (what IPOs and actors' object lists point to).
+	std::optional<memory_location> physical_object_geometry(const memory_image& memory, const memory_location& physical);
+
 	// Reads a transform (0x58 bytes) from memory.
 	transform read_transform(const memory_image& memory, const memory_location& at);
 

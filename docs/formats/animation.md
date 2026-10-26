@@ -1,0 +1,90 @@
+# Actors and animations (Rayman 2 PC)
+
+Actors ("persos" in the engine: Rayman, enemies, Lums, platforms, props) are super objects of type
+2 in the dynamic world (see [gpt.md](gpt.md)). What they look like comes from an object list, and
+where each part goes from an animation.
+
+## From an actor to its parts
+
+```
+actor super object → actor (perso)
+  +0x00 → 3D data
+           +0x04 current state → +0x04 animation reference
+           +0x0C object list
+           +0x14 family
+```
+
+**Object list**: +0x04 entries, +0x0C u16 number of entries. Each entry is 0x14 bytes: +0x00
+optional scale (3 floats), +0x04 physical object (the same structure static geometry uses, see
+[geometry.md](geometry.md)), then three small values.
+
+**Animation reference** (0x20 bytes): u16 frames, u8 speed, u8 channels, events pointer, 3 floats,
+morph data pointer, +0x18 u16 **animation index**, u8 number of events, u8 transition, u32 unknown.
+The frame and channel counts repeat the animation's own, which makes a good consistency check.
+
+Actors without an animation reference (or without an object list) are usually invisible helpers:
+triggers, waypoints.
+
+## The animation bank
+
+All animations of Fix and a level live in 12 shared arrays. Fix's elements come first and the
+level's are appended; every index anywhere is into the combined arrays.
+
+Each array is described by 16 bytes: u32 (usually count − 1), u32 count, u32 capacity, u32 how
+many are Fix's. In **Fix.gpt** the 12 descriptions are at 0xCC0, followed by 12 pointers to the
+arrays in Fix's memory (block `05/01`). In a **level GPT** they are at 0xF6C (all 70 levels), and
+each array's new elements follow inline, every array starting 4-byte aligned, in this order:
+
+| # | Array | Element size |
+| --- | --- | --- |
+| 0 | animations | 0x38 |
+| 1 | vectors: 3 floats | 12 |
+| 2 | quaternions: 4 × i16 / 32767 (x, y, z, w) | 8 |
+| 3 | hierarchy links: i16 child channel id, i16 parent channel id | 4 |
+| 4 | object choices ("NTTO"): u16 flags (0x2 = hidden), u16 object list index, 2 bytes | 6 |
+| 5 | frames: u16 rotation, u16 vector, u16 hierarchy link count, u16 first hierarchy link, u16 object choice | 10 |
+| 6 | channels: u16, i16 id, u16 vector, u16 first object choice, u32 first frame key, u32 first keyframe | 16 |
+| 7 | object choice indices (u16) | 2 |
+| 8 | frame keys: per channel and frame, a keyframe index (u32) | 4 |
+| 9 | keyframes: 4 floats (the last a position multiplier), u16 frame, flags (0x80 = last), rotation, a second rotation, scale vector, position vector, 4 × u16 | 36 |
+| 10 | events (contain pointers, so they're not part of the pointer-free stretch) | 12 |
+| 11 | morph data | 8 |
+
+This accounts for the whole level GPT after its header: the "1.8 MB without pointers" in Learn_10
+is arrays 0–9, the run of pointers after it is the events, and the last stretch is the morph data.
+
+**Animation** (0x38 bytes): u16 speed, then u16 counts of vectors, quaternions, hierarchy links,
+object choices, object choices per channel, channels, frames, keyframes, an unknown, events; 8 more
+u16 (unknowns, a second speed, second start indices, morph count); then u16 start indices of its
+vectors, quaternions, hierarchy links, object choices, frames, channels, events and morph data.
+
+## Posing a frame
+
+For animation `a` at frame `f`, with `F = frames[a.start_frames + f]`, for each channel `c` of `a`:
+
+- keyframe `k = keyframes[frame_keys[c.first_frame_key + f]]`
+- local transform: translate by `vectors[k.position] × k.position_multiplier`, rotate by
+  `quaternions[k.rotation]`, scale by `vectors[k.scale]`
+- shown object: `objects[choices[c.first_object_choice + F.object_choice]]`; hidden if its flag says
+  so, else that entry of the actor's object list
+- parent: the frame's hierarchy links (`F.hierarchy_start`, `F.hierarchy_count`) link channels by id
+
+A part's world transform is the actor's own world transform × its parents' channel transforms ×
+its own.
+
+## Checks
+
+- All 70 levels: Fix's and the level's descriptions agree, the level's data ends where the event
+  pointers begin, every actor's animation reference matches its animation's frame and channel
+  counts, and every index used to pose frame 0 is in range.
+- Learn_10: 450 animations (289 from Fix), 176 meshes and 3,838 triangles at frame 0. Rendered and
+  checked by eye: Rayman and the other characters stand upright with their parts in place.
+
+## Where this came from
+
+- Own analysis: that the level GPT's tail is the animation bank, the 4-byte alignment of every
+  array (found by checking every level), the Fix/level split, and the field offsets in actors,
+  3D data, object lists and states.
+- The animation structures, element layouts and how a frame is posed follow Raymap's description
+  (reference only), each checked against the data as described above. In the level files the arrays
+  keep the same layout as in memory.

@@ -13,6 +13,8 @@
 #include <renderer/gl.h>
 #include <renderer/level_renderer.h>
 
+#include <openrayman/actor.h>
+#include <openrayman/animation.h>
 #include <openrayman/cnt_archive.h>
 #include <openrayman/game_data.h>
 #include <openrayman/geometry.h>
@@ -243,6 +245,10 @@ namespace
 			level_header header = read_level_header(files);
 			scene tree(files.memory, header);
 			std::vector<placed_geometry> geometry = static_geometry(files.memory, tree);
+			// Actors (platforms, Lums, characters...) in the first frame of their current animation.
+			animation_bank bank = read_animation_bank(files);
+			std::vector<placed_geometry> actors = actor_geometry(files.memory, tree, bank);
+			geometry.insert(geometry.end(), std::make_move_iterator(actors.begin()), std::make_move_iterator(actors.end()));
 			a.level_stats = a.level->load(geometry, a.archives);
 			SDL_Log("%s: %zu meshes, %zu triangles, %zu textures (%zu missing), %llu ms", levels[index].c_str(),
 				a.level_stats.meshes, a.level_stats.triangles, a.level_stats.textures, a.level_stats.missing_textures,

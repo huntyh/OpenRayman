@@ -10,9 +10,9 @@ This continues [imaginaryPineapple's OpenRayman](https://github.com/imaginaryPin
 > Ubisoft in any way.** Rayman and Rayman 2: The Great Escape are trademarks of Ubisoft
 > Entertainment. You need your own legally obtained copy of the game to use OpenRayman.
 
-**Status: Phase 2.** The engine opens the original levels and lets you fly through their scenery,
-with the game's textures. Characters, objects, the game's lighting and the sky aren't drawn yet,
-and nothing moves: it's a viewer, not a game, for now.
+**Status: Phase 2.** The engine opens the original levels and lets you fly through them, with the
+game's textures, characters and objects. Nothing moves yet, and the game's lighting, sky and
+glowing sprites (like Lums) aren't drawn: it's a viewer, not a game, for now.
 
 ## You need the game
 
