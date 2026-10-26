@@ -135,6 +135,13 @@ every one uses the same Fix material with the texture `effets_speciaux\shadow1_m
 quarter of a black blob (up to 49% opaque), its centre in a corner, mirrored into a whole one. Fix's
 Rayman has 0.8 by 0.8; in Learn_10 the three Globox kids (one actor) have 3 by 1.
 
+Whether it's drawn (0x44C570 in `Rayman2.exe`): the 3D data's u16 at +0xDC must be nonzero, bit
+0x04 of the byte at +0x29 of the actor's standard game record (actor +0x04) set, the super object's
+draw flag 0x20 clear, and fewer than 10 shadows drawn so far. No actor in the game has the standard
+game bit set as saved: scripts switch shadows on (Rayman's), and leave others off, such as the
+Globox kids' (byte 0x0A), which indeed have no shadow in the game. OpenRayman draws every actor's
+shadow anyway, a deliberate improvement.
+
 The game projects the blob onto the ground below the actor. Without collision yet, OpenRayman finds
 the ground with a ray straight down onto the level's solid triangles and lays the blob there,
 turned with the actor, the size being half its extent. Actors with nothing visible (scripts give

@@ -558,7 +558,7 @@ TEST_CASE("real data: actor shadows")
 	auto game = game_data::locate(*dir);
 	REQUIRE(game.has_value());
 
-	std::size_t with_shadow = 0, actors = 0;
+	std::size_t with_shadow = 0, actors = 0, shown = 0;
 	std::map<std::string, std::size_t> textures;
 	for(const std::string& level : game->game_dsb().levels)
 	{
@@ -575,6 +575,7 @@ TEST_CASE("real data: actor shadows")
 			if(!a.shadow)
 				continue;
 			here++;
+			shown += a.shadow->shown;
 			CHECK(a.shadow->width > 0);
 			CHECK(a.shadow->length > 0);
 			REQUIRE(a.shadow->material.texture.has_value());
@@ -586,6 +587,8 @@ TEST_CASE("real data: actor shadows")
 	}
 	// Every shadow uses the same blob texture from Fix.
 	CHECK(with_shadow == 152);
+	// None is switched on as saved: the scripts switch them on (Rayman's) or leave them off.
+	CHECK(shown == 0);
 	CHECK(actors == 5107);
 	CHECK(textures == std::map<std::string, std::size_t>{ { "effets_speciaux\\shadow1_mxy_aaa.tga", 152 } });
 }

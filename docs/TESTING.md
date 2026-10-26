@@ -147,7 +147,8 @@ it darker or brighter (the title bar shows the luminosity; it starts at 0.50).
       corners face partly down; open question)
 - [ ] Near the waterfall, distant things fade into a teal haze like in the game
 - [ ] A soft dark blob lies on the ground under the three Globox kids
-      (`--level Learn_10 --camera -67.1,205.8,1.9,321.0,-11.7`), like the game's
+      (`--level Learn_10 --camera -67.1,205.8,1.9,321.0,-11.7`). The game leaves theirs off; we
+      draw every character's shadow on purpose
 - [ ] The open sky shows cyan with slowly drifting clouds, like the game's
       (`--level Learn_10 --camera 26.8,329.3,-6.2,588.7,15.1`)
 - [ ] Characters (Lums, mushrooms, the Globox kids) are lit like the scenery around them, not

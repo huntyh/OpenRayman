@@ -283,6 +283,8 @@ namespace
 		{
 			// Actors with nothing to show (set up by scripts later) don't get a shadow yet either.
 			bool visible = std::ranges::any_of(actor.meshes, [](const auto& mesh) { return mesh.has_value(); });
+			// Every shadow is drawn, also those the game's scripts leave off (like the Globox kids'): a
+			// deliberate improvement. The game's own switch is in actor.shadow->shown.
 			if(!actor.shadow || !visible)
 				continue;
 			glm::mat4 model(1.0f);

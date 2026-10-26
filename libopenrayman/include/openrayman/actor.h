@@ -25,6 +25,8 @@ namespace openrayman
 	{
 		visual_material material; // Fix's shadow1_mxy_aaa in every case seen
 		float width = 1, length = 1;  // the blob's size along the actor's X and Y
+		// Whether the game draws it as saved; scripts may switch it on later (the Globox kids' is off).
+		bool shown = false;
 	};
 
 	// An actor ("perso"): what it looks like and which animation its current state plays.

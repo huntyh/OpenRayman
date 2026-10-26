@@ -14,6 +14,10 @@ namespace openrayman
 	{
 		// actor -> 3D data -> current state -> animation reference.
 		constexpr std::uint32_t actor_3d_data = 0x00;
+		constexpr std::uint32_t actor_standard_game = 0x04;
+		constexpr std::uint32_t standard_game_shadow_byte = 0x29; // bit 0x04: draw the shadow
+		constexpr std::uint32_t data_shadow_quality = 0xDC;      // u16, 0: no shadow
+		constexpr std::uint32_t draw_flag_no_shadow = 0x20;      // in the super object's draw flags
 		constexpr std::uint32_t data_current_state = 0x04;
 		constexpr std::uint32_t data_object_list = 0x0C;
 		constexpr std::uint32_t data_family = 0x14;
@@ -110,6 +114,12 @@ namespace openrayman
 				binary_reader size = reader_at(*data + data_shadow_size, 8);
 				shadow.width = size.f32();
 				shadow.length = size.f32();
+				// Whether the game draws it now (0x44C570 in Rayman2.exe): scripts can switch it on.
+				std::uint16_t quality = reader_at(*data + data_shadow_quality, 2).u16();
+				bool switched_on = false;
+				if(auto standard_game = memory.follow(*n.data + actor_standard_game))
+					switched_on = (reader_at(*standard_game + standard_game_shadow_byte, 1).u8() & 0x04) != 0;
+				shadow.shown = quality != 0 && switched_on && !(n.draw_flags & draw_flag_no_shadow);
 				result.shadow = shadow;
 			}
 		}
