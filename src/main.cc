@@ -275,6 +275,7 @@ namespace
 			out.push_back({ part.mesh, model });
 		}
 		a.level->set_parts(std::move(out));
+		a.level->set_time(a.animation_time);
 	}
 
 	// Debug: puts the actor you're looking at (the one nearest the middle of the view, within 150

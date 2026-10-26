@@ -423,6 +423,21 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 			CHECK(lum->states.size() == 15);
 			CHECK(lum->state == std::optional<std::size_t>(0));
 			CHECK(lum->states[4] == std::optional<std::uint16_t>(std::uint16_t(280)));
+
+			// Lums flap their wings with an animated texture: 4 frames of 0.035 s.
+			bool wings = false;
+			for(const geometric_object& mesh : set.meshes)
+			{
+				for(const triangle_element& e : mesh.elements)
+				{
+					if(!e.material || e.material->frames.size() != 4 || e.material->frames[0].texture.name.find("lum_aile01") == std::string::npos)
+						continue;
+					wings = true;
+					for(const texture_frame& f : e.material->frames)
+						CHECK(f.duration == doctest::Approx(0.035f));
+				}
+			}
+			CHECK(wings);
 		}
 		if(level == "Learn_10")
 			CHECK(set.meshes.size() == 113); // distinct meshes, shared between actors

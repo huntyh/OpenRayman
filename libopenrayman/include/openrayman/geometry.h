@@ -20,12 +20,22 @@ namespace openrayman
 	using rgba = std::array<float, 4>;
 
 	// How a surface looks. Colours are as stored; how the engine combines them isn't confirmed yet.
+	// One image of an animated texture, and how long it shows.
+	struct texture_frame
+	{
+		texture_info texture;
+		float duration = 0; // seconds
+	};
+
 	struct visual_material
 	{
 		memory_location at;
 		std::uint32_t flags = 0;
 		rgba ambient{}, diffuse{}, specular{};
 		std::optional<texture_info> texture;
+		// An animated texture: images shown in turn, looping (e.g. the flapping wings of Lums).
+		// Empty for a still texture.
+		std::vector<texture_frame> frames;
 	};
 
 	// Element types inside a geometric object.

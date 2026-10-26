@@ -53,6 +53,9 @@ namespace openrayman
 		// What to draw of the actors this frame. Parts naming a mesh that wasn't loaded are skipped.
 		void set_parts(std::vector<part> parts) { m_parts = std::move(parts); }
 
+		// The clock for animated textures, in seconds.
+		void set_time(double seconds) { m_time = seconds; }
+
 		// Sprites turn to face the camera, so this needs the view on its own.
 		void draw(const glm::mat4& view, const glm::mat4& projection) const;
 
@@ -76,6 +79,14 @@ namespace openrayman
 			GLint first = 0;
 			GLsizei count = 0;
 			blend mode = blend::none;
+			int animation = -1; // an animated texture, which replaces `texture` frame by frame
+		};
+
+		// An animated texture: each frame's texture, and when it ends within one loop (seconds).
+		struct texture_animation
+		{
+			std::vector<GLuint> textures;
+			std::vector<float> ends;
 		};
 
 		struct gpu_texture
@@ -92,6 +103,7 @@ namespace openrayman
 			GLuint texture = 0;
 			blend mode = blend::none;
 			glm::vec2 uv_extent{ 1, 1 }; // 2 along a mirrored axis, so the whole image shows
+			int animation = -1;
 		};
 
 		// A loaded mesh placed per frame (actors' meshes, and the level's cards that turn to the
@@ -106,6 +118,10 @@ namespace openrayman
 		void clear();
 		void set_blend(blend mode) const;
 		gpu_texture texture_for(const texture_info& info, std::span<const std::unique_ptr<cnt_archive>> archives, statistics& stats);
+		// The material's animated texture, uploaded once; -1 if its texture is still.
+		int animation_for(const visual_material& material, std::span<const std::unique_ptr<cnt_archive>> archives, statistics& stats);
+		// What a batch or sprite shows now.
+		GLuint texture_at(int animation, GLuint still) const;
 
 		GLuint m_program = 0;
 		GLint m_u_view_projection = -1;
@@ -121,6 +137,9 @@ namespace openrayman
 		std::vector<mesh> m_meshes;
 		std::vector<part> m_parts;
 		std::vector<part> m_level_cards; // the level's own cards that turn to the camera
+		std::vector<texture_animation> m_animations;
+		std::map<std::uint32_t, int> m_animation_by_material; // by visual material address
+		double m_time = 0;
 		bool m_edge_clamp = true;
 	};
 }

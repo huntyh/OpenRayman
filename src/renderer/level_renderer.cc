@@ -220,6 +220,8 @@ namespace openrayman
 		m_meshes.clear();
 		m_parts.clear();
 		m_level_cards.clear();
+		m_animations.clear();
+		m_animation_by_material.clear();
 	}
 
 	void level_renderer::set_blend(blend mode) const
@@ -289,6 +291,41 @@ namespace openrayman
 		return texture;
 	}
 
+	int level_renderer::animation_for(const visual_material& material, std::span<const std::unique_ptr<cnt_archive>> archives, statistics& stats)
+	{
+		if(material.frames.size() < 2)
+			return -1;
+		if(auto it = m_animation_by_material.find(material.at.address()); it != m_animation_by_material.end())
+			return it->second;
+		texture_animation animation;
+		float end = 0;
+		for(const texture_frame& frame : material.frames)
+		{
+			GLuint id = texture_for(frame.texture, archives, stats).id;
+			animation.textures.push_back(id ? id : m_white);
+			end += std::max(frame.duration, 0.0f);
+			animation.ends.push_back(end);
+		}
+		int index = -1;
+		if(end > 0) // all-zero durations would never move on
+		{
+			index = int(m_animations.size());
+			m_animations.push_back(std::move(animation));
+		}
+		m_animation_by_material[material.at.address()] = index;
+		return index;
+	}
+
+	GLuint level_renderer::texture_at(int animation, GLuint still) const
+	{
+		if(animation < 0 || std::size_t(animation) >= m_animations.size())
+			return still;
+		const texture_animation& a = m_animations[std::size_t(animation)];
+		float t = float(std::fmod(m_time, double(a.ends.back())));
+		auto it = std::ranges::upper_bound(a.ends, t);
+		return it == a.ends.end() ? a.textures.back() : a.textures[std::size_t(it - a.ends.begin())];
+	}
+
 	level_renderer::statistics level_renderer::load(std::span<const placed_geometry> geometry, std::span<const geometric_object> meshes,
 		std::span<const std::unique_ptr<cnt_archive>> archives)
 	{
@@ -299,19 +336,21 @@ namespace openrayman
 
 		// Triangles grouped by texture. Corners are expanded into separate vertices, because a
 		// corner's UV is indexed separately from its position.
-		using by_texture = std::map<std::pair<blend, GLuint>, std::vector<vertex>>;
+		using by_texture = std::map<std::tuple<blend, GLuint, int>, std::vector<vertex>>;
 		auto add = [&](const geometric_object& object, const affine& world, by_texture& triangles, std::vector<sprite_instance>& sprites) {
 			stats.meshes++;
 			for(const triangle_element& element : object.elements)
 			{
 				gpu_texture texture{ m_white, blend::none };
+				int animation = -1;
 				if(element.material && element.material->texture)
 				{
 					texture = texture_for(*element.material->texture, archives, stats);
 					if(!texture.id)
 						texture = { m_white, blend::none };
+					animation = animation_for(*element.material, archives, stats);
 				}
-				std::vector<vertex>& out = triangles[{ texture.mode, texture.id }];
+				std::vector<vertex>& out = triangles[{ texture.mode, texture.id, animation }];
 				for(std::size_t t = 0; t < element.triangles.size(); t++)
 				{
 					// The game's v runs up from the bottom row; our textures are uploaded top row first.
@@ -339,17 +378,19 @@ namespace openrayman
 			for(const sprite& sp : object.sprites)
 			{
 				gpu_texture texture{ m_white, blend::alpha };
+				int animation = -1;
 				if(sp.material && sp.material->texture)
 				{
 					texture = texture_for(*sp.material->texture, archives, stats);
 					if(!texture.id)
 						continue;
+					animation = animation_for(*sp.material, archives, stats);
 				}
 				vec3 c = world.apply(object.vertices[sp.vertex]);
 				// Sprites scale with the part they belong to (a Lum's blue core is about half its glow).
 				float scale = world.uniform_scale();
 				sprites.push_back({ glm::vec3(c[0], c[1], c[2]), glm::vec2(sp.half_size[0], sp.half_size[1]) * scale, texture.id, texture.mode,
-					glm::vec2(texture.mirror_u ? 2.0f : 1.0f, texture.mirror_v ? 2.0f : 1.0f) });
+					glm::vec2(texture.mirror_u ? 2.0f : 1.0f, texture.mirror_v ? 2.0f : 1.0f), animation });
 				stats.sprites++;
 			}
 		};
@@ -359,7 +400,7 @@ namespace openrayman
 		auto append = [&](const by_texture& triangles, std::vector<batch>& batches) {
 			for(const auto& [key, list] : triangles)
 			{
-				batches.push_back({ key.second, GLint(vertices.size()), GLsizei(list.size()), key.first });
+				batches.push_back({ std::get<1>(key), GLint(vertices.size()), GLsizei(list.size()), std::get<0>(key), std::get<2>(key) });
 				vertices.insert(vertices.end(), list.begin(), list.end());
 			}
 		};
@@ -425,12 +466,12 @@ namespace openrayman
 
 		glBindVertexArray(m_vao);
 		const glm::mat4 identity(1.0f);
-		auto draw_batches = [](const std::vector<batch>& batches, blend mode) {
+		auto draw_batches = [this](const std::vector<batch>& batches, blend mode) {
 			for(const batch& b : batches)
 			{
 				if(b.mode != mode)
 					continue;
-				glBindTexture(GL_TEXTURE_2D, b.texture);
+				glBindTexture(GL_TEXTURE_2D, texture_at(b.animation, b.texture));
 				glDrawArrays(GL_TRIANGLES, b.first, b.count);
 			}
 		};
@@ -451,12 +492,15 @@ namespace openrayman
 
 		// The level's sprites, and the actors' where their parts are now.
 		std::vector<sprite_instance> sprites = m_sprites;
+		for(sprite_instance& s : sprites)
+			s.texture = texture_at(s.animation, s.texture);
 		for(const part& p : parts)
 		{
 			float scale = std::cbrt(std::abs(glm::determinant(glm::mat3(p.model))));
 			for(sprite_instance s : m_meshes[p.mesh].sprites)
 			{
 				s.center = glm::vec3(p.model * glm::vec4(s.center, 1.0f));
+				s.texture = texture_at(s.animation, s.texture);
 				s.half_size *= scale;
 				sprites.push_back(s);
 			}

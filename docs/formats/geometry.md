@@ -90,7 +90,16 @@ Learn_10 has 31 of them, all on actors.
 **Game material**: +0x00 visual material.
 
 **Visual material**: +0x00 u32 flags, +0x04 ambient, +0x14 diffuse, +0x24 specular (4 floats each;
-specular's fourth may be an exponent), +0x48 texture description (see [gpt.md](gpt.md#ptx-texture-lists)).
+specular's fourth may be an exponent), +0x48 texture description (see [gpt.md](gpt.md#ptx-texture-lists)),
++0x64 first frame of an animated texture, +0x68 the frame showing now, +0x6C u32 number of frames.
+
+**Animated texture frame** (0xC bytes): +0x00 texture description, +0x04 f32 how long it shows, in
+seconds, +0x08 the next frame (none after the last; the animation loops). The frames swap whole
+images: the Lums' wings flap through `lum_aile01`, `03`, `02`, `01` at 0.035 s each, the cages'
+lights blink, and other levels have flames, lava splashes, lightning, blinking eyes and pulsing
+floor spikes (1,254 uses in all levels). A few single-frame entries have odd durations around 100;
+they only ever show one image. In every material of all 70 levels the chain is exactly as long as
+the count says.
 
 ## Checks
 
@@ -106,6 +115,9 @@ specular's fourth may be an exponent), +0x48 texture description (see [gpt.md](g
   visual material) follows the usual OpenSpace model as documented by Raymap (reference only).
 - Sprites: structure from Raymap (reference only), checked against the data (centre vertices in
   range in all 70 levels) and by eye.
+- Animated textures: own analysis, starting from the Lum's three wing textures and walking back
+  from them with `ortool refs`; checked on all levels as described above and by eye (the wings
+  flap). The fields match what Raymap reads for animated textures (reference only).
 - Look-at mode: own analysis. The word differs between a mushroom card and a character mesh; a
   survey of all meshes in all 70 levels found only 0, 1 and 2, and every non-zero mesh flat along
   X. Which way the card turns (upright vs. fully) was inferred from what uses each mode and checked

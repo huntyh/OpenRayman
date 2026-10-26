@@ -39,6 +39,18 @@ namespace openrayman
 		constexpr std::uint32_t diffuse = 0x14;
 		constexpr std::uint32_t specular = 0x24;
 		constexpr std::uint32_t texture = 0x48;
+		constexpr std::uint32_t first_frame = 0x64;   // animated texture: first frame, then the current one
+		constexpr std::uint32_t frame_count = 0x6C;   // u32
+		constexpr std::uint32_t size = 0x70;
+	}
+
+	// One frame of an animated texture: texture description, f32 duration in seconds, next frame
+	// (none after the last).
+	namespace frame_field
+	{
+		constexpr std::uint32_t texture = 0x00;
+		constexpr std::uint32_t duration = 0x04;
+		constexpr std::uint32_t next = 0x08;
 	}
 
 	static std::string describe(const memory_location& at)
@@ -92,7 +104,7 @@ namespace openrayman
 	{
 		visual_material m;
 		m.at = at;
-		binary_reader r = reader_at(at, material_field::texture + 4);
+		binary_reader r = reader_at(at, material_field::size);
 		m.flags = r.u32();
 		r.seek(material_field::ambient);
 		m.ambient = read_rgba(r);
@@ -102,6 +114,19 @@ namespace openrayman
 		m.specular = read_rgba(r);
 		if(auto texture = memory.follow(at + material_field::texture))
 			m.texture = read_texture_info(memory, *texture);
+
+		r.seek(material_field::frame_count);
+		std::uint32_t count = r.u32();
+		auto frame = memory.follow(at + material_field::first_frame);
+		for(std::uint32_t i = 0; frame && i < count; i++, frame = memory.follow(*frame + frame_field::next))
+		{
+			texture_frame f;
+			f.texture = read_texture_info(memory, require(memory.follow(*frame + frame_field::texture), *frame, "animated texture frame"));
+			f.duration = reader_at(*frame + frame_field::duration, 4).f32();
+			m.frames.push_back(std::move(f));
+		}
+		if(m.frames.size() != count || frame)
+			throw format_error(std::format("animated texture of the material at {} has {} frames, its count says {}", describe(at), m.frames.size(), count));
 		return m;
 	}
 
