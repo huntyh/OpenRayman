@@ -4,6 +4,7 @@
 #include <openrayman/animation.h>
 #include <openrayman/apm_audio.h>
 #include <openrayman/brain.h>
+#include <openrayman/game/handlers.h>
 #include <openrayman/game/interpreter.h>
 #include <openrayman/game/live_memory.h>
 #include <openrayman/cnt_archive.h>
@@ -973,6 +974,7 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames)
 		std::cout << std::format(" {:08X}", memory.u32(main_actor + i * 4));
 	std::cout << "\n";
 	game::interpreter vm(memory, main_actor);
+	game::register_handlers(vm);
 
 	auto snapshot = [&](const actor_brain& b) {
 		std::uint32_t actor = tree.node(b.node).data->address();

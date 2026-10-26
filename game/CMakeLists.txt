@@ -2,6 +2,7 @@
 # so the engine, ortool and the tests can all run the game's scripts.
 
 add_library(openrayman_game STATIC
+	src/handlers.cc
 	src/interpreter.cc
 	src/live_memory.cc
 )
