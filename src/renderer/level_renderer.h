@@ -17,8 +17,9 @@
 
 namespace openrayman
 {
-	// Draws a level's static geometry. Everything is uploaded once per level, grouped into one
-	// draw call per texture.
+	// Draws a level: its static geometry, and the meshes of its actors wherever they are this
+	// frame. Everything is uploaded once per level, grouped into one draw call per texture (per
+	// mesh for actors).
 	class level_renderer
 	{
 	public:
@@ -37,8 +38,20 @@ namespace openrayman
 			glm::vec3 min{ 0 }, max{ 0 }; // bounds of all vertices
 		};
 
-		// Replaces what's on the GPU with this level's geometry. Textures are looked up in `archives`.
-		statistics load(std::span<const placed_geometry> geometry, std::span<const std::unique_ptr<cnt_archive>> archives);
+		// Replaces what's on the GPU with this level's static geometry and the meshes its actors
+		// use (in their own space, placed by set_parts). Textures are looked up in `archives`.
+		statistics load(std::span<const placed_geometry> geometry, std::span<const geometric_object> meshes,
+			std::span<const std::unique_ptr<cnt_archive>> archives);
+
+		// A mesh given to load(), placed in the world.
+		struct part
+		{
+			std::size_t mesh = 0;
+			glm::mat4 model{ 1 };
+		};
+
+		// What to draw of the actors this frame. Parts naming a mesh that wasn't loaded are skipped.
+		void set_parts(std::vector<part> parts) { m_parts = std::move(parts); }
 
 		// Sprites turn to face the camera, so this needs the view on its own.
 		void draw(const glm::mat4& view, const glm::mat4& projection) const;
@@ -81,20 +94,33 @@ namespace openrayman
 			glm::vec2 uv_extent{ 1, 1 }; // 2 along a mirrored axis, so the whole image shows
 		};
 
+		// A loaded mesh placed per frame (actors' meshes, and the level's cards that turn to the
+		// camera): its draw calls, and its sprites in the mesh's own space.
+		struct mesh
+		{
+			std::vector<batch> batches;
+			std::vector<sprite_instance> sprites;
+			look_at look = look_at::none;
+		};
+
 		void clear();
 		void set_blend(blend mode) const;
 		gpu_texture texture_for(const texture_info& info, std::span<const std::unique_ptr<cnt_archive>> archives, statistics& stats);
 
 		GLuint m_program = 0;
 		GLint m_u_view_projection = -1;
+		GLint m_u_model = -1;
 		GLint m_u_alpha_cut = -1;
 		GLint m_u_edge_clamp = -1;
 		GLuint m_vao = 0, m_vbo = 0;
 		GLuint m_sprite_vao = 0, m_sprite_vbo = 0; // rebuilt every frame
-		std::vector<sprite_instance> m_sprites;     // sorted by blend mode, then texture
+		std::vector<sprite_instance> m_sprites;     // of the static geometry, in world space
 		GLuint m_white = 0; // for untextured materials
 		std::map<std::string, gpu_texture> m_textures; // by CNT path, id 0 if missing
-		std::vector<batch> m_batches;
+		std::vector<batch> m_batches; // of the static geometry
+		std::vector<mesh> m_meshes;
+		std::vector<part> m_parts;
+		std::vector<part> m_level_cards; // the level's own cards that turn to the camera
 		bool m_edge_clamp = true;
 	};
 }

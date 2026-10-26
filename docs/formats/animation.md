@@ -84,6 +84,33 @@ For animation `a` at frame `f`, with `F = frames[a.start_frames + f]`, for each 
 A part's world transform is the actor's own world transform × its parents' channel transforms ×
 its own.
 
+## Playing an animation
+
+The animation's speed (u16 at +0x00) is in frames per second: 30 for most, 25 or 60 for some, a
+handful between 15 and 55. Between keyframes the pose is blended: each frame names the keyframe at
+or before it, and unless that is the channel's last keyframe (flag 0x80), the next keyframe in the
+array is the next one in time. A survey of every channel and frame of all 70 levels confirmed both
+(the named keyframe is never after the frame, the next one always after it). Positions, scales and
+the position multiplier are blended linearly, rotations along the shorter way between the two
+quaternions. Every channel's first keyframe is at frame 0. After the last keyframe, a channel holds
+still until the animation loops. Which objects are shown and how channels link come from the whole
+frame, without blending.
+
+## States the scripts choose
+
+An actor's saved state is often a still or a placeholder: the game's scripts switch it to its real
+state when the level begins. `ortool states <game> <level> <node>` lists a family's states. In
+Learn_10:
+
+- The mushroom clusters' saved state plays animation 312, which shows 3 mushrooms (a stem and a cap
+  each). Every other state of the family shows 5 (10 channels), as the real game does.
+- Lums are saved in a still pose (animation 276, 2 frames). Their flying loops are states 5–10
+  (animations 281–285, 38 frames).
+- The cages are saved standing, without their chains (see above).
+
+These need the script interpreter (Phase 3). `ortool motion <game> <level>` lists each actor's
+animation and how far its parts move over a loop.
+
 ## Checks
 
 - All 70 levels: Fix's and the level's descriptions agree, the level's data ends where the event
@@ -91,10 +118,15 @@ its own.
   counts, and every index used to pose frame 0 is in range.
 - Learn_10: 450 animations (289 from Fix), 176 meshes and 3,838 triangles at frame 0. Rendered and
   checked by eye: Rayman and the other characters stand upright with their parts in place.
+- All 70 levels: every actor poses at every frame of its animation, and halfway between frames,
+  with all indices in range. Learn_10's actors use 113 distinct meshes.
+- Blending: a unit test with a hand-made two-keyframe animation (halfway positions, the shorter
+  rotation, holding after the last keyframe, wrapping around).
 
 ## Where this came from
 
-- Own analysis: that the level GPT's tail is the animation bank, the 4-byte alignment of every
+- Own analysis: the speed as frames per second and the keyframe order (surveyed on all levels), the
+  states the scripts choose, and that the level GPT's tail is the animation bank, the 4-byte alignment of every
   array (found by checking every level), the Fix/level split, and the field offsets in actors,
   3D data, object lists and states.
 - The animation structures, element layouts and how a frame is posed follow Raymap's description

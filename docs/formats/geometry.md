@@ -59,7 +59,15 @@ switching distances (floats), +0x0C list of geometric object pointers. OpenRayma
 | 0x04 | vertex normals: 3 floats each |
 | 0x10 | element types: u16 each |
 | 0x14 | elements: one pointer each |
+| 0x28 | u32 look-at mode: 0 none, 1 upright card, 2 card facing the camera |
 | 0x2C | u16 number of vertices, u16 number of elements |
+
+**Look-at cards**: a mesh with a look-at mode is a flat card in its own YZ plane, facing +X, and the
+game turns it towards the camera every frame. Mode 1 turns only about the mesh's own Z axis, so it
+stays upright: mushrooms, flowers, Murfy's mittens (30 meshes in all levels). Mode 2 faces the camera
+fully: flames, sparks, chain links, the rings and eyes of Lums (505 meshes). Every one of them is
+flat along X, and no other value occurs. Drawn fixed, the cards vanish edge-on and overlap each
+other, which is how the missing mushrooms near the Learn_10 start were found.
 
 **Element, type 1 (indexed triangles)**:
 
@@ -98,5 +106,9 @@ specular's fourth may be an exponent), +0x48 texture description (see [gpt.md](g
   visual material) follows the usual OpenSpace model as documented by Raymap (reference only).
 - Sprites: structure from Raymap (reference only), checked against the data (centre vertices in
   range in all 70 levels) and by eye.
+- Look-at mode: own analysis. The word differs between a mushroom card and a character mesh; a
+  survey of all meshes in all 70 levels found only 0, 1 and 2, and every non-zero mesh flat along
+  X. Which way the card turns (upright vs. fully) was inferred from what uses each mode and checked
+  by eye; the name "look at" matches what Raymap calls this field.
 - The Rayman 2 PC field offsets and sizes: own analysis, by following pointers with
   `ortool peek` and checking counts against array sizes, then verified over all 70 levels.

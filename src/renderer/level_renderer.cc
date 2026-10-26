@@ -22,6 +22,7 @@ namespace openrayman
 			layout(location = 2) in vec3 a_normal;
 			layout(location = 3) in vec4 a_uv_bounds;
 			uniform mat4 u_view_projection;
+			uniform mat4 u_model;
 			out vec2 v_uv;
 			flat out vec4 v_uv_bounds;
 			out float v_light;
@@ -30,10 +31,10 @@ namespace openrayman
 				// Stand-in lighting until the game's own is decoded: a soft light from above, so
 				// shapes are readable.
 				vec3 sun = normalize(vec3(0.3, 0.2, 0.9));
-				v_light = 0.6 + 0.4 * abs(dot(normalize(a_normal), sun));
+				v_light = 0.6 + 0.4 * abs(dot(normalize(mat3(u_model) * a_normal), sun));
 				v_uv = a_uv;
 				v_uv_bounds = a_uv_bounds;
-				gl_Position = u_view_projection * vec4(a_position, 1.0);
+				gl_Position = u_view_projection * u_model * vec4(a_position, 1.0);
 			}
 		)";
 
@@ -102,6 +103,50 @@ namespace openrayman
 			return bounds;
 		}
 
+		glm::mat4 to_mat4(const affine& a)
+		{
+			glm::mat4 m(1.0f);
+			for(int r = 0; r < 3; r++)
+			{
+				for(int c = 0; c < 4; c++)
+					m[c][r] = a.m[r][c];
+			}
+			return m;
+		}
+
+		// Turns a card (flat in its own YZ plane, facing +X) towards the camera, keeping its
+		// position and the size along each of its axes.
+		glm::mat4 face_camera(const glm::mat4& model, look_at look, const glm::mat4& camera)
+		{
+			if(look == look_at::none)
+				return model;
+			glm::vec3 position(model[3]);
+			glm::vec3 to_camera = glm::vec3(camera[3]) - position;
+			glm::vec3 x, z;
+			if(look == look_at::upright)
+			{
+				z = glm::normalize(glm::vec3(model[2]));
+				x = to_camera - glm::dot(to_camera, z) * z;
+			}
+			else
+			{
+				x = to_camera;
+				glm::vec3 up(camera[1]);
+				z = up - glm::dot(up, glm::normalize(x)) * glm::normalize(x);
+			}
+			if(glm::length(x) < 1e-5f || glm::length(z) < 1e-5f)
+				return model;
+			x = glm::normalize(x);
+			z = glm::normalize(z);
+			glm::vec3 y = glm::cross(z, x);
+			glm::mat4 out(1.0f);
+			out[0] = glm::vec4(x * glm::length(glm::vec3(model[0])), 0);
+			out[1] = glm::vec4(y * glm::length(glm::vec3(model[1])), 0);
+			out[2] = glm::vec4(z * glm::length(glm::vec3(model[2])), 0);
+			out[3] = model[3];
+			return out;
+		}
+
 		GLuint upload_texture(std::uint32_t width, std::uint32_t height, const std::uint8_t* rgba)
 		{
 			GLuint texture = 0;
@@ -123,6 +168,7 @@ namespace openrayman
 	{
 		m_program = gl::create_program(api, vertex_shader, fragment_shader);
 		m_u_view_projection = glGetUniformLocation(m_program, "u_view_projection");
+		m_u_model = glGetUniformLocation(m_program, "u_model");
 		m_u_alpha_cut = glGetUniformLocation(m_program, "u_alpha_cut");
 		m_u_edge_clamp = glGetUniformLocation(m_program, "u_edge_clamp");
 		glUseProgram(m_program);
@@ -171,6 +217,9 @@ namespace openrayman
 		m_textures.clear();
 		m_batches.clear();
 		m_sprites.clear();
+		m_meshes.clear();
+		m_parts.clear();
+		m_level_cards.clear();
 	}
 
 	void level_renderer::set_blend(blend mode) const
@@ -240,7 +289,8 @@ namespace openrayman
 		return texture;
 	}
 
-	level_renderer::statistics level_renderer::load(std::span<const placed_geometry> geometry, std::span<const std::unique_ptr<cnt_archive>> archives)
+	level_renderer::statistics level_renderer::load(std::span<const placed_geometry> geometry, std::span<const geometric_object> meshes,
+		std::span<const std::unique_ptr<cnt_archive>> archives)
 	{
 		clear();
 		statistics stats;
@@ -249,11 +299,9 @@ namespace openrayman
 
 		// Triangles grouped by texture. Corners are expanded into separate vertices, because a
 		// corner's UV is indexed separately from its position.
-		std::map<std::pair<blend, GLuint>, std::vector<vertex>> by_texture;
-		for(const placed_geometry& placed : geometry)
-		{
+		using by_texture = std::map<std::pair<blend, GLuint>, std::vector<vertex>>;
+		auto add = [&](const geometric_object& object, const affine& world, by_texture& triangles, std::vector<sprite_instance>& sprites) {
 			stats.meshes++;
-			const geometric_object& object = placed.object;
 			for(const triangle_element& element : object.elements)
 			{
 				gpu_texture texture{ m_white, blend::none };
@@ -263,7 +311,7 @@ namespace openrayman
 					if(!texture.id)
 						texture = { m_white, blend::none };
 				}
-				std::vector<vertex>& out = by_texture[{ texture.mode, texture.id }];
+				std::vector<vertex>& out = triangles[{ texture.mode, texture.id }];
 				for(std::size_t t = 0; t < element.triangles.size(); t++)
 				{
 					// The game's v runs up from the bottom row; our textures are uploaded top row first.
@@ -277,7 +325,7 @@ namespace openrayman
 					for(int k = 0; k < 3; k++)
 					{
 						std::uint16_t index = element.triangles[t][k];
-						vec3 p = placed.world.apply(object.vertices[index]);
+						vec3 p = world.apply(object.vertices[index]);
 						vec3 n = index < object.normals.size() ? object.normals[index] : vec3{ 0, 0, 1 };
 						glm::vec3 position(p[0], p[1], p[2]);
 						stats.min = glm::min(stats.min, position);
@@ -297,28 +345,57 @@ namespace openrayman
 					if(!texture.id)
 						continue;
 				}
-				vec3 c = placed.world.apply(object.vertices[sp.vertex]);
+				vec3 c = world.apply(object.vertices[sp.vertex]);
 				// Sprites scale with the part they belong to (a Lum's blue core is about half its glow).
-				float scale = placed.world.uniform_scale();
-				m_sprites.push_back({ glm::vec3(c[0], c[1], c[2]), glm::vec2(sp.half_size[0], sp.half_size[1]) * scale, texture.id, texture.mode,
+				float scale = world.uniform_scale();
+				sprites.push_back({ glm::vec3(c[0], c[1], c[2]), glm::vec2(sp.half_size[0], sp.half_size[1]) * scale, texture.id, texture.mode,
 					glm::vec2(texture.mirror_u ? 2.0f : 1.0f, texture.mirror_v ? 2.0f : 1.0f) });
 				stats.sprites++;
 			}
-		}
-		std::ranges::sort(m_sprites, [](const sprite_instance& a, const sprite_instance& b) {
-			return std::tie(a.mode, a.texture) < std::tie(b.mode, b.texture);
-		});
+		};
 
+		// One vertex buffer: the static geometry first, then each actor mesh.
 		std::vector<vertex> vertices;
-		for(const auto& [key, list] : by_texture)
+		auto append = [&](const by_texture& triangles, std::vector<batch>& batches) {
+			for(const auto& [key, list] : triangles)
+			{
+				batches.push_back({ key.second, GLint(vertices.size()), GLsizei(list.size()), key.first });
+				vertices.insert(vertices.end(), list.begin(), list.end());
+			}
+		};
+
+		by_texture level_triangles;
+		std::vector<const placed_geometry*> cards;
+		for(const placed_geometry& placed : geometry)
 		{
-			// The map is ordered by blend mode first, so solid batches come first.
-			m_batches.push_back({ key.second, GLint(vertices.size()), GLsizei(list.size()), key.first });
-			vertices.insert(vertices.end(), list.begin(), list.end());
+			if(placed.object.look == look_at::none)
+				add(placed.object, placed.world, level_triangles, m_sprites);
+			else
+				cards.push_back(&placed);
 		}
+		append(level_triangles, m_batches);
+		// Meshes placed per frame are in their own space, so they don't count towards the level's bounds.
+		glm::vec3 level_min = stats.min, level_max = stats.max;
+		auto add_mesh = [&](const geometric_object& object) {
+			by_texture triangles;
+			mesh& m = m_meshes.emplace_back();
+			m.look = object.look;
+			add(object, affine{}, triangles, m.sprites);
+			append(triangles, m.batches);
+		};
+		for(const geometric_object& object : meshes)
+			add_mesh(object);
+		for(const placed_geometry* card : cards)
+		{
+			m_level_cards.push_back({ m_meshes.size(), to_mat4(card->world) });
+			add_mesh(card->object);
+		}
+		stats.min = level_min;
+		stats.max = level_max;
+
 		glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
 		glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(vertices.size() * sizeof(vertex)), vertices.data(), GL_STATIC_DRAW);
-		if(vertices.empty())
+		if(stats.min.x > stats.max.x) // no level vertices
 			stats.min = stats.max = glm::vec3(0);
 		return stats;
 	}
@@ -333,27 +410,71 @@ namespace openrayman
 		glUniform1f(m_u_edge_clamp, m_edge_clamp ? 1.0f : 0.0f);
 		glActiveTexture(GL_TEXTURE0);
 
-		glBindVertexArray(m_vao);
-		blend current = blend::none;
-		set_blend(current);
-		for(const batch& b : m_batches)
+		// Where everything goes this frame: cards turn towards the camera.
+		const glm::mat4 camera = glm::inverse(view);
+		std::vector<part> parts;
+		parts.reserve(m_level_cards.size() + m_parts.size());
+		for(const auto* list : { &m_level_cards, &m_parts })
 		{
-			if(b.mode != current)
-				set_blend(current = b.mode);
-			glBindTexture(GL_TEXTURE_2D, b.texture);
-			glDrawArrays(GL_TRIANGLES, b.first, b.count);
+			for(const part& p : *list)
+			{
+				if(p.mesh < m_meshes.size())
+					parts.push_back({ p.mesh, face_camera(p.model, m_meshes[p.mesh].look, camera) });
+			}
 		}
+
+		glBindVertexArray(m_vao);
+		const glm::mat4 identity(1.0f);
+		auto draw_batches = [](const std::vector<batch>& batches, blend mode) {
+			for(const batch& b : batches)
+			{
+				if(b.mode != mode)
+					continue;
+				glBindTexture(GL_TEXTURE_2D, b.texture);
+				glDrawArrays(GL_TRIANGLES, b.first, b.count);
+			}
+		};
+		// Solid surfaces first, the level's and the actors', then the see-through ones over them.
+		blend current = blend::none;
+		for(blend mode : { blend::none, blend::alpha, blend::additive })
+		{
+			set_blend(current = mode);
+			glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(identity));
+			draw_batches(m_batches, mode);
+			for(const part& p : parts)
+			{
+				glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(p.model));
+				draw_batches(m_meshes[p.mesh].batches, mode);
+			}
+		}
+		glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(identity));
+
+		// The level's sprites, and the actors' where their parts are now.
+		std::vector<sprite_instance> sprites = m_sprites;
+		for(const part& p : parts)
+		{
+			float scale = std::cbrt(std::abs(glm::determinant(glm::mat3(p.model))));
+			for(sprite_instance s : m_meshes[p.mesh].sprites)
+			{
+				s.center = glm::vec3(p.model * glm::vec4(s.center, 1.0f));
+				s.half_size *= scale;
+				sprites.push_back(s);
+			}
+		}
+		std::ranges::sort(sprites, [](const sprite_instance& a, const sprite_instance& b) {
+			return std::tie(a.mode, a.texture) < std::tie(b.mode, b.texture);
+		});
 
 		// Sprites: squares facing the camera, built from its right and up directions. Their normal
 		// points at the stand-in sun so they come out fully lit.
-		if(!m_sprites.empty())
+		if(!sprites.empty())
 		{
 			glm::vec3 right(view[0][0], view[1][0], view[2][0]);
 			glm::vec3 up(view[0][1], view[1][1], view[2][1]);
 			glm::vec3 lit = glm::normalize(glm::vec3(0.3f, 0.2f, 0.9f));
 			std::vector<vertex> quads;
-			quads.reserve(m_sprites.size() * 6);
-			for(const sprite_instance& s : m_sprites)
+			quads.reserve(sprites.size() * 6);
+			for(const sprite_instance& s : sprites)
 			{
 				glm::vec3 x = right * s.half_size.x, y = up * s.half_size.y;
 				// v counts up in the game; our textures are uploaded top row first.
@@ -371,14 +492,14 @@ namespace openrayman
 			glBindVertexArray(m_sprite_vao);
 			glBindBuffer(GL_ARRAY_BUFFER, m_sprite_vbo);
 			glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(quads.size() * sizeof(vertex)), quads.data(), GL_STREAM_DRAW);
-			for(std::size_t first = 0; first < m_sprites.size();)
+			for(std::size_t first = 0; first < sprites.size();)
 			{
 				std::size_t last = first;
-				while(last < m_sprites.size() && m_sprites[last].texture == m_sprites[first].texture && m_sprites[last].mode == m_sprites[first].mode)
+				while(last < sprites.size() && sprites[last].texture == sprites[first].texture && sprites[last].mode == sprites[first].mode)
 					last++;
-				if(m_sprites[first].mode != current)
-					set_blend(current = m_sprites[first].mode);
-				glBindTexture(GL_TEXTURE_2D, m_sprites[first].texture);
+				if(sprites[first].mode != current)
+					set_blend(current = sprites[first].mode);
+				glBindTexture(GL_TEXTURE_2D, sprites[first].texture);
 				glDrawArrays(GL_TRIANGLES, GLint(first * 6), GLsizei((last - first) * 6));
 				first = last;
 			}

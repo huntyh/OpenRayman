@@ -18,6 +18,7 @@ namespace openrayman
 		constexpr std::uint32_t normals = 0x04;
 		constexpr std::uint32_t element_types = 0x10;
 		constexpr std::uint32_t elements = 0x14;
+		constexpr std::uint32_t look_at = 0x28;      // u32
 		constexpr std::uint32_t vertex_count = 0x2C; // u16, then u16 element count
 	}
 
@@ -198,6 +199,10 @@ namespace openrayman
 	{
 		geometric_object object;
 		object.at = at;
+		std::uint32_t look = reader_at(at + geometry_field::look_at, 4).u32();
+		if(look > 2)
+			throw format_error(std::format("geometric object at {} +0x{:X} has unknown look-at mode {}", at.block->id.to_string(), at.offset, look));
+		object.look = look_at(look);
 		binary_reader counts = reader_at(at + geometry_field::vertex_count, 4);
 		std::uint16_t vertex_count = counts.u16();
 		std::uint16_t element_count = counts.u16();

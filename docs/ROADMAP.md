@@ -45,8 +45,11 @@ yet: everything that moves on its own moves, but nothing reacts to Rayman.
 
 **Milestone 2b: things move ⬅ we are here**
 
-- Animation playback: every actor loops its current animation (Lums bobbing, Teensies, Rayman
-  idling), interpolating between keyframes
+- ✅ Animation playback: every actor loops its current animation, blending between keyframes
+  (built, waiting for your check). Many actors are saved in a still or placeholder state (Lums
+  without flapping wings, mushroom clusters with 3 of their 5 mushrooms, cages without chains); the
+  scripts pick their real state, so those come with Phase 3
+- ✅ Cards that turn to the camera: mushrooms, flowers, flames, chain links
 - Moving textures: the water stream, waterfall and mist scroll the way the game scrolls them
 - Effects: the drifting fireflies and other particles
 

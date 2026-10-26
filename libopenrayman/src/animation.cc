@@ -6,6 +6,8 @@
 #include <openrayman/error.h>
 #include <openrayman/pointer_stream.h>
 
+#include <algorithm>
+#include <cmath>
 #include <format>
 
 namespace openrayman
@@ -210,7 +212,7 @@ namespace openrayman
 		return bank;
 	}
 
-	std::vector<channel_pose> pose(const animation_bank& bank, std::size_t animation_index, std::uint32_t frame)
+	std::vector<channel_pose> pose(const animation_bank& bank, std::size_t animation_index, double frame)
 	{
 		auto at = [](const auto& list, std::size_t index, const char* what) -> const auto& {
 			if(index >= list.size())
@@ -222,16 +224,49 @@ namespace openrayman
 		std::vector<channel_pose> result;
 		if(a.frames == 0)
 			return result;
-		frame %= a.frames;
-		const animation_frame& f = at(bank.frames, std::size_t(a.start_frames) + frame, "frame");
+		frame = std::fmod(frame, double(a.frames));
+		if(!(frame >= 0)) // negative or NaN
+			frame = frame < 0 ? frame + a.frames : 0;
+		const std::uint32_t whole = std::min(std::uint32_t(frame), std::uint32_t(a.frames - 1));
+		const animation_frame& f = at(bank.frames, std::size_t(a.start_frames) + whole, "frame");
 
 		for(std::size_t c = 0; c < a.channels; c++)
 		{
 			const animation_channel& channel = at(bank.channels, std::size_t(a.start_channels) + c, "channel");
-			const animation_keyframe& key = at(bank.keyframes, at(bank.frame_keys, channel.frame_keys + frame, "frame key"), "keyframe");
-			const vec3& position = at(bank.vectors, key.position_vector, "position");
-			const vec3& scale = at(bank.vectors, key.scale_vector, "scale");
-			const std::array<float, 4>& q = at(bank.quaternions, key.quaternion, "rotation");
+			// Each frame names the keyframe at or before it. Unless that's the channel's last one,
+			// the next keyframe in the array follows it in time, so blend towards it (true for every
+			// keyframe of every level; after the last keyframe the channel holds still).
+			const std::uint32_t key_index = at(bank.frame_keys, channel.frame_keys + whole, "frame key");
+			const animation_keyframe& key = at(bank.keyframes, key_index, "keyframe");
+			const animation_keyframe* next = key.last() ? nullptr : &at(bank.keyframes, std::size_t(key_index) + 1, "keyframe");
+			float t = 0;
+			if(next && next->frame > key.frame)
+				t = std::clamp(float((frame - key.frame) / (next->frame - key.frame)), 0.0f, 1.0f);
+			if(t == 0)
+				next = nullptr;
+
+			vec3 position = at(bank.vectors, key.position_vector, "position");
+			vec3 scale = at(bank.vectors, key.scale_vector, "scale");
+			std::array<float, 4> q = at(bank.quaternions, key.quaternion, "rotation");
+			float multiplier = key.position_multiplier;
+			if(next)
+			{
+				const vec3& position2 = at(bank.vectors, next->position_vector, "position");
+				const vec3& scale2 = at(bank.vectors, next->scale_vector, "scale");
+				std::array<float, 4> q2 = at(bank.quaternions, next->quaternion, "rotation");
+				// q and -q are the same rotation: take the one nearer, so the blend goes the short way.
+				if(q[0] * q2[0] + q[1] * q2[1] + q[2] * q2[2] + q[3] * q2[3] < 0)
+					for(float& v : q2)
+						v = -v;
+				for(int k = 0; k < 3; k++)
+				{
+					position[k] += (position2[k] - position[k]) * t;
+					scale[k] += (scale2[k] - scale[k]) * t;
+				}
+				for(int k = 0; k < 4; k++)
+					q[k] += (q2[k] - q[k]) * t; // normalized by quaternion_to_matrix
+				multiplier += (next->position_multiplier - multiplier) * t;
+			}
 			const animation_object& object = at(bank.objects, at(bank.ntto_choices, std::size_t(channel.ntto) + f.ntto, "object choice"), "object");
 
 			channel_pose p;
@@ -246,7 +281,7 @@ namespace openrayman
 			{
 				for(int k = 0; k < 3; k++)
 					p.local.m[r][k] = rotation[r * 3 + k] * scale[k];
-				p.local.m[r][3] = position[r] * key.position_multiplier;
+				p.local.m[r][3] = position[r] * multiplier;
 			}
 			result.push_back(p);
 		}

@@ -98,13 +98,28 @@ If you find a spot that looks wrong, press **P**: it copies the position as `--l
 to the clipboard, ready to paste into a report. **F2** switches the edge fix off and on, to see
 whether a line comes from it.
 
+## Round 4: animations
+
+Start at the Globox kids: `--level Learn_10 --camera -67.1,205.8,1.9,321.0,-11.7`
+
+- [ ] Characters and props make small idle movements that loop smoothly: no jerks, no snapping
+      back at the end of a loop, no parts flying off
+- [ ] F3 pauses and resumes them
+- [ ] The mushrooms (e.g. `--level Learn_10 --camera -54.2,178.3,1.5,758.6,-12.4`) stay visible and
+      upright from every side as you fly around them, with no flickering where two overlap
+- [ ] Flames, sparks and chain links in other levels face you from every side
+
 ## Known limitations
 
 Don't report these as bugs, they're the next steps:
 
-- Nothing moves: actors are frozen, and some are invisible on purpose (triggers, waypoints)
-- The breakable cages stand without their chains. Their saved state is the standing one; the game's
-  own scripts switch them to hanging when the level starts, and those scripts don't run yet
+- Some actors are invisible on purpose (triggers, waypoints)
+- Actors play the state they were saved in, which is often a still or a placeholder: the game's own
+  scripts switch them to their real state when the level starts, and those scripts don't run yet.
+  So Lums hang still without flapping their wings, the mushroom clusters show 3 of their 5
+  mushrooms, the breakable cages stand without their chains, and the butterfly flies its loop
+  instead of its real path
+- Moving textures (the water stream, waterfall, mist) and particles (fireflies) don't move yet
 - The start view uses the game camera's saved position, which can be an odd spot (e.g. among the
   treetops in The Woods of Light); press R after flying off to get back there
 - The lighting is a simple stand-in, not the game's own; the sky is a plain colour

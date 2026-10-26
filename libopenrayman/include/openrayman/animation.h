@@ -108,7 +108,9 @@ namespace openrayman
 		affine local;                        // relative to the parent channel, or to the actor
 	};
 
-	// Evaluates an animation at a frame (without interpolating between keyframes). Throws
-	// format_error on indices outside the bank.
-	std::vector<channel_pose> pose(const animation_bank& bank, std::size_t animation_index, std::uint32_t frame);
+	// Evaluates an animation at a frame, which may lie between frames and wraps around the
+	// animation's length. Positions, scales and rotations are blended between keyframes; which
+	// objects show and how channels link come from the whole frame. Throws format_error on indices
+	// outside the bank.
+	std::vector<channel_pose> pose(const animation_bank& bank, std::size_t animation_index, double frame);
 }

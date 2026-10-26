@@ -5,6 +5,7 @@
 #include <openrayman/binary_reader.h>
 #include <openrayman/error.h>
 
+#include <algorithm>
 #include <format>
 
 namespace openrayman
@@ -106,54 +107,88 @@ namespace openrayman
 		return world;
 	}
 
-	std::vector<placed_geometry> actor_geometry(const memory_image& memory, const scene& tree, const animation_bank& bank)
+	actor_set read_actors(const memory_image& memory, const scene& tree, const animation_bank& bank)
 	{
-		std::vector<placed_geometry> result;
-		auto add = [&](std::size_t node, const actor_object& object, const affine& world) {
-			if(!object.physical_object)
-				return;
-			auto at = physical_object_geometry(memory, *object.physical_object);
-			if(!at)
-				return;
-			affine placed = world;
-			if(object.scale)
-			{
-				for(int r = 0; r < 3; r++)
-					for(int c = 0; c < 3; c++)
-						placed.m[r][c] *= (*object.scale)[c];
-			}
-			result.push_back({ node, placed, read_geometric_object(memory, *at) });
-		};
-
+		actor_set result;
+		std::vector<std::pair<memory_location, std::size_t>> read; // geometric object -> mesh index
 		for(std::size_t node : tree.node(tree.dynamic_world()).children)
 		{
 			if(tree.node(node).type != super_object_type::actor)
 				continue;
 			actor a = read_actor(memory, tree, bank, node);
-			affine world = world_transform(memory, tree, node);
-			if(!a.animation)
+			actor_set::entry e;
+			e.node = node;
+			e.world = world_transform(memory, tree, node);
+			e.animation = a.animation;
+			for(const actor_object& object : a.objects)
 			{
-				if(!a.objects.empty())
-					add(node, a.objects.front(), world);
-				continue;
-			}
-
-			std::vector<channel_pose> channels = pose(bank, *a.animation, 0);
-			for(std::size_t c = 0; c < channels.size(); c++)
-			{
-				if(!channels[c].object || *channels[c].object >= a.objects.size())
-					continue;
-				// Chain up through parent channels; a channel count bounds the walk against cycles.
-				affine local = channels[c].local;
-				std::optional<std::size_t> parent = channels[c].parent;
-				for(std::size_t steps = 0; parent && steps < channels.size(); steps++)
+				std::optional<std::size_t> mesh;
+				auto at = object.physical_object ? physical_object_geometry(memory, *object.physical_object) : std::nullopt;
+				if(at)
 				{
-					local = channels[*parent].local * local;
-					parent = channels[*parent].parent;
+					auto found = std::ranges::find(read, *at, &std::pair<memory_location, std::size_t>::first);
+					if(found == read.end())
+					{
+						read.push_back({ *at, result.meshes.size() });
+						result.meshes.push_back(read_geometric_object(memory, *at));
+						found = read.end() - 1;
+					}
+					mesh = found->second;
 				}
-				add(node, a.objects[*channels[c].object], world * local);
+				e.meshes.push_back(mesh);
+				e.scales.push_back(object.scale);
 			}
+			result.actors.push_back(std::move(e));
 		}
+		return result;
+	}
+
+	void pose_actor(const actor_set::entry& actor, const animation_bank& bank, double frame, std::vector<posed_part>& out)
+	{
+		auto add = [&](std::size_t object, const affine& world) {
+			if(object >= actor.meshes.size() || !actor.meshes[object])
+				return;
+			affine placed = world;
+			if(const auto& scale = actor.scales[object])
+			{
+				for(int r = 0; r < 3; r++)
+					for(int c = 0; c < 3; c++)
+						placed.m[r][c] *= (*scale)[c];
+			}
+			out.push_back({ actor.node, *actor.meshes[object], placed });
+		};
+
+		if(!actor.animation)
+		{
+			add(0, actor.world);
+			return;
+		}
+		std::vector<channel_pose> channels = pose(bank, *actor.animation, frame);
+		for(std::size_t c = 0; c < channels.size(); c++)
+		{
+			if(!channels[c].object)
+				continue;
+			// Chain up through parent channels; a channel count bounds the walk against cycles.
+			affine local = channels[c].local;
+			std::optional<std::size_t> parent = channels[c].parent;
+			for(std::size_t steps = 0; parent && steps < channels.size(); steps++)
+			{
+				local = channels[*parent].local * local;
+				parent = channels[*parent].parent;
+			}
+			add(*channels[c].object, actor.world * local);
+		}
+	}
+
+	std::vector<placed_geometry> actor_geometry(const memory_image& memory, const scene& tree, const animation_bank& bank)
+	{
+		actor_set set = read_actors(memory, tree, bank);
+		std::vector<posed_part> parts;
+		for(const actor_set::entry& actor : set.actors)
+			pose_actor(actor, bank, 0, parts);
+		std::vector<placed_geometry> result;
+		for(const posed_part& part : parts)
+			result.push_back({ part.node, part.world, set.meshes[part.mesh] });
 		return result;
 	}
 }

@@ -113,6 +113,12 @@ namespace
 		std::string level_error;
 		fly_camera camera;
 		std::optional<fly_camera> start_camera; // --camera x,y,z,yaw,pitch (degrees)
+		// Actors play their current animation, looping, from when the level loads.
+		animation_bank bank;
+		actor_set actors;
+		double animation_time = 0;        // seconds; --time <seconds> starts there
+		std::optional<double> start_time;
+		bool animating = true;            // F3 pauses
 		float speed = 15.0f;                     // units per second
 		bool looking = false;
 		Uint64 last_frame = 0;
@@ -230,6 +236,43 @@ namespace
 		update_title(a);
 	}
 
+	// Poses every actor at the current animation time and hands the parts to the renderer.
+	void update_actors(app& a)
+	{
+		std::vector<posed_part> parts;
+		for(const actor_set::entry& actor : a.actors.actors)
+		{
+			double frame = 0;
+			if(actor.animation && *actor.animation < a.bank.animations.size())
+			{
+				// The animation's speed is in frames per second (mostly 30, some 25 or 60).
+				std::uint16_t speed = a.bank.animations[*actor.animation].speed;
+				frame = a.animation_time * (speed ? speed : 30);
+			}
+			try
+			{
+				pose_actor(actor, a.bank, frame, parts);
+			}
+			catch(const std::exception&)
+			{
+				// Bad animation data: leave this actor out rather than stop the level.
+			}
+		}
+		std::vector<level_renderer::part> out;
+		out.reserve(parts.size());
+		for(const posed_part& part : parts)
+		{
+			glm::mat4 model(1.0f);
+			for(int r = 0; r < 3; r++)
+			{
+				for(int c = 0; c < 4; c++)
+					model[c][r] = part.world.m[r][c];
+			}
+			out.push_back({ part.mesh, model });
+		}
+		a.level->set_parts(std::move(out));
+	}
+
 	void load_level(app& a, std::size_t index)
 	{
 		const auto& levels = a.game->game_dsb().levels;
@@ -245,11 +288,13 @@ namespace
 			level_header header = read_level_header(files);
 			scene tree(files.memory, header);
 			std::vector<placed_geometry> geometry = static_geometry(files.memory, tree);
-			// Actors (platforms, Lums, characters...) in the first frame of their current animation.
-			animation_bank bank = read_animation_bank(files);
-			std::vector<placed_geometry> actors = actor_geometry(files.memory, tree, bank);
-			geometry.insert(geometry.end(), std::make_move_iterator(actors.begin()), std::make_move_iterator(actors.end()));
-			a.level_stats = a.level->load(geometry, a.archives);
+			// Actors (platforms, Lums, characters...): their meshes, placed every frame.
+			a.bank = read_animation_bank(files);
+			a.actors = read_actors(files.memory, tree, a.bank);
+			a.level_stats = a.level->load(geometry, a.actors.meshes, a.archives);
+			a.animation_time = a.start_time.value_or(0.0);
+			a.start_time.reset();
+			update_actors(a);
 			SDL_Log("%s: %zu meshes, %zu triangles, %zu textures (%zu missing), %llu ms", levels[index].c_str(),
 				a.level_stats.meshes, a.level_stats.triangles, a.level_stats.textures, a.level_stats.missing_textures,
 				static_cast<unsigned long long>(SDL_GetTicks() - start));
@@ -279,7 +324,9 @@ namespace
 		catch(const std::exception& e)
 		{
 			a.level_error = e.what();
-			a.level->load({}, a.archives);
+			a.bank = {};
+			a.actors = {};
+			a.level->load({}, {}, a.archives);
 			SDL_Log("Could not load %s: %s", levels[index].c_str(), e.what());
 		}
 		update_title(a);
@@ -522,6 +569,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 		}
 		else if(arg == "--level")
 			a->start_level = argv[n + 1];
+		else if(arg == "--time") // seconds into the actors' animations, for screenshots
+			a->start_time = std::strtod(argv[n + 1], nullptr);
 		else if(arg == "--edge-clamp") // on (default) or off, to compare texture edges; F2 in the viewer
 			a->level->set_edge_clamp(std::string(argv[n + 1]) != "off");
 		else if(arg == "--camera")
@@ -588,6 +637,10 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 							a.level->set_edge_clamp(!a.level->edge_clamp());
 							SDL_Log("Texture edge clamp %s", a.level->edge_clamp() ? "on" : "off");
 						}
+						return SDL_APP_CONTINUE;
+					case SDLK_F3:
+						a.animating = !a.animating;
+						SDL_Log("Animations %s at %.2f s", a.animating ? "playing" : "paused", a.animation_time);
 						return SDL_APP_CONTINUE;
 					case SDLK_P:
 					{
@@ -677,6 +730,10 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 		float up = float(keys[SDL_SCANCODE_SPACE] || keys[SDL_SCANCODE_E]) - float(keys[SDL_SCANCODE_LCTRL] || keys[SDL_SCANCODE_Q]);
 		float step = a.speed * dt * (keys[SDL_SCANCODE_LSHIFT] ? 4.0f : 1.0f);
 		a.camera.move(forward * step, right * step, up * step);
+
+		if(a.animating && !a.screenshot)
+			a.animation_time += dt;
+		update_actors(a);
 	}
 
 	// Keep the music clock in the title ticking.

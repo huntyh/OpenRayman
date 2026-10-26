@@ -379,6 +379,34 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 		}
 		if(level == "Learn_10")
 			CHECK(actor_sprites == 31); // the Lums and other glows, checked by eye
+
+		// Every frame of every actor's animation, and halfway to the next, poses without bad indices.
+		actor_set set = read_actors(files.memory, tree, bank);
+		std::size_t pose_failures = 0, posed_frames = 0;
+		for(const actor_set::entry& actor : set.actors)
+		{
+			std::uint16_t frames = actor.animation ? bank.animations[*actor.animation].frames : 1;
+			for(std::uint16_t f = 0; f < frames; f++)
+			{
+				for(double offset : { 0.0, 0.5 })
+				{
+					std::vector<posed_part> parts;
+					try
+					{
+						pose_actor(actor, bank, f + offset, parts);
+						posed_frames++;
+					}
+					catch(const format_error&)
+					{
+						pose_failures++;
+					}
+				}
+			}
+		}
+		CHECK(pose_failures == 0);
+		CHECK(posed_frames > 0);
+		if(level == "Learn_10")
+			CHECK(set.meshes.size() == 113); // distinct meshes, shared between actors
 		if(level == "Learn_10")
 		{
 			// Recorded from a render checked by eye: Rayman, Lums and props correctly posed.

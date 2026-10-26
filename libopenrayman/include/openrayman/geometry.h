@@ -54,6 +54,13 @@ namespace openrayman
 		std::optional<visual_material> material;
 	};
 
+	enum class look_at : std::uint32_t
+	{
+		none = 0,
+		upright = 1, // turns about its own Z axis only (mushrooms, flowers)
+		facing = 2,  // faces the camera fully (flames, sparks, chain links)
+	};
+
 	// A mesh: vertices plus elements. See docs/formats/geometry.md.
 	struct geometric_object
 	{
@@ -63,6 +70,8 @@ namespace openrayman
 		std::vector<triangle_element> elements;
 		std::vector<sprite> sprites;
 		std::vector<std::uint16_t> skipped_types; // elements of types not decoded yet
+		// Cards that turn towards the camera. They lie flat in their own YZ plane and face +X.
+		look_at look = look_at::none;
 	};
 
 	// Reads a geometric object. Throws format_error on out-of-range indices or truncated data.

@@ -36,7 +36,38 @@ namespace openrayman
 	// take theirs from the level header.
 	affine world_transform(const memory_image& memory, const scene& tree, std::size_t node);
 
+	// The actors of the dynamic world, ready to animate: each distinct mesh is read once, and an
+	// actor's object list refers to them by index.
+	struct actor_set
+	{
+		struct entry
+		{
+			std::size_t node = 0;
+			affine world;
+			std::optional<std::uint16_t> animation;
+			std::vector<std::optional<std::size_t>> meshes; // per object list entry, if it has one
+			std::vector<std::optional<vec3>> scales;        // per object list entry
+		};
+		std::vector<geometric_object> meshes;
+		std::vector<entry> actors;
+	};
+
+	// Reads every actor in the dynamic world. Throws format_error.
+	actor_set read_actors(const memory_image& memory, const scene& tree, const animation_bank& bank);
+
+	// One part of a posed actor: which mesh, and where.
+	struct posed_part
+	{
+		std::size_t node = 0; // the actor's super object
+		std::size_t mesh = 0; // in actor_set::meshes
+		affine world;
+	};
+
+	// Appends an actor's parts at a frame of its current animation (see pose()). Actors without an
+	// animation show their first object, if they have one.
+	void pose_actor(const actor_set::entry& actor, const animation_bank& bank, double frame, std::vector<posed_part>& out);
+
 	// Geometry of every actor in the dynamic world, posed at the first frame of its current
-	// animation. Actors without an animation show their first object, if they have one.
+	// animation.
 	std::vector<placed_geometry> actor_geometry(const memory_image& memory, const scene& tree, const animation_bank& bank);
 }

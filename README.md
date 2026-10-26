@@ -73,6 +73,7 @@ In a level:
 | Home | First level |
 | R | Back to the start position |
 | P | Copy the current position (as `--level ... --camera ...`) to the clipboard, for bug reports |
+| F3 | Pause or resume the animations |
 | T | Switch to the texture browser and back |
 
 In the texture browser:

@@ -50,6 +50,9 @@ static void usage()
 		"  scene <game folder> <level>         Print a level's super object tree\n"
 		"  peek <game folder> <level> <block> <hex offset> <words>\n"
 		"                                      Print memory words, e.g. peek ... Learn_10 05/02 300 16\n"
+		"  motion <game folder> <level>       For each actor: its animation and how far its parts move\n"
+		"  states <game folder> <level> <node>\n"
+		"                                      The states of an actor's family and their animations\n"
 		"  anim <game folder> <level> <index> <frame>\n"
 		"                                      Print the objects an animation shows at a frame\n"
 		"  refs <game folder> <level> <block> <hex offset>\n"
@@ -610,6 +613,79 @@ static int cmd_refs(const fs::path& folder, const std::string& name, const std::
 	return EXIT_SUCCESS;
 }
 
+// For each actor: its animation, and how far its parts travel over one loop (to find what moves).
+static int cmd_motion(const fs::path& folder, const std::string& name)
+{
+	game_data game = require_game(folder);
+	level_files files = load_level_files(game, name);
+	level_header header = read_level_header(files);
+	scene tree(files.memory, header);
+	animation_bank bank = read_animation_bank(files);
+	actor_set set = read_actors(files.memory, tree, bank);
+	for(const actor_set::entry& actor : set.actors)
+	{
+		const auto& p = actor.world.m;
+		if(!actor.animation)
+		{
+			std::vector<posed_part> parts;
+			pose_actor(actor, bank, 0, parts);
+			std::cout << std::format("node {:>4} at ({:7.1f}, {:7.1f}, {:6.1f}) no animation, {} objects, {} parts\n",
+				actor.node, p[0][3], p[1][3], p[2][3], actor.meshes.size(), parts.size());
+			continue;
+		}
+		const animation& a = bank.animations[*actor.animation];
+		std::vector<posed_part> first;
+		pose_actor(actor, bank, 0, first);
+		float most = 0;
+		for(std::uint32_t f = 1; f < a.frames; f++)
+		{
+			std::vector<posed_part> parts;
+			pose_actor(actor, bank, f, parts);
+			for(std::size_t i = 0; i < std::min(parts.size(), first.size()); i++)
+			{
+				for(int r = 0; r < 3; r++)
+					most = std::max(most, std::abs(parts[i].world.m[r][3] - first[i].world.m[r][3]));
+			}
+		}
+		std::cout << std::format("node {:>4} at ({:7.1f}, {:7.1f}, {:6.1f}) animation {:>3}: {:>3} frames at {:>2}/s, {:>2} parts, moves up to {:.3f}\n",
+			actor.node, p[0][3], p[1][3], p[2][3], *actor.animation, a.frames, a.speed, first.size(), most);
+	}
+	return EXIT_SUCCESS;
+}
+
+// The states of an actor's family, in order, with the animation each one plays.
+static int cmd_states(const fs::path& folder, const std::string& name, const std::string& node_text)
+{
+	game_data game = require_game(folder);
+	level_files files = load_level_files(game, name);
+	level_header header = read_level_header(files);
+	scene tree(files.memory, header);
+	animation_bank bank = read_animation_bank(files);
+	const memory_image& memory = files.memory;
+	const scene_node& n = tree.node(std::stoul(node_text));
+	auto data = n.data ? memory.follow(*n.data) : std::nullopt;               // 3D data
+	auto current = data ? memory.follow(*data + 4) : std::nullopt;
+	auto family = data ? memory.follow(*data + 0x14) : std::nullopt;
+	if(!family)
+		throw format_error("this super object has no actor family");
+	auto state = memory.follow(*family + 0x10);
+	std::uint32_t count = 0;
+	std::memcpy(&count, family->block->data.data() + family->offset + 0x18, 4);
+	for(std::uint32_t i = 0; state && i < count; i++, state = memory.follow(*state))
+	{
+		std::cout << std::format("state {:>2} at {} +0x{:X}{}", i, state->block->id.to_string(), state->offset, current && *current == *state ? " (current)" : "");
+		if(auto reference = memory.follow(*state + 4))
+		{
+			std::uint16_t index = 0;
+			std::memcpy(&index, reference->block->data.data() + reference->offset + 0x18, 2);
+			if(index < bank.animations.size())
+				std::cout << std::format(": animation {}, {} frames, {} channels", index, bank.animations[index].frames, bank.animations[index].channels);
+		}
+		std::cout << '\n';
+	}
+	return EXIT_SUCCESS;
+}
+
 int main(int argc, char** argv)
 {
 	std::vector<std::string> args(argv + 1, argv + argc);
@@ -644,6 +720,10 @@ int main(int argc, char** argv)
 			return cmd_actors(args[1], args[2]);
 		if(cmd == "scene" && args.size() == 3)
 			return cmd_scene(args[1], args[2]);
+		if(cmd == "motion" && args.size() == 3)
+			return cmd_motion(args[1], args[2]);
+		if(cmd == "states" && args.size() == 4)
+			return cmd_states(args[1], args[2], args[3]);
 		if(cmd == "anim" && args.size() == 5)
 			return cmd_anim(args[1], args[2], args[3], args[4]);
 		if(cmd == "refs" && args.size() == 5)
