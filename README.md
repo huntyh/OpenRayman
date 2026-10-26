@@ -100,17 +100,10 @@ runs the unit tests against your real game files.
 | `android/` | The 2016 Android launcher, kept for reference until the Android port (Phase 4) | GPLv3 |
 | `docs/` | Roadmap, testing guide, [file format notes](docs/FORMATS.md) | GPLv3 |
 
-## Ground rules
+## Contributing
 
-- **No Ubisoft assets in the repository**, ever: no textures, music, logos or extracted game data.
-  Everyone reads their own copy of the game. Tests use your install via `OPENRAYMAN_GAME_DIR` and only
-  store checksums, never the data itself.
-- **No leaked or copied code.** Never use leaked Ubisoft source code, and never copy code from Ubisoft
-  binaries or from projects whose license doesn't allow it. Everything is implemented from our own
-  understanding of the file formats.
-- **Record where knowledge comes from.** [docs/FORMATS.md](docs/FORMATS.md) lists, for each format,
-  what we know and its sources.
-- **Keep copyright notices.** Existing notices stay in place and upstream code is never relicensed.
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) first: it covers how we
+keep the project free of Ubisoft assets and copied code.
 
 ## License
 
