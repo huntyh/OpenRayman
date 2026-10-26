@@ -85,6 +85,8 @@ that need gameplay.
 - The AI bytecode interpreter: behaviours, macros, reflexes, DsgVars
 - Input mapped to the game's controls (keyboard, gamepad, touch)
 - Rayman himself walking around a level
+- An optional modern camera, turned freely with the right stick like in today's platformers, next
+  to the game's own guided camera
 
 ## Phase 4: Android
 

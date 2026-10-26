@@ -231,6 +231,53 @@ namespace openrayman
 			return out;
 		}
 
+		// See-through pixels keep a colour (usually black) that filtering and smaller mipmaps blend into
+		// the edges of leaves as a dark outline. Give them their opaque neighbours' colour instead,
+		// spreading outwards a few pixels at a time; alpha stays as it is.
+		void bleed_edges(std::uint32_t width, std::uint32_t height, std::vector<std::uint8_t>& rgba)
+		{
+			std::vector<std::uint8_t> known(std::size_t(width) * height);
+			for(std::size_t i = 0; i < known.size(); i++)
+				known[i] = rgba[i * 4 + 3] >= 128;
+			for(int pass = 0; pass < 16; pass++)
+			{
+				std::vector<std::uint8_t> next = known;
+				bool changed = false;
+				for(std::uint32_t y = 0; y < height; y++)
+				{
+					for(std::uint32_t x = 0; x < width; x++)
+					{
+						std::size_t i = std::size_t(y) * width + x;
+						if(known[i])
+							continue;
+						int sum[3] = {}, count = 0;
+						for(int dy = -1; dy <= 1; dy++)
+						{
+							for(int dx = -1; dx <= 1; dx++)
+							{
+								// Textures tile, so neighbours wrap around.
+								std::size_t j = std::size_t((y + height + dy) % height) * width + (x + width + dx) % width;
+								if(!known[j])
+									continue;
+								for(int c = 0; c < 3; c++)
+									sum[c] += rgba[j * 4 + c];
+								count++;
+							}
+						}
+						if(count == 0)
+							continue;
+						for(int c = 0; c < 3; c++)
+							rgba[i * 4 + c] = std::uint8_t(sum[c] / count);
+						next[i] = 1;
+						changed = true;
+					}
+				}
+				known.swap(next);
+				if(!changed)
+					break;
+			}
+		}
+
 		GLuint upload_texture(std::uint32_t width, std::uint32_t height, const std::uint8_t* rgba)
 		{
 			GLuint texture = 0;
@@ -337,6 +384,7 @@ namespace openrayman
 		m_animation_by_material.clear();
 		m_lights = {};
 		m_skies.clear();
+		m_solid_cores.clear();
 	}
 
 	void level_renderer::set_blend(blend mode) const
@@ -385,6 +433,7 @@ namespace openrayman
 								gf.rgba[i + 3] = 0;
 						}
 					}
+					bleed_edges(gf.width, gf.height, gf.rgba);
 					texture.id = upload_texture(gf.width, gf.height, gf.rgba.data());
 					texture.mirror_u = info.tiling & texture_tiling::mirror_u;
 					texture.mirror_v = info.tiling & texture_tiling::mirror_v;
@@ -403,7 +452,21 @@ namespace openrayman
 					if(info.flags & texture_flag::additive)
 						texture.mode = blend::additive;
 					else if(has_soft_alpha(gf))
+					{
 						texture.mode = blend::alpha;
+						// Leaves are mostly fully opaque with a soft fringe; light rays, water and
+						// mist are mostly partly see-through.
+						std::size_t opaque = 0, partial = 0;
+						for(std::size_t i = 3; i < gf.rgba.size(); i += 4)
+						{
+							if(gf.rgba[i] >= 230)
+								opaque++;
+							else if(gf.rgba[i] > 16)
+								partial++;
+						}
+						if(opaque * 2 >= partial * 3)
+							m_solid_cores.insert(texture.id);
+					}
 				}
 				catch(const std::exception& e)
 				{
@@ -839,20 +902,28 @@ namespace openrayman
 			use_lights(part_light[i]);
 			draw_batches(m_meshes[parts[i].mesh].batches, blend::none);
 		}
-		// The nearly opaque middle of soft surfaces (a leaf, not its fringe) is solid too: it hides
-		// whatever see-through things lie behind it, however they're sorted (sprites come last).
+		// The nearly opaque middle of cut-out-like soft surfaces (a leaf, not its fringe) is solid
+		// too: it hides whatever see-through things lie behind it, however they're sorted (sprites come
+		// last). Not for soft gradients like light rays, whose bright body must stay see-through.
 		glUniform1f(m_u_alpha_cut, 0.9f);
 		glUniform1f(m_u_light_alpha, 1.0f);
 		glUniform1i(m_u_lighting, m_lighting ? 1 : 0);
 		glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(identity));
+		auto draw_cores = [&](std::span<const batch> batches) {
+			for(const batch& b : batches)
+			{
+				if(m_solid_cores.contains(b.texture))
+					draw_batches(std::span(&b, 1), blend::alpha);
+			}
+		};
 		for(const see_through& s : m_see_through)
-			draw_batches(std::span(&s.b, 1), blend::alpha);
+			draw_cores(std::span(&s.b, 1));
 		glUniform1i(m_u_lighting, m_lighting ? 2 : 0);
 		for(std::size_t i = 0; i < parts.size(); i++)
 		{
 			glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(parts[i].model));
 			use_lights(part_light[i]);
-			draw_batches(m_meshes[parts[i].mesh].batches, blend::alpha);
+			draw_cores(m_meshes[parts[i].mesh].batches);
 		}
 
 		// Then the see-through ones over them, soft and glowing alike, farthest first: a leaf in front
