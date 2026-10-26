@@ -76,19 +76,43 @@ that need gameplay (2026-10-26).
 
 ## Phase 3: make it a game ⬅ we are here
 
-- BNM sound banks: sound effects, voices, and the adaptive music sequencing
-- Actor behaviour: states and transitions (e.g. the cages hang from their chains once their
-  scripts pick the hanging state)
-- Particles: the fireflies of The Woods of Light (emitter actors such as nodes 31 and 32, whose
-  scripts spawn them; their settings are probably in the scripts' variables)
-- Collision and physics
-- The AI bytecode interpreter: behaviours, macros, reflexes, DsgVars
-- Input mapped to the game's controls (keyboard, gamepad, touch)
-- Rayman himself walking around a level
+Goal: Rayman runs around The Woods of Light (`Learn_10`) as in the real game, with its characters
+behaving as their scripts say. Everything targets Learn_10 first; the other levels get their turn
+once it plays right (they have issues of their own, found on a first look).
+
+Most of the gameplay is in the scripts saved inside each level, so they come first.
+
+**Milestone 3a: reading the scripts ⬅ we are here**
+
+- Each actor's brain: its AI model, behaviours, reflexes, macros and designer variables (DsgVars)
+- The script nodes as a tree, and the interpreter's 41 node types (from `Rayman2.exe`)
+- `ortool brain` prints an actor's scripts as readable text, with our own names for the keywords
+  and operators (the game keeps no names). Conditions, functions and procedures get theirs as each
+  is read from the exe and implemented in 3b
+
+**Milestone 3b: the scripts run**
+
+- The interpreter: behaviours, reflexes, macros, DsgVars, the functions and procedures
+  Learn_10's actors use, read one by one from the exe
+- Actor states and transitions picked by the scripts: Lums fly in their loop, the cages hang
+  from their chains, the mushroom clusters show all five mushrooms
+- Particles: the fireflies of The Woods of Light (emitter actors such as nodes 31 and 32)
+
+**Milestone 3c: Rayman**
+
+- Collision with the level and with actors, and the game's physics
+- Input mapped to the game's controls (keyboard, gamepad)
+- Rayman himself walking, running and jumping, moved by his own scripts
+- The game's camera following him
 - An optional modern camera, turned freely with the right stick like in today's platformers, next
   to the game's own guided camera. It will see what the guided camera never shows, which needs
   handling: half-built cutscene sets (e.g. above the waterfall in The Woods of Light,
   `--camera 36.2,328.9,-3.7,-50.1,24.2`) and painted "paper" trees that simply end
+
+**Milestone 3d: sound**
+
+- BNM sound banks: sound effects and voices, played when the scripts ask for them
+- The adaptive music sequencing
 
 ## Phase 4: the whole game
 

@@ -2,6 +2,7 @@
 
 #include <openrayman/actor.h>
 #include <openrayman/animation.h>
+#include <openrayman/brain.h>
 #include <openrayman/cnt_archive.h>
 #include <openrayman/error.h>
 #include <openrayman/game_data.h>
@@ -591,4 +592,96 @@ TEST_CASE("real data: actor shadows")
 	CHECK(shown == 0);
 	CHECK(actors == 5107);
 	CHECK(textures == std::map<std::string, std::size_t>{ { "effets_speciaux\\shadow1_mxy_aaa.tga", 152 } });
+}
+
+TEST_CASE("real data: every actor's scripts")
+{
+	auto dir = real_game_dir();
+	if(!dir)
+	{
+		MESSAGE("OPENRAYMAN_GAME_DIR not set, skipping");
+		return;
+	}
+	auto game = game_data::locate(*dir);
+	REQUIRE(game.has_value());
+
+	// The exe's handler tables: keywords, conditions, operators, functions, procedures, meta-actions.
+	constexpr std::uint32_t table_size[] = { 20, 149, 28, 314, 514, 12 };
+	std::size_t actors = 0, models = 0, behaviours = 0, reflexes = 0, macros = 0, scripts = 0, nodes = 0, variables = 0;
+	std::size_t empty_macros = 0;
+	std::size_t unprinted = 0; // operators whose argument count doesn't fit their form
+	for(const std::string& level : game->game_dsb().levels)
+	{
+		INFO(level);
+		level_files files = load_level_files(*game, level);
+		level_header header = read_level_header(files);
+		scene tree(files.memory, header);
+		level_brains brains = read_brains(files.memory, tree);
+		actors += brains.actors.size();
+		models += brains.models.size();
+		for(const auto& [key, m] : brains.models)
+		{
+			behaviours += m.behaviours.size();
+			reflexes += m.reflexes.size();
+			macros += m.macros.size();
+			variables += m.variables.size();
+			for(const dsg_variable& v : m.variables)
+				CHECK(v.offset < m.defaults.size());
+			std::vector<const script*> all;
+			for(const auto* list : { &m.behaviours, &m.reflexes })
+				for(const behaviour& b : *list)
+				{
+					for(const script& s : b.rules)
+						all.push_back(&s);
+					if(b.schedule)
+						all.push_back(&*b.schedule);
+				}
+			for(const macro& mc : m.macros)
+				if(!mc.body.nodes.empty())
+					all.push_back(&mc.body);
+				else
+					empty_macros++;
+			for(const script* s : all)
+			{
+				scripts++;
+				nodes += s->nodes.size();
+				// Every script starts one indent in and ends with an end node at indent 0.
+				REQUIRE(s->nodes.size() >= 1);
+				CHECK(s->nodes.back().type == std::uint8_t(node_type::end));
+				CHECK((s->nodes.size() == 1 || s->nodes.front().indent == 1));
+				for(const script_node& n : s->nodes)
+				{
+					if(n.type < std::size(table_size))
+						CHECK(n.param < table_size[n.type]);
+					if(n.type == std::uint8_t(node_type::subroutine))
+						CHECK(std::ranges::any_of(m.macros, [&](const macro& mc) { return n.target == mc.at; }));
+				}
+				for(const std::string& line : describe_script(*s, m, files.memory, tree))
+					unprinted += line.find("operator_") != std::string::npos;
+			}
+		}
+		if(level == "Learn_10")
+		{
+			CHECK(brains.actors.size() == 82);
+			CHECK(brains.models.size() == 38);
+			// Rayman, Fix's actor in node 84.
+			auto rayman = std::ranges::find_if(brains.actors, [](const actor_brain& b) { return b.node == 84; });
+			REQUIRE(rayman != brains.actors.end());
+			const ai_model& m = brains.model(*rayman);
+			CHECK(m.behaviours.size() == 46);
+			CHECK(m.reflexes.size() == 16);
+			CHECK(m.macros.size() == 65);
+			CHECK(m.variables.size() == 115);
+		}
+	}
+	CHECK(actors == 5020);
+	CHECK(models == 1944);
+	CHECK(behaviours == 15679);
+	CHECK(reflexes == 2151);
+	CHECK(macros == 6920);
+	CHECK(scripts == 37845);
+	CHECK(nodes == 3319729);
+	CHECK(variables == 47915);
+	CHECK(empty_macros == 1); // in Astro_10
+	CHECK(unprinted == 0);
 }

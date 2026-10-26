@@ -128,6 +128,8 @@ ortool music "<game folder>" <out>          Export every music file as WAV
 ortool level "<game folder>" <name|all>     Load a level and check all its pointers
 ortool obj "<game folder>" <level> <out>    Export a level's scenery as OBJ with textures
 ortool scene "<game folder>" <level>        Print a level's scene tree
+ortool lights "<game folder>" <level>       Sectors and their lights
+ortool brain "<game folder>" <level> [node] The actors' scripts (one actor's as text)
 ortool dsb <file.dsb>                       Print a DSB script
 ortool cnt <file.cnt>                       List a texture archive
 ```

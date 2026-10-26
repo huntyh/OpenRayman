@@ -30,6 +30,7 @@ came from. Update this whenever a format is added or corrected.
 | Actors, animations | inside SNA, GPT | Object lists, animation bank, posing a frame; interpolation, events and morphs not yet | `actor.cc`, `animation.cc` |
 | Static geometry | inside SNA | Meshes, triangles, UVs, materials; sprites (type 3) and collision not yet | `geometry.cc` |
 | PTX | `Fix.ptx`, `<Level>.ptx` | Texture slots and names; trailing values unknown | `texture_table.cc` |
+| Scripts (AI) | inside SNA | Brains, models, behaviours, reflexes, macros, variables, script nodes; keywords and operators named | `brain.cc`, `script_text.cc` |
 | BNM sound banks | `World/Sound/*.bnm` | Not started | |
 | SND | `<Level>.snd` | Not started | |
 
@@ -124,6 +125,15 @@ spherical, fog), its box and virtual flag, and how lights combine with material 
 - Sources: own analysis (offsets, list layout, box, virtual flag, counts over all 70 levels); field
   names and the way lights combine with materials from Raymap (reference only); the overall
   brightness by eye against the real game.
+
+## Scripts
+
+See [formats/scripts.md](formats/scripts.md). Each actor's brain leads to an AI model shared by
+its kind: behaviours (rules every frame, plus a schedule that resumes where it stopped), reflexes,
+macros and designer variables. Script nodes are 8 bytes (parameter, cache, indent, type), run by
+the exe's tree-walking interpreter through 41 node types.
+
+- Sources: own analysis of `Rayman2.exe` and the data of all 70 levels; Raymap for orientation only.
 
 ## Actors and animations
 

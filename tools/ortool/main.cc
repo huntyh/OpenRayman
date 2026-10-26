@@ -3,6 +3,7 @@
 #include <openrayman/actor.h>
 #include <openrayman/animation.h>
 #include <openrayman/apm_audio.h>
+#include <openrayman/brain.h>
 #include <openrayman/cnt_archive.h>
 #include <openrayman/dsb_script.h>
 #include <openrayman/file.h>
@@ -19,6 +20,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cctype>
@@ -52,6 +54,9 @@ static void usage()
 		"  scene <game folder> <level>         Print a level's super object tree\n"
 		"  lights <game folder> <level> [x,y,z] Sectors (box, light kinds), every static light, each actor's sector;\n"
 		"                                      with a point: the static vertices near it and their light\n"
+		"  brain <game folder> <level|all> [node]\n"
+		"                                      Actors' AI models and script statistics; with a node,\n"
+		"                                      that actor's variables, behaviours and macros as text\n"
 		"  peek <game folder> <level> <block> <hex offset> <words>\n"
 		"                                      Print memory words, e.g. peek ... Learn_10 05/02 300 16\n"
 		"  motion <game folder> <level>       For each actor: its animation and how far its parts move\n"
@@ -803,6 +808,152 @@ static int cmd_lights(const fs::path& folder, const std::string& name, std::opti
 	return EXIT_SUCCESS;
 }
 
+static void print_script(const script& s, const char* label, const ai_model& model, const memory_image& memory, const scene& tree)
+{
+	std::cout << std::format("    {} at {} +0x{:X}\n", label, s.at.block->id.to_string(), s.at.offset);
+	for(const std::string& line : describe_script(s, model, memory, tree))
+		std::cout << "      " << line << "\n";
+}
+
+static int cmd_brain(const fs::path& folder, const std::string& name, std::optional<std::size_t> only)
+{
+	game_data game = require_game(folder);
+	std::vector<std::string> levels = name == "all" ? game.game_dsb().levels : std::vector<std::string>{ name };
+	std::map<int, std::size_t> types, pointing;
+	std::map<std::pair<int, std::uint32_t>, std::size_t> params; // non-pointer params of table types
+	std::size_t actors = 0, models = 0, behaviours = 0, reflexes = 0, scripts = 0, nodes = 0, variables = 0;
+	for(const std::string& level : levels)
+	{
+		level_files files = load_level_files(game, level);
+		level_header header = read_level_header(files);
+		scene tree(files.memory, header);
+		level_brains brains = read_brains(files.memory, tree);
+		actors += brains.actors.size();
+		models += brains.models.size();
+		for(const auto& [key, m] : brains.models)
+		{
+			behaviours += m.behaviours.size();
+			reflexes += m.reflexes.size();
+			variables += m.variables.size();
+			auto count = [&](const script& s) {
+				scripts++;
+				for(const script_node& n : s.nodes)
+				{
+					nodes++;
+					types[n.type]++;
+					if(n.target)
+						pointing[n.type]++;
+					else if(n.type <= 5 || n.type == 9 || n.type == 17 || n.type == 18 || n.type == 27 || n.type == 30 || n.type == 37)
+						params[{ n.type, n.param }]++;
+				}
+			};
+			for(const auto* list : { &m.behaviours, &m.reflexes })
+				for(const behaviour& b : *list)
+				{
+					for(const script& s : b.rules)
+						count(s);
+					if(b.schedule)
+						count(*b.schedule);
+				}
+		}
+		if(levels.size() != 1)
+			continue;
+		if(!only)
+		{
+			// What pointer nodes point at, by kind of known structure.
+			std::map<std::pair<const sna_block*, std::uint32_t>, std::string> known;
+			for(std::size_t i = 0; i < tree.nodes().size(); i++)
+			{
+				const scene_node& sn = tree.node(i);
+				known[{ sn.at.block, sn.at.offset }] = "super object";
+				if(sn.data)
+					known[{ sn.data->block, sn.data->offset }] = sn.type == super_object_type::actor ? "actor" : std::format("data of type {}", sn.type);
+			}
+			for(const auto& [key, m] : brains.models)
+			{
+				known[{ m.at.block, m.at.offset }] = "ai model";
+				for(const behaviour& b : m.behaviours)
+					known[{ b.at.block, b.at.offset }] = "behaviour";
+				for(const behaviour& b : m.reflexes)
+					known[{ b.at.block, b.at.offset }] = "reflex";
+			}
+			std::map<int, std::map<std::string, std::size_t>> kinds;
+			std::map<int, std::vector<memory_location>> samples;
+			for(const auto& [key, m] : brains.models)
+				for(const auto* list : { &m.behaviours, &m.reflexes })
+					for(const behaviour& b : *list)
+						for(const script* s : [&] { std::vector<const script*> v; for(auto& r : b.rules) v.push_back(&r); if(b.schedule) v.push_back(&*b.schedule); return v; }())
+							for(const script_node& n : s->nodes)
+								if(n.target)
+								{
+									auto it = known.find({ n.target->block, n.target->offset });
+									kinds[n.type][it == known.end() ? "block " + n.target->block->id.to_string() : it->second]++;
+									if(samples[n.type].size() < 3)
+										samples[n.type].push_back(*n.target);
+								}
+			for(const auto& [type, k] : kinds)
+			{
+				std::cout << std::format("  type {:>2} points at:", type);
+				for(const auto& [what, n] : k)
+					std::cout << std::format(" {} x{};", what, n);
+				for(const memory_location& at : samples[type])
+					std::cout << std::format(" [{} +0x{:X}]", at.block->id.to_string(), at.offset);
+				std::cout << "\n";
+			}
+		}
+		for(const actor_brain& b : brains.actors)
+		{
+			if(only && b.node != *only)
+				continue;
+			const ai_model& m = brains.model(b);
+			std::cout << std::format("node {:>4}: model {} +0x{:X}, {} behaviours (current {}), {} reflexes (current {}), {} variables\n",
+				b.node, m.at.block->id.to_string(), m.at.offset, m.behaviours.size(), b.behaviour ? std::to_string(*b.behaviour) : "-",
+				m.reflexes.size(), b.reflex ? std::to_string(*b.reflex) : "-", m.variables.size());
+			if(!only)
+				continue;
+			for(std::size_t i = 0; i < m.variables.size(); i++)
+				std::cout << std::format("  variable {:>2}: offset {:>3}, type {}\n", i, m.variables[i].offset, m.variables[i].type);
+			for(const auto& [list, label] : { std::pair{ &m.behaviours, "behaviour" }, std::pair{ &m.reflexes, "reflex" } })
+				for(std::size_t i = 0; i < list->size(); i++)
+				{
+					const behaviour& bh = (*list)[i];
+					std::cout << std::format("  {} {} at {} +0x{:X}\n", label, i, bh.at.block->id.to_string(), bh.at.offset);
+					for(const script& s : bh.rules)
+						print_script(s, "rule", m, files.memory, tree);
+					if(bh.schedule)
+						print_script(*bh.schedule, "schedule", m, files.memory, tree);
+				}
+			for(std::size_t i = 0; i < m.macros.size(); i++)
+				print_script(m.macros[i].body, std::format("macro {}", i).c_str(), m, files.memory, tree);
+		}
+	}
+	std::cout << std::format("{} actors with a brain, {} models, {} behaviours, {} reflexes, {} scripts, {} nodes, {} variables\n",
+		actors, models, behaviours, reflexes, scripts, nodes, variables);
+	for(const auto& [type, n] : types)
+		std::cout << std::format("  type {:>2}: {:>7} nodes, {:>7} pointing somewhere\n", type, n, pointing[type]);
+	if(levels.size() != 1 || !only)
+	{
+		std::map<int, std::uint32_t> highest;
+		for(const auto& [key, n] : params)
+			highest[key.first] = std::max(highest[key.first], key.second);
+		for(const auto& [type, h] : highest)
+			std::cout << std::format("  type {} highest param {}\n", type, h);
+		std::map<int, std::vector<std::pair<std::size_t, std::uint32_t>>> top;
+		for(const auto& [key, n] : params)
+			if(key.first >= 9)
+				top[key.first].push_back({ n, key.second });
+		for(auto& [type, v] : top)
+		{
+			std::sort(v.rbegin(), v.rend());
+			std::cout << std::format("  type {} {} distinct:", type, v.size());
+			for(std::size_t i = 0; i < std::min<std::size_t>(v.size(), 12); i++)
+				std::cout << std::format(" {:X}x{}", v[i].second, v[i].first);
+			std::cout << "\n";
+		}
+	}
+	return EXIT_SUCCESS;
+}
+
 int main(int argc, char** argv)
 {
 	std::vector<std::string> args(argv + 1, argv + argc);
@@ -855,6 +1006,10 @@ int main(int argc, char** argv)
 			std::sscanf(args[3].c_str(), "%f,%f,%f", &p[0], &p[1], &p[2]);
 			return cmd_lights(args[1], args[2], p);
 		}
+		if(cmd == "brain" && args.size() == 3)
+			return cmd_brain(args[1], args[2], std::nullopt);
+		if(cmd == "brain" && args.size() == 4)
+			return cmd_brain(args[1], args[2], std::stoul(args[3]));
 		if(cmd == "peek" && args.size() == 6)
 			return cmd_peek(args[1], args[2], args[3], args[4], args[5]);
 	}
