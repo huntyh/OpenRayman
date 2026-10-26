@@ -17,6 +17,7 @@ The data of a sector super object (type 0x04, see [geometry.md](geometry.md)):
 | 0x24, 0x30, 0x3C | lists of neighbouring sectors (not decoded yet) |
 | 0x60 | box: 3 floats minimum, 3 floats maximum |
 | 0x7C | u8: 1 for a virtual sector |
+| 0x80 | sky: a visual material, or null (then +0x84 is 100 as well) |
 
 A light list element is the light, then the next element. Sectors share lights: Learn_10's 20
 sectors list 225 distinct lights.
@@ -120,6 +121,16 @@ driver, `GliVd1vf.dll`, which builds a Glide fog table: 64 entries indexed by W,
 as above (0x10007BA0). Using straight-line distance instead gave slightly too much fog away from the
 middle of the screen.
 
+## Sky
+
+Behind everything the game clears the screen with the background colour of the first fog light in
+the camera's sector (0x40AD00 packs it and hands it to the screen clear; Learn_10's is teal). On top
+of that each sector can name a **sky material** (+0x80): in Learn_10 the 11 open-air sectors all
+point to the same one, `foret_sky_txy`, white swirling clouds on cyan that scroll slowly (0.002 per
+frame). How the game maps it onto the sky wasn't found yet; OpenRayman draws it on a dome around the
+camera (from a little below the horizon to the top, repeating 4 times around), unlit and unfogged,
+which looks like the game's from the one spot compared so far.
+
 ## Where this came from
 
 - Own analysis: the sector light list (offsets 0x0C/0x14, element layout), the light's size, the
@@ -135,6 +146,9 @@ middle of the screen.
   conversion that doubles and clamps (0x42D520 and its variants, constant −24576.0). Fog: the setup
   that picks the first fog light (0x44AE80, getters at 0x4270E0..0x427110), the fog record
   (0x424010), object culling past the infinite distance (0x42AF80), and the Glide fog table in
-  `GliVd1vf.dll` (0x10007BA0; its exported GLI_DRV_vComputeFogEffect is an empty stub).
+  `GliVd1vf.dll` (0x10007BA0; its exported GLI_DRV_vComputeFogEffect is an empty stub). Sky: the
+  background colour reader (0x40AD00) and the screen clear (0x4204B0).
+- Own analysis: the sector's sky material at +0x80 (followed back from the `foret_sky_txy`
+  texture, which no geometry uses, to the open-air sectors).
 - By eye against the real game (Learn_10): the river tablet, the stone doors, the mushroom cave and
   the stream, which is how the earlier guesses were found wrong.

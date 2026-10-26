@@ -19,7 +19,8 @@ namespace openrayman
 			constexpr std::uint32_t first_light = 0x0C, light_count = 0x14;
 			constexpr std::uint32_t min = 0x60, max = 0x6C;
 			constexpr std::uint32_t is_virtual = 0x7C; // u8
-			constexpr std::uint32_t size = 0x80;
+			constexpr std::uint32_t sky = 0x80;        // visual material
+			constexpr std::uint32_t size = 0x88;
 		}
 
 		namespace light_field
@@ -187,6 +188,8 @@ namespace openrayman
 			s.max = read_vec3(r);
 			r.seek(sector_field::is_virtual);
 			s.is_virtual = r.u8() != 0;
+			if(auto sky = memory.follow(at + sector_field::sky))
+				s.sky = read_visual_material(memory, *sky);
 			std::optional<memory_location> element = memory.follow(at + sector_field::first_light);
 			for(std::uint32_t i = 0; i < count; i++)
 			{

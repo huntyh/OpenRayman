@@ -63,6 +63,8 @@ namespace openrayman
 		vec3 min{}, max{};
 		// Virtual sectors overlay others to light parts of the scenery; nothing stands in them.
 		bool is_virtual = false;
+		// What the sky shows while the camera is in this sector (Learn_10: scrolling clouds).
+		std::optional<visual_material> sky;
 
 		bool contains(const vec3& point) const;
 	};

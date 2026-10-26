@@ -177,6 +177,7 @@ namespace openrayman
 		std::vector<mesh> m_meshes;
 		std::vector<part> m_parts;
 		std::vector<part> m_level_cards; // the level's own cards that turn to the camera
+		std::map<std::size_t, batch> m_skies; // by sector: the sky's texture and where the dome is
 		std::vector<texture_animation> m_animations;
 		std::map<std::uint32_t, int> m_animation_by_material; // by visual material address
 		double m_time = 0;

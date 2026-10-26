@@ -87,6 +87,9 @@ namespace openrayman
 		look_at look = look_at::none;
 	};
 
+	// Reads a visual material: colours, texture, animated frames, scrolling. Throws format_error.
+	visual_material read_visual_material(const memory_image& memory, const memory_location& at);
+
 	// Reads a geometric object. Throws format_error on out-of-range indices or truncated data.
 	geometric_object read_geometric_object(const memory_image& memory, const memory_location& at);
 

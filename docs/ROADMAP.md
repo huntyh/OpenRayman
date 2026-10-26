@@ -65,7 +65,8 @@ yet: everything that moves on its own moves, but nothing reacts to Rayman.
 - ✅ Fog: the blue-green haze of The Woods of Light, by depth like the game's Glide fog table
 - ✅ Water and glass: lights also set how see-through they are, which gives the waterfall its soft
   edges; soft and glowing surfaces are drawn back to front
-- The sky and the distant background
+- ✅ The sky: the fog's background colour behind everything, and each sector's sky material (the
+  scrolling clouds of The Woods of Light) on a dome around the camera
 - Shadows under characters
 - Moved to Later: a modern lighting mode that keeps the art direction, together with HDR, since
   HDR changes how lights have to work anyway

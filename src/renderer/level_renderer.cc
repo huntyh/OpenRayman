@@ -2,6 +2,7 @@
 
 #include <openrayman/gf_texture.h>
 
+#include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
 #include <SDL3/SDL_log.h>
@@ -335,6 +336,7 @@ namespace openrayman
 		m_animations.clear();
 		m_animation_by_material.clear();
 		m_lights = {};
+		m_skies.clear();
 	}
 
 	void level_renderer::set_blend(blend mode) const
@@ -606,6 +608,47 @@ namespace openrayman
 		stats.min = level_min;
 		stats.max = level_max;
 
+		// The sky: each sector's sky material, shown on a dome around the camera (how the game maps it
+		// isn't known yet; see docs/formats/lighting.md).
+		for(std::size_t s = 0; s < m_lights.sectors.size(); s++)
+		{
+			const auto& sky = m_lights.sectors[s].sky;
+			if(!sky || !sky->texture)
+				continue;
+			gpu_texture texture = texture_for(*sky->texture, archives, stats);
+			if(!texture.id)
+				continue;
+			batch b;
+			b.texture = texture.id;
+			b.animation = animation_for(*sky, archives, stats);
+			b.scroll = glm::vec2(sky->scroll[0] * scroll_frames_per_second, -sky->scroll[1] * scroll_frames_per_second);
+			m_skies[s] = b;
+		}
+		if(!m_skies.empty())
+		{
+			// From a little below the horizon to the top, the texture repeating around it.
+			constexpr int rings = 12, segments = 32;
+			constexpr float lowest = -0.35f, repeats = 4.0f;
+			GLint first = GLint(vertices.size());
+			auto at = [&](int ring, int segment) {
+				float elevation = lowest + (1.5707964f - lowest) * float(ring) / rings;
+				float azimuth = 6.2831853f * float(segment) / segments;
+				glm::vec3 p(std::cos(elevation) * std::cos(azimuth), std::cos(elevation) * std::sin(azimuth), std::sin(elevation));
+				vertex v{ p, glm::vec2(repeats * float(segment) / segments, 2.0f * float(ring) / rings), -p };
+				return v;
+			};
+			for(int ring = 0; ring < rings; ring++)
+			{
+				for(int segment = 0; segment < segments; segment++)
+				{
+					vertex a = at(ring, segment), b = at(ring, segment + 1), c = at(ring + 1, segment), d = at(ring + 1, segment + 1);
+					vertices.insert(vertices.end(), { a, b, d, a, d, c });
+				}
+			}
+			for(auto& [s, b] : m_skies)
+				b.first = first, b.count = GLsizei(vertices.size()) - first;
+		}
+
 		glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
 		glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(vertices.size() * sizeof(vertex)), vertices.data(), GL_STATIC_DRAW);
 		if(stats.min.x > stats.max.x) // no level vertices
@@ -708,6 +751,35 @@ namespace openrayman
 					glUniform4f(m_u_fog_color, fog->color[0], fog->color[1], fog->color[2], 1);
 					glUniform4f(m_u_fog, fog->near, fog->far, fog->fog_near_blend, fog->fog_far_blend);
 				}
+			}
+		}
+
+		// The sky first, behind everything: the camera's sector's, unlit and unfogged, centred on the
+		// camera so it never comes nearer.
+		if(m_lighting)
+		{
+			auto s = m_lights.sector_at({ eye.x, eye.y, eye.z });
+			auto sky = s ? m_skies.find(*s) : m_skies.end();
+			if(sky != m_skies.end())
+			{
+				glm::vec4 fog_was(0.0f);
+				glGetUniformfv(m_program, m_u_fog, glm::value_ptr(fog_was));
+				glUniform4f(m_u_fog, 0, 0, 0, 0);
+				set_blend(blend::none);
+				glUniform1f(m_u_alpha_cut, -1.0f);
+				glDisable(GL_DEPTH_TEST);
+				glDepthMask(GL_FALSE);
+				glUniform1i(m_u_lighting, 3);
+				glm::mat4 model = glm::translate(glm::mat4(1.0f), eye) * glm::scale(glm::mat4(1.0f), glm::vec3(500.0f));
+				glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(model));
+				const batch& b = sky->second;
+				glBindVertexArray(m_vao);
+				glBindTexture(GL_TEXTURE_2D, texture_at(b.animation, b.texture));
+				glUniform2f(m_u_uv_offset, float(std::fmod(double(b.scroll.x) * m_time, 4.0)), float(std::fmod(double(b.scroll.y) * m_time, 4.0)));
+				glDrawArrays(GL_TRIANGLES, b.first, b.count);
+				glEnable(GL_DEPTH_TEST);
+				glDepthMask(GL_TRUE);
+				glUniform4fv(m_u_fog, 1, glm::value_ptr(fog_was));
 			}
 		}
 

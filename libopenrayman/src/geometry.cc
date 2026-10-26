@@ -101,7 +101,7 @@ namespace openrayman
 		return t;
 	}
 
-	static visual_material read_visual_material(const memory_image& memory, const memory_location& at)
+	visual_material read_visual_material(const memory_image& memory, const memory_location& at)
 	{
 		visual_material m;
 		m.at = at;
