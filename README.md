@@ -10,10 +10,35 @@ This continues [imaginaryPineapple's OpenRayman](https://github.com/imaginaryPin
 > Ubisoft in any way.** Rayman and Rayman 2: The Great Escape are trademarks of Ubisoft
 > Entertainment. You need your own legally obtained copy of the game (GOG) to use OpenRayman.
 
-**Status: Phase 2.** The engine opens the original levels and lets you fly through them, with the
-game's textures, characters, objects and glowing Lums. Nothing moves yet, and the game's lighting
-and sky aren't drawn: it's a viewer, not a game, for now. It renders with OpenGL today; the plan is
-Vulkan or Direct3D 12, keeping OpenGL for older devices.
+## Where it stands
+
+OpenRayman opens every level of the original game and lets you fly through it, looking like the
+real thing. You can't play yet: making it a game is the current phase.
+
+| Phase | What it's about | Status |
+| --- | --- | --- |
+| 0. Foundation | Modern toolchain, texture and music readers, test tools | ✅ Done |
+| 1. Level data | Reading the levels: scenery, scene tree, pointers, all 70 levels | ✅ Done |
+| 2. Looking like the game | Characters, animation, the game's lighting, fog and sky | ✅ Done |
+| 3. Making it a game | Sounds, collision, the game's scripts, Rayman walking around | ⬅ **We are here** |
+| 4. Android | Touch controls, phone performance | Planned |
+| Later | Vulkan or Direct3D 12, saves, menus, cutscenes, widescreen and HDR | Planned |
+
+What works today:
+
+- All 70 levels load, with their scenery, textures and characters where the game puts them.
+- Things move: characters play their animations, mushrooms move, Lums flap their wings, water and
+  waterfalls flow (animated and scrolling textures).
+- The game's own lighting and fog, worked out from the original program, plus the sky, glass,
+  see-through water and characters' shadows. The Woods of Light look the same as the real game
+  side by side.
+- The game's music.
+- A texture browser and `ortool` for looking inside the game's files.
+
+Not yet: sound effects and voices, collision, the game's scripts (so characters don't react, and some
+stand in a placeholder pose), and controlling Rayman. See [docs/ROADMAP.md](docs/ROADMAP.md) for the
+details. It renders with OpenGL today; the plan is Vulkan or Direct3D 12, keeping OpenGL for older
+devices.
 
 ## You need the game
 
