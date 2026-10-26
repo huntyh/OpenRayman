@@ -101,6 +101,11 @@ are kept half a texel inside that copy, so filtering doesn't bring in the opposi
 line (in the sky above the painted jungle walls, or as a crack between strips); triangles that
 tile across copies are left alone.
 
+One exception does use the bits: cut-out textures (with transparent pixels) whose tiling byte is 0
+are clamped at their edges instead of repeating. The cliff-edge foliage of The Woods of Light,
+`foret_bordtri_nz`, has UVs running 6% past both edges along u; repeated, its opaque opposite edge
+showed as dark slivers in the sky, clamped it ends at its transparent border as in the game.
+
 ## Where this came from
 
 - Own analysis: the stream model and what the GPT/PTX tables contain, the level header and the Fix
