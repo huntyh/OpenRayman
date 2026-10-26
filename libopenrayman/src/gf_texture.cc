@@ -1,140 +1,81 @@
 #include <openrayman/gf_texture.h>
-#include <iostream>
-#include <iomanip>
+#include <openrayman/binary_reader.h>
+#include <openrayman/error.h>
+
+#include <algorithm>
+#include <string>
 
 namespace openrayman
 {
-    gf_texture::gf_texture(std::istream& stream) :
-        m_stream(stream), m_valid(false), m_info(0, 0, 0)
-    {
-        m_stream.seekg(0);
-        if(m_stream.fail())
-        {
-#ifdef LIBOPENRAYMAN_COUT
-			std::cout << "[openrayman::gf_texture::gf_texture (constructor)] m_stream.fail()" << std::endl;
-#endif
-            return;
-        }
+	// Signature values seen in Rayman 2 PC. They match the pixel format: 888 and 8888.
+	constexpr std::uint32_t gf_format_888 = 888;
+	constexpr std::uint32_t gf_format_8888 = 8888;
 
-        std::int32_t signature;
-        m_stream.read((char*)&signature, sizeof(std::int32_t));
-        if(signature != 0x00000378 && signature != 0x000022b8)
-        {
-#ifdef LIBOPENRAYMAN_COUT
-			std::cout << "[openrayman::gf_texture::gf_texture (constructor)] Invalid signature (not 0x00000378 or 0x000022b8), "
-				      << std::hex << std::setw(8) << "0x" << signature << std::endl;
-#endif
-            return;
+	// Decodes one RLE plane: a byte equal to repeat_byte is followed by (value, count).
+	static void read_plane(binary_reader& reader, std::uint8_t repeat_byte, std::vector<std::uint8_t>& plane)
+	{
+		std::size_t at = 0;
+		while(at < plane.size())
+		{
+			std::uint8_t value = reader.u8();
+			if(value == repeat_byte)
+			{
+				value = reader.u8();
+				std::size_t count = reader.u8();
+				// Runs never cross into the next plane, but don't trust the file on that.
+				count = std::min(count, plane.size() - at);
+				std::fill_n(plane.begin() + static_cast<std::ptrdiff_t>(at), count, value);
+				at += count;
+			}
+			else
+				plane[at++] = value;
 		}
+	}
 
-        std::uint32_t rw, rh;
-        m_stream.read((char*)&rw, sizeof(std::uint32_t));
-        m_stream.read((char*)&rh, sizeof(std::uint32_t));
-        if(rw < 1 || rh < 1)
-        {
-#ifdef LIBOPENRAYMAN_COUT
-			std::cout << "[openrayman::gf_texture::gf_texture (constructor)] rw < 1 || rh < 1" << std::endl;
-#endif
-            return;
-        }
-        m_info.w = rw;
-        m_info.h = rh;
+	gf_texture decode_gf(std::span<const std::byte> data)
+	{
+		binary_reader reader(data);
 
-        std::uint8_t rc, rb;
-        m_stream.read((char*)&rc, 1);
-        m_stream.read((char*)&rb, 1);
-        if(rc != 3 && rc != 4)
-        {
-#ifdef LIBOPENRAYMAN_COUT
-			std::cout << "[openrayman::gf_texture::gf_texture (constructor)] Invalid number of channels (" << rc << ", expected 3 or 4)" << std::endl;
-#endif
-            return;
-        }
-        m_info.channels = rc;
-        m_info.repeat_byte = rb;
+		std::uint32_t format = reader.u32();
+		if(format != gf_format_888 && format != gf_format_8888)
+			throw format_error("unsupported GF format " + std::to_string(format));
 
-        m_valid = true;
-    }
+		gf_texture texture;
+		texture.width = reader.u32();
+		texture.height = reader.u32();
+		texture.channels = reader.u8();
+		std::uint8_t repeat_byte = reader.u8();
 
-    std::size_t gf_texture::convert_to_rgba(std::ostream& stream)
-    {
-        // pixel data starts at position 14
-        m_stream.seekg(14);
-        if(m_stream.fail())
-        {
-#ifdef LIBOPENRAYMAN_COUT
-			std::cout << "[openrayman::gf_texture::gf_texture::convert_to_rgba] m_stream.fail() (after m_stream.seekg(14))" << std::endl;
-#endif
-            return 0;
-        }
+		if(texture.width == 0 || texture.height == 0 || texture.width > 4096 || texture.height > 4096)
+			throw format_error("GF texture has implausible size");
+		if(texture.channels != 3 && texture.channels != 4)
+			throw format_error("GF texture has " + std::to_string(texture.channels) + " channels, expected 3 or 4");
 
-        std::vector<char> r_ch(m_info.w * m_info.h, 0), g_ch(m_info.w * m_info.h, 0), b_ch(m_info.w * m_info.h, 0), a_ch(m_info.w * m_info.h, 255);
-        read_channel(m_stream, m_info.repeat_byte, b_ch);
-        read_channel(m_stream, m_info.repeat_byte, g_ch);
-        read_channel(m_stream, m_info.repeat_byte, r_ch);
-        if(m_info.channels == 4)
-            read_channel(m_stream, m_info.repeat_byte, a_ch);
+		std::size_t pixels = static_cast<std::size_t>(texture.width) * texture.height;
+		std::vector<std::uint8_t> planes[4] = {
+			std::vector<std::uint8_t>(pixels),       // blue
+			std::vector<std::uint8_t>(pixels),       // green
+			std::vector<std::uint8_t>(pixels),       // red
+			std::vector<std::uint8_t>(pixels, 255),  // alpha
+		};
+		for(std::size_t c = 0; c < texture.channels; c++)
+			read_plane(reader, repeat_byte, planes[c]);
 
-        std::size_t written = 0;
-        std::size_t x, y;
-        for(y = 0; y < m_info.h; y++)
-        {
-            for(x = 0; x < m_info.w; x++)
-            {
-                stream << r_ch[((m_info.h - 1 - y) * m_info.w) + x];
-                stream << g_ch[((m_info.h - 1 - y) * m_info.w) + x];
-                stream << b_ch[((m_info.h - 1 - y) * m_info.w) + x];
-                stream << a_ch[((m_info.h - 1 - y) * m_info.w) + x];
-                if(stream.fail())
-                {
-#ifdef LIBOPENRAYMAN_COUT
-					std::cout << "[openrayman::gf_texture::gf_texture::convert_to_rgba] stream.fail() (wrote " << written << ")" << std::endl;
-#endif
-                    return written;
-                }
-                written += 4;
-            }
-        }
-#ifdef LIBOPENRAYMAN_COUT
-			std::cout << "[openrayman::gf_texture::convert_to_rgba] written == " << written << std::endl;
-#endif
-        return written;
-    }
-
-    void gf_texture::read_channel(std::istream& stream, std::uint8_t repeat_byte, std::vector<char>& channel)
-    {
-        std::size_t at = 0;
-        while(at < channel.size())
-        {
-            if(stream.fail())
-            {
-#ifdef LIBOPENRAYMAN_COUT
-					std::cout << "[openrayman::gf_texture::gf_texture::read_channel] stream.fail() (at " << at << ")" << std::endl;
-#endif
-                return;
-            }
-            std::uint8_t value;
-            stream.read((char*)&value, 1);
-            if(value == repeat_byte)
-            {
-                stream.read((char*)&value, 1);
-                std::uint8_t count;
-                stream.read((char*)&count, 1);
-                for(std::size_t n = 0; n < count; n++)
-                {
-                    // either we are wrong or some files are formatted weird?
-                    // -this seems to turn out ok-
-                    // TODO: this does not seem to turn out ok, there are red stripes on some textures
-                    if(at + n < channel.size())
-                        channel[at + n] = value;
-                }
-                at += count;
-            }
-            else
-            {
-                channel[at] = value;
-                at++;
-            }
-        }
-    }
+		texture.rgba.resize(pixels * 4);
+		for(std::uint32_t y = 0; y < texture.height; y++)
+		{
+			// Flip vertically: GF is stored bottom-up.
+			std::size_t src_row = static_cast<std::size_t>(texture.height - 1 - y) * texture.width;
+			std::uint8_t* dst = texture.rgba.data() + static_cast<std::size_t>(y) * texture.width * 4;
+			for(std::uint32_t x = 0; x < texture.width; x++)
+			{
+				std::size_t src = src_row + x;
+				dst[x * 4 + 0] = planes[2][src];
+				dst[x * 4 + 1] = planes[1][src];
+				dst[x * 4 + 2] = planes[0][src];
+				dst[x * 4 + 3] = planes[3][src];
+			}
+		}
+		return texture;
+	}
 }

@@ -1,236 +1,113 @@
 #include <openrayman/cnt_archive.h>
+#include <openrayman/binary_reader.h>
+#include <openrayman/error.h>
+#include <openrayman/file.h>
+
+#include <algorithm>
+#include <cctype>
+#include <fstream>
 
 namespace openrayman
 {
-    cnt_archive::cnt_archive(std::istream& stream) :
-        m_archive_node(nullptr, *this, "/"), m_stream(stream), m_valid(false)
-    {
-        if(m_stream.fail())
-        {
-#ifdef LIBOPENRAYMAN_COUT
-			std::cout << "[openrayman::cnt_archive::cnt_archive (constructor)] m_stream.fail()" << std::endl;
-#endif
-            return;
-        }
-
-        std::int32_t num_directories, num_files;
-        m_stream.read((char*)&num_directories, sizeof(std::int32_t));
-        m_stream.read((char*)&num_files, sizeof(std::int32_t));
-        if(num_directories <= 0 && num_files <= 0)
-        {
-#ifdef LIBOPENRAYMAN_COUT
-			std::cout << "[openrayman::cnt_archive::cnt_archive (constructor)] num_directories <= 0 && num_files <= 0" << std::endl;
-#endif
-            return;
-        }
-
-        char signature[2];
-        m_stream.read(signature, 2);
-        if(signature[0] != 0x1 || signature[1] != 0x1)
-        {
-#ifdef LIBOPENRAYMAN_COUT
-			std::cout << "[openrayman::cnt_archive::cnt_archive (constructor)] Invalid signature (not [0x1, 0x1])" << std::endl;
-#endif
-            return;
-        }
-
-        char xor_key;
-        m_stream.read(&xor_key, 1);
-
-        for(std::int32_t dir = 0; dir < num_directories; dir++)
-        {
-            std::int32_t dir_name_len;
-            m_stream.read((char*)&dir_name_len, sizeof(std::int32_t));
-            std::string dir_name = "";
-            for(std::int32_t n = 0; n < dir_name_len; n++)
-            {
-                char c;
-                m_stream.read(&c, 1);
-                dir_name += c ^ xor_key;
-            }
-            std::vector<std::string> components;
-            std::size_t last_begun = 0;
-            for(std::size_t n = 0; n < dir_name.size(); n++)
-            {
-                if(dir_name[n] == '\\' || dir_name[n] == '/')
-                {
-                    if(n - last_begun > 0)
-                        components.push_back(dir_name.substr(last_begun, n - last_begun));
-                    n++;
-                    last_begun = n;
-                }
-            }
-            if((dir_name.size() - 1 - last_begun) > 0)
-                components.push_back(dir_name.substr(last_begun, dir_name.size() - 1 - last_begun));
-            cnt_directory_node* parent = &m_archive_node;
-            for(std::size_t n = 0; n < components.size() - 1; n++)
-            {
-                if(!parent->has_child(components[n]))
-                    parent->push_child(components[n]);
-                parent = parent->find_child(components[n]);
-            }
-            parent->push_child(components[components.size() - 1], dir);
-        }
-
-        std::vector<cnt_directory_node*> all_directories = m_archive_node.children();
-        char tmp;
-        m_stream.read(&tmp, 1);
-
-        for(std::int32_t file = 0; file < num_files; file++)
-        {
-            std::int32_t dir_index, file_name_len;
-            m_stream.read((char*)&dir_index, sizeof(std::int32_t));
-            m_stream.read((char*)&file_name_len, sizeof(std::int32_t));
-            cnt_directory_node* parent = &m_archive_node;
-            for(cnt_directory_node* node : all_directories)
-            {
-                if(node->cnt_index == dir_index)
-                    parent = node;
-            }
-            std::string file_name = "";
-            for(std::int32_t n = 0; n < file_name_len; n++)
-            {
-                char c;
-                m_stream.read(&c, 1);
-                file_name += c ^ xor_key;
-            }
-            std::vector<char> f_xor_key(4, 0);
-            m_stream.read(f_xor_key.data(), 4);
-            std::int32_t tmp, ptr_in_archive, file_size;
-            m_stream.read((char*)&tmp, sizeof(std::int32_t));
-            m_stream.read((char*)&ptr_in_archive, sizeof(std::int32_t));
-            m_stream.read((char*)&file_size, sizeof(std::int32_t));
-            parent->push_file(file_name, ptr_in_archive, file_size, f_xor_key);
-        }
-
-        m_valid = true;
-    }
-
-    std::string cnt_file::full_path() const
-    {
-        return parent.full_path() + "/" + name;
-    }
-
-    std::vector<char> cnt_file::read(std::int32_t start, std::int32_t count) const
-    {
-        std::vector<char> read;
-        read.reserve(count);
-
-        std::size_t start_in_archive = m_ptr_in_archive + start;
-        std::size_t end = m_ptr_in_archive + start + size;
-        std::size_t pos = start_in_archive;
-
-        parent.owner.m_stream.seekg(pos);
-        std::uint8_t c;
-        while(pos < end && pos < m_ptr_in_archive + start + count)
-        {
-            if(!parent.owner.m_stream.read((char*)&c, 1))
-                break;
-            c ^= m_xor_key[(pos - start_in_archive) % m_xor_key.size()];
-            read.push_back(c);
-            pos++;
-        }
-
-        return read;
-    }
-
-    void cnt_directory_node::push_child(const std::string& child)
-    {
-        m_children.push_back(std::unique_ptr<cnt_directory_node>(new cnt_directory_node(this, owner, child)));
-    }
-
-    void cnt_directory_node::push_child(const std::string& child, std::int32_t cnt_index)
-    {
-        m_children.push_back(std::unique_ptr<cnt_directory_node>(new cnt_directory_node(this, owner, child, cnt_index)));
-    }
-
-    void cnt_directory_node::push_file(const std::string& name, std::int32_t ptr_in_archive, std::int32_t size, std::vector<char>& xor_key)
-    {
-        m_files.push_back(cnt_file(*this, name, ptr_in_archive, size, xor_key));
-    }
-
-    cnt_file* cnt_directory_node::find_file(const std::string& name)
-    {
-        cnt_directory_node& archive_node = owner.archive_node();
-        if(name.find(archive_node.name) == 0)
-            return archive_node.find_file(std::string(name).erase(0, archive_node.name.size()));
-
-        std::string in_this = std::string(name).substr(0, name.find("/"));
-        for(cnt_file& file : m_files)
-        {
-            if(file.name == in_this)
-                return &file;
-        }
-        for(std::unique_ptr<cnt_directory_node>& child : m_children)
-        {
-            if(child->name == in_this)
-                return child->find_file(std::string(name).erase(0, std::min(name.size(), in_this.size() + 1)));
-        }
-        return nullptr;
-    }
-
-    cnt_directory_node* cnt_directory_node::find_child(const std::string& name)
-    {
-        if(name == "")
-            return this;
-
-        cnt_directory_node& archive_node = owner.archive_node();
-        if(name.find(archive_node.name) == 0)
-            return archive_node.find_child(std::string(name).erase(0, archive_node.name.size()));
-
-        std::string in_this = std::string(name).substr(0, name.find("/"));
-        for(std::unique_ptr<cnt_directory_node>& child : m_children)
-        {
-            if(child->name == in_this)
-                return child->find_child(std::string(name).erase(0, std::min(name.size(), in_this.size() + 1)));
-        }
-        return nullptr;
-    }
-
-	std::size_t cnt_directory_node::count_num_files(bool recursive) const
+	static std::string normalize(std::string_view path)
 	{
-		std::size_t n = m_files.size();
-		if(recursive)
-		{
-			for(const std::unique_ptr<cnt_directory_node>& node : m_children)
-				n += node->count_num_files(true);
-		}
-		return n;
+		std::string result(path);
+		for(char& c : result)
+			c = c == '\\' ? '/' : static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+		while(!result.empty() && result.front() == '/')
+			result.erase(result.begin());
+		return result;
 	}
 
-	std::vector<cnt_directory_node*> cnt_directory_node::children()
-    {
-        std::vector<cnt_directory_node*> values;
-        for(std::unique_ptr<cnt_directory_node>& node : m_children)
-        {
-            values.push_back(node.get());
-            std::vector<cnt_directory_node*> node_children = node->children();
-            for(std::size_t n = 0; n < node_children.size(); n++)
-                values.push_back(node_children[n]);
-        }
-        return values;
-    }
+	static std::string read_name(binary_reader& reader, bool xored, std::uint8_t key)
+	{
+		std::uint32_t length = reader.u32();
+		if(length > 1024)
+			throw format_error("CNT name length is implausible");
+		std::string name = reader.string(length);
+		if(xored)
+		{
+			for(char& c : name)
+				c = static_cast<char>(c ^ key);
+		}
+		return name;
+	}
 
-    std::vector<cnt_file*> cnt_directory_node::files()
-    {
-        std::vector<cnt_file*> values;
-        for(cnt_file& file : m_files)
-            values.push_back(&file);
-        for(cnt_directory_node* child : children())
-        {
-            for(cnt_file& file : child->m_files)
-                values.push_back(&file);
-        }
-        return values;
-    }
+	cnt_archive::cnt_archive(const std::filesystem::path& path) : m_path(path)
+	{
+		// The directory lives at the start of the archive, contents follow after it.
+		// Read the whole file once: the archives are ~30 MB and this keeps the code simple.
+		std::vector<std::byte> data = read_file(path);
+		binary_reader reader(data);
 
-    std::string cnt_directory_node::full_path() const
-    {
-		std::cout << "parent " << parent << std::endl;
-		if(parent == nullptr)
-            return name;
-		if(parent->parent == nullptr)
-            return parent->full_path() + name;
-		return parent->full_path() + "/" + name;
-    }
+		std::int32_t directory_count = reader.i32();
+		std::int32_t file_count = reader.i32();
+		if(directory_count < 0 || file_count < 0 || file_count > 100000)
+			throw format_error("not a CNT archive (bad counts)");
+
+		bool xored = reader.u8() != 0;
+		bool checksummed = reader.u8() != 0;
+		std::uint8_t name_key = reader.u8();
+
+		std::vector<std::string> directories;
+		directories.reserve(static_cast<std::size_t>(directory_count));
+		for(std::int32_t n = 0; n < directory_count; n++)
+			directories.push_back(read_name(reader, xored, name_key));
+
+		// Checksum over the directory names. Not verified, the game doesn't either.
+		if(checksummed)
+			reader.u8();
+
+		m_entries.reserve(static_cast<std::size_t>(file_count));
+		for(std::int32_t n = 0; n < file_count; n++)
+		{
+			std::int32_t directory = reader.i32();
+			std::string name = read_name(reader, xored, name_key);
+
+			cnt_entry entry;
+			for(auto& b : entry.xor_key)
+				b = reader.u8();
+			reader.u32(); // checksum
+			entry.offset = reader.u32();
+			entry.size = reader.u32();
+
+			if(directory >= 0 && directory < directory_count)
+			{
+				entry.path = directories[static_cast<std::size_t>(directory)];
+				while(!entry.path.empty() && (entry.path.back() == '\\' || entry.path.back() == '/'))
+					entry.path.pop_back();
+				entry.path += "/" + name;
+			}
+			else
+				entry.path = name;
+			std::ranges::replace(entry.path, '\\', '/');
+
+			if(static_cast<std::uint64_t>(entry.offset) + entry.size > data.size())
+				throw format_error("CNT entry " + entry.path + " points past the end of the archive");
+
+			m_index.emplace(normalize(entry.path), m_entries.size());
+			m_entries.push_back(std::move(entry));
+		}
+	}
+
+	const cnt_entry* cnt_archive::find(std::string_view path) const
+	{
+		auto it = m_index.find(normalize(path));
+		return it == m_index.end() ? nullptr : &m_entries[it->second];
+	}
+
+	std::vector<std::byte> cnt_archive::read(const cnt_entry& entry) const
+	{
+		std::ifstream stream(m_path, std::ios::binary);
+		stream.seekg(entry.offset);
+		std::vector<std::byte> data(entry.size);
+		if(!stream.read(reinterpret_cast<char*>(data.data()), entry.size))
+			throw format_error("could not read CNT entry " + entry.path);
+
+		// The trailing (size % 4) bytes are stored unencoded.
+		std::size_t encoded = entry.size - entry.size % 4;
+		for(std::size_t n = 0; n < encoded; n++)
+			data[n] ^= static_cast<std::byte>(entry.xor_key[n % 4]);
+		return data;
+	}
 }

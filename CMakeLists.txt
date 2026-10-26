@@ -1,35 +1,45 @@
-project(OpenRayman)
-cmake_minimum_required(VERSION 2.6)
+cmake_minimum_required(VERSION 3.24)
+project(OpenRayman VERSION 0.1.0 LANGUAGES C CXX)
 
-set(CMAKE_BUILD_TYPE Release CACHE STRING "The type of build")
-set(USE_LIBRETRO OFF CACHE BOOL "If OpenRayman should be built as a libretro core (TODO)")
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-add_definitions(-std=c++11)
+option(OPENRAYMAN_BUILD_ENGINE "Build the openrayman engine executable" ON)
+option(OPENRAYMAN_BUILD_TOOLS "Build the ortool command line tool" ON)
+option(OPENRAYMAN_BUILD_TESTS "Build the unit tests" ON)
 
-set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
-# taken from glfw
 if(MSVC)
-	foreach(flag CMAKE_C_FLAGS
-				CMAKE_C_FLAGS_DEBUG
-				CMAKE_C_FLAGS_RELEASE
-				CMAKE_C_FLAGS_MINSIZEREL
-				CMAKE_C_FLAGS_RELWITHDEBINFO)
-		if(${flag} MATCHES "/MD")
-			string(REGEX REPLACE "/MD" "/MT" ${flag} "${${flag}}")
-		endif()
-		if(${flag} MATCHES "/MDd")
-			string(REGEX REPLACE "/MDd" "/MTd" ${flag} "${${flag}}")
-		endif()
-	endforeach()
+	add_compile_options(/utf-8 /permissive- /MP)
 endif()
 
-set(BuildTests OFF)
-add_subdirectory(lib/gl3w)
-add_subdirectory(lib/json)
-add_definitions(-DLIBOPENRAYMAN_COUT)
+# Warnings for our own targets only, dependencies keep their own settings.
+function(openrayman_warnings target)
+	if(MSVC)
+		target_compile_options(${target} PRIVATE /W4)
+	else()
+		target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+	endif()
+endfunction()
+
+include(cmake/Dependencies.cmake)
+
+add_subdirectory(lib)
 add_subdirectory(libopenrayman)
-add_subdirectory(src)
+
+if(OPENRAYMAN_BUILD_ENGINE)
+	add_subdirectory(src)
+endif()
+
+if(OPENRAYMAN_BUILD_TOOLS)
+	add_subdirectory(tools/ortool)
+endif()
+
+if(OPENRAYMAN_BUILD_TESTS)
+	enable_testing()
+	add_subdirectory(tests)
+endif()

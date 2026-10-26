@@ -1,52 +1,57 @@
-#ifndef OPENRAYMAN_DSB_SCRIPT_H
-#define OPENRAYMAN_DSB_SCRIPT_H
+#pragma once
 
-#include <openrayman/common_stream.h>
-#include <memory>
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <map>
+#include <span>
 #include <string>
-#include <iostream>
-#include <fstream>
+#include <vector>
 
 namespace openrayman
 {
-    // DSB files are compiled scripts, with different sections.
-    class dsb_script
-    {
-public:
-        dsb_script(std::istream& stream);
+	// Removes the DSB/SNA style XOR obfuscation. The first 4 bytes of the input are the
+	// initial key and are not part of the output.
+	std::vector<std::byte> decode_dsb(std::span<const std::byte> data);
 
-        // Returns true if the stream data was accessible.
-        inline bool valid() const
-        {
-            return m_valid;
-        }
+	// Loading screen ("vignette") description.
+	struct dsb_vignette
+	{
+		// Picture candidates. "Random<A,1,1,B,1,6>" style specs are expanded to their names.
+		std::vector<std::string> images;
+		std::array<float, 4> bar_outside_color{};
+		std::array<float, 4> bar_inside_color{};
+		std::array<std::array<float, 4>, 4> bar_corner_colors{};
+		std::array<std::int32_t, 4> bar_rect{};
+		std::int32_t bar_max = 0;
+	};
 
-        // Decodes and decompiles this script into several files in the target directory.
-        // This function assumes that the target directory is accessible.
-        // Returns true if the function succeeded.
-        bool decompile(const std::string& target);
-private:
-        void decompile_alloc(std::istream& source, const std::string& target);
-        void decompile_lvl_list(std::istream& source, const std::string& target);
-        void decompile_data_directories(std::istream& source, const std::string& target);
-        void decompile_unknown_blob_0x20(std::istream& source, const std::string& target);
-        void decompile_vignette(std::istream& source, const std::string& target);
-        void decompile_texture_files(std::istream& source, const std::string& target);
-        void decompile_unknown_blob_0x6e(std::istream& source, const std::string& target);
-        void decompile_game_options(std::istream& source, const std::string& target);
-        void decompile_sound_banks(std::istream& source, const std::string& target);
-        void decompile_load_sound_banks(std::istream& source, const std::string& target);
+	// The contents of a DSB script: Game.dsb describes the whole game, each level has its own.
+	struct dsb_script
+	{
+		// Section 0x00: memory pool sizes, keyed by pool id.
+		std::map<std::uint32_t, std::uint32_t> memory;
 
-        // Reads a null-terminated string from source.
-        const std::string read_string_null_terminated(std::istream& source);
+		// Section 0x1E: all levels in Game.dsb order. The first one is loaded on startup.
+		std::vector<std::string> levels;
 
-        // Reads the length of the string from source.
-        const std::string read_string_with_length_u16(std::istream& source);
+		// Section 0x28: data directories, keyed by role ("world", "levels", "sound", ...).
+		std::map<std::string, std::string> directories;
 
-        bool m_valid;
-        std::unique_ptr<common::encoded_buf> m_buf;
-        std::istream m_stream;
-    };
+		// Section 0x40: texture archives, e.g. "\Textures.cnt".
+		std::vector<std::string> texture_archives;
+
+		// Section 0x46: loading screens, in order of appearance.
+		std::vector<dsb_vignette> vignettes;
+
+		// Section 0x5C: sound banks to load.
+		std::vector<std::uint32_t> sound_banks;
+
+		// Section 0x64: options file names.
+		std::string default_options_file;
+		std::string current_options_file;
+	};
+
+	// Decodes and parses a DSB file. Throws format_error on unknown or malformed sections.
+	dsb_script parse_dsb(std::span<const std::byte> data);
 }
-
-#endif

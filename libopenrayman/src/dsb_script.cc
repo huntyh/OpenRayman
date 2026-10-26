@@ -1,352 +1,222 @@
 #include <openrayman/dsb_script.h>
-#include <cstdint>
-#include <unordered_map>
-#include <iomanip>
-#include <fstream>
-#include <json.hpp>
+#include <openrayman/binary_reader.h>
+#include <openrayman/error.h>
+
+#include <format>
+
+// A decoded DSB is a list of sections: a u32 section id, entries of the form
+// (u32 entry id, arguments...), then a u32 0xFFFF terminator. Strings are a u16
+// length (including the NUL) followed by the characters.
 
 namespace openrayman
 {
-    dsb_script::dsb_script(std::istream& stream) :
-        m_valid(false), m_buf(new common::encoded_buf(stream)), m_stream(m_buf.get())
-    {
-        m_stream.seekg(4);
-        m_buf->set_virtual_position(0);
+	constexpr std::uint32_t dsb_end = 0xFFFF;
 
-        if(m_stream.fail())
-            return;
+	std::vector<std::byte> decode_dsb(std::span<const std::byte> data)
+	{
+		binary_reader reader(data);
+		std::uint32_t key = reader.u32();
 
-        m_valid = true;
-    }
+		std::vector<std::byte> result(data.begin() + 4, data.end());
+		for(std::byte& b : result)
+		{
+			b ^= static_cast<std::byte>((key >> 8) & 0xFF);
+			key = 16807 * (key ^ 0x75BD924u) - 0x7FFFFFFFu * ((key ^ 0x75BD924u) / 0x1F31Du);
+		}
+		return result;
+	}
 
-    bool dsb_script::decompile(const std::string& target)
-    {
-        m_stream.seekg(4);
-        m_buf->set_virtual_position(0);
+	static std::string read_string(binary_reader& reader)
+	{
+		return reader.string(reader.u16());
+	}
 
-        if(m_stream.fail())
-            return false;
+	static std::array<float, 4> read_color(binary_reader& reader)
+	{
+		return { reader.f32(), reader.f32(), reader.f32(), reader.f32() };
+	}
 
-        std::int32_t id;
-        m_stream.read((char*)&id, sizeof(std::int32_t));
-        while(!m_stream.eof() && !m_stream.fail() && id != 0xFFFF)
-        {
-            #define DECOMPILE_SECTION(id, function) \
-                case id: \
-                { \
-					std::cout << "Decompiling section 0x" << std::hex << id << std::endl; \
-                    function(m_stream, target); \
-					std::cout << "Finished decompiling section 0x" << std::hex << id << std::endl; \
-                    break; \
-                }
+	[[noreturn]] static void unknown(const char* section, std::uint32_t id, std::size_t position)
+	{
+		throw format_error(std::format("unknown DSB {} entry 0x{:X} at offset 0x{:X}", section, id, position - 4));
+	}
 
-            switch(id)
-            {
-                DECOMPILE_SECTION(0x00, decompile_alloc);
-                DECOMPILE_SECTION(0x1E, decompile_lvl_list);
-                DECOMPILE_SECTION(0x28, decompile_data_directories);
-                DECOMPILE_SECTION(0x20, decompile_unknown_blob_0x20);
-                DECOMPILE_SECTION(0x46, decompile_vignette);
-                DECOMPILE_SECTION(0x40, decompile_texture_files);
-                DECOMPILE_SECTION(0x6E, decompile_unknown_blob_0x6e);
-                DECOMPILE_SECTION(0x64, decompile_game_options);
-                DECOMPILE_SECTION(0x5A, decompile_sound_banks);
-                DECOMPILE_SECTION(0x5C, decompile_load_sound_banks);
-            }
-            m_stream.read((char*)&id, sizeof(std::int32_t));
-        }
-        return true;
-    }
+	// "Random<VigLoadLearn,1,1,VigLoadMisc,1,6>" -> { "VigLoadLearn", "VigLoadMisc" }
+	static std::vector<std::string> expand_images(const std::string& spec)
+	{
+		const std::string prefix = "Random<";
+		if(!spec.starts_with(prefix))
+			return { spec };
 
-    void dsb_script::decompile_alloc(std::istream& source, const std::string& target)
-    {
-        std::int32_t id;
-        source.read((char*)&id, sizeof(std::int32_t));
-        while(id != 0xFFFF)
-        {
-            if(id == 0x10)
-            {
-                std::int32_t a, b;
-                source.read((char*)&a, sizeof(std::int32_t));
-                source.read((char*)&b, sizeof(std::int32_t));
-            }
-            else
-            {
-                std::int32_t a;
-                source.read((char*)&a, sizeof(std::int32_t));
-                if(a == 0xFFFF)
-                    return;
-            }
-            source.read((char*)&id, sizeof(std::int32_t));
-        }
-    }
+		std::vector<std::string> parts;
+		std::string inner = spec.substr(prefix.size(), spec.find('>') - prefix.size());
+		std::size_t start = 0;
+		while(start <= inner.size())
+		{
+			std::size_t comma = inner.find(',', start);
+			if(comma == std::string::npos)
+				comma = inner.size();
+			parts.push_back(inner.substr(start, comma - start));
+			start = comma + 1;
+		}
 
-    void dsb_script::decompile_lvl_list(std::istream& source, const std::string& target)
-    {
-        std::ofstream levels_file(target + "/levels.json");
-        nlohmann::json levels_json;
-        levels_json["levels"] = nlohmann::json::array();
-        levels_json["initial"] = "";
-        std::int32_t num_levels;
-        source.read((char*)&num_levels, sizeof(std::int32_t));
-        std::int32_t id;
-        source.read((char*)&id, sizeof(std::int32_t));
-        while(id != 0xFFFF)
-        {
-            if(id == 0x1F)
-            {
-                std::string str = read_string_with_length_u16(source);
-                // levels have four spaced appended for some reason, trim them
-                str.erase(str.find_last_not_of(" \t") + 1);
-                // this seems to be the case for all games, makes sense too
-                if(levels_json["initial"] == "")
-                    levels_json["initial"] = str;
-                levels_json["levels"].push_back(str);
-            }
-            source.read((char*)&id, sizeof(std::int32_t));
-        }
-        if(levels_file.is_open())
-            levels_file << std::setw(4) << levels_json;
-    }
+		// Parts come in triplets of (name, min, max).
+		std::vector<std::string> images;
+		for(std::size_t n = 0; n < parts.size(); n += 3)
+			images.push_back(parts[n]);
+		return images;
+	}
 
-    void dsb_script::decompile_data_directories(std::istream& source, const std::string& target)
-    {
-        std::int32_t id;
-        source.read((char*)&id, sizeof(std::int32_t));
-        while(id != 0xFFFF)
-        {
-            std::string dir = "";
+	static void parse_memory(binary_reader& r, dsb_script& script)
+	{
+		for(std::uint32_t id = r.u32(); id != dsb_end; id = r.u32())
+		{
+			if(id == 0x10)
+			{
+				// Two values for this pool, only the first one has been seen used.
+				script.memory[id] = r.u32();
+				r.u32();
+			}
+			else
+				script.memory[id] = r.u32();
+		}
+	}
 
-#define TRANSLATE_DATA_ID(id, str) \
-                case (id): \
-                    dir = (str); \
-                    break;
+	static void parse_levels(binary_reader& r, dsb_script& script)
+	{
+		r.u32(); // level count, always 0 in practice
+		for(std::uint32_t id = r.u32(); id != dsb_end; id = r.u32())
+		{
+			if(id != 0x1F)
+				unknown("level list", id, r.position());
+			script.levels.push_back(read_string(r));
+		}
+	}
 
-            switch(id)
-            {
-                TRANSLATE_DATA_ID(41, "dll");
-                TRANSLATE_DATA_ID(42, "root");
-                TRANSLATE_DATA_ID(43, "world");
-                TRANSLATE_DATA_ID(44, "levels");
-                TRANSLATE_DATA_ID(45, "sound");
-                TRANSLATE_DATA_ID(46, "saves");
-                TRANSLATE_DATA_ID(48, "vignette");
-                TRANSLATE_DATA_ID(49, "options");
-            }
-            std::uint16_t str_length;
-            source.read((char*)&str_length, sizeof(std::uint16_t));
-            char str[str_length];
-            source.read(str, str_length);
-            source.read((char*)&id, sizeof(std::int32_t));
-        }
-    }
+	static void parse_directories(binary_reader& r, dsb_script& script)
+	{
+		for(std::uint32_t id = r.u32(); id != dsb_end; id = r.u32())
+		{
+			std::string path = read_string(r);
+			switch(id)
+			{
+				case 0x29: script.directories["dll"] = path; break;
+				case 0x2A: script.directories["root"] = path; break;
+				case 0x2B: script.directories["world"] = path; break;
+				case 0x2C: script.directories["levels"] = path; break;
+				case 0x2D: script.directories["sound"] = path; break;
+				case 0x2E: script.directories["saves"] = path; break;
+				case 0x30: script.directories["vignette"] = path; break;
+				case 0x31: script.directories["options"] = path; break;
+				default: script.directories[std::format("0x{:X}", id)] = path; break;
+			}
+		}
+	}
 
-    void dsb_script::decompile_unknown_blob_0x20(std::istream& source, const std::string& target)
-    {
-        std::uint32_t size;
-        source.read((char*)&size, sizeof(std::uint32_t));
-        std::int32_t id;
-        source.read((char*)&id, sizeof(std::int32_t));
-        std::unordered_map<std::int32_t, int> encountered_ids;
-        while(id != 0xFFFF)
-        {
-            if(encountered_ids.count(id) == 0)
-                encountered_ids[id] = 0;
-            encountered_ids[id]++;
-            source.read((char*)&id, sizeof(std::int32_t));
-        }
-    }
+	static void parse_texture_archives(binary_reader& r, dsb_script& script)
+	{
+		for(std::uint32_t id = r.u32(); id != dsb_end; id = r.u32())
+			script.texture_archives.push_back(read_string(r));
+	}
 
-    void dsb_script::decompile_vignette(std::istream& source, const std::string& target)
-    {
-        std::ofstream vignette_file(target + "/vignette.json");
-        nlohmann::json vignette_json;
-        vignette_json["bar"] = nlohmann::json::object();
-        vignette_json["image"] = "";
-        std::int32_t id;
-        source.read((char*)&id, sizeof(std::int32_t));
-        while(id != 0xFFFF)
-        {
-            switch(id)
-            {
-                case 71:
-                case 72:
-                {
-                    std::string str = read_string_with_length_u16(source);
-                    if(str.find_first_of("Random<") == 0)
-                    {
-                        // this is supposed to select a random vignette
-                        // but we just use the first one
-                        str = str.substr(7, std::string::npos);
-                        str = str.substr(0, str.find_first_of(','));
-                    }
-                    if(str.find_last_of(".bmp") != std::string::npos)
-                        str = str.substr(0, str.find_last_of(".bmp") - 3);
-                    vignette_json["image"] = str;
-                    break;
-                }
-                case 75:
-                {
-                    // display
-                    break;
-                }
-                case 76:
-                case 77:
-                {
-                    std::int32_t tmp;
-                    // skip these three
-                    // TODO
-                    for(int n = 0; n < 3; n++)
-                        source.read((char*)&tmp, sizeof(std::int32_t));
-                    std::uint8_t r, g, b, a;
-                    source.read((char*)&r, 1); source.read((char*)&g, 1); source.read((char*)&b, 1); source.read((char*)&a, 1);
-                    if(id == 76)
-                        vignette_json["bar"]["outside"] = { r, g, b, a };
-                    else
-                        vignette_json["bar"]["inside"] = { r, g, b, a };
-                    break;
-                }
-                case 78:
-                {
-                    std::uint8_t colors[(sizeof(std::uint8_t) * 4) * 4];
-                    source.read((char*)colors, (sizeof(std::uint8_t) * 4) * 4);
-                    vignette_json["bar"]["main"] = nlohmann::json::object();
-                    // TODO: are these coordinates right?!?
-                    vignette_json["bar"]["main"]["(x, -)"] = { colors[0], colors[1], colors[2], colors[3] };
-                    vignette_json["bar"]["main"]["(y, -)"] = { colors[4], colors[5], colors[6], colors[7] };
-                    vignette_json["bar"]["main"]["(x, +)"] = { colors[8], colors[9], colors[10], colors[11] };
-                    vignette_json["bar"]["main"]["(y, +)"] = { colors[12], colors[13], colors[14], colors[15] };
-                    break;
-                }
-                case 79:
-                {
-                    std::int32_t vec[4];
-                    source.read((char*)vec, sizeof(std::int32_t) * 4);
-                    vignette_json["bar"]["pos"] = { vec[0], vec[1], vec[2], vec[3] };
-                    break;
-                }
-                case 80:
-                {
-                    // add_bar
-                    break;
-                }
-                case 81:
-                {
-                    std::int32_t max;
-                    source.read((char*)&max, sizeof(std::int32_t));
-                    vignette_json["bar"]["max"] = max;
-                    break;
-                }
-            }
-            source.read((char*)&id, sizeof(std::int32_t));
-        }
-        if(vignette_file.is_open())
-            vignette_file << std::setw(4) << vignette_json;
-    }
+	static void parse_vignette(binary_reader& r, dsb_script& script)
+	{
+		dsb_vignette& v = script.vignettes.emplace_back();
+		for(std::uint32_t id = r.u32(); id != dsb_end; id = r.u32())
+		{
+			switch(id)
+			{
+				case 0x47:
+				case 0x48:
+					v.images = expand_images(read_string(r));
+					break;
+				case 0x4B: // display now
+				case 0x50: // add the loading bar
+					break;
+				case 0x4C: v.bar_outside_color = read_color(r); break;
+				case 0x4D: v.bar_inside_color = read_color(r); break;
+				case 0x4E:
+					for(auto& c : v.bar_corner_colors)
+						c = read_color(r);
+					break;
+				case 0x4F:
+					for(auto& n : v.bar_rect)
+						n = r.i32();
+					break;
+				case 0x51: v.bar_max = r.i32(); break;
+				default: unknown("vignette", id, r.position());
+			}
+		}
+	}
 
-    void dsb_script::decompile_texture_files(std::istream& source, const std::string& target)
-    {
-        std::int32_t id;
-        source.read((char*)&id, sizeof(std::int32_t));
-        while(id != 0xFFFF)
-        {
-            read_string_with_length_u16(source);
-            source.read((char*)&id, sizeof(std::int32_t));
-        }
-    }
+	static void parse_options(binary_reader& r, dsb_script& script)
+	{
+		for(std::uint32_t id = r.u32(); id != dsb_end; id = r.u32())
+		{
+			switch(id)
+			{
+				case 0x65: script.default_options_file = read_string(r); break;
+				case 0x66: script.current_options_file = read_string(r); break;
+				case 0x67:
+					// Three option strings, e.g. "ON", "2", "95". Meaning unknown.
+					for(int n = 0; n < 3; n++)
+						read_string(r);
+					break;
+				default: unknown("options", id, r.position());
+			}
+		}
+	}
 
-    void dsb_script::decompile_unknown_blob_0x6e(std::istream& source, const std::string& target)
-    {
-        std::uint8_t tmp = 0x00;
-        while(tmp != 0xFF)
-            source.read((char*)&tmp, 1);
-        for(int n = 0; n < 3; n++)
-            source.read((char*)&tmp, 1);
-    }
+	static void parse_sound_banks(binary_reader& r, dsb_script& script)
+	{
+		for(std::uint32_t id = r.u32(); id != dsb_end; id = r.u32())
+		{
+			switch(id)
+			{
+				case 0x5D:
+				{
+					std::uint32_t count = r.u32();
+					for(std::uint32_t n = 0; n < count; n++)
+						script.sound_banks.push_back(r.u32());
+					break;
+				}
+				case 0x5E: script.sound_banks.push_back(r.u32()); break;
+				default: unknown("sound bank", id, r.position());
+			}
+		}
+	}
 
-    void dsb_script::decompile_game_options(std::istream& source, const std::string& target)
-    {
-        std::int32_t id;
-        source.read((char*)&id, sizeof(std::int32_t));
-        while(id != 0xFFFF)
-        {
-            switch(id)
-            {
-                case 0x65:
-                case 0x66:
-                {
-                    read_string_with_length_u16(source);
-                    break;
-                }
-                case 0x67:
-                {
-                    std::int16_t tmp;
-                    source.read((char*)&tmp, sizeof(std::int16_t));
-                    break;
-                }
-            }
-            source.read((char*)&id, sizeof(std::int32_t));
-        }
-    }
+	// Sections whose meaning isn't known yet: a flat list of u32 values until the terminator.
+	static void skip_flat(binary_reader& r)
+	{
+		while(r.u32() != dsb_end) {}
+	}
 
-    void dsb_script::decompile_sound_banks(std::istream& source, const std::string& target)
-    {
-        std::int32_t id;
-        source.read((char*)&id, sizeof(std::int32_t));
-        while(id != 0xFFFF)
-        {
-            if(id == 92)
-                decompile_load_sound_banks(source, target);
-            else
-            {
-                std::int32_t unknown;
-                source.read((char*)&unknown, sizeof(std::int32_t));
-            }
-            source.read((char*)&id, sizeof(std::int32_t));
-        }
-    }
+	dsb_script parse_dsb(std::span<const std::byte> data)
+	{
+		std::vector<std::byte> decoded = decode_dsb(data);
+		binary_reader r(decoded);
+		dsb_script script;
 
-    void dsb_script::decompile_load_sound_banks(std::istream& source, const std::string& target)
-    {
-        std::int32_t id;
-        source.read((char*)&id, sizeof(std::int32_t));
-        while(id != 0xFFFF)
-        {
-            if(id == 94)
-            {
-                std::int32_t bank;
-                source.read((char*)&bank, sizeof(std::int32_t));
-            }
-            else
-            {
-                std::int32_t size;
-                source.read((char*)&size, sizeof(std::int32_t));
-                char bytes[size * 4];
-                source.read((char*)&bytes, size * 4);
-            }
-            source.read((char*)&id, sizeof(std::int32_t));
-        }
-    }
-
-    const std::string dsb_script::read_string_null_terminated(std::istream& source)
-    {
-        std::stringstream target;
-        char c = 0x00;
-        source.read(&c, 1);
-        while(c != '\0')
-        {
-            target << c;
-            source.read(&c, 1);
-        }
-        return target.str();
-    }
-
-    const std::string dsb_script::read_string_with_length_u16(std::istream& source)
-    {
-        std::uint16_t length;
-        source.read((char*)&length, sizeof(std::uint16_t));
-        char str[length];
-        source.read(str, length);
-        return std::string(str);
-    }
+		while(r.remaining() >= 4)
+		{
+			std::uint32_t section = r.u32();
+			switch(section)
+			{
+				case 0x00: parse_memory(r, script); break;
+				case 0x1E: parse_levels(r, script); break;
+				case 0x20: skip_flat(r); break;
+				case 0x28: parse_directories(r, script); break;
+				case 0x40: parse_texture_archives(r, script); break;
+				case 0x46: parse_vignette(r, script); break;
+				case 0x5A: skip_flat(r); break; // levels only: entry 0x5B with one value, e.g. 40
+				case 0x5C: parse_sound_banks(r, script); break;
+				case 0x64: parse_options(r, script); break;
+				case 0x6E: skip_flat(r); break;
+				case dsb_end: break; // stray terminator between sections
+				default: unknown("section", section, r.position());
+			}
+		}
+		return script;
+	}
 }
