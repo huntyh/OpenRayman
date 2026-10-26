@@ -56,8 +56,8 @@ Longer complete tracks to try: `main title`, `Jail10`.
 - [ ] Space pauses and resumes, M/N switch tracks, short tracks loop
 - [ ] `outro1` (the only mono track) plays on both ears
 
-Tip: `ortool music "F:\Games\Rayman 2" C:\temp\r2music` exports everything as WAV so you can listen in
-any player (about 500 MB).
+Tip: `ortool music "F:\Games\Rayman 2" H:\r2export\music` exports everything as WAV so you can listen in
+any player (about 500 MB). Keep exports like this off the C: drive, and never commit them.
 
 ### Folder picker
 

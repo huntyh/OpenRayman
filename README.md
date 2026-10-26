@@ -1,10 +1,14 @@
 # OpenRayman
 
 An open source reimplementation of the *Rayman 2: The Great Escape* engine in modern C++,
-targeting Windows, Linux and Android.
+targeting Windows, Linux and Android. Free for anyone to use, under the GPL/LGPL (see [License](#license)).
 
 This continues [imaginaryPineapple's OpenRayman](https://github.com/imaginaryPineapple/OpenRayman)
 (2016), rebuilt on a current toolchain. See [docs/ROADMAP.md](docs/ROADMAP.md) for where it's heading.
+
+> **OpenRayman is an unofficial fan project. It is not affiliated with, endorsed by, or connected to
+> Ubisoft in any way.** Rayman and Rayman 2: The Great Escape are trademarks of Ubisoft
+> Entertainment. You need your own legally obtained copy of the game to use OpenRayman.
 
 **Status: Phase 1.** The engine reads the original game files and can show every texture and play
 every music track. All 70 levels load into memory with every pointer resolved; nothing is drawn
@@ -92,11 +96,75 @@ runs the unit tests against your real game files.
 | `src/` | The engine | GPLv3 |
 | `tools/ortool/` | Data inspection tool | GPLv3 |
 | `tests/` | Unit tests (doctest) | GPLv3 |
-| `lib/` | Vendored glad (OpenGL loader) and stb_image_write | their own |
+| `lib/` | Vendored glad (OpenGL loader) and stb_image_write | their own, see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) |
 | `android/` | The 2016 Android launcher, kept for reference until the Android port (Phase 4) | GPLv3 |
+| `docs/` | Roadmap, testing guide, [file format notes](docs/FORMATS.md) | GPLv3 |
 
 ## Ground rules
 
-- **No game data in the repository**, ever. Tests read your own install from `OPENRAYMAN_GAME_DIR`.
-- **Clean-room only.** Work from the game's files, public format documentation and our own analysis.
-  Never use leaked Ubisoft source code.
+- **No Ubisoft assets in the repository**, ever: no textures, music, logos or extracted game data.
+  Everyone reads their own copy of the game. Tests use your install via `OPENRAYMAN_GAME_DIR` and only
+  store checksums, never the data itself.
+- **No leaked or copied code.** Never use leaked Ubisoft source code, and never copy code from Ubisoft
+  binaries or from projects whose license doesn't allow it. Everything is implemented from our own
+  understanding of the file formats.
+- **Record where knowledge comes from.** [docs/FORMATS.md](docs/FORMATS.md) lists, for each format,
+  what we know and its sources.
+- **Keep copyright notices.** Existing notices stay in place and upstream code is never relicensed.
+
+## License
+
+OpenRayman is free software: anyone may use, study, share and modify it.
+
+- **The engine and tools** (everything outside `libopenrayman/`) are licensed under the
+  **GNU General Public License v3**, inherited from the original OpenRayman. See
+  [LICENSE_openrayman](LICENSE_openrayman).
+- **libopenrayman** (everything in `libopenrayman/`), the library that reads the game's files, is
+  licensed under the **GNU Lesser General Public License v3**, so other tools can use it more freely.
+  See [LICENSE_libopenrayman](LICENSE_libopenrayman).
+- Third party components keep their own licenses. Full texts are in
+  [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+
+These licenses cover OpenRayman's code only. They grant nothing for Rayman 2's game data, which
+remains Ubisoft's property.
+
+## Credits
+
+OpenRayman stands on the work of many people in the Rayman community who reverse engineered and
+documented this game over two decades. Thank you.
+
+### Original project
+
+- **imaginaryPineapple** (Hannes Mann): created [OpenRayman](https://github.com/imaginaryPineapple/OpenRayman)
+  in 2016, including the first open decoders for CNT, GF, APM and DSB files and the original Android
+  launcher. This project continues that work under the same licenses.
+
+### Rayman 2 research
+
+- **szymski** (Szymon Jankowski): [Rayman2Lib](https://github.com/szymski/Rayman2Lib), tools for
+  Rayman 2 modding and content extraction. The original libopenrayman drew heavily on it, and our
+  understanding of the formats builds on it (MIT, see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)).
+- **Synthesis**: [Ray2Get](https://github.com/Synthesis/ray2get), the APM music converter first
+  released in 2009, whose format description the APM decoder is partly based on.
+- **The Raymap team** (byvar and contributors): [Raymap](https://github.com/byvar/raymap), the map
+  viewer for OpenSpace games, used as a reference for how the engine's data fits together. No code
+  is taken from it.
+- **The UnLockRay community**, for years of Rayman 2 research and knowledge sharing.
+- **The RaymanPC community** and everyone who documented OpenSpace on its
+  [wiki](https://raymanpc.com/wiki/en/OpenSpace) and forums.
+
+### Libraries
+
+- [SDL 3](https://libsdl.org) by Sam Lantinga and contributors (zlib license)
+- [GLM](https://github.com/g-truc/glm) by G-Truc Creation (MIT)
+- [glad](https://github.com/Dav1dde/glad) by David Herberth, with Khronos OpenGL definitions
+  (WTFPL/CC0 and Apache-2.0)
+- [stb_image_write](https://github.com/nothings/stb) by Sean Barrett (MIT or public domain)
+- [doctest](https://github.com/doctest/doctest) by Viktor Kirilov (MIT), for the tests
+
+The 2016 version also used gl3w, nlohmann json, lodepng, mingw-std-threads and FLAC; thanks to their
+authors as well. They're no longer part of the project.
+
+### And
+
+- **Ubisoft Montpellier** and everyone who made Rayman 2, a game worth preserving.

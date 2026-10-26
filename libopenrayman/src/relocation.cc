@@ -1,3 +1,6 @@
+// This file is part of libopenrayman, licensed under the GNU Lesser General Public License v3.
+// See LICENSE_libopenrayman in the repository root.
+
 #include <openrayman/relocation.h>
 #include <openrayman/binary_reader.h>
 #include <openrayman/error.h>
