@@ -15,6 +15,11 @@ Never use leaked Ubisoft source code. Never copy code from Ubisoft binaries, or 
 license doesn't allow it (for example [Raymap](https://github.com/byvar/raymap), which has no license).
 Implement everything yourself, from your own understanding of the file formats.
 
+Studying how the game's own program (`Rayman2.exe` and its DLLs) reads a file, to understand the
+format, is allowed: that's how the LEVELS0.DAT tables were found. Copying its code is not. Describe
+what you learned in your own words in [docs/FORMATS.md](docs/FORMATS.md), then write the
+implementation from that description.
+
 ## Record where knowledge comes from
 
 When you add or correct something about a file format, update [docs/FORMATS.md](docs/FORMATS.md):
