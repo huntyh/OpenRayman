@@ -21,7 +21,7 @@ namespace openrayman
 			layout(location = 1) in vec2 a_uv;
 			layout(location = 2) in vec3 a_normal;
 			layout(location = 3) in vec4 a_uv_bounds;
-			layout(location = 4) in vec3 a_color; // the game's light, worked out at load (static geometry)
+			layout(location = 4) in vec3 a_color; // the game's lights summed, worked out at load (static geometry)
 			uniform mat4 u_view_projection;
 			uniform mat4 u_model;
 			uniform vec3 u_camera;
@@ -32,6 +32,13 @@ namespace openrayman
 			uniform int u_light_count;
 			uniform int u_light_kind[max_lights];    // 0 ambient, 1 parallel, 2 spherical, 3 spherical painting
 			uniform vec3 u_material_ambient, u_material_diffuse; // the surface's own colours
+			// The game's luminosity setting, as an offset from its middle (0.5): it brightens surfaces
+			// and strengthens the lights on them.
+			uniform float u_luminosity;
+			vec3 lit(vec3 sum)
+			{
+				return clamp(u_luminosity + u_material_ambient + sum * (u_luminosity + u_material_diffuse), 0.0, 1.0);
+			}
 			uniform vec3 u_light_vector[max_lights]; // parallel: the way it shines; spherical: its position
 			uniform vec3 u_light_color[max_lights];
 			uniform vec2 u_light_range[max_lights];  // spherical: near, far
@@ -44,7 +51,7 @@ namespace openrayman
 				vec4 world = u_model * vec4(a_position, 1.0);
 				vec3 normal = normalize(mat3(u_model) * a_normal);
 				if(u_lighting == 1)
-					v_light = a_color;
+					v_light = lit(a_color);
 				else if(u_lighting == 2)
 				{
 					vec3 sum = vec3(0.0);
@@ -63,7 +70,7 @@ namespace openrayman
 						}
 						sum += u_light_color[i] * strength;
 					}
-					v_light = clamp(u_material_ambient + sum * u_material_diffuse, 0.0, 1.0);
+					v_light = lit(sum);
 				}
 				else
 				{
@@ -246,6 +253,7 @@ namespace openrayman
 		m_u_light_range = glGetUniformLocation(m_program, "u_light_range");
 		m_u_material_ambient = glGetUniformLocation(m_program, "u_material_ambient");
 		m_u_material_diffuse = glGetUniformLocation(m_program, "u_material_diffuse");
+		m_u_luminosity = glGetUniformLocation(m_program, "u_luminosity");
 		m_u_fog_color = glGetUniformLocation(m_program, "u_fog_color");
 		m_u_fog = glGetUniformLocation(m_program, "u_fog");
 		m_u_additive = glGetUniformLocation(m_program, "u_additive");
@@ -296,6 +304,7 @@ namespace openrayman
 		}
 		m_textures.clear();
 		m_batches.clear();
+		m_see_through.clear();
 		m_sprites.clear();
 		m_meshes.clear();
 		m_parts.clear();
@@ -472,7 +481,7 @@ namespace openrayman
 							vec3 origin = world.apply({ 0, 0, 0 }), tip = world.apply(n);
 							glm::vec3 turned = glm::normalize(glm::vec3(tip[0] - origin[0], tip[1] - origin[1], tip[2] - origin[2]));
 							vec3 sum = light_at(lit, light_target::scenery, p, { turned.x, turned.y, turned.z });
-							color = glm::clamp(glm::vec3(colors[0], colors[1], colors[2]) + glm::vec3(sum[0], sum[1], sum[2]) * glm::vec3(colors[3], colors[4], colors[5]), 0.0f, 1.0f);
+							color = glm::vec3(sum[0], sum[1], sum[2]);
 						}
 						out.push_back({ position, uvs[k], glm::vec3(n[0], n[1], n[2]), bounds, color });
 					}
@@ -531,7 +540,25 @@ namespace openrayman
 				for(std::size_t i : m_lights.sectors[*sectors[g]].lights)
 					lit.push_back(&m_lights.lights[i]);
 			}
-			add(placed.object, placed.world, level_triangles, m_sprites, lit);
+			// Solid surfaces join the level's batches; see-through ones stay per object, to be drawn
+			// back to front (a leaf in front of the waterfall must go over it, not under).
+			by_texture own;
+			add(placed.object, placed.world, own, m_sprites, lit);
+			for(auto& [key, list] : own)
+			{
+				if(std::get<0>(key) == blend::none)
+				{
+					auto& into = level_triangles[key];
+					into.insert(into.end(), list.begin(), list.end());
+					continue;
+				}
+				glm::vec3 lo(1e30f), hi(-1e30f);
+				for(const vertex& v : list)
+					lo = glm::min(lo, v.position), hi = glm::max(hi, v.position);
+				std::vector<batch> one;
+				append(by_texture{ { key, list } }, one);
+				m_see_through.push_back({ one.front(), (lo + hi) * 0.5f });
+			}
 		}
 		append(level_triangles, m_batches);
 		// Meshes placed per frame are in their own space, so they don't count towards the level's bounds.
@@ -616,6 +643,7 @@ namespace openrayman
 		const glm::mat4 camera = glm::inverse(view);
 		const glm::vec3 eye(camera[3]);
 		glUniform3f(m_u_camera, eye.x, eye.y, eye.z);
+		glUniform1f(m_u_luminosity, m_luminosity - 0.5f);
 		std::vector<part> parts;
 		parts.reserve(m_level_cards.size() + m_parts.size());
 		for(const auto* list : { &m_level_cards, &m_parts })
@@ -660,7 +688,7 @@ namespace openrayman
 			glUniform3fv(m_u_light_color, l.count, glm::value_ptr(l.color[0]));
 			glUniform2fv(m_u_light_range, l.count, glm::value_ptr(l.range[0]));
 		};
-		auto draw_batches = [this](const std::vector<batch>& batches, blend mode) {
+		auto draw_batches = [this](std::span<const batch> batches, blend mode) {
 			for(const batch& b : batches)
 			{
 				if(b.mode != mode)
@@ -682,6 +710,18 @@ namespace openrayman
 			glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(identity));
 			glUniform1i(m_u_lighting, m_lighting ? 1 : 0);
 			draw_batches(m_batches, mode);
+			if(mode != blend::none)
+			{
+				std::vector<std::pair<float, const batch*>> order;
+				for(const see_through& s : m_see_through)
+				{
+					if(s.b.mode == mode)
+						order.push_back({ glm::length(s.center - eye), &s.b });
+				}
+				std::ranges::sort(order, [](const auto& a, const auto& b) { return a.first > b.first; });
+				for(const auto& [distance, b] : order)
+					draw_batches(std::span(b, 1), mode);
+			}
 			glUniform1i(m_u_lighting, m_lighting ? 2 : 0);
 			for(std::size_t i = 0; i < parts.size(); i++)
 			{
@@ -693,6 +733,7 @@ namespace openrayman
 		glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(identity));
 		// Sprites are glows and flames: they shine by themselves.
 		glUniform1i(m_u_lighting, m_lighting ? 1 : 0);
+		glUniform3f(m_u_material_ambient, 1, 1, 1);
 		glUniform2f(m_u_uv_offset, 0, 0);
 
 		// The level's sprites, and the actors' where their parts are now.

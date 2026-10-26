@@ -72,6 +72,9 @@ namespace openrayman
 		// The game's lights and fog (on by default), or a plain stand-in light for comparing.
 		void set_lighting(bool on) { m_lighting = on; }
 		bool lighting() const { return m_lighting; }
+		// The game's luminosity setting: 0.5 is neutral, higher is brighter.
+		void set_luminosity(float luminosity) { m_luminosity = luminosity; }
+		float luminosity() const { return m_luminosity; }
 
 	private:
 		// Drawn in this order: solid surfaces first, then see-through ones over them.
@@ -153,14 +156,20 @@ namespace openrayman
 		GLint m_u_uv_offset = -1;
 		GLint m_u_camera = -1, m_u_lighting = -1;
 		GLint m_u_light_count = -1, m_u_light_kind = -1, m_u_light_vector = -1, m_u_light_color = -1, m_u_light_range = -1;
-		GLint m_u_material_ambient = -1, m_u_material_diffuse = -1;
+		GLint m_u_material_ambient = -1, m_u_material_diffuse = -1, m_u_luminosity = -1;
 		GLint m_u_fog_color = -1, m_u_fog = -1, m_u_additive = -1;
 		GLuint m_vao = 0, m_vbo = 0;
 		GLuint m_sprite_vao = 0, m_sprite_vbo = 0; // rebuilt every frame
 		std::vector<sprite_instance> m_sprites;     // of the static geometry, in world space
 		GLuint m_white = 0; // for untextured materials
 		std::map<std::string, gpu_texture> m_textures; // by CNT path, id 0 if missing
-		std::vector<batch> m_batches; // of the static geometry
+		std::vector<batch> m_batches; // of the static geometry: solid surfaces
+		struct see_through
+		{
+			batch b;
+			glm::vec3 center; // drawn farthest first
+		};
+		std::vector<see_through> m_see_through; // of the static geometry, one per object and texture
 		std::vector<mesh> m_meshes;
 		std::vector<part> m_parts;
 		std::vector<part> m_level_cards; // the level's own cards that turn to the camera
@@ -169,6 +178,7 @@ namespace openrayman
 		double m_time = 0;
 		bool m_edge_clamp = true;
 		bool m_lighting = true;
+		float m_luminosity = 1.0f;
 		level_lights m_lights;
 	};
 }

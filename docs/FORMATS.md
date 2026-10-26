@@ -116,6 +116,15 @@ materials.
 - Sources: structure chain from Raymap (reference only); Rayman 2 PC offsets and sizes from own
   analysis, verified over all 70 levels and by eye on Learn_10.
 
+## Lighting and fog
+
+See [formats/lighting.md](formats/lighting.md). Each sector's static lights (ambient, parallel,
+spherical, fog), its box and virtual flag, and how lights combine with material colours.
+
+- Sources: own analysis (offsets, list layout, box, virtual flag, counts over all 70 levels); field
+  names and the way lights combine with materials from Raymap (reference only); the overall
+  brightness by eye against the real game.
+
 ## Actors and animations
 
 See [formats/animation.md](formats/animation.md). Actors' object lists, and the animation bank shared

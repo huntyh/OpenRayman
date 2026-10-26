@@ -128,6 +128,20 @@ change every actor of that family); the title bar shows the node and state. Comp
       ours, so say if it's too fast or too slow)
 - [ ] Skies with clouds in other levels drift like in the game
 
+## Round 5: lighting and fog
+
+Press **L** to switch between the game's lighting and the old plain light, and **[** / **]** to make
+it darker or brighter (the title bar shows the luminosity; it starts at 1.00).
+
+- [ ] Mushroom cave, `--level Learn_10 --camera -54.2,178.3,1.5,758.6,-12.4`: about as bright as in
+      the game, with the blue tint on the left wall
+- [ ] Waterfall, `--level Learn_10 --camera -93.7,223.0,2.3,700.0,0.1`: the colours match the game's,
+      and the hanging leaves in front of the waterfall cover it cleanly (no box around them)
+- [ ] Which luminosity matches the game best? Note the value from the title bar
+- [ ] Near the waterfall, distant things fade into a teal haze like in the game
+- [ ] Characters (Lums, mushrooms, the Globox kids) are lit like the scenery around them, not
+      black and not glowing
+
 ## Known limitations
 
 Don't report these as bugs, they're the next steps:
@@ -141,7 +155,8 @@ Don't report these as bugs, they're the next steps:
 - No fireflies or other particles yet: scripts spawn them (Phase 3)
 - The start view uses the game camera's saved position, which can be an odd spot (e.g. among the
   treetops in The Woods of Light); press R after flying off to get back there
-- The lighting is a simple stand-in, not the game's own; the sky is a plain colour
-- Water and glass may look too solid
+- The sky is a plain colour
+- Some lights also change how see-through water and glass are; that isn't done yet, so water and
+  glass may look too pale or too solid
 
 Tip: compare with the real game at the same spot.
