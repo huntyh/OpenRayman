@@ -26,7 +26,8 @@ Once the VM works, the game's own logic runs from your data files.
 - ✅ GPT and PTX files: the level header with its world roots, how Fix's actors (Rayman, the
   camera, ...) join each level, and every level's texture list ([format notes](formats/gpt.md))
 - ✅ The super object hierarchy: every level's scene tree rebuilt, with all links cross-checked
-- The object graph: sectors, geometric objects, materials, transforms
+- ✅ Static geometry: sectors, meshes, UVs, materials and their textures
+  ([format notes](formats/geometry.md)); `ortool obj` exports a level for any 3D viewer
 - BNM sound banks (sound effects, voices, and the music sequencing)
 
 ## Phase 2: render one level

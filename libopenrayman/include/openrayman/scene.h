@@ -20,6 +20,8 @@ namespace openrayman
 	{
 		constexpr std::uint32_t world = 0x1; // the world roots
 		constexpr std::uint32_t actor = 0x2; // "perso" in the engine
+		constexpr std::uint32_t sector = 0x4;
+		constexpr std::uint32_t ipo = 0x20; // instantiated physical object: static geometry
 	}
 
 	// One super object: a node of the level's scene tree. Each carries an engine object

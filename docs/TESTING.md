@@ -89,3 +89,14 @@ Run `.\build\windows-debug\bin\ortool.exe level "F:\Games\Rayman 2" Learn_10`
 - [ ] It says `10 Fix actors, 5 placed in this level`
 - [ ] It lists 112 textures with readable names, like `textures_vegetaux\...` and `effets_speciaux\...`
 - [ ] The `scene:` line shows 194 super objects, 83 actors and 108 nodes in the sector tree
+
+### Level geometry
+
+Run `.\build\windows-debug\bin\ortool.exe obj "F:\Games\Rayman 2" Learn_10 H:\r2export\obj\Learn_10`
+
+- [ ] It reports `87 objects, 2604 triangles, 45 materials` and `0 textures missing`
+- [ ] Open `H:\r2export\obj\Learn_10\Learn_10.obj` in Windows' 3D Viewer or Blender: you see the
+      Woods of Light (the paths, pools and waterfall), with textures, not mirrored or upside down
+- [ ] Try a level you remember well the same way (replace `Learn_10` in both places)
+
+Only the level's static scenery is exported. Characters, Lums and other objects come later.

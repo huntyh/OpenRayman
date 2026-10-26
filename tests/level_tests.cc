@@ -3,6 +3,7 @@
 #include <openrayman/cnt_archive.h>
 #include <openrayman/error.h>
 #include <openrayman/game_data.h>
+#include <openrayman/geometry.h>
 #include <openrayman/gf_texture.h>
 #include <openrayman/level_header.h>
 #include <openrayman/mask.h>
@@ -266,6 +267,7 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 	};
 
 	std::size_t references = 0, exact = 0;
+	std::map<std::uint16_t, std::size_t> skipped_types;
 	for(const std::string& level : game->game_dsb().levels)
 	{
 		INFO(level);
@@ -289,6 +291,31 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 				CHECK(node.type == super_object_type::actor);
 		}
 
+		// Static geometry: every mesh decodes, with indices in range (checked while reading), and
+		// every textured material names a texture that exists.
+		std::size_t meshes = 0, level_triangles = 0;
+		for(const placed_geometry& placed : static_geometry(files.memory, tree))
+		{
+			meshes++;
+			for(std::uint16_t type : placed.object.skipped_types)
+				skipped_types[type]++;
+			for(const triangle_element& e : placed.object.elements)
+			{
+				level_triangles += e.triangles.size();
+				CHECK(e.uv_triangles.size() == e.triangles.size());
+				if(e.material && e.material->texture)
+					CHECK(gf_size(e.material->texture->cnt_path()).has_value());
+			}
+		}
+		CHECK(meshes > 0);
+		CHECK(level_triangles > 0);
+		if(level == "Learn_10")
+		{
+			// Recorded from the export checked by eye (top and side views of the whole level).
+			CHECK(meshes == 87);
+			CHECK(level_triangles == 2604);
+		}
+
 		CHECK(read_texture_table(files, false).size() == 257);
 		std::vector<texture_info> textures = read_texture_table(files, true);
 		CHECK(!textures.empty());
@@ -306,4 +333,7 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 		}
 	}
 	CHECK(exact >= references * 95 / 100);
+	// Only one element type isn't decoded yet: type 3, 22 elements in all, none in Learn_10.
+	for(auto [type, count] : skipped_types)
+		CHECK(type == 3);
 }

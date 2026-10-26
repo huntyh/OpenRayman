@@ -26,7 +26,8 @@ came from. Update this whenever a format is added or corrected.
 | Relocation tables | `Fix.rtb/.rtp/.rtt/.rts` | Complete | `relocation.cc` |
 | LEVELS0.DAT | `World/Levels/LEVELS0.DAT` | Complete | `relocation.cc` |
 | GPT | `Fix.gpt`, `<Level>.gpt` | Level header (Fix actors, world roots); the rest unknown | `pointer_stream.cc`, `level_header.cc` |
-| Super objects | inside SNA | Tree links complete; engine objects not interpreted | `scene.cc` |
+| Super objects | inside SNA | Tree links complete | `scene.cc` |
+| Static geometry | inside SNA | Meshes, triangles, UVs, materials; sprites (type 3) and collision not yet | `geometry.cc` |
 | PTX | `Fix.ptx`, `<Level>.ptx` | Texture slots and names; trailing values unknown | `texture_table.cc` |
 | BNM sound banks | `World/Sound/*.bnm` | Not started | |
 | SND | `<Level>.snd` | Not started | |
@@ -105,3 +106,11 @@ texture lists.
 - Sources: own analysis (stream model, header, Fix actor placements, PTX, texture descriptions);
   super object layout and world root names from Raymap (reference only), every field confirmed by own
   analysis across all 70 levels.
+
+## Static geometry
+
+See [formats/geometry.md](formats/geometry.md). The chain from sectors down to triangles, UVs and
+materials.
+
+- Sources: structure chain from Raymap (reference only); Rayman 2 PC offsets and sizes from own
+  analysis, verified over all 70 levels and by eye on Learn_10.

@@ -5,6 +5,7 @@
 #include <openrayman/dsb_script.h>
 #include <openrayman/file.h>
 #include <openrayman/game_data.h>
+#include <openrayman/geometry.h>
 #include <openrayman/gf_texture.h>
 #include <openrayman/memory_image.h>
 #include <openrayman/level_header.h>
@@ -15,6 +16,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 
+#include <array>
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
@@ -23,6 +25,7 @@
 #include <format>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -41,6 +44,8 @@ static void usage()
 		"  music <game folder> <out folder>    Export every APM music file as WAV\n"
 		"  level <game folder> <level|all>     Load a level's memory and check its pointers\n"
 		"  gpt <game folder> <level>           List the pointers in Fix.gpt and a level's GPT\n"
+		"  obj <game folder> <level> <out>     Export a level's static geometry as OBJ with textures\n"
+		"  scene <game folder> <level>         Print a level's super object tree\n"
 		"  peek <game folder> <level> <block> <hex offset> <words>\n"
 		"                                      Print memory words, e.g. peek ... Learn_10 05/02 300 16\n"
 		"\n"
@@ -270,6 +275,123 @@ static int cmd_gpt(const fs::path& folder, const std::string& name)
 	return EXIT_SUCCESS;
 }
 
+static void dump_node(const memory_image& memory, const scene& tree, std::size_t index, int depth)
+{
+	const scene_node& node = tree.node(index);
+	std::cout << std::format("{:{}}type 0x{:X} at {} +0x{:X}", "", depth * 2, node.type, node.at.block->id.to_string(), node.at.offset);
+	if(node.data)
+		std::cout << std::format("  data {} +0x{:X} {}", node.data->block->id.to_string(), node.data->offset, shape(memory, *node.data, 0x40));
+	if(node.matrix)
+		std::cout << std::format("  matrix {} +0x{:X}", node.matrix->block->id.to_string(), node.matrix->offset);
+	std::cout << "\n";
+	for(std::size_t child : node.children)
+		dump_node(memory, tree, child, depth + 1);
+}
+
+static int cmd_scene(const fs::path& folder, const std::string& name)
+{
+	game_data game = require_game(folder);
+	level_files files = load_level_files(game, name);
+	level_header header = read_level_header(files);
+	scene tree(files.memory, header);
+	dump_node(files.memory, tree, tree.actual_world(), 0);
+	return EXIT_SUCCESS;
+}
+
+// Exports a level's static geometry (the sector tree) as Wavefront OBJ with textures as PNG.
+static int cmd_obj(const fs::path& folder, const std::string& name, const fs::path& out)
+{
+	game_data game = require_game(folder);
+	level_files files = load_level_files(game, name);
+	level_header header = read_level_header(files);
+	scene tree(files.memory, header);
+
+	std::vector<cnt_archive> archives;
+	for(const fs::path& path : game.texture_archives())
+		archives.emplace_back(path);
+
+	fs::create_directories(out / "textures");
+	std::ofstream obj(out / (files.name + ".obj"));
+	std::ofstream mtl(out / (files.name + ".mtl"));
+	obj << "# " << files.name << " static geometry, exported by ortool. Z up in the game, Y up here.\n";
+	obj << "mtllib " << files.name << ".mtl\n";
+
+	std::map<std::uint32_t, std::string> materials; // by visual material address
+	std::size_t vertex_base = 1, uv_base = 1, objects = 0, triangles = 0, skipped = 0, moved = 0, missing_textures = 0;
+
+	auto material_name = [&](const std::optional<visual_material>& m) -> std::string {
+		if(!m)
+			return "none";
+		if(auto it = materials.find(m->at.address()); it != materials.end())
+			return it->second;
+		std::string id = std::format("m{}", materials.size());
+		materials[m->at.address()] = id;
+		mtl << "newmtl " << id << "\n" << std::format("Kd {} {} {}\n", m->diffuse[0], m->diffuse[1], m->diffuse[2]);
+		if(m->texture)
+		{
+			std::string png = "textures/" + fs::path(m->texture->cnt_path()).filename().replace_extension(".png").string();
+			const cnt_entry* entry = nullptr;
+			const cnt_archive* source = nullptr;
+			for(const cnt_archive& a : archives)
+			{
+				if((entry = a.find(m->texture->cnt_path())))
+				{
+					source = &a;
+					break;
+				}
+			}
+			if(entry)
+			{
+				gf_texture t = decode_gf(source->read(*entry));
+				stbi_write_png((out / png).string().c_str(), int(t.width), int(t.height), 4, t.rgba.data(), int(t.width * 4));
+				mtl << "map_Kd " << png << "\n";
+				if(t.channels == 4)
+					mtl << "map_d " << png << "\n";
+			}
+			else
+				missing_textures++;
+		}
+		return id;
+	};
+
+	for(const placed_geometry& placed : static_geometry(files.memory, tree))
+	{
+		const geometric_object& geo = placed.object;
+		moved += placed.world != affine{};
+		obj << std::format("o ipo_{:X}\n", tree.node(placed.node).at.address());
+		for(const vec3& v : geo.vertices)
+		{
+			vec3 p = placed.world.apply(v);
+			obj << std::format("v {} {} {}\n", p[0], p[2], -p[1]);
+		}
+		std::size_t uvs = 0;
+		for(const triangle_element& e : geo.elements)
+		{
+			for(const vec2& uv : e.uvs)
+				obj << std::format("vt {} {}\n", uv[0], 1 - uv[1]);
+			obj << "usemtl " << material_name(e.material) << "\n";
+			for(std::size_t t = 0; t < e.triangles.size(); t++)
+			{
+				obj << "f";
+				for(int k = 0; k < 3; k++)
+					obj << std::format(" {}/{}", vertex_base + e.triangles[t][k], uv_base + uvs + e.uv_triangles[t][k]);
+				obj << "\n";
+			}
+			uvs += e.uvs.size();
+			triangles += e.triangles.size();
+		}
+		vertex_base += geo.vertices.size();
+		uv_base += uvs;
+		skipped += geo.skipped_types.size();
+		objects++;
+	}
+
+	std::cout << std::format("{} objects, {} triangles, {} materials, {} not at the origin, {} elements of other types skipped, {} textures missing\n",
+		objects, triangles, materials.size(), moved, skipped, missing_textures);
+	std::cout << "Written to " << (out / (files.name + ".obj")).string() << "\n";
+	return EXIT_SUCCESS;
+}
+
 static int cmd_peek(const fs::path& folder, const std::string& name, const std::string& block, const std::string& offset, const std::string& words)
 {
 	game_data game = require_game(folder);
@@ -318,6 +440,10 @@ int main(int argc, char** argv)
 			return cmd_level(args[1], args[2]);
 		if(cmd == "gpt" && args.size() == 3)
 			return cmd_gpt(args[1], args[2]);
+		if(cmd == "obj" && args.size() == 4)
+			return cmd_obj(args[1], args[2], args[3]);
+		if(cmd == "scene" && args.size() == 3)
+			return cmd_scene(args[1], args[2]);
 		if(cmd == "peek" && args.size() == 6)
 			return cmd_peek(args[1], args[2], args[3], args[4], args[5]);
 	}

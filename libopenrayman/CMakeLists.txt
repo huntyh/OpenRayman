@@ -6,6 +6,7 @@ add_library(libopenrayman STATIC
 	src/dsb_script.cc
 	src/file.cc
 	src/game_data.cc
+	src/geometry.cc
 	src/gf_texture.cc
 	src/level_header.cc
 	src/memory_image.cc
