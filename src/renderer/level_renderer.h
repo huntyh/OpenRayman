@@ -178,7 +178,7 @@ namespace openrayman
 		double m_time = 0;
 		bool m_edge_clamp = true;
 		bool m_lighting = true;
-		float m_luminosity = 1.0f;
+		float m_luminosity = 0.5f;
 		level_lights m_lights;
 	};
 }

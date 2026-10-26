@@ -76,11 +76,14 @@ The material then decides the result:
 
 ```
 colour = clamp(L + material ambient + sum × (L + material diffuse), 0, 1)
+pixel  = texture × 2 × colour
 ```
 
 where L is the game's luminosity setting as an offset from neutral (0.5). Most scenery in Learn_10
-has material ambient 0.1 and diffuse 0.5, so with L = 0 the level is far too dark; compared with the
-real game, L = 0.5 (a luminosity of 1.0) is close. The texture is multiplied by this colour.
+has material ambient 0.1 and diffuse 0.5. Multiplying the texture by the colour alone left the level
+far too dark; raising L to 0.5 instead brightened it but washed it out. Doubling (what Direct3D calls
+"modulate 2×") matched the game by eye: the red glow at the foot of the stone doors, dark tops, the
+blue waterfall and teal stream. So L defaults to 0 (luminosity 0.5) for now.
 
 Static geometry is lit once when the level loads. Actors move between lights, so they're lit every
 frame by the strongest 8 lights of the sector they stand in.
@@ -99,4 +102,4 @@ mixed towards the fog colour by that much. Glows (additive surfaces) fade instea
   blends, the four flag bytes after the colour, the background colour), the type names, and how its
   viewer combines lights with the material's ambient and diffuse colours and the luminosity offset.
   The engine's own code in `Rayman2.exe` hasn't been checked yet.
-- By eye against the real game (Learn_10): the overall brightness, which is what settled L.
+- By eye against the real game (Learn_10): the doubling and the default luminosity.

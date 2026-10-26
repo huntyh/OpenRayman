@@ -176,7 +176,7 @@ namespace
 				title += std::format(" ({} triangles)", a.level_stats.triangles);
 			else
 				title += " (ERROR: " + a.level_error + ")";
-			title += " | WASD move, hold right mouse to look, PgUp/PgDn level, T textures, P copy position, L lighting, [ ] luminosity, F4/F5 actor state";
+			title += " | WASD move, hold right mouse to look, PgUp/PgDn level, T textures, P copy position, L lighting, F6/F7 luminosity, F4/F5 actor state";
 			if(!a.actor_note.empty())
 				title += " | " + a.actor_note;
 		}
@@ -660,7 +660,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 			a->start_time = std::strtod(argv[n + 1], nullptr);
 		else if(arg == "--lighting") // on (default) or off: the game's lights and fog, or a plain light; L in the viewer
 			a->level->set_lighting(std::string(argv[n + 1]) != "off");
-		else if(arg == "--luminosity") // the game's luminosity setting (0.5 neutral); [ and ] in the viewer
+		else if(arg == "--luminosity") // the game's luminosity setting (0.5 neutral); F6/F7 in the viewer
 			a->level->set_luminosity(std::strtof(argv[n + 1], nullptr));
 		else if(arg == "--edge-clamp") // on (default) or off, to compare texture edges; F2 in the viewer
 			a->level->set_edge_clamp(std::string(argv[n + 1]) != "off");
@@ -736,11 +736,11 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 							SDL_Log("Game lighting %s", a.level->lighting() ? "on" : "off");
 						}
 						return SDL_APP_CONTINUE;
-					case SDLK_LEFTBRACKET:
-					case SDLK_RIGHTBRACKET:
+					case SDLK_F6:
+					case SDLK_F7:
 						if(a.level)
 						{
-							float step = event->key.key == SDLK_RIGHTBRACKET ? 0.05f : -0.05f;
+							float step = event->key.key == SDLK_F7 ? 0.05f : -0.05f;
 							a.level->set_luminosity(std::clamp(a.level->luminosity() + step, 0.0f, 2.0f));
 							a.actor_note = std::format("luminosity {:.2f}", a.level->luminosity());
 							SDL_Log("Luminosity %.2f", a.level->luminosity());

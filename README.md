@@ -75,7 +75,7 @@ In a level:
 | P | Copy the current position (as `--level ... --camera ...`) to the clipboard, for bug reports |
 | F3 | Pause or resume the animations |
 | L | Switch between the game's lighting and fog and a plain light |
-| [ / ] | Darker / brighter, like the game's luminosity setting |
+| F6 / F7 | Darker / brighter, like the game's luminosity setting |
 | F5 / F4 | Put the actor you're looking at into its next / previous state (Shift: its whole family), to preview animations the game's scripts would pick |
 | T | Switch to the texture browser and back |
 

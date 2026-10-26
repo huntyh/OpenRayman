@@ -130,13 +130,16 @@ change every actor of that family); the title bar shows the node and state. Comp
 
 ## Round 5: lighting and fog
 
-Press **L** to switch between the game's lighting and the old plain light, and **[** / **]** to make
-it darker or brighter (the title bar shows the luminosity; it starts at 1.00).
+Press **L** to switch between the game's lighting and the old plain light, and **F6** / **F7** to make
+it darker or brighter (the title bar shows the luminosity; it starts at 0.50).
 
 - [ ] Mushroom cave, `--level Learn_10 --camera -54.2,178.3,1.5,758.6,-12.4`: about as bright as in
       the game, with the blue tint on the left wall
+- [ ] Stone doors, `--level Learn_10 --camera 12.4,194.5,-2.7,641.3,4.8`: red glow at their foot,
+      darker towards the top
 - [ ] Waterfall, `--level Learn_10 --camera -93.7,223.0,2.3,700.0,0.1`: the colours match the game's,
-      and the hanging leaves in front of the waterfall cover it cleanly (no box around them)
+      and the hanging leaves in front of the waterfall cover it and the light ray cleanly (no box
+      around them)
 - [ ] Which luminosity matches the game best? Note the value from the title bar
 - [ ] Near the waterfall, distant things fade into a teal haze like in the game
 - [ ] Characters (Lums, mushrooms, the Globox kids) are lit like the scenery around them, not

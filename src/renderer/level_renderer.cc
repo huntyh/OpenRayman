@@ -26,7 +26,7 @@ namespace openrayman
 			uniform mat4 u_model;
 			uniform vec3 u_camera;
 			// 0: a soft stand-in light from above. 1: the game's lights, from a_color. 2: the game's
-			// lights, from the u_light_* list below (actors, which move between lights).
+			// lights, from the u_light_* list below (actors, which move between lights). 3: unlit.
 			uniform int u_lighting;
 			const int max_lights = 8;
 			uniform int u_light_count;
@@ -37,7 +37,9 @@ namespace openrayman
 			uniform float u_luminosity;
 			vec3 lit(vec3 sum)
 			{
-				return clamp(u_luminosity + u_material_ambient + sum * (u_luminosity + u_material_diffuse), 0.0, 1.0);
+				// Doubled, as the texture is modulated by twice the light (compared with the game by eye):
+				// coloured lights tint strongly and unlit places stay dark.
+				return 2.0 * clamp(u_luminosity + u_material_ambient + sum * (u_luminosity + u_material_diffuse), 0.0, 1.0);
 			}
 			uniform vec3 u_light_vector[max_lights]; // parallel: the way it shines; spherical: its position
 			uniform vec3 u_light_color[max_lights];
@@ -50,7 +52,9 @@ namespace openrayman
 			{
 				vec4 world = u_model * vec4(a_position, 1.0);
 				vec3 normal = normalize(mat3(u_model) * a_normal);
-				if(u_lighting == 1)
+				if(u_lighting == 3)
+					v_light = vec3(1.0);
+				else if(u_lighting == 1)
 					v_light = lit(a_color);
 				else if(u_lighting == 2)
 				{
@@ -702,38 +706,61 @@ namespace openrayman
 				glDrawArrays(GL_TRIANGLES, b.first, b.count);
 			}
 		};
-		// Solid surfaces first, the level's and the actors', then the see-through ones over them.
+		// Solid surfaces first, the level's and the actors'.
 		blend current = blend::none;
-		for(blend mode : { blend::none, blend::alpha, blend::additive })
+		set_blend(current);
+		glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(identity));
+		glUniform1i(m_u_lighting, m_lighting ? 1 : 0);
+		draw_batches(m_batches, blend::none);
+		glUniform1i(m_u_lighting, m_lighting ? 2 : 0);
+		for(std::size_t i = 0; i < parts.size(); i++)
 		{
-			set_blend(current = mode);
-			glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(identity));
-			glUniform1i(m_u_lighting, m_lighting ? 1 : 0);
-			draw_batches(m_batches, mode);
-			if(mode != blend::none)
+			glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(parts[i].model));
+			use_lights(part_light[i]);
+			draw_batches(m_meshes[parts[i].mesh].batches, blend::none);
+		}
+
+		// Then the see-through ones over them, soft and glowing alike, farthest first: a leaf in front
+		// of the waterfall goes over it. The level's are sorted per object, the actors' per part.
+		constexpr std::size_t level = SIZE_MAX;
+		struct see_through_draw
+		{
+			float distance;
+			const batch* b;
+			std::size_t part;
+		};
+		std::vector<see_through_draw> order;
+		for(const see_through& s : m_see_through)
+			order.push_back({ glm::length(s.center - eye), &s.b, level });
+		for(std::size_t i = 0; i < parts.size(); i++)
+		{
+			float distance = glm::length(glm::vec3(parts[i].model[3]) - eye);
+			for(const batch& b : m_meshes[parts[i].mesh].batches)
 			{
-				std::vector<std::pair<float, const batch*>> order;
-				for(const see_through& s : m_see_through)
-				{
-					if(s.b.mode == mode)
-						order.push_back({ glm::length(s.center - eye), &s.b });
-				}
-				std::ranges::sort(order, [](const auto& a, const auto& b) { return a.first > b.first; });
-				for(const auto& [distance, b] : order)
-					draw_batches(std::span(b, 1), mode);
+				if(b.mode != blend::none)
+					order.push_back({ distance, &b, i });
 			}
-			glUniform1i(m_u_lighting, m_lighting ? 2 : 0);
-			for(std::size_t i = 0; i < parts.size(); i++)
+		}
+		std::ranges::stable_sort(order, [](const see_through_draw& a, const see_through_draw& b) { return a.distance > b.distance; });
+		std::size_t placed = level - 1; // whose model and lights are set
+		for(const see_through_draw& d : order)
+		{
+			if(d.b->mode != current)
+				set_blend(current = d.b->mode);
+			if(d.part != placed)
 			{
-				glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(parts[i].model));
-				use_lights(part_light[i]);
-				draw_batches(m_meshes[parts[i].mesh].batches, mode);
+				placed = d.part;
+				bool is_level = d.part == level;
+				glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(is_level ? identity : parts[d.part].model));
+				glUniform1i(m_u_lighting, m_lighting ? (is_level ? 1 : 2) : 0);
+				if(!is_level)
+					use_lights(part_light[d.part]);
 			}
+			draw_batches(std::span(d.b, 1), d.b->mode);
 		}
 		glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(identity));
 		// Sprites are glows and flames: they shine by themselves.
-		glUniform1i(m_u_lighting, m_lighting ? 1 : 0);
-		glUniform3f(m_u_material_ambient, 1, 1, 1);
+		glUniform1i(m_u_lighting, m_lighting ? 3 : 0);
 		glUniform2f(m_u_uv_offset, 0, 0);
 
 		// The level's sprites, and the actors' where their parts are now.
