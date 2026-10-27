@@ -102,7 +102,10 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
 - ✅ Actors move and turn where their scripts put them
 - ✅ Animations blend as the game's do (eased keyframes); looping animations whose ends don't meet
   glide into their start, one of the improvements listed in [IMPROVEMENTS.md](IMPROVEMENTS.md)
-- Particles: the fireflies of The Woods of Light (emitter actors such as nodes 31 and 32)
+- ✅ The fireflies: not particles after all, but four small actors (nodes 73 to 76) that hover
+  around their spot, steered by their scripts (procedure 171, read from the exe), and fly to Rayman
+  when he comes near. Until the physics of 3c, a speed the scripts set moves an actor freely. The
+  invisible actors once taken for firefly emitters (nodes 31 and 32) play ambient sounds (3d)
 - Moved to 3c, since they need collision: the Lum in the cage by the river door keeps inside its
   cage in the game, most likely by bumping into the bars; the condor's flight along its path
 

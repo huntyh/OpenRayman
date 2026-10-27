@@ -1165,6 +1165,45 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 171 (0x469CB0): turn so two given directions become two of the actor's axes. The mode
+		// picks them (tables 0x46A848, 0x46A860): A becomes -Y, -Y, Z, Z, X, X and B becomes Z, X,
+		// -Y, X, Z, -Y for modes 0..5. A zero vector keeps the current axis. A stays exact, the
+		// third axis is the cross product of the other two (right-handed), then B is made square.
+		std::uint32_t orient_from_vectors(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value va, vb, vmode;
+			next_arg(c, va);
+			next_arg(c, vb);
+			next_arg(c, vmode);
+			std::uint32_t t = transform_of(c.vm, self);
+			std::uint32_t mode = std::uint32_t(vmode.as_int());
+			if(!t || mode > 5)
+				return c.args;
+			live_memory& m = c.vm.memory();
+			static const int axis_a[6] = { 1, 1, 2, 2, 0, 0 }, axis_b[6] = { 2, 0, 1, 0, 2, 1 };
+			int a = axis_a[mode], b = axis_b[mode], third = 3 - a - b;
+			vec3 axes[3] = { read3(m, t + 0x10), read3(m, t + 0x1C), read3(m, t + 0x28) };
+			auto take = [&](const value& v, int axis, bool flip) {
+				vec3 d = vec_of(v);
+				if(length(d) < 1e-9f)
+					return;
+				d = normalised(d);
+				axes[axis] = flip ? vec3{ -d[0], -d[1], -d[2] } : d;
+			};
+			take(va, a, a == 1);
+			take(vb, b, b == 1);
+			auto rebuild = [&](int axis) {
+				vec3 v = normalised(cross(axes[(axis + 1) % 3], axes[(axis + 2) % 3]));
+				if(length(v) > 0.5f)
+					axes[axis] = v;
+			};
+			rebuild(third);
+			rebuild(b);
+			set_axes(m, t, axes[0], axes[1], axes[2]);
+			return c.args;
+		}
+
 		// 163..165 (0x46AB20): turn about the actor's own X, Y or Z axis by degrees.
 		std::uint32_t rotate_local(call& c)
 		{
@@ -1413,6 +1452,7 @@ namespace openrayman::game
 			vm.on_procedure(i, capabilities);
 		vm.on_procedure(200, teleport);
 		vm.on_procedure(433, face_horizontal);
+		vm.on_procedure(171, orient_from_vectors);
 		vm.on_procedure(161, face_direction);
 		for(std::uint32_t i : { 163, 164, 165 })
 			vm.on_procedure(i, rotate_local);

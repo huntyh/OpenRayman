@@ -87,7 +87,7 @@ returns the next node and leaves a value and a value type (a u32 after 12 bytes 
 | 26 | waypoint | pointer: position and radius |
 | 27 | not identified yet | mostly 0x5000..0x5100 |
 | 28 | behaviour or reflex | pointer, of any model |
-| 30 | not identified yet | looks like a runtime address |
+| 30 | sound event | an id the sound engine looks up (procedure 115 plays it; 3d) |
 | 31, 32, 36, 38 | pointers not identified yet | 32 points into the dynamic world's blocks |
 | 35 | AI model | pointer |
 | 37 | flags, not identified yet | |
@@ -183,6 +183,15 @@ behaviour, 13 state, 14 an id (-1 = none), 15 to 17 references not identified ye
 (u32 element type, u8 count, elements from +8; vectors take 12 bytes), 24 super object.
 
 From an actor to its super object: actor +0x04 (standard game) +0x0C (0x4136D0).
+
+**Turning and moving.** Procedure 171 (0x469CB0) turns an actor so that two given directions A and
+B become two of its axes, picked by a mode (tables 0x46A848, 0x46A860; 0x445F20 splits a
+transform into its X, Y, Z rows): A becomes -Y, -Y, Z, Z, X, X and B becomes Z, X, -Y, X, Z, -Y for
+modes 0 to 5. A zero vector keeps the current axis. A stays exact, the third axis is the cross
+product of the other two, and B is rebuilt from them (the mode 5 case at 0x46A086). Procedures 176
+and 182 set a speed at dynamics +0x24, in the actor's own axes (176) or the world's (182, bit 0x4000
+of +8). Node type 30 is a sound event: procedure 115 with one is a sound request (the invisible
+actors 31 and 32 of Learn_10 only play ambient sounds).
 
 ## Numbers
 

@@ -36,5 +36,7 @@ as those arrive:
 - Script handlers that aren't written yet do nothing and read as 0; `ortool run` lists them.
 - A reference to an actor that isn't set (or has no brain) reads as nobody, and a distance to
   nobody as very far, instead of stopping the actor's scripts.
+- The game's physics isn't there yet: a speed the scripts set moves the actor straight on, with no
+  gravity or collision (right for flying actors such as the fireflies).
 - Messages to the engine, particle effects, on-screen text and the scripts' fog override are read
   but have no effect yet.

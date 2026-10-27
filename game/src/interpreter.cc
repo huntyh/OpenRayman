@@ -298,7 +298,7 @@ namespace openrayman::game
 		case std::uint8_t(node_type::waypoint): out = value::of(value_type::waypoint, n.param); return next;
 		case std::uint8_t(node_type::id_27): out = value::of(value_type::id, n.param); return next;
 		case std::uint8_t(node_type::behaviour): out = value::of(value_type::behaviour, n.param); return next;
-		case std::uint8_t(node_type::id_30): out = value::of(0x21, n.param); return next;
+		case std::uint8_t(node_type::sound_event): out = value::of(0x21, n.param); return next;
 		case std::uint8_t(node_type::reference_31): out = value::of(0x1D, n.param); return next;
 		case std::uint8_t(node_type::reference_32): out = value::of(0x26, n.param); return next;
 		case 33: out = value::of(0x25, n.param); return next;

@@ -31,14 +31,14 @@ What works today:
 - Things move: characters play their animations, water and waterfalls flow (animated and
   scrolling textures).
 - The game's own scripts run: the cages hang from their chains and swing, the mushrooms dance, the
-  Lums float and turn towards Rayman.
+  Lums float and turn towards Rayman, the fireflies hover.
 - The game's own lighting and fog, worked out from the original program, plus the sky, glass,
   see-through water and characters' shadows. The Woods of Light look the same as the real game
   side by side.
 - The game's music.
 - A texture browser and `ortool` for looking inside the game's files.
 
-Not yet: sound effects and voices, particles, collision, and controlling Rayman. See
+Not yet: sound effects and voices, collision, and controlling Rayman. See
 [docs/ROADMAP.md](docs/ROADMAP.md) for the details. It renders with OpenGL today; the plan is Vulkan
 or Direct3D 12, keeping OpenGL for older devices.
 

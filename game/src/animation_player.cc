@@ -137,6 +137,41 @@ namespace openrayman::game
 		}
 	}
 
+	// Stand-in for the game's physics (milestone 3c): a speed the scripts set this tick
+	// (procedures 176 and 182, dynamics +0x24, marked by bits 0xE0000 of +8) moves the actor
+	// freely, in its own axes unless bit 0x4000 says world axes. No gravity, no collision yet, which
+	// is what flying actors such as the fireflies need. The marks are cleared after each tick.
+	void apply_speed(live_memory& m, std::uint32_t super_object, std::uint32_t actor, double ms)
+	{
+		std::uint32_t dynamics = m.u32(actor + 8);
+		std::uint32_t base = dynamics && m.contains(dynamics, 4) ? m.u32(dynamics) : 0;
+		if(!base || !m.contains(base, 0x1A8))
+			return;
+		std::uint32_t flags = m.u32(base + 8);
+		if(!(flags & 0xE0000))
+			return;
+		m.write<std::uint32_t>(base + 8, flags & ~0xE0000u);
+		std::uint32_t t = m.u32(super_object + 0x24);
+		if(!t || !m.contains(t, 0x58))
+			return;
+		float v[3] = { m.f32(base + 0x24), m.f32(base + 0x28), m.f32(base + 0x2C) };
+		float world[3] = { v[0], v[1], v[2] };
+		if(!(flags & 0x4000))
+		{
+			for(int i = 0; i < 3; i++)
+			{
+				world[i] = 0;
+				for(int axis = 0; axis < 3; axis++)
+					world[i] += v[axis] * m.f32(t + 0x10 + std::uint32_t(axis * 3 + i) * 4);
+			}
+		}
+		for(int i = 0; i < 3; i++)
+		{
+			std::uint32_t at = t + 4 + std::uint32_t(i) * 4;
+			m.write<float>(at, m.f32(at) + float(world[i] * ms / 1000));
+		}
+	}
+
 	void step(interpreter& vm, std::span<const std::uint32_t> super_objects, const step_error& on_error)
 	{
 		vm.next_tick();
@@ -163,6 +198,8 @@ namespace openrayman::game
 			std::uint32_t data = actor ? m.u32(actor) : 0;
 			if(data && !vm.removed(self))
 				play_animation(m, data, vm.frame_ms());
+			if(actor && !vm.removed(self))
+				apply_speed(m, self, actor, vm.frame_ms());
 		}
 	}
 }

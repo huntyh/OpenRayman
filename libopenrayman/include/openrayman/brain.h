@@ -43,7 +43,7 @@ namespace openrayman
 		waypoint = 26,       // a position and a radius
 		id_27 = 27,          // mostly 0x5000..0x5100, not identified yet
 		behaviour = 28,      // a behaviour or reflex of some AI model
-		id_30 = 30,          // looks like a runtime address, not identified yet
+		sound_event = 30,    // a sound event (procedure 115 plays it)
 		reference_31 = 31,
 		reference_32 = 32,   // points into the dynamic world's blocks, not identified yet
 		model = 35,          // an AI model (to read another actor's variables)
