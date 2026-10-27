@@ -131,6 +131,9 @@ namespace
 		std::vector<std::uint32_t> thinkers;     // super objects of the actors with a brain
 		std::vector<std::uint32_t> actor_at;     // per actors.actors entry: its actor in live memory
 		std::vector<std::uint32_t> super_object_at; // per entry: its super object
+		// Per entry: where each of its family's states is in live memory. (The entries' own
+		// locations point into the level files, which are gone once the level has loaded.)
+		std::vector<std::vector<std::uint32_t>> state_addresses;
 		std::vector<double> state_since;         // per entry: animation time its state began
 		bool scripts = true;
 		double script_clock = 0;                 // seconds not yet run as ticks
@@ -282,12 +285,13 @@ namespace
 		{
 			actor_set::entry& actor = a.actors.actors[i];
 			std::uint32_t data = a.live->u32(a.actor_at[i]);
-			if(!data || actor.state_at.empty())
+			if(!data || i >= a.state_addresses.size())
 				continue;
 			std::uint32_t current = a.live->u32(data + 4);
-			for(std::size_t k = 0; k < actor.state_at.size(); k++)
+			const auto& states = a.state_addresses[i];
+			for(std::size_t k = 0; k < states.size() && k < actor.states.size(); k++)
 			{
-				if(actor.state_at[k].address() == current && actor.state != k)
+				if(states[k] == current && actor.state != k)
 				{
 					actor.state = k;
 					actor.animation = actor.states[k];
@@ -465,8 +469,12 @@ namespace
 			}
 			a.actor_at.clear();
 			a.super_object_at.clear();
+			a.state_addresses.clear();
 			for(const actor_set::entry& actor : a.actors.actors)
 			{
+				auto& states = a.state_addresses.emplace_back();
+				for(const memory_location& at : actor.state_at)
+					states.push_back(at.address());
 				a.actor_at.push_back(tree.node(actor.node).data ? tree.node(actor.node).data->address() : 0);
 				a.super_object_at.push_back(tree.node(actor.node).at.address());
 			}

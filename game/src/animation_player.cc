@@ -22,6 +22,7 @@ namespace openrayman::game
 			m.write<std::uint16_t>(data + data_3d::frame, 0);
 			m.write<std::uint32_t>(data + data_3d::elapsed, 0);
 			m.write<std::uint8_t>(data + data_3d::changed, 0);
+			m.write<std::uint8_t>(data + data_3d::finished, 0);
 		}
 	}
 
@@ -74,6 +75,7 @@ namespace openrayman::game
 		std::uint32_t frame = elapsed * (speed ? speed : 30) / 1000;
 		if(frames && frame >= frames)
 		{
+			m.write<std::uint8_t>(data + data_3d::finished, 1);
 			std::uint8_t loops = m.u8(data + data_3d::loops);
 			std::uint32_t after = m.u32(s + state::after);
 			if(loops)

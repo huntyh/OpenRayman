@@ -701,6 +701,598 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// --- Transforms ----------------------------------------------------------------------------
+		// A super object's global transform (+0x24): u32 type, position, rotation (3 rows: the
+		// actor's X, Y, Z axes in the world; the game multiplies row vectors), then the same rows
+		// times the scale. Its forward is -Y.
+
+		using vec3 = std::array<float, 3>;
+
+		float dot(const vec3& a, const vec3& b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+		vec3 sub(const vec3& a, const vec3& b) { return { a[0] - b[0], a[1] - b[1], a[2] - b[2] }; }
+		vec3 cross(const vec3& a, const vec3& b) { return { a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0] }; }
+		float length(const vec3& a) { return std::sqrt(dot(a, a)); }
+		vec3 normalised(const vec3& a)
+		{
+			float l = length(a);
+			return l > 1e-9f ? vec3{ a[0] / l, a[1] / l, a[2] / l } : a;
+		}
+		vec3 vec_of(const value& v) { return { v.component(0), v.component(1), v.component(2) }; }
+		value value_of(const vec3& v) { return value::vector(v[0], v[1], v[2]); }
+
+		std::uint32_t transform_of(interpreter& vm, std::uint32_t super_object)
+		{
+			return vm.actor_of(super_object) ? vm.memory().u32(super_object + super_object_transform) : 0;
+		}
+		vec3 read3(live_memory& m, std::uint32_t at) { return { m.f32(at), m.f32(at + 4), m.f32(at + 8) }; }
+		void write3(live_memory& m, std::uint32_t at, const vec3& v)
+		{
+			for(int i = 0; i < 3; i++)
+				m.write<float>(at + std::uint32_t(i) * 4, v[std::size_t(i)]);
+		}
+		vec3 position_of(interpreter& vm, std::uint32_t super_object)
+		{
+			std::uint32_t t = transform_of(vm, super_object);
+			return t ? read3(vm.memory(), t + 4) : vec3{};
+		}
+		vec3 axis_of(interpreter& vm, std::uint32_t super_object, int axis)
+		{
+			std::uint32_t t = transform_of(vm, super_object);
+			return t ? read3(vm.memory(), t + 0x10 + std::uint32_t(axis) * 12) : vec3{};
+		}
+		// A world vector in an actor's own axes (assumes they are perpendicular).
+		vec3 to_local(interpreter& vm, std::uint32_t super_object, const vec3& v)
+		{
+			return { dot(v, axis_of(vm, super_object, 0)), dot(v, axis_of(vm, super_object, 1)), dot(v, axis_of(vm, super_object, 2)) };
+		}
+
+		// Writes new axes into a transform, keeping each axis' scale in the second copy (0x445D00).
+		void set_axes(live_memory& m, std::uint32_t t, const vec3& x, const vec3& y, const vec3& z)
+		{
+			const vec3 axes[3] = { x, y, z };
+			for(int i = 0; i < 3; i++)
+			{
+				float scale = length(read3(m, t + 0x34 + std::uint32_t(i) * 12));
+				if(scale < 1e-6f)
+					scale = 1;
+				write3(m, t + 0x10 + std::uint32_t(i) * 12, axes[i]);
+				const vec3& a = axes[i];
+				write3(m, t + 0x34 + std::uint32_t(i) * 12, { a[0] * scale, a[1] * scale, a[2] * scale });
+			}
+			// Rotation and scale from here on (type 4: the second copy is what places the object).
+			if(m.u32(t) < 4)
+				m.write<std::uint32_t>(t, 4);
+		}
+
+		// 3 (0x47B6C0): distance between the actors' positions (far away when there's no other).
+		std::uint32_t distance_to(call& c, value& out)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value other;
+			next_arg(c, other);
+			std::uint32_t them = c.vm.super_object_of(actor_value(c.vm, other));
+			out = value::real(them ? length(sub(position_of(c.vm, self), position_of(c.vm, them))) : 3.4028234e38f);
+			return c.args;
+		}
+
+		// 2, 4..9, 11..17 (0x47B8D0): where another actor is, seen from it: the offset from it to us
+		// in its own axes, as one component, the length of two, or (2) the angle in degrees between
+		// our forward and the direction to it, in the horizontal plane. 11..16 use the bounding
+		// sphere centres. 17: distance to a waypoint.
+		std::uint32_t relative(call& c, value& out)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value other;
+			next_arg(c, other);
+			live_memory& m = c.vm.memory();
+			if(c.index == 17)
+			{
+				std::uint32_t w = other.word();
+				out = value::real(w && m.contains(w, 16) ? length(sub(position_of(c.vm, self), read3(m, w))) : 3.4028234e38f);
+				return c.args;
+			}
+			std::uint32_t them = c.vm.super_object_of(actor_value(c.vm, other));
+			if(!them)
+			{
+				out = value::real(3.4028234e38f);
+				return c.args;
+			}
+			bool centres = c.index >= 11;
+			vec3 v = centres ? sub(centre(c.vm, self), centre(c.vm, them)) : sub(position_of(c.vm, self), position_of(c.vm, them));
+			if(c.index == 2)
+			{
+				vec3 forward = axis_of(c.vm, self, 1);
+				float heading = std::atan2(-forward[1], -forward[0]);
+				float towards = std::atan2(-v[1], -v[0]);
+				float d = towards - heading;
+				constexpr float pi = 3.14159265f;
+				while(d > pi)
+					d -= 2 * pi;
+				while(d < -pi)
+					d += 2 * pi;
+				out = value::real(d * 57.29578f);
+				return c.args;
+			}
+			vec3 l = to_local(c.vm, them, v);
+			switch(centres ? c.index - 7 : c.index)
+			{
+			case 4: out = value::real(l[0]); break;
+			case 5: out = value::real(l[1]); break;
+			case 6: out = value::real(l[2]); break;
+			case 7: out = value::real(std::sqrt(l[0] * l[0] + l[1] * l[1])); break;
+			case 8: out = value::real(std::sqrt(l[0] * l[0] + l[2] * l[2])); break;
+			case 9: out = value::real(std::sqrt(l[1] * l[1] + l[2] * l[2])); break;
+			}
+			return c.args;
+		}
+
+		// 21..30, 32..35 (0x47BDC0): maths on floats.
+		std::uint32_t float_math(call& c, value& out)
+		{
+			value a;
+			next_arg(c, a);
+			float x = a.as_float();
+			auto more = [&] {
+				value v;
+				next_arg(c, v);
+				return v.as_float();
+			};
+			switch(c.index)
+			{
+			case 21: out = value::real(x); break;
+			case 22: out = value::real(std::sin(x * 0.0174533f)); break;
+			case 23: out = value::real(std::cos(x * 0.0174533f)); break;
+			case 24: out = value::real(x * x); break;
+			case 25: out = value::real(std::sqrt(std::max(x, 0.0f))); break;
+			case 26:
+			{
+				// The game reads a table of pre-made random numbers; any uniform source does.
+				float y = more();
+				static std::uint32_t seed = 12345;
+				seed = seed * 1664525u + 1013904223u;
+				out = value::real(x + (y - x) * float(seed >> 8) / float(1 << 24));
+				break;
+			}
+			case 27: out = value::real(std::min(x, more())); break;
+			case 28: out = value::real(std::max(x, more())); break;
+			case 29: out = value::real(x * 0.0174533f); break;
+			case 30: out = value::real(x * 57.29578f); break;
+			case 32:
+			{
+				float lo = more(), hi = more();
+				out = value::real(std::clamp(x, lo, std::max(lo, hi)));
+				break;
+			}
+			case 33: out = value::real(x > 0 ? 1.0f : x < 0 ? -1.0f : 0.0f); break;
+			case 34: out = value::real(x * x * x); break;
+			case 35:
+			{
+				float lo = more(), hi = more(), span = hi - lo;
+				if(span > 0)
+				{
+					while(x >= hi)
+						x -= span;
+					while(x < lo)
+						x += span;
+				}
+				out = value::real(x);
+				break;
+			}
+			}
+			return c.args;
+		}
+
+		// 52, 54 (0x47C250): a vector against the actor's axes (x = X axis . v, ...).
+		std::uint32_t against_axes(call& c, value& out)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value v;
+			next_arg(c, v);
+			out = value_of(to_local(c.vm, self, vec_of(v)));
+			return c.args;
+		}
+
+		// 60, 61 (0x47CAF0): the game clock, and how far it is from a time (no sign).
+		std::uint32_t clock_function(call& c, value& out)
+		{
+			std::uint32_t now = c.vm.clock();
+			if(c.index == 60)
+			{
+				out = value::integer(std::int32_t(now));
+				return c.args;
+			}
+			value then;
+			next_arg(c, then);
+			std::uint32_t t = std::uint32_t(then.as_int());
+			out = value::integer(std::int32_t(now >= t ? now - t : t - now));
+			return c.args;
+		}
+
+		// 149 (0x4784F0): dot product.
+		std::uint32_t dot_product(call& c, value& out)
+		{
+			value a, b;
+			next_arg(c, a);
+			next_arg(c, b);
+			out = value::real(dot(vec_of(a), vec_of(b)));
+			return c.args;
+		}
+
+		// 162, 164, 165 (0x478AA0): the actor's scale, X axis, Z axis (up: (0,0,1) when dynamics
+		// flag 0x08 is set, not handled yet).
+		std::uint32_t matrix_vector(call& c, value& out)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			live_memory& m = c.vm.memory();
+			std::uint32_t t = transform_of(c.vm, self);
+			if(!t)
+			{
+				out = value::vector(0, 0, 0);
+				return c.args;
+			}
+			switch(c.index)
+			{
+			case 162:
+				out = value::vector(length(read3(m, t + 0x34)), length(read3(m, t + 0x40)), length(read3(m, t + 0x4C)));
+				break;
+			case 164: out = value_of(read3(m, t + 0x10)); break;
+			case 165: out = value_of(read3(m, t + 0x28)); break;
+			}
+			return c.args;
+		}
+
+		// 180..185 (0x47C350): vector maths: project, mix, mix (frame-rate scaled, the same at our
+		// fixed 60 per second), scale, length, rotate about an axis.
+		std::uint32_t vector_ops(call& c, value& out)
+		{
+			value a;
+			next_arg(c, a);
+			vec3 va = vec_of(a);
+			switch(c.index)
+			{
+			case 180:
+			{
+				value b;
+				next_arg(c, b);
+				vec3 vb = vec_of(b);
+				if(length(vb) < 1e-9f)
+				{
+					out = a;
+					break;
+				}
+				vec3 n = normalised(vb);
+				float d = dot(va, n);
+				out = value::vector(n[0] * d, n[1] * d, n[2] * d);
+				break;
+			}
+			case 181: case 182:
+			{
+				value t, b;
+				next_arg(c, t);
+				next_arg(c, b);
+				vec3 vc = vec_of(b);
+				float f = t.as_float();
+				out = value::vector(vc[0] + (va[0] - vc[0]) * f, vc[1] + (va[1] - vc[1]) * f, vc[2] + (va[2] - vc[2]) * f);
+				break;
+			}
+			case 183:
+			{
+				value s;
+				next_arg(c, s);
+				float f = s.as_float();
+				out = value::vector(va[0] * f, va[1] * f, va[2] * f);
+				break;
+			}
+			case 184: out = value::real(length(va)); break;
+			case 185:
+			{
+				value degrees;
+				next_arg(c, degrees);
+				if(degrees.as_float() == 0)
+				{
+					c.args = c.vm.skip(c.args);
+					out = a;
+					break;
+				}
+				value axis;
+				next_arg(c, axis);
+				// Rodrigues' rotation by -angle (the exe builds the quaternion from -angle/2).
+				vec3 k = normalised(vec_of(axis));
+				float angle = -degrees.as_float() * 0.0174533f, cs = std::cos(angle), sn = std::sin(angle);
+				vec3 kxv = cross(k, va);
+				float kv = dot(k, va);
+				out = value::vector(va[0] * cs + kxv[0] * sn + k[0] * kv * (1 - cs), va[1] * cs + kxv[1] * sn + k[1] * kv * (1 - cs),
+					va[2] * cs + kxv[2] * sn + k[2] * kv * (1 - cs));
+				break;
+			}
+			}
+			return c.args;
+		}
+
+		// 240 (0x47A3E0): the nearest actor above this one in the scene (what it is attached to).
+		std::uint32_t parent_actor(call& c, value& out)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			live_memory& m = c.vm.memory();
+			out = value::of(value_type::actor, 0);
+			for(std::uint32_t so = self ? m.u32(self + 0x1C) : 0; so && m.contains(so, 8); so = m.u32(so + 0x1C))
+			{
+				if(m.u32(so) == 2)
+				{
+					out = value::of(value_type::actor, m.u32(so + 4));
+					break;
+				}
+			}
+			return c.args;
+		}
+
+		// --- More conditions ---------------------------------------------------------------------
+
+		// 27..32 (0x48A330): the contact flags of the actor's dynamics report (dynamics base +0x150,
+		// flags at +4), filled by collisions (milestone 3c).
+		std::uint32_t contact(call& c, bool& result)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			live_memory& m = c.vm.memory();
+			std::uint32_t base = dynamics_base(c, self, 0x154);
+			std::uint32_t report = base ? m.u32(base + 0x150) : 0;
+			result = false;
+			if(!report || !m.contains(report + 4, 4))
+				return c.args;
+			std::uint32_t flags = m.u32(report + 4);
+			switch(c.index)
+			{
+			case 27: result = flags & 0x01; break;
+			case 28: result = flags & 0x04; break;
+			case 29: result = flags == 0; break;
+			case 30: result = flags & 0x10; break;
+			case 31: result = flags & 0x10000; break;
+			case 32: result = flags & 0x40; break;
+			}
+			return c.args;
+		}
+
+		// 65 (0x48A950): the two numbers share a bit. 72: the game mode (0x500380) isn't 9.
+		std::uint32_t bits_overlap(call& c, bool& result)
+		{
+			if(c.index == 72)
+			{
+				result = true;
+				return c.args;
+			}
+			value a, b;
+			next_arg(c, a);
+			next_arg(c, b);
+			result = (std::uint32_t(a.as_int()) & std::uint32_t(b.as_int())) != 0;
+			return c.args;
+		}
+
+		// 74 (0x48B190): an actor stands inside a waypoint's sphere (position, radius at +0xC).
+		std::uint32_t inside_waypoint(call& c, bool& result)
+		{
+			value who, waypoint;
+			next_arg(c, who);
+			next_arg(c, waypoint);
+			live_memory& m = c.vm.memory();
+			std::uint32_t so = c.vm.super_object_of(actor_value(c.vm, who));
+			std::uint32_t w = waypoint.word();
+			result = false;
+			if(!so || !w || !m.contains(w, 16))
+				return c.args;
+			vec3 d = sub(read3(m, w), position_of(c.vm, so));
+			float r = m.f32(w + 0xC);
+			result = dot(d, d) <= r * r;
+			return c.args;
+		}
+
+		// 78 (0x48B0C0): the current state's flags (+0x2B) share a bit with the mask.
+		std::uint32_t state_flag(call& c, bool& result)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value mask;
+			next_arg(c, mask);
+			live_memory& m = c.vm.memory();
+			std::uint32_t data = actor_part(c.vm, self, actor_field::data_3d);
+			std::uint32_t s = data ? m.u32(data + 4) : 0;
+			result = s && (m.u8(s + 0x2B) & std::uint32_t(mask.as_int())) != 0;
+			return c.args;
+		}
+
+		// 103 (0x48B2D0): the vector is (nearly) zero.
+		std::uint32_t is_zero_vector(call& c, bool& result)
+		{
+			value v;
+			next_arg(c, v);
+			vec3 a = vec_of(v);
+			result = std::abs(a[0]) < 1e-5f && std::abs(a[1]) < 1e-5f && std::abs(a[2]) < 1e-5f;
+			return c.args;
+		}
+
+		// --- Transform procedures ----------------------------------------------------------------
+
+		// 200 (0x46BF20): move an actor (the first argument, not the usual target) to a position.
+		std::uint32_t teleport(call& c)
+		{
+			value who, where;
+			next_arg(c, who);
+			next_arg(c, where);
+			std::uint32_t so = c.vm.super_object_of(actor_value(c.vm, who));
+			if(std::uint32_t t = transform_of(c.vm, so))
+				write3(c.vm.memory(), t + 4, vec_of(where));
+			return c.args;
+		}
+
+		// 433 (0x46A890): turn to face a horizontal direction (up stays (0,0,1); forward is -Y).
+		std::uint32_t face_horizontal(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value v;
+			next_arg(c, v);
+			std::uint32_t t = transform_of(c.vm, self);
+			if(!t)
+				return c.args;
+			vec3 d = vec_of(v);
+			d[2] = 0;
+			if(length(d) < 1e-9f)
+				return c.args;
+			vec3 forward = normalised(d), up{ 0, 0, 1 };
+			vec3 y{ -forward[0], -forward[1], 0 };
+			vec3 x = cross(y, up);
+			set_axes(c.vm.memory(), t, x, y, up);
+			return c.args;
+		}
+
+		// 161 (0x46AB20): look along a direction (forward, -Y, along it), keeping up as close as
+		// possible to the old Z axis.
+		std::uint32_t face_direction(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value v;
+			next_arg(c, v);
+			std::uint32_t t = transform_of(c.vm, self);
+			vec3 d = vec_of(v);
+			if(!t || length(d) < 1e-9f)
+				return c.args;
+			live_memory& m = c.vm.memory();
+			vec3 y = normalised({ -d[0], -d[1], -d[2] });
+			vec3 z = read3(m, t + 0x28);
+			vec3 x = cross(y, z);
+			if(length(x) < 1e-6f)
+				x = read3(m, t + 0x10);
+			x = normalised(x);
+			z = normalised(cross(x, y));
+			set_axes(m, t, x, y, z);
+			return c.args;
+		}
+
+		// 163..165 (0x46AB20): turn about the actor's own X, Y or Z axis by degrees.
+		std::uint32_t rotate_local(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value degrees;
+			next_arg(c, degrees);
+			std::uint32_t t = transform_of(c.vm, self);
+			if(!t)
+				return c.args;
+			live_memory& m = c.vm.memory();
+			vec3 axes[3] = { read3(m, t + 0x10), read3(m, t + 0x1C), read3(m, t + 0x28) };
+			int about = int(c.index - 163);
+			int i = (about + 1) % 3, j = (about + 2) % 3;
+			float a = degrees.as_float() * 0.0174533f, cs = std::cos(a), sn = std::sin(a);
+			vec3 u = axes[i], w = axes[j];
+			for(int k = 0; k < 3; k++)
+			{
+				axes[i][std::size_t(k)] = u[std::size_t(k)] * cs + w[std::size_t(k)] * sn;
+				axes[j][std::size_t(k)] = w[std::size_t(k)] * cs - u[std::size_t(k)] * sn;
+			}
+			set_axes(m, t, axes[0], axes[1], axes[2]);
+			return c.args;
+		}
+
+		// 173 (0x46AB20): set the scale along the actor's axes.
+		std::uint32_t set_scale(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value v;
+			next_arg(c, v);
+			std::uint32_t t = transform_of(c.vm, self);
+			live_memory& m = c.vm.memory();
+			if(!t || (m.u32(self + 0x30) & 0x10))
+				return c.args;
+			vec3 s = vec_of(v);
+			if(m.u32(self + 0x30) & 0x100)
+				s = { s[0], s[0], s[0] };
+			for(int i = 0; i < 3; i++)
+			{
+				vec3 a = read3(m, t + 0x10 + std::uint32_t(i) * 12);
+				float f = s[std::size_t(i)];
+				write3(m, t + 0x34 + std::uint32_t(i) * 12, { a[0] * f, a[1] * f, a[2] * f });
+			}
+			m.write<std::uint32_t>(t, 4);
+			return c.args;
+		}
+
+		// 235, 236 (0x46DCE0): forget what the actor stands on; clear its contact flags.
+		std::uint32_t clear_contacts(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			live_memory& m = c.vm.memory();
+			std::uint32_t base = dynamics_base(c, self, 0x154);
+			std::uint32_t report = base ? m.u32(base + 0x150) : 0;
+			if(!report || !m.contains(report, 0xA8))
+				return c.args;
+			if(c.index == 235)
+			{
+				m.write<std::uint32_t>(report + 0xA4, 0);
+				m.write<std::uint32_t>(report + 4, m.u32(report + 4) & ~0x10000u);
+			}
+			else
+				m.write<std::uint32_t>(report + 4, 0);
+			return c.args;
+		}
+
+		// --- Meta-actions (0x4A6418): start once, then checked every frame. The check returns
+		// flow::stop while running (the scripts hold here) and flow::done when finished. Scratch is 8
+		// slots of 12 bytes.
+
+		meta_handler wait_time()
+		{
+			// 0: wait a number of ms on the game clock (slot 0: the deadline).
+			return { [](call& c, std::uint32_t scratch) {
+						value ms;
+						next_arg(c, ms);
+						c.vm.memory().write<std::uint32_t>(scratch, c.vm.clock() + std::uint32_t(ms.as_int()));
+						return c.args;
+					},
+				[](interpreter& vm, std::uint32_t, std::uint32_t scratch) -> std::uint8_t {
+					return vm.clock() < vm.memory().u32(scratch) ? flow::stop : flow::done;
+				} };
+		}
+
+		// The current animation has played to its end and nothing else is queued (0x410310).
+		bool animation_finished(interpreter& vm, std::uint32_t self)
+		{
+			live_memory& m = vm.memory();
+			std::uint32_t data = actor_part(vm, self, actor_field::data_3d);
+			return data && m.u8(data + data_3d::finished) && m.u32(data + data_3d::current_state) == m.u32(data + data_3d::next_state);
+		}
+
+		meta_handler change_state_and_wait()
+		{
+			// 1: change state, then wait until it plays (slot 0: success, slot 1: the state).
+			return { [](call& c, std::uint32_t scratch) {
+						value s;
+						next_arg(c, s);
+						live_memory& m = c.vm.memory();
+						std::uint32_t data = actor_part(c.vm, c.self, actor_field::data_3d);
+						bool ok = false;
+						if(data)
+						{
+							m.write<std::uint32_t>(data + data_3d::requested_state, 0);
+							ok = change_state(m, data, s.word(), false, c.vm.clock());
+						}
+						m.write<std::uint32_t>(scratch, ok ? 1 : 0);
+						m.write<std::uint32_t>(scratch + 12, s.word());
+						return c.args;
+					},
+				[](interpreter& vm, std::uint32_t self, std::uint32_t scratch) -> std::uint8_t {
+					live_memory& m = vm.memory();
+					std::uint32_t data = actor_part(vm, self, actor_field::data_3d);
+					if(!m.u32(scratch) || !data || m.u32(data + data_3d::requested_state) != m.u32(scratch + 12))
+						return flow::done;
+					return animation_finished(vm, self) ? flow::done : flow::stop;
+				} };
+		}
+
+		meta_handler wait_animation()
+		{
+			// 2: wait for the current animation to end.
+			return { [](call& c, std::uint32_t) { return c.args; },
+				[](interpreter& vm, std::uint32_t self, std::uint32_t) -> std::uint8_t {
+					return animation_finished(vm, self) ? flow::done : flow::stop;
+				} };
+		}
+
 		// 174, 175 (0x4698A0): set or clear custom bit n (1-based), or the bits of a mask.
 		std::uint32_t set_custom_bits(call& c)
 		{
@@ -753,6 +1345,13 @@ namespace openrayman::game
 		for(std::uint32_t i : { 49, 50, 51, 52, 53 })
 			vm.on_condition(i, valid);
 		vm.on_condition(66, collision_event_flag);
+		for(std::uint32_t i = 27; i <= 32; i++)
+			vm.on_condition(i, contact);
+		vm.on_condition(65, bits_overlap);
+		vm.on_condition(72, bits_overlap);
+		vm.on_condition(74, inside_waypoint);
+		vm.on_condition(78, state_flag);
+		vm.on_condition(103, is_zero_vector);
 		vm.on_condition(67, in_behaviour);
 		vm.on_condition(68, in_behaviour);
 		vm.on_condition(70, in_state);
@@ -764,6 +1363,21 @@ namespace openrayman::game
 		for(std::uint32_t i : { 43, 44, 45, 46, 47, 48 })
 			vm.on_function(i, hit_points);
 		vm.on_function(10, distance);
+		vm.on_function(3, distance_to);
+		for(std::uint32_t i : { 2, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17 })
+			vm.on_function(i, relative);
+		for(std::uint32_t i : { 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 32, 33, 34, 35 })
+			vm.on_function(i, float_math);
+		vm.on_function(52, against_axes);
+		vm.on_function(54, against_axes);
+		vm.on_function(60, clock_function);
+		vm.on_function(61, clock_function);
+		vm.on_function(149, dot_product);
+		for(std::uint32_t i : { 162, 164, 165 })
+			vm.on_function(i, matrix_vector);
+		for(std::uint32_t i = 180; i <= 185; i++)
+			vm.on_function(i, vector_ops);
+		vm.on_function(240, parent_actor);
 		vm.on_function(31, absolute);
 		vm.on_function(42, smooth);
 		vm.on_function(62, frame_time);
@@ -797,6 +1411,17 @@ namespace openrayman::game
 			vm.on_procedure(i, gauge);
 		for(std::uint32_t i : { 396, 397, 398 })
 			vm.on_procedure(i, capabilities);
+		vm.on_procedure(200, teleport);
+		vm.on_procedure(433, face_horizontal);
+		vm.on_procedure(161, face_direction);
+		for(std::uint32_t i : { 163, 164, 165 })
+			vm.on_procedure(i, rotate_local);
+		vm.on_procedure(173, set_scale);
+		vm.on_procedure(235, clear_contacts);
+		vm.on_procedure(236, clear_contacts);
+		vm.on_meta_action(0, wait_time());
+		vm.on_meta_action(1, change_state_and_wait());
+		vm.on_meta_action(2, wait_animation());
 		vm.on_procedure(174, set_custom_bits);
 		vm.on_procedure(175, set_custom_bits);
 	}
