@@ -145,3 +145,6 @@ Everything the PC game has, working before we port it anywhere:
 - A modern lighting mode that keeps the art direction, and HDR, designed together (both change how
   the lights are used)
 - Controller support with the right button icons
+- Antialiasing (MSAA, with alpha to coverage for cut-out textures)
+- Smoother cut-out textures: colour-keyed and alpha-tested textures have jagged, "cut out with
+  scissors" edges (Globox's eyes); smoothing their edges, as we did for the leaves in 2c
