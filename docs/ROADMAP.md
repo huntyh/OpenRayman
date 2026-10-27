@@ -82,7 +82,7 @@ once it plays right (they have issues of their own, found on a first look).
 
 Most of the gameplay is in the scripts saved inside each level, so they come first.
 
-**Milestone 3a: reading the scripts ⬅ we are here**
+**Milestone 3a: reading the scripts ✅**
 
 - Each actor's brain: its AI model, behaviours, reflexes, macros and designer variables (DsgVars)
 - The script nodes as a tree, and the interpreter's 41 node types (from `Rayman2.exe`)
@@ -90,13 +90,21 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
   and operators (the game keeps no names). Conditions, functions and procedures get theirs as each
   is read from the exe and implemented in 3b
 
-**Milestone 3b: the scripts run**
+**Milestone 3b: the scripts run ⬅ we are here**
 
-- The interpreter: behaviours, reflexes, macros, DsgVars, the functions and procedures
-  Learn_10's actors use, read one by one from the exe
-- Actor states and transitions picked by the scripts: Lums fly in their loop, the cages hang
-  from their chains, the mushroom clusters show all five mushrooms
+- ✅ The interpreter, rebuilt from `Rayman2.exe`: behaviours, reflexes, macros, designer variables,
+  waits and other actions that take several frames, at the game's 60 ticks per second whatever the
+  frame rate. About 150 conditions, functions and procedures so far, read from the exe; `ortool run`
+  lists the ones Learn_10's scripts still reach that aren't written yet
+- ✅ States and transitions picked by the scripts, with the game's animation player: the cages
+  hang from their chains and swing, the mushroom clusters dance with all five mushrooms, the Lums
+  float and turn to face Rayman
+- ✅ Actors move and turn where their scripts put them
+- ✅ Animations blend as the game's do (eased keyframes); looping animations whose ends don't meet
+  glide into their start, one of the improvements listed in [IMPROVEMENTS.md](IMPROVEMENTS.md)
 - Particles: the fireflies of The Woods of Light (emitter actors such as nodes 31 and 32)
+- Moved to 3c, since they need collision: the Lum in the cage by the river door keeps inside its
+  cage in the game, most likely by bumping into the bars; the condor's flight along its path
 
 **Milestone 3c: Rayman**
 

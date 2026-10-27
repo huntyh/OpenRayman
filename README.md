@@ -28,18 +28,22 @@ real thing. You can't play yet: making it a game is the current phase.
 What works today:
 
 - All 70 levels load, with their scenery, textures and characters where the game puts them.
-- Things move: characters play their animations, mushrooms move, Lums flap their wings, water and
-  waterfalls flow (animated and scrolling textures).
+- Things move: characters play their animations, water and waterfalls flow (animated and
+  scrolling textures).
+- The game's own scripts run: the cages hang from their chains and swing, the mushrooms dance, the
+  Lums float and turn towards Rayman.
 - The game's own lighting and fog, worked out from the original program, plus the sky, glass,
   see-through water and characters' shadows. The Woods of Light look the same as the real game
   side by side.
 - The game's music.
 - A texture browser and `ortool` for looking inside the game's files.
 
-Not yet: sound effects and voices, collision, the game's scripts (so characters don't react, and some
-stand in a placeholder pose), and controlling Rayman. See [docs/ROADMAP.md](docs/ROADMAP.md) for the
-details. It renders with OpenGL today; the plan is Vulkan or Direct3D 12, keeping OpenGL for older
-devices.
+Not yet: sound effects and voices, particles, collision, and controlling Rayman. See
+[docs/ROADMAP.md](docs/ROADMAP.md) for the details. It renders with OpenGL today; the plan is Vulkan
+or Direct3D 12, keeping OpenGL for older devices.
+
+Where OpenRayman deliberately does something differently from the game (no shadow limit, soft leaf
+edges, smoother animation loops, ...), it's listed in [docs/IMPROVEMENTS.md](docs/IMPROVEMENTS.md).
 
 ## You need the game
 
