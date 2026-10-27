@@ -1,6 +1,7 @@
 #include <openrayman/game/handlers.h>
 #include <openrayman/game/animation_player.h>
 
+#include <array>
 #include <bit>
 #include <algorithm>
 #include <cmath>
@@ -349,6 +350,46 @@ namespace openrayman::game
 			for(std::int32_t n = from.as_int(); n <= to.as_int(); n++)
 				count += bit(n);
 			out = value::integer(count);
+			return c.args;
+		}
+
+		// The centre of an actor's bounding sphere in the world (super object +0x34: centre, radius,
+		// in the actor's own space), or its position when it has none.
+		std::array<float, 3> centre(interpreter& vm, std::uint32_t super_object)
+		{
+			live_memory& m = vm.memory();
+			std::uint32_t t = vm.actor_of(super_object) ? m.u32(super_object + super_object_transform) : 0;
+			if(!t)
+				return {};
+			std::array<float, 3> p{ m.f32(t + 4), m.f32(t + 8), m.f32(t + 12) };
+			std::uint32_t sphere = m.u32(super_object + 0x34);
+			if(sphere && m.contains(sphere, 16))
+			{
+				// The transform's matrix (+0x10) holds the actor's axes; the centre is in those.
+				float c[3] = { m.f32(sphere), m.f32(sphere + 4), m.f32(sphere + 8) };
+				for(int row = 0; row < 3; row++)
+					for(int k = 0; k < 3; k++)
+						p[std::size_t(k)] += c[row] * m.f32(t + 0x10 + std::uint32_t(row * 3 + k) * 4);
+			}
+			return p;
+		}
+
+		// 10 (0x47B480): the distance between two actors' bounding sphere centres.
+		std::uint32_t distance(call& c, value& out)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value other;
+			next_arg(c, other);
+			std::uint32_t them = c.vm.super_object_of(actor_value(c.vm, other));
+			if(!them)
+			{
+				// No such actor: far away (a missing actor must never seem close).
+				out = value::real(1e9f);
+				return c.args;
+			}
+			auto a = centre(c.vm, self), b = centre(c.vm, them);
+			float dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
+			out = value::real(std::sqrt(dx * dx + dy * dy + dz * dz));
 			return c.args;
 		}
 
@@ -722,6 +763,7 @@ namespace openrayman::game
 		vm.on_function(0, position);
 		for(std::uint32_t i : { 43, 44, 45, 46, 47, 48 })
 			vm.on_function(i, hit_points);
+		vm.on_function(10, distance);
 		vm.on_function(31, absolute);
 		vm.on_function(42, smooth);
 		vm.on_function(62, frame_time);

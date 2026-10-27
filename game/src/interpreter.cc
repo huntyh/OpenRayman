@@ -166,7 +166,7 @@ namespace openrayman::game
 
 	void interpreter::note_missing(const char* kind, std::uint32_t index)
 	{
-		missing[std::format("{} {}", kind, index)]++;
+		missing[{ kind, index }]++;
 	}
 
 	// --- Evaluation ----------------------------------------------------------------------------

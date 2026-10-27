@@ -266,9 +266,11 @@ namespace
 		while(a.script_clock >= tick)
 		{
 			a.script_clock -= tick;
-			if(++ticks > 600)
+			// A slow frame runs at most a few ticks and lets the rest go, so the game slows down
+			// instead of falling further behind. A long --time at load may run up to 10 minutes.
+			if(++ticks > (a.screenshot || a.last_frame == 0 ? 36000 : 4))
 			{
-				a.script_clock = 0; // far behind (a long --time): skip the rest
+				a.script_clock = 0;
 				break;
 			}
 			openrayman::game::step(*a.vm, a.thinkers, [](std::uint32_t self, const std::exception& e) {

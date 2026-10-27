@@ -148,7 +148,8 @@ namespace openrayman::game
 		std::uint32_t last_node() const { return m_last_node; }
 
 		// Handlers that don't exist yet, by kind and index, and how often scripts reached them.
-		std::map<std::string, std::size_t> missing;
+		// The key is the kind's name (a string literal) and the index.
+		std::map<std::pair<const char*, std::uint32_t>, std::size_t> missing;
 
 	private:
 		struct node_view

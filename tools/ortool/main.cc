@@ -960,13 +960,14 @@ static int cmd_brain(const fs::path& folder, const std::string& name, std::optio
 
 // Runs the level's scripts for a number of frames, without drawing anything, and reports what
 // changed and which handlers the scripts reached that don't exist yet.
-static int cmd_run(const fs::path& folder, const std::string& name, int frames)
+static int cmd_run(const fs::path& folder, const std::string& name, int frames, std::optional<std::size_t> trace)
 {
 	game_data game = require_game(folder);
 	level_files files = load_level_files(game, name);
 	level_header header = read_level_header(files);
 	scene tree(files.memory, header);
 	level_brains brains = read_brains(files.memory, tree);
+	animation_bank bank = read_animation_bank(files);
 	game::live_memory memory(files.memory);
 	std::cout << std::format("{} pointers relocated, {} moved\n", memory.relocated(), memory.moved());
 	std::uint32_t main_actor = header.placements.empty() ? 0 : header.placements[0].super_object.address();
@@ -996,10 +997,29 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames)
 			node_of[actors.back()] = n;
 		}
 	std::map<std::size_t, std::string> errors;
+	// With a node: every change of that actor's state and behaviour, by tick.
+	std::uint32_t traced = trace ? tree.node(*trace).data->address() : 0;
+	auto state_of = [&](std::uint32_t actor) {
+		std::uint32_t data = memory.u32(actor);
+		std::uint32_t mind = memory.u32(memory.u32(actor + 0x0C));
+		std::uint32_t normal = mind ? memory.u32(mind + 4) : 0;
+		return std::tuple{ data ? memory.u32(data + 4) : 0u, data ? memory.u32(data + 8) : 0u, normal ? memory.u32(normal + 8) : 0u };
+	};
+	auto last = traced ? state_of(traced) : std::tuple{ 0u, 0u, 0u };
 	for(int f = 0; f < frames; f++)
+	{
 		game::step(vm, actors, [&](std::uint32_t self, const std::exception& e) {
 			errors.try_emplace(node_of[self], std::format("frame {}, node 0x{:08X}: {}", f, vm.last_node(), e.what()));
 		});
+		if(traced)
+		{
+			auto now = state_of(traced);
+			if(now != last)
+				std::cout << std::format("tick {:>4}: playing 0x{:X}, asked 0x{:X}, behaviour 0x{:X}{}\n", f, std::get<0>(now), std::get<1>(now), std::get<2>(now),
+					vm.removed(tree.node(*trace).at.address()) ? " (removed)" : "");
+			last = now;
+		}
+	}
 	for(std::size_t i = 0; i < brains.actors.size(); i++)
 	{
 		const actor_brain& b = brains.actors[i];
@@ -1011,15 +1031,23 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames)
 					return std::to_string(k);
 			return std::format("0x{:X}", at);
 		};
+		actor a = read_actor(files.memory, tree, bank, b.node);
+		auto state_text = [&](std::uint32_t at) -> std::string {
+			for(std::size_t k = 0; k < a.state_at.size(); k++)
+				if(a.state_at[k].address() == at)
+					return a.states[k] ? std::format("{} (animation {})", k, *a.states[k]) : std::format("{} (no animation)", k);
+			return std::format("0x{:X}", at);
+		};
 		if(after != before[i])
-			std::cout << std::format("node {:>4}: behaviour {} -> {}, state 0x{:X} -> 0x{:X}\n", b.node,
-				behaviour_index(before[i].first), behaviour_index(after.first), before[i].second, after.second);
+			std::cout << std::format("node {:>4}: behaviour {} -> {}, state {} -> {}{}\n", b.node,
+				behaviour_index(before[i].first), behaviour_index(after.first), state_text(before[i].second), state_text(after.second),
+				vm.removed(tree.node(b.node).at.address()) ? ", removed" : "");
 	}
 	for(const auto& [node, e] : errors)
 		std::cout << std::format("node {:>4} stopped: {}\n", node, e);
 	std::vector<std::pair<std::size_t, std::string>> missing;
 	for(const auto& [what, n] : vm.missing)
-		missing.push_back({ n, what });
+		missing.push_back({ n, std::format("{} {}", what.first, what.second) });
 	std::ranges::sort(missing, std::greater<>());
 	std::cout << std::format("{} handlers missing:", missing.size());
 	for(std::size_t i = 0; i < missing.size(); i++)
@@ -1085,7 +1113,9 @@ int main(int argc, char** argv)
 		if(cmd == "brain" && args.size() == 4)
 			return cmd_brain(args[1], args[2], std::stoul(args[3]));
 		if(cmd == "run" && args.size() == 4)
-			return cmd_run(args[1], args[2], std::stoi(args[3]));
+			return cmd_run(args[1], args[2], std::stoi(args[3]), std::nullopt);
+		if(cmd == "run" && args.size() == 5)
+			return cmd_run(args[1], args[2], std::stoi(args[3]), std::stoul(args[4]));
 		if(cmd == "peek" && args.size() == 6)
 			return cmd_peek(args[1], args[2], args[3], args[4], args[5]);
 	}

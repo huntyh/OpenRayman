@@ -63,6 +63,7 @@ namespace openrayman::game
 		const region* find(std::uint32_t address, std::size_t size) const;
 
 		std::map<std::uint32_t, region> m_regions; // by base address
+		mutable const region* m_last = nullptr;    // most reads hit the block read last
 		std::size_t m_relocated = 0, m_moved = 0;
 	};
 }

@@ -38,13 +38,19 @@ namespace openrayman::game
 
 	const live_memory::region* live_memory::find(std::uint32_t address, std::size_t size) const
 	{
+		auto inside = [&](const region& r) {
+			return address >= r.base && std::uint64_t(address) + size <= std::uint64_t(r.base) + r.data.size();
+		};
+		if(m_last && inside(*m_last))
+			return m_last;
 		auto it = m_regions.upper_bound(address);
 		if(it == m_regions.begin())
 			return nullptr;
 		--it;
 		const region& r = it->second;
-		if(std::uint64_t(address) + size > std::uint64_t(r.base) + r.data.size())
+		if(!inside(r))
 			return nullptr;
+		m_last = &r;
 		return &r;
 	}
 
