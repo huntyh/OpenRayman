@@ -3,6 +3,9 @@
 #include <openrayman/actor.h>
 #include <openrayman/animation.h>
 #include <openrayman/brain.h>
+#include <openrayman/game/handlers.h>
+#include <openrayman/game/interpreter.h>
+#include <openrayman/game/live_memory.h>
 #include <openrayman/cnt_archive.h>
 #include <openrayman/error.h>
 #include <openrayman/game_data.h>
@@ -684,4 +687,39 @@ TEST_CASE("real data: every actor's scripts")
 	CHECK(variables == 47915);
 	CHECK(empty_macros == 1); // in Astro_10
 	CHECK(unprinted == 0);
+}
+
+TEST_CASE("real data: Learn_10's scripts run")
+{
+	auto dir = real_game_dir();
+	if(!dir)
+	{
+		MESSAGE("OPENRAYMAN_GAME_DIR not set, skipping");
+		return;
+	}
+	auto game = game_data::locate(*dir);
+	REQUIRE(game.has_value());
+	level_files files = load_level_files(*game, "Learn_10");
+	level_header header = read_level_header(files);
+	scene tree(files.memory, header);
+	game::live_memory memory(files.memory);
+	game::interpreter vm(memory, header.placements.at(0).super_object.address());
+	game::register_handlers(vm);
+	// Five seconds of the game's 60 ticks per second: no actor's scripts may fail.
+	std::size_t errors = 0;
+	for(int tick = 0; tick < 300; tick++)
+		for(const scene_node& n : tree.nodes())
+			if(n.type == super_object_type::actor)
+			{
+				try
+				{
+					vm.think(n.at.address());
+				}
+				catch(const std::exception& e)
+				{
+					if(errors++ == 0)
+						MESSAGE(std::format("tick {}, node 0x{:08X}: {}", tick, vm.last_node(), e.what()));
+				}
+			}
+	CHECK(errors == 0);
 }

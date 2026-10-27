@@ -8,7 +8,7 @@ add_executable(openrayman WIN32
 )
 target_include_directories(openrayman PRIVATE .)
 target_compile_definitions(openrayman PRIVATE OPENRAYMAN_VERSION="${PROJECT_VERSION}")
-target_link_libraries(openrayman PRIVATE openrayman::lib SDL3::SDL3 glad glm::glm)
+target_link_libraries(openrayman PRIVATE openrayman::lib openrayman::game SDL3::SDL3 glad glm::glm)
 openrayman_warnings(openrayman)
 
 if(WIN32)

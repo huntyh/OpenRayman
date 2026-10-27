@@ -14,6 +14,9 @@
 #include <renderer/level_renderer.h>
 
 #include <openrayman/actor.h>
+#include <openrayman/game/handlers.h>
+#include <openrayman/game/interpreter.h>
+#include <openrayman/game/live_memory.h>
 #include <openrayman/animation.h>
 #include <openrayman/cnt_archive.h>
 #include <openrayman/game_data.h>
@@ -120,6 +123,15 @@ namespace
 		double animation_time = 0;        // seconds; --time <seconds> starts there
 		std::optional<double> start_time;
 		bool animating = true;            // F3 pauses
+		// The game's scripts, run on a live copy of the level's memory at the game's 60 ticks per
+		// second. G switches them off (actors then keep their saved states).
+		std::unique_ptr<openrayman::game::live_memory> live;
+		std::unique_ptr<openrayman::game::interpreter> vm;
+		std::vector<std::uint32_t> thinkers;     // super objects of the actors with a brain
+		std::vector<std::uint32_t> actor_at;     // per actors.actors entry: its actor in live memory
+		std::vector<double> state_since;         // per entry: animation time its state began
+		bool scripts = true;
+		double script_clock = 0;                 // seconds not yet run as ticks
 		std::string actor_note;           // the state last picked with F4/F5, shown in the title
 		std::vector<std::pair<std::size_t, std::size_t>> start_states; // --actor-state <node>:<state>
 		float speed = 15.0f;                     // units per second
@@ -176,7 +188,7 @@ namespace
 				title += std::format(" ({} triangles)", a.level_stats.triangles);
 			else
 				title += " (ERROR: " + a.level_error + ")";
-			title += " | WASD move, hold right mouse to look, PgUp/PgDn level, T textures, P copy position, L lighting, F6/F7 luminosity, F4/F5 actor state";
+			title += " | WASD move, hold right mouse to look, PgUp/PgDn level, T textures, P copy position, L lighting, F6/F7 luminosity, F4/F5 actor state, G scripts";
 			if(!a.actor_note.empty())
 				title += " | " + a.actor_note;
 		}
@@ -241,18 +253,69 @@ namespace
 		update_title(a);
 	}
 
+	// Runs the game's scripts for `seconds`, in ticks of 1/60 s, then shows the states they picked.
+	void run_scripts(app& a, double seconds)
+	{
+		if(!a.vm || !a.scripts)
+			return;
+		constexpr double tick = 1.0 / 60.0;
+		a.script_clock += seconds;
+		int ticks = 0;
+		while(a.script_clock >= tick)
+		{
+			a.script_clock -= tick;
+			if(++ticks > 600)
+			{
+				a.script_clock = 0; // far behind (a long --time): skip the rest
+				break;
+			}
+			for(std::uint32_t self : a.thinkers)
+			{
+				try
+				{
+					a.vm->think(self);
+				}
+				catch(const std::exception& e)
+				{
+					SDL_Log("Script error, actor 0x%08X: %s", self, e.what());
+				}
+			}
+		}
+		// The current state is the first word after the initial state in the actor's 3D data.
+		for(std::size_t i = 0; i < a.actors.actors.size() && i < a.actor_at.size(); i++)
+		{
+			actor_set::entry& actor = a.actors.actors[i];
+			std::uint32_t data = a.live->u32(a.actor_at[i]);
+			if(!data || actor.state_at.empty())
+				continue;
+			std::uint32_t current = a.live->u32(data + 4);
+			for(std::size_t k = 0; k < actor.state_at.size(); k++)
+			{
+				if(actor.state_at[k].address() == current && actor.state != k)
+				{
+					actor.state = k;
+					actor.animation = actor.states[k];
+					a.state_since[i] = a.animation_time;
+				}
+			}
+		}
+	}
+
 	// Poses every actor at the current animation time and hands the parts to the renderer.
 	void update_actors(app& a)
 	{
 		std::vector<posed_part> parts;
-		for(const actor_set::entry& actor : a.actors.actors)
+		for(std::size_t i = 0; i < a.actors.actors.size(); i++)
 		{
+			const actor_set::entry& actor = a.actors.actors[i];
 			double frame = 0;
 			if(actor.animation && *actor.animation < a.bank.animations.size())
 			{
-				// The animation's speed is in frames per second (mostly 30, some 25 or 60).
+				// The animation's speed is in frames per second (mostly 30, some 25 or 60). Each actor's
+				// clock starts when its current state began.
 				std::uint16_t speed = a.bank.animations[*actor.animation].speed;
-				frame = a.animation_time * (speed ? speed : 30);
+				double since = i < a.state_since.size() ? a.state_since[i] : 0.0;
+				frame = (a.animation_time - since) * (speed ? speed : 30);
 			}
 			try
 			{
@@ -386,6 +449,23 @@ namespace
 					shadow_material = &actor.shadow->material;
 			}
 			a.level_stats = a.level->load(geometry, a.actors.meshes, a.archives, std::move(lights), sectors, shadow_material);
+
+			// The scripts. Rayman, the game's main actor, is the first Fix actor the level places.
+			a.live = std::make_unique<openrayman::game::live_memory>(files.memory);
+			std::uint32_t main_actor = header.placements.empty() ? 0 : header.placements[0].super_object.address();
+			a.vm = std::make_unique<openrayman::game::interpreter>(*a.live, main_actor);
+			openrayman::game::register_handlers(*a.vm);
+			a.thinkers.clear();
+			for(std::size_t n = 0; n < tree.nodes().size(); n++)
+			{
+				if(tree.node(n).type == super_object_type::actor)
+					a.thinkers.push_back(tree.node(n).at.address());
+			}
+			a.actor_at.clear();
+			for(const actor_set::entry& actor : a.actors.actors)
+				a.actor_at.push_back(tree.node(actor.node).data ? tree.node(actor.node).data->address() : 0);
+			a.state_since.assign(a.actors.actors.size(), 0.0);
+			a.script_clock = 0;
 			a.animation_time = a.start_time.value_or(0.0);
 			a.start_time.reset();
 			for(const auto& [node, state] : a.start_states)
@@ -400,6 +480,8 @@ namespace
 				}
 			}
 			a.start_states.clear();
+			// --time: let the scripts run up to then, so screenshots show what they picked.
+			run_scripts(a, a.animation_time);
 			update_actors(a);
 			SDL_Log("%s: %zu meshes, %zu triangles, %zu textures (%zu missing), %llu ms", levels[index].c_str(),
 				a.level_stats.meshes, a.level_stats.triangles, a.level_stats.textures, a.level_stats.missing_textures,
@@ -783,6 +865,12 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 					case SDLK_F5:
 						step_actor_state(a, event->key.key == SDLK_F5 ? 1 : -1, (event->key.mod & SDL_KMOD_SHIFT) != 0);
 						return SDL_APP_CONTINUE;
+					case SDLK_G:
+						a.scripts = !a.scripts;
+						a.actor_note = a.scripts ? "scripts on" : "scripts off";
+						SDL_Log("Scripts %s", a.scripts ? "on" : "off");
+						update_title(a);
+						return SDL_APP_CONTINUE;
 					case SDLK_F3:
 						a.animating = !a.animating;
 						SDL_Log("Animations %s at %.2f s", a.animating ? "playing" : "paused", a.animation_time);
@@ -877,7 +965,10 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 		a.camera.move(forward * step, right * step, up * step);
 
 		if(a.animating && !a.screenshot)
+		{
 			a.animation_time += dt;
+			run_scripts(a, dt);
+		}
 		update_actors(a);
 	}
 

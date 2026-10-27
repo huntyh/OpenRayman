@@ -136,10 +136,12 @@ namespace openrayman::game
 	std::uint32_t interpreter::super_object_of(std::uint32_t actor) const
 	{
 		// The game keeps a back pointer in the actor's standard game structure (0x4136D0).
-		if(!actor)
+		// Scripts can hold stale or not-yet-set references (while handlers are missing): read those
+		// as "nobody" instead of failing.
+		if(!actor || !m_memory.contains(actor + 0x04, 4))
 			return 0;
 		std::uint32_t standard = m_memory.u32(actor + 0x04);
-		return standard ? m_memory.u32(standard + 0x0C) : 0;
+		return standard && m_memory.contains(standard + 0x0C, 4) ? m_memory.u32(standard + 0x0C) : 0;
 	}
 
 	std::uint32_t interpreter::target(std::uint32_t self, bool allow_override)
@@ -395,7 +397,12 @@ namespace openrayman::game
 
 	interpreter::variable_slot interpreter::variable(std::uint32_t self, std::uint32_t index) const
 	{
-		std::uint32_t mind = m_memory.u32(m_memory.u32(actor_of(self) + actor_field::brain));
+		// An actor without a brain (or none at all) has no variables: address 0 reads as 0.
+		std::uint32_t actor = actor_of(self);
+		std::uint32_t brain = actor ? m_memory.u32(actor + actor_field::brain) : 0;
+		std::uint32_t mind = brain && m_memory.contains(brain, 4) ? m_memory.u32(brain) : 0;
+		if(!mind)
+			return {};
 		std::uint32_t variables = m_memory.u32(mind + mind_field::variables);
 		std::uint32_t declaration = m_memory.u32(m_memory.u32(variables));
 		std::uint32_t info = m_memory.u32(declaration + declaration_info) + (index & 0xFF) * variable_info_size;
@@ -405,6 +412,8 @@ namespace openrayman::game
 	value interpreter::read_variable(const variable_slot& s) const
 	{
 		std::uint32_t a = s.address;
+		if(!a)
+			return value::integer(0);
 		switch(s.type)
 		{
 		case 0: case 1: return value::integer(std::int8_t(m_memory.u8(a)));
@@ -431,6 +440,8 @@ namespace openrayman::game
 	void interpreter::write_variable(const variable_slot& s, const value& v)
 	{
 		std::uint32_t a = s.address;
+		if(!a)
+			return;
 		switch(s.type)
 		{
 		case 0: case 1: case 2: m_memory.write<std::uint8_t>(a, std::uint8_t(v.as_int())); break;

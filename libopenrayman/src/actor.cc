@@ -135,6 +135,7 @@ namespace openrayman
 				if(current && *state == *current)
 					result.state = result.states.size();
 				result.states.push_back(animation_of(*state));
+				result.state_at.push_back(*state);
 			}
 		}
 		return result;
@@ -171,6 +172,7 @@ namespace openrayman
 			e.animation = a.animation;
 			e.family = a.family;
 			e.states = a.states;
+			e.state_at = a.state_at;
 			e.state = a.state;
 			e.shadow = a.shadow;
 			for(const actor_object& object : a.objects)

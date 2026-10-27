@@ -40,6 +40,7 @@ namespace openrayman
 		// saved state is often a placeholder that the game's scripts replace when the level starts.
 		std::optional<memory_location> family;
 		std::vector<std::optional<std::uint16_t>> states;
+		std::vector<memory_location> state_at; // where each state is, to follow the scripts' choice
 		std::optional<std::size_t> state;
 		std::optional<actor_shadow> shadow;
 	};
@@ -62,6 +63,7 @@ namespace openrayman
 			std::optional<std::uint16_t> animation; // what it plays now
 			std::optional<memory_location> family;  // see actor
 			std::vector<std::optional<std::uint16_t>> states;
+			std::vector<memory_location> state_at;
 			std::optional<std::size_t> state;
 			std::vector<std::optional<std::size_t>> meshes; // per object list entry, if it has one
 			std::vector<std::optional<vec3>> scales;        // per object list entry
