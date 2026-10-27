@@ -128,7 +128,7 @@ namespace openrayman::game
 
 	std::uint32_t interpreter::actor_of(std::uint32_t super_object) const
 	{
-		if(!super_object || m_memory.u32(super_object + super_object_field::type) != 2)
+		if(!super_object || !m_memory.contains(super_object, 8) || m_memory.u32(super_object + super_object_field::type) != 2)
 			return 0;
 		return m_memory.u32(super_object + super_object_field::data);
 	}

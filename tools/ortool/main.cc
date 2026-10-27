@@ -988,7 +988,7 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames)
 		before.push_back(snapshot(b));
 	std::map<std::size_t, std::string> errors;
 	for(int f = 0; f < frames; f++)
-		for(const actor_brain& b : brains.actors)
+		for(const actor_brain& b : (vm.next_tick(), brains.actors))
 		{
 			if(errors.contains(b.node))
 				continue;

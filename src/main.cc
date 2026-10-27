@@ -269,6 +269,7 @@ namespace
 				a.script_clock = 0; // far behind (a long --time): skip the rest
 				break;
 			}
+			a.vm->next_tick();
 			for(std::uint32_t self : a.thinkers)
 			{
 				try

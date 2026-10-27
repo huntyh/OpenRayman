@@ -708,7 +708,7 @@ TEST_CASE("real data: Learn_10's scripts run")
 	// Five seconds of the game's 60 ticks per second: no actor's scripts may fail.
 	std::size_t errors = 0;
 	for(int tick = 0; tick < 300; tick++)
-		for(const scene_node& n : tree.nodes())
+		for(const scene_node& n : (vm.next_tick(), tree.nodes()))
 			if(n.type == super_object_type::actor)
 			{
 				try

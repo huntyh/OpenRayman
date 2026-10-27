@@ -111,6 +111,17 @@ namespace openrayman::game
 		// For handlers.
 		live_memory& memory() { return m_memory; }
 		std::uint32_t main_actor() const { return m_main_actor; }
+		// The game's clock in milliseconds (0x5003EC), which timers in scripts compare against.
+		std::uint32_t clock() const { return m_clock; }
+		// Call once per tick (1/60 s), before the actors think.
+		void next_tick()
+		{
+			std::uint32_t before = m_clock;
+			m_ticks++;
+			m_clock = std::uint32_t(m_ticks * 1000 / 60);
+			m_frame_ms = m_clock - before;
+		}
+		std::uint32_t frame_ms() const { return m_frame_ms; }
 		std::uint32_t eval(std::uint32_t self, std::uint32_t node, value& out); // 0x480B90
 		// Skips a node and its arguments.
 		std::uint32_t skip(std::uint32_t node) const;
@@ -213,5 +224,8 @@ namespace openrayman::game
 		std::uint32_t m_macro_node = 0;      // 0x4B9C20
 		std::uint32_t m_acting = 0;          // 0x4B9C28: "actor: ..." override
 		std::uint32_t m_last_node = 0;
+		std::uint32_t m_clock = 0;
+		std::uint64_t m_ticks = 0;
+		std::uint32_t m_frame_ms = 16;
 	};
 }
