@@ -1,11 +1,13 @@
 #pragma once
 
+#include <openrayman/geometry.h>
 #include <openrayman/game/interpreter.h>
 #include <openrayman/game/live_memory.h>
 
 #include <cstdint>
 #include <exception>
 #include <functional>
+#include <optional>
 #include <span>
 
 namespace openrayman::game
@@ -44,6 +46,15 @@ namespace openrayman::game
 	// Advances an actor's animation by one tick of `ms`; at the end of an animation it plays again
 	// (while loops remain) or moves on to the state's "after" state.
 	void play_animation(live_memory& memory, std::uint32_t data, std::uint32_t ms);
+
+	// Where a super object is in the world as the game keeps it (its global transform, +0x24), or
+	// nothing if it has none.
+	std::optional<affine> global_placement(const live_memory& memory, std::uint32_t super_object);
+
+	// Writes a placement into a super object's global transform (as rotation and scale, type 4).
+	// The level's own actors arrive with theirs; Fix's actors take theirs from the level header, so
+	// the loader writes them.
+	void set_global_placement(live_memory& memory, std::uint32_t super_object, const affine& placement);
 
 	// One tick of the game (1/60 s): the clock moves on, every actor thinks, then every actor's
 	// animation advances. Actors taken out of the world are skipped. An actor whose scripts fail

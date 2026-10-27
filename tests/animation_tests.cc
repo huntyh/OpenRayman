@@ -58,7 +58,7 @@ static animation_bank two_keyframe_bank()
 	return bank;
 }
 
-TEST_CASE("pose: blends between keyframes and holds after the last one")
+TEST_CASE("pose: blends between keyframes, and from the last one back to the first")
 {
 	const animation_bank bank = two_keyframe_bank();
 	auto x_at = [&](double frame) {
@@ -71,9 +71,12 @@ TEST_CASE("pose: blends between keyframes and holds after the last one")
 	CHECK(x_at(0.5) == doctest::Approx(1.0f));
 	CHECK(x_at(1) == doctest::Approx(2.0f));
 	CHECK(x_at(2) == doctest::Approx(4.0f));
-	CHECK(x_at(3.5) == doctest::Approx(4.0f)); // after the last keyframe
+	// 4 frames, keyframes at 0 and 2: frames 2..4 blend back towards the first, so the loop
+	// doesn't hold the last pose and then jump.
+	CHECK(x_at(3) == doctest::Approx(2.0f));
+	CHECK(x_at(3.5) == doctest::Approx(1.0f));
 	CHECK(x_at(4.5) == doctest::Approx(1.0f)); // wraps around
-	CHECK(x_at(-0.5) == doctest::Approx(4.0f));
+	CHECK(x_at(-0.5) == doctest::Approx(1.0f));
 
 	// Halfway through the turn: 45 degrees, not the long way round.
 	auto halfway = pose(bank, 0, 1);

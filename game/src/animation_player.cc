@@ -97,6 +97,46 @@ namespace openrayman::game
 
 namespace openrayman::game
 {
+	std::optional<affine> global_placement(const live_memory& m, std::uint32_t super_object)
+	{
+		if(!super_object || !m.contains(super_object + 0x24, 4))
+			return std::nullopt;
+		std::uint32_t at = m.u32(super_object + 0x24);
+		if(!at || !m.contains(at, 0x58))
+			return std::nullopt;
+		transform t;
+		t.type = m.u32(at);
+		for(int i = 0; i < 3; i++)
+			t.position[std::size_t(i)] = m.f32(at + 4 + std::uint32_t(i) * 4);
+		for(int i = 0; i < 9; i++)
+		{
+			t.rotation[std::size_t(i)] = m.f32(at + 0x10 + std::uint32_t(i) * 4);
+			t.matrix[std::size_t(i)] = m.f32(at + 0x34 + std::uint32_t(i) * 4);
+		}
+		return affine::from(t);
+	}
+
+	void set_global_placement(live_memory& m, std::uint32_t super_object, const affine& a)
+	{
+		if(!super_object || !m.contains(super_object + 0x24, 4))
+			return;
+		std::uint32_t at = m.u32(super_object + 0x24);
+		if(!at || !m.contains(at, 0x58))
+			return;
+		m.write<std::uint32_t>(at, 4);
+		for(int r = 0; r < 3; r++)
+		{
+			m.write<float>(at + 4 + std::uint32_t(r) * 4, a.m[r][3]);
+			for(int c = 0; c < 3; c++)
+			{
+				// Stored transposed (the game multiplies row vectors). Both copies get rotation and
+				// scale together; nothing reads the first copy apart from axis directions.
+				m.write<float>(at + 0x10 + std::uint32_t(c * 3 + r) * 4, a.m[r][c]);
+				m.write<float>(at + 0x34 + std::uint32_t(c * 3 + r) * 4, a.m[r][c]);
+			}
+		}
+	}
+
 	void step(interpreter& vm, std::span<const std::uint32_t> super_objects, const step_error& on_error)
 	{
 		vm.next_tick();

@@ -242,6 +242,17 @@ namespace openrayman
 			float t = 0;
 			if(next && next->frame > key.frame)
 				t = std::clamp(float((frame - key.frame) / (next->frame - key.frame)), 0.0f, 1.0f);
+			else if(!next && a.frames > key.frame)
+			{
+				// After the last keyframe, blend back towards the first, so a loop closes smoothly
+				// instead of holding the last pose and then jumping.
+				const std::uint32_t first = at(bank.frame_keys, channel.frame_keys, "frame key");
+				if(first != key_index)
+				{
+					next = &at(bank.keyframes, first, "keyframe");
+					t = std::clamp(float((frame - key.frame) / (double(a.frames) - key.frame)), 0.0f, 1.0f);
+				}
+			}
 			if(t == 0)
 				next = nullptr;
 

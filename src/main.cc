@@ -280,6 +280,10 @@ namespace
 				SDL_Log("Script error, actor 0x%08X: %s", self, e.what());
 			});
 		}
+		// Where each actor is now: scripts move and turn them.
+		for(std::size_t i = 0; i < a.actors.actors.size() && i < a.super_object_at.size(); i++)
+			if(auto placed = openrayman::game::global_placement(*a.live, a.super_object_at[i]))
+				a.actors.actors[i].world = *placed;
 		// The current state is the first word after the initial state in the actor's 3D data.
 		for(std::size_t i = 0; i < a.actors.actors.size() && i < a.actor_at.size(); i++)
 		{
@@ -472,6 +476,16 @@ namespace
 			a.state_addresses.clear();
 			for(const actor_set::entry& actor : a.actors.actors)
 			{
+				// Where it is: the loader's job for Fix's actors (their placement is in the level header).
+				if(auto saved = openrayman::game::global_placement(*a.live, tree.node(actor.node).at.address()))
+				{
+					float d = 0;
+					for(int r = 0; r < 3; r++)
+						for(int c = 0; c < 4; c++)
+							d = std::max(d, std::abs(saved->m[r][c] - actor.world.m[r][c]));
+					if(d > 1e-3f)
+						openrayman::game::set_global_placement(*a.live, tree.node(actor.node).at.address(), actor.world);
+				}
 				auto& states = a.state_addresses.emplace_back();
 				for(const memory_location& at : actor.state_at)
 					states.push_back(at.address());

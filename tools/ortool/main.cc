@@ -969,6 +969,7 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	level_brains brains = read_brains(files.memory, tree);
 	animation_bank bank = read_animation_bank(files);
 	game::live_memory memory(files.memory);
+
 	std::cout << std::format("{} pointers relocated, {} moved\n", memory.relocated(), memory.moved());
 	std::uint32_t main_actor = header.placements.empty() ? 0 : header.placements[0].super_object.address();
 	std::cout << std::format("main actor's super object 0x{:08X}:", main_actor);
@@ -977,6 +978,30 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	std::cout << "\n";
 	game::interpreter vm(memory, main_actor);
 	game::register_handlers(vm);
+	// Do the global transforms the game keeps agree with the placements computed from the tree?
+	{
+		actor_set set = read_actors(files.memory, tree, bank);
+		std::size_t checked = 0, missing_transform = 0, differ = 0;
+		float worst = 0;
+		for(const actor_set::entry& e : set.actors)
+		{
+			auto g = game::global_placement(memory, tree.node(e.node).at.address());
+			if(!g)
+			{
+				missing_transform++;
+				continue;
+			}
+			checked++;
+			float d = 0;
+			for(int r = 0; r < 3; r++)
+				for(int c = 0; c < 4; c++)
+					d = std::max(d, std::abs(g->m[r][c] - e.world.m[r][c]));
+			if(d > 1e-3f)
+				differ++;
+			worst = std::max(worst, d);
+		}
+		std::cout << std::format("global transforms: {} checked, {} differ (worst {}), {} have none\n", checked, differ, worst, missing_transform);
+	}
 
 	auto snapshot = [&](const actor_brain& b) {
 		std::uint32_t actor = tree.node(b.node).data->address();
