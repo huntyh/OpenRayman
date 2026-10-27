@@ -151,7 +151,8 @@ namespace openrayman
 						r.u16(); // a second quaternion
 						k.scale_vector = r.u16();
 						k.position_vector = r.u16();
-						r.skip(8);
+						r.skip(6);
+						k.ease = r.i16();
 						bank.keyframes.push_back(k);
 						break;
 					}
@@ -212,7 +213,7 @@ namespace openrayman
 		return bank;
 	}
 
-	std::vector<channel_pose> pose(const animation_bank& bank, std::size_t animation_index, double frame, bool loops)
+	std::vector<channel_pose> pose(const animation_bank& bank, std::size_t animation_index, double frame, double seam)
 	{
 		auto at = [](const auto& list, std::size_t index, const char* what) -> const auto& {
 			if(index >= list.size())
@@ -242,16 +243,21 @@ namespace openrayman
 			float t = 0;
 			if(next && next->frame > key.frame)
 				t = std::clamp(float((frame - key.frame) / (next->frame - key.frame)), 0.0f, 1.0f);
-			else if(!next && loops && a.frames > key.frame)
+			else if(!next && key.loops_to_first())
 			{
-				// After the last keyframe, blend back towards the first, so a loop closes smoothly
-				// instead of holding the last pose and then jumping.
+				// After the last keyframe, blend back towards the first over the rest of the loop.
 				const std::uint32_t first = at(bank.frame_keys, channel.frame_keys, "frame key");
 				if(first != key_index)
 				{
 					next = &at(bank.keyframes, first, "keyframe");
-					t = std::clamp(float((frame - key.frame) / (double(a.frames) - key.frame)), 0.0f, 1.0f);
+					double span = double(a.frames) + next->frame - key.frame;
+					t = span > 0 ? std::clamp(float((frame - key.frame) / span), 0.0f, 1.0f) : 0.0f;
 				}
+			}
+			if(next && next->ease)
+			{
+				float e = next->ease / 8192.0f;
+				t = t * (1 + e * (t - 1));
 			}
 			if(t == 0)
 				next = nullptr;
@@ -277,6 +283,29 @@ namespace openrayman
 				for(int k = 0; k < 4; k++)
 					q[k] += (q2[k] - q[k]) * t; // normalized by quaternion_to_matrix
 				multiplier += (next->position_multiplier - multiplier) * t;
+			}
+			// Gliding into the loop's first frame over the last `seam` frames (at most a quarter of it).
+			const double window = std::min(seam, a.frames / 4.0);
+			double into = window > 0 ? (frame - (double(a.frames) - window)) / window : 0;
+			if(into > 0)
+			{
+				float s = float(std::min(into, 1.0));
+				s = s * s * (3 - 2 * s);
+				const animation_keyframe& start = at(bank.keyframes, at(bank.frame_keys, channel.frame_keys, "frame key"), "keyframe");
+				const vec3& position2 = at(bank.vectors, start.position_vector, "position");
+				const vec3& scale2 = at(bank.vectors, start.scale_vector, "scale");
+				std::array<float, 4> q2 = at(bank.quaternions, start.quaternion, "rotation");
+				if(q[0] * q2[0] + q[1] * q2[1] + q[2] * q2[2] + q[3] * q2[3] < 0)
+					for(float& v : q2)
+						v = -v;
+				for(int k = 0; k < 3; k++)
+				{
+					position[k] += (position2[k] - position[k]) * s;
+					scale[k] += (scale2[k] - scale[k]) * s;
+				}
+				for(int k = 0; k < 4; k++)
+					q[k] += (q2[k] - q[k]) * s;
+				multiplier += (start.position_multiplier - multiplier) * s;
 			}
 			const animation_object& object = at(bank.objects, at(bank.ntto_choices, std::size_t(channel.ntto) + f.ntto, "object choice"), "object");
 

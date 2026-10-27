@@ -198,6 +198,9 @@ namespace openrayman
 		return result;
 	}
 
+	// How many frames a looping animation takes to glide into its start (see pose()).
+	constexpr double loop_seam_frames = 4;
+
 	void pose_actor(const actor_set::entry& actor, const animation_bank& bank, double frame, std::vector<posed_part>& out)
 	{
 		auto add = [&](std::size_t object, const affine& world) {
@@ -218,7 +221,7 @@ namespace openrayman
 			add(0, actor.world);
 			return;
 		}
-		std::vector<channel_pose> channels = pose(bank, *actor.animation, frame, actor.loops);
+		std::vector<channel_pose> channels = pose(bank, *actor.animation, frame, actor.loops ? loop_seam_frames : 0);
 		for(std::size_t c = 0; c < channels.size(); c++)
 		{
 			if(!channels[c].object)

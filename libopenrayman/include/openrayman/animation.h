@@ -74,7 +74,11 @@ namespace openrayman
 		float position_multiplier = 1;
 		std::uint16_t frame = 0, flags = 0;
 		std::uint16_t quaternion = 0, scale_vector = 0, position_vector = 0;
+		// Eases the blend towards this keyframe: t becomes t * (1 + e * (t - 1)), e = ease / 8192.
+		std::int16_t ease = 0;
 		bool last() const { return flags & 0x80; }
+		// After the last keyframe, blend back to the first (else hold the last pose until the loop).
+		bool loops_to_first() const { return flags & 0x200; }
 	};
 
 	// The animations of Fix and a level, in the engine's shared arrays: Fix's come first, the
@@ -110,8 +114,12 @@ namespace openrayman
 
 	// Evaluates an animation at a frame, which may lie between frames and wraps around the
 	// animation's length. Positions, scales and rotations are blended between keyframes; which
-	// objects show and how channels link come from the whole frame. A looping animation blends from
-	// its last keyframe back to its first; one that doesn't holds its last keyframe. Throws
-	// format_error on indices outside the bank.
-	std::vector<channel_pose> pose(const animation_bank& bank, std::size_t animation_index, double frame, bool loops = true);
+	// objects show and how channels link come from the whole frame. After a channel's last
+	// keyframe it blends back to its first if the keyframe says so, else holds. Blends are eased as
+	// each keyframe asks (Rayman2.exe 0x41A610). Throws format_error on indices outside the bank.
+	//
+	// `seam` (frames, 0 = as the game) smooths an animation that loops onto itself: over its last
+	// `seam` frames the pose glides into its first frame, hiding a mismatch between the two that the
+	// game shows as a jump (the swinging cages). Our own improvement, not the game's.
+	std::vector<channel_pose> pose(const animation_bank& bank, std::size_t animation_index, double frame, double seam = 0);
 }

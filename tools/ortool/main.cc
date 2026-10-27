@@ -597,11 +597,34 @@ static int cmd_anim(const fs::path& folder, const std::string& name, const std::
 	if(a >= bank.animations.size())
 		throw format_error(std::format("animation {} is beyond the bank's {}", a, bank.animations.size()));
 	std::cout << std::format("animation {}: {} frames, {} channels\n", a, bank.animations[a].frames, bank.animations[a].channels);
-	for(const channel_pose& c : pose(bank, a, std::uint32_t(std::stoul(frame))))
+	if(frame == "keys")
+	{
+		// Each channel's keyframes: frame, flags, rotation (as the angle of its quaternion).
+		const animation& an = bank.animations[a];
+		for(std::size_t c = 0; c < an.channels; c++)
+		{
+			const animation_channel& ch = bank.channels.at(std::size_t(an.start_channels) + c);
+			std::cout << std::format("  channel {:>3}:", ch.id);
+			for(std::size_t k = ch.keyframe;; k++)
+			{
+				const animation_keyframe& key = bank.keyframes.at(k);
+				const auto& q = bank.quaternions.at(key.quaternion);
+				std::cout << std::format(" f{}/{:X} {:.1f}", key.frame, key.flags, 2 * std::acos(std::clamp(std::abs(q[3]), 0.0f, 1.0f)) * 57.29578f);
+				if(key.last() || k - ch.keyframe > 200)
+					break;
+			}
+			std::cout << "\n";
+		}
+		return EXIT_SUCCESS;
+	}
+	for(const channel_pose& c : pose(bank, a, std::stod(frame)))
 	{
 		const auto& m = c.local.m;
-		std::cout << std::format("  channel {:>3} parent {:>3} object {:>3}  pos ({:.2f}, {:.2f}, {:.2f})\n", c.id,
-			c.parent ? std::to_string(*c.parent) : "-", c.object ? std::to_string(*c.object) : "-", m[0][3], m[1][3], m[2][3]);
+		// The turn about each axis, roughly (from the rotation's columns), to see swings.
+		std::cout << std::format("  channel {:>3} parent {:>3} object {:>3}  turn x {:6.1f} y {:6.1f} z {:6.1f}  pos ({:.2f}, {:.2f}, {:.2f})\n", c.id,
+			c.parent ? std::to_string(*c.parent) : "-", c.object ? std::to_string(*c.object) : "-",
+			std::atan2(m[2][1], m[2][2]) * 57.29578f, std::atan2(-m[2][0], std::sqrt(m[2][1] * m[2][1] + m[2][2] * m[2][2])) * 57.29578f,
+			std::atan2(m[1][0], m[0][0]) * 57.29578f, m[0][3], m[1][3], m[2][3]);
 	}
 	return EXIT_SUCCESS;
 }
@@ -696,6 +719,9 @@ static int cmd_states(const fs::path& folder, const std::string& name, const std
 			if(index < bank.animations.size())
 				std::cout << std::format(": animation {}, {} frames, {} channels", index, bank.animations[index].frames, bank.animations[index].channels);
 		}
+		// When its animation ends, the actor moves on to this state (+0x20).
+		if(auto after = memory.follow(*state + 0x20))
+			std::cout << (*after == *state ? ", loops" : std::format(", then +0x{:X}", after->offset));
 		std::cout << '\n';
 	}
 	return EXIT_SUCCESS;

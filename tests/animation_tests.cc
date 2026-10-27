@@ -58,9 +58,9 @@ static animation_bank two_keyframe_bank()
 	return bank;
 }
 
-TEST_CASE("pose: blends between keyframes, and from the last one back to the first")
+TEST_CASE("pose: blends between keyframes, holds after the last, loops back when flagged, eases")
 {
-	const animation_bank bank = two_keyframe_bank();
+	animation_bank bank = two_keyframe_bank();
 	auto x_at = [&](double frame) {
 		auto channels = pose(bank, 0, frame);
 		REQUIRE(channels.size() == 1);
@@ -71,12 +71,25 @@ TEST_CASE("pose: blends between keyframes, and from the last one back to the fir
 	CHECK(x_at(0.5) == doctest::Approx(1.0f));
 	CHECK(x_at(1) == doctest::Approx(2.0f));
 	CHECK(x_at(2) == doctest::Approx(4.0f));
-	// 4 frames, keyframes at 0 and 2: frames 2..4 blend back towards the first, so the loop
-	// doesn't hold the last pose and then jump.
+	CHECK(x_at(3.5) == doctest::Approx(4.0f)); // after the last keyframe: held
+	CHECK(x_at(4.5) == doctest::Approx(1.0f)); // wraps around
+	CHECK(x_at(-0.5) == doctest::Approx(4.0f));
+
+	// Flag 0x200 on the last keyframe: frames 2..4 blend back to the first.
+	bank.keyframes[1].flags = 0x280;
 	CHECK(x_at(3) == doctest::Approx(2.0f));
 	CHECK(x_at(3.5) == doctest::Approx(1.0f));
-	CHECK(x_at(4.5) == doctest::Approx(1.0f)); // wraps around
-	CHECK(x_at(-0.5) == doctest::Approx(1.0f));
+
+	// Easing towards the second keyframe: t = 0.5 becomes 0.5 * (1 + 1 * -0.5) = 0.25.
+	bank.keyframes[1].ease = 8192;
+	CHECK(x_at(1) == doctest::Approx(1.0f));
+	bank.keyframes[1].flags = 0x80;
+	bank.keyframes[1].ease = 0;
+
+	// Our loop seam glide: over the last quarter (frame 3..4) it slides from the held x = 4 into the
+	// first frame's x = 0; halfway (smoothstep 0.5) is x = 2.
+	CHECK(pose(bank, 0, 3.5, 2)[0].local.m[0][3] == doctest::Approx(2.0f));
+	CHECK(pose(bank, 0, 2.5, 2)[0].local.m[0][3] == doctest::Approx(4.0f));
 
 	// Halfway through the turn: 45 degrees, not the long way round.
 	auto halfway = pose(bank, 0, 1);

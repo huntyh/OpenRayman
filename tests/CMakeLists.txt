@@ -38,7 +38,7 @@ ortool_check(motion_learn_10
 	a6320d837212e5b1495b5bd30e4ed9f0f4830ec949d27fd68a03a102e43f2475
 	motion <game> Learn_10)
 ortool_check(states_learn_10_cage
-	bd85460cd76e1984e4f2b937100e36b6e589424bd24c5e0c65d546c587534831
+	23004b4c93ad4163b9b5be4ec49f6e0b5040dd564431d57eee8150ad473f20bc
 	states <game> Learn_10 53)
 ortool_check(brain_learn_10
 	864b40b3a3f85e05898513aebc4b6bdc9f7df1b24038aab02c935e2e049dc6a1
