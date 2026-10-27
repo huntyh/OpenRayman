@@ -4,6 +4,7 @@
 #include <openrayman/animation.h>
 #include <openrayman/apm_audio.h>
 #include <openrayman/brain.h>
+#include <openrayman/game/animation_player.h>
 #include <openrayman/game/handlers.h>
 #include <openrayman/game/interpreter.h>
 #include <openrayman/game/live_memory.h>
@@ -986,21 +987,19 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames)
 	std::vector<std::pair<std::uint32_t, std::uint32_t>> before;
 	for(const actor_brain& b : brains.actors)
 		before.push_back(snapshot(b));
+	std::vector<std::uint32_t> actors;
+	std::map<std::uint32_t, std::size_t> node_of;
+	for(std::size_t n = 0; n < tree.nodes().size(); n++)
+		if(tree.node(n).type == super_object_type::actor)
+		{
+			actors.push_back(tree.node(n).at.address());
+			node_of[actors.back()] = n;
+		}
 	std::map<std::size_t, std::string> errors;
 	for(int f = 0; f < frames; f++)
-		for(const actor_brain& b : (vm.next_tick(), brains.actors))
-		{
-			if(errors.contains(b.node))
-				continue;
-			try
-			{
-				vm.think(tree.node(b.node).at.address());
-			}
-			catch(const std::exception& e)
-			{
-				errors[b.node] = std::format("frame {}, node 0x{:08X}: {}", f, vm.last_node(), e.what());
-			}
-		}
+		game::step(vm, actors, [&](std::uint32_t self, const std::exception& e) {
+			errors.try_emplace(node_of[self], std::format("frame {}, node 0x{:08X}: {}", f, vm.last_node(), e.what()));
+		});
 	for(std::size_t i = 0; i < brains.actors.size(); i++)
 	{
 		const actor_brain& b = brains.actors[i];

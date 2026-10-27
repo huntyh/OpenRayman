@@ -921,7 +921,7 @@ namespace openrayman::game
 	void interpreter::think(std::uint32_t self)
 	{
 		std::uint32_t actor = actor_of(self);
-		if(!actor)
+		if(!actor || removed(self))
 			return;
 		std::uint32_t data = m_memory.u32(actor + actor_field::data_3d);
 		if(data && honour_brain_period)

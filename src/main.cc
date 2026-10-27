@@ -14,6 +14,7 @@
 #include <renderer/level_renderer.h>
 
 #include <openrayman/actor.h>
+#include <openrayman/game/animation_player.h>
 #include <openrayman/game/handlers.h>
 #include <openrayman/game/interpreter.h>
 #include <openrayman/game/live_memory.h>
@@ -129,6 +130,7 @@ namespace
 		std::unique_ptr<openrayman::game::interpreter> vm;
 		std::vector<std::uint32_t> thinkers;     // super objects of the actors with a brain
 		std::vector<std::uint32_t> actor_at;     // per actors.actors entry: its actor in live memory
+		std::vector<std::uint32_t> super_object_at; // per entry: its super object
 		std::vector<double> state_since;         // per entry: animation time its state began
 		bool scripts = true;
 		double script_clock = 0;                 // seconds not yet run as ticks
@@ -269,18 +271,9 @@ namespace
 				a.script_clock = 0; // far behind (a long --time): skip the rest
 				break;
 			}
-			a.vm->next_tick();
-			for(std::uint32_t self : a.thinkers)
-			{
-				try
-				{
-					a.vm->think(self);
-				}
-				catch(const std::exception& e)
-				{
-					SDL_Log("Script error, actor 0x%08X: %s", self, e.what());
-				}
-			}
+			openrayman::game::step(*a.vm, a.thinkers, [](std::uint32_t self, const std::exception& e) {
+				SDL_Log("Script error, actor 0x%08X: %s", self, e.what());
+			});
 		}
 		// The current state is the first word after the initial state in the actor's 3D data.
 		for(std::size_t i = 0; i < a.actors.actors.size() && i < a.actor_at.size(); i++)
@@ -309,6 +302,9 @@ namespace
 		for(std::size_t i = 0; i < a.actors.actors.size(); i++)
 		{
 			const actor_set::entry& actor = a.actors.actors[i];
+			// Taken out of the world by its scripts.
+			if(a.vm && a.scripts && i < a.super_object_at.size() && a.vm->removed(a.super_object_at[i]))
+				continue;
 			double frame = 0;
 			if(actor.animation && *actor.animation < a.bank.animations.size())
 			{
@@ -343,8 +339,11 @@ namespace
 		a.level->set_time(a.animation_time);
 
 		std::vector<level_renderer::shadow> shadows;
-		for(const actor_set::entry& actor : a.actors.actors)
+		for(std::size_t i = 0; i < a.actors.actors.size(); i++)
 		{
+			const actor_set::entry& actor = a.actors.actors[i];
+			if(a.vm && a.scripts && i < a.super_object_at.size() && a.vm->removed(a.super_object_at[i]))
+				continue;
 			// Actors with nothing to show (set up by scripts later) don't get a shadow yet either.
 			bool visible = std::ranges::any_of(actor.meshes, [](const auto& mesh) { return mesh.has_value(); });
 			// Every shadow is drawn, also those the game's scripts leave off (like the Globox kids'): a
@@ -463,8 +462,12 @@ namespace
 					a.thinkers.push_back(tree.node(n).at.address());
 			}
 			a.actor_at.clear();
+			a.super_object_at.clear();
 			for(const actor_set::entry& actor : a.actors.actors)
+			{
 				a.actor_at.push_back(tree.node(actor.node).data ? tree.node(actor.node).data->address() : 0);
+				a.super_object_at.push_back(tree.node(actor.node).at.address());
+			}
 			a.state_since.assign(a.actors.actors.size(), 0.0);
 			a.script_clock = 0;
 			a.animation_time = a.start_time.value_or(0.0);

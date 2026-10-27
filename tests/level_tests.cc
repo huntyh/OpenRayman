@@ -3,6 +3,7 @@
 #include <openrayman/actor.h>
 #include <openrayman/animation.h>
 #include <openrayman/brain.h>
+#include <openrayman/game/animation_player.h>
 #include <openrayman/game/handlers.h>
 #include <openrayman/game/interpreter.h>
 #include <openrayman/game/live_memory.h>
@@ -706,20 +707,15 @@ TEST_CASE("real data: Learn_10's scripts run")
 	game::interpreter vm(memory, header.placements.at(0).super_object.address());
 	game::register_handlers(vm);
 	// Five seconds of the game's 60 ticks per second: no actor's scripts may fail.
+	std::vector<std::uint32_t> actors;
+	for(const scene_node& n : tree.nodes())
+		if(n.type == super_object_type::actor)
+			actors.push_back(n.at.address());
 	std::size_t errors = 0;
 	for(int tick = 0; tick < 300; tick++)
-		for(const scene_node& n : (vm.next_tick(), tree.nodes()))
-			if(n.type == super_object_type::actor)
-			{
-				try
-				{
-					vm.think(n.at.address());
-				}
-				catch(const std::exception& e)
-				{
-					if(errors++ == 0)
-						MESSAGE(std::format("tick {}, node 0x{:08X}: {}", tick, vm.last_node(), e.what()));
-				}
-			}
+		game::step(vm, actors, [&](std::uint32_t, const std::exception& e) {
+			if(errors++ == 0)
+				MESSAGE(std::format("tick {}, node 0x{:08X}: {}", tick, vm.last_node(), e.what()));
+		});
 	CHECK(errors == 0);
 }

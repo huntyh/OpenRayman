@@ -1,6 +1,8 @@
 #include <openrayman/game/handlers.h>
+#include <openrayman/game/animation_player.h>
 
 #include <bit>
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <map>
@@ -451,6 +453,213 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 70 (0x469710): switch the reflex behaviour. 71 (0x469760): switch both, normal first.
+		std::uint32_t change_behaviours(call& c)
+		{
+			live_memory& m = c.vm.memory();
+			std::uint32_t mind = mind_of(c.vm, c.self);
+			bool from_reflex = m.u8(mind + mind_field::running_normal) == 0;
+			value first;
+			next_arg(c, first);
+			if(c.index == 70)
+			{
+				// From the normal behaviour, switching the reflex doesn't cut the running script short.
+				if(std::uint32_t reflex = m.u32(mind + mind_field::reflex))
+					c.vm.change_behaviour(reflex, first.word(), !from_reflex);
+				return c.args;
+			}
+			value second;
+			next_arg(c, second);
+			if(std::uint32_t normal = m.u32(mind + mind_field::normal))
+				c.vm.change_behaviour(normal, first.word(), from_reflex);
+			if(std::uint32_t reflex = m.u32(mind + mind_field::reflex))
+				c.vm.change_behaviour(reflex, second.word(), !from_reflex);
+			return c.args;
+		}
+
+		// 72..75 (0x472290): change the actor's state (73 forced, 75 takes a number first). A refused
+		// change stops the script run (flag 2).
+		std::uint32_t change_state_procedure(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			if(c.index == 75)
+			{
+				value ignored;
+				next_arg(c, ignored);
+			}
+			value target;
+			next_arg(c, target);
+			std::uint32_t data = actor_part(c.vm, self, actor_field::data_3d);
+			if(data && !change_state(c.vm.memory(), data, target.word(), c.index == 73, c.vm.clock()))
+				c.vm.signal(flow::wait);
+			return c.args;
+		}
+
+		// 88 (0x467970): the flags the next statement's result merges with.
+		std::uint32_t pending_signal(call& c)
+		{
+			value v;
+			next_arg(c, v);
+			c.vm.set_pending_signal(std::uint8_t(v.word()));
+			return c.args;
+		}
+
+		// 139 (0x467850): take an actor out of the world. When it's the running actor, its scripts
+		// stop for this frame (flag 3).
+		std::uint32_t remove_actor(call& c)
+		{
+			value who;
+			next_arg(c, who);
+			std::uint32_t target = c.vm.super_object_of(actor_value(c.vm, who));
+			if(!target)
+				return c.args;
+			c.vm.remove(target);
+			if(target == c.self)
+				c.vm.signal(3);
+			return c.args;
+		}
+
+		// 312 (0x46D920): set or clear bit n (0-based) of the super object's flags (+0x30).
+		std::uint32_t super_object_flag(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value bit, on;
+			next_arg(c, bit);
+			next_arg(c, on);
+			live_memory& m = c.vm.memory();
+			std::int32_t b = bit.as_int();
+			if(!c.vm.actor_of(self) || b < 0 || b >= 32)
+				return c.args;
+			std::uint32_t flags = m.u32(self + 0x30);
+			m.write<std::uint32_t>(self + 0x30, on.as_int() ? flags | 1u << b : flags & ~(1u << b));
+			return c.args;
+		}
+
+		// 321..332 (0x46DFB0): a zone's 2-bit mode in the actor's collision set: four words (+0x30,
+		// +0x38, +0x34, +0x3C by kind), 16 zones each. 321..324 set mode 1, 325..328 mode 2, 329..332
+		// clear, for kinds 0..3.
+		std::uint32_t zone_mode(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value n;
+			next_arg(c, n);
+			live_memory& m = c.vm.memory();
+			std::uint32_t collision = actor_part(c.vm, self, actor_field::collision);
+			std::int32_t zone = n.as_int() - 1;
+			if(!collision || zone < 0 || zone >= 16)
+				return c.args;
+			static constexpr std::uint32_t words[] = { 0x30, 0x38, 0x34, 0x3C };
+			std::uint32_t kind = (c.index - 321) % 4, mode = c.index < 325 ? 1 : c.index < 329 ? 2 : 0;
+			std::uint32_t at = collision + words[kind];
+			std::uint32_t word = m.u32(at) & ~(3u << (zone * 2));
+			m.write<std::uint32_t>(at, word | mode << (zone * 2));
+			return c.args;
+		}
+
+		// 341 (0x46E2A0): how often the brain runs (3D data +0xFE); the counter restarts if past it.
+		std::uint32_t brain_period(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value v;
+			next_arg(c, v);
+			live_memory& m = c.vm.memory();
+			std::uint32_t data = actor_part(c.vm, self, actor_field::data_3d);
+			if(!data)
+				return c.args;
+			std::uint8_t period = std::uint8_t(v.word());
+			m.write<std::uint8_t>(data + 0xFE, period);
+			if(std::int8_t(m.u8(data + 0xFF)) >= std::int8_t(period))
+				m.write<std::uint8_t>(data + 0xFF, 0);
+			return c.args;
+		}
+
+		// 378..385 (0x470770): a global gauge, a value and its maximum (0x4E9308, 0x4E930C; functions
+		// 102 and 103 read them). What it measures isn't known yet.
+		float g_gauge = 0, g_gauge_max = 0;
+		std::uint32_t gauge(call& c)
+		{
+			value v;
+			next_arg(c, v);
+			float x = v.as_float();
+			switch(c.index)
+			{
+			case 378: case 380: g_gauge = x; break;
+			case 379: case 381: g_gauge_max = x; break;
+			case 382: g_gauge = std::clamp(g_gauge + x, 0.0f, g_gauge_max); break;
+			case 383: g_gauge_max = std::max(g_gauge_max + x, 0.0f); g_gauge = std::min(g_gauge, g_gauge_max); break;
+			case 384: g_gauge = std::clamp(g_gauge - x, 0.0f, g_gauge_max); break;
+			case 385: g_gauge_max = std::max(g_gauge_max - x, 0.0f); g_gauge = std::min(g_gauge, g_gauge_max); break;
+			}
+			return c.args;
+		}
+
+		// 396..398 (0x470C80): the actor's capability bits (standard game +0x1C): set, add, remove.
+		std::uint32_t capabilities(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value v;
+			next_arg(c, v);
+			live_memory& m = c.vm.memory();
+			std::uint32_t standard = actor_part(c.vm, self, actor_field::standard_game);
+			if(!standard)
+				return c.args;
+			std::uint32_t bits = m.u32(standard + 0x1C), x = std::uint32_t(v.as_int());
+			bits = c.index == 396 ? x : c.index == 397 ? bits | x : bits & ~x;
+			m.write<std::uint32_t>(standard + 0x1C, bits);
+			return c.args;
+		}
+
+		// The actor's dynamics block (the physics, milestone 3c), or 0.
+		std::uint32_t dynamics_base(call& c, std::uint32_t self, std::uint32_t size)
+		{
+			live_memory& m = c.vm.memory();
+			std::uint32_t dynamics = actor_part(c.vm, self, actor_field::dynamics);
+			std::uint32_t base = dynamics && m.contains(dynamics, 4) ? m.u32(dynamics) : 0;
+			return base && m.contains(base, size) ? base : 0;
+		}
+
+		// 244..261 (0x46C1D0): one dynamics flag bit each.
+		std::uint32_t dynamics_flag(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value on;
+			next_arg(c, on);
+			std::uint32_t base = dynamics_base(c, self, 0x10);
+			static const std::map<std::uint32_t, std::pair<std::uint32_t, std::uint32_t>> bits = {
+				{ 244, { 8, 0x1 } }, { 245, { 8, 0x2 } }, { 246, { 8, 0x4 } }, { 247, { 8, 0x8 } }, { 248, { 8, 0x10 } },
+				{ 249, { 8, 0x40 } }, { 250, { 8, 0x20 } }, { 251, { 0xC, 0x100 } }, { 252, { 0xC, 0x200 } },
+				{ 253, { 0xC, 0x100000 } }, { 254, { 0xC, 0x200000 } }, { 256, { 8, 0x80 } }, { 257, { 8, 0x100 } },
+				{ 258, { 8, 0x200 } }, { 259, { 8, 0x400 } }, { 260, { 8, 0x800 } }, { 261, { 8, 0x1000 } },
+			};
+			auto it = bits.find(c.index);
+			if(!base || it == bits.end())
+				return c.args;
+			live_memory& m = c.vm.memory();
+			auto [word, bit] = it->second;
+			std::uint32_t flags = m.u32(base + word);
+			m.write<std::uint32_t>(base + word, on.as_int() ? flags | bit : flags & ~bit);
+			return c.args;
+		}
+
+		// 181 (0x46CE00): procedure 176's vector, from three numbers.
+		std::uint32_t set_dynamics_xyz(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value x, y, z;
+			next_arg(c, x);
+			next_arg(c, y);
+			next_arg(c, z);
+			std::uint32_t base = dynamics_base(c, self, 0x30);
+			if(!base)
+				return c.args;
+			live_memory& m = c.vm.memory();
+			m.write<float>(base + 0x24, x.as_float());
+			m.write<float>(base + 0x28, y.as_float());
+			m.write<float>(base + 0x2C, z.as_float());
+			m.write<std::uint32_t>(base + 8, (m.u32(base + 8) | 0xE0000) & ~0x4000u);
+			return c.args;
+		}
+
 		// 174, 175 (0x4698A0): set or clear custom bit n (1-based), or the bits of a mask.
 		std::uint32_t set_custom_bits(call& c)
 		{
@@ -523,10 +732,29 @@ namespace openrayman::game
 		vm.on_function(249, bit_array);
 
 		vm.on_procedure(69, change_behaviour);
-		for(std::uint32_t i : { 115, 116, 117, 118, 119, 503, 505 })
+		// 42..47: the scripts' fog override (0x468B90), until the renderer takes it.
+		for(std::uint32_t i : { 42, 43, 44, 45, 46, 47, 115, 116, 117, 118, 119, 503, 505, 506, 507 })
 			vm.on_procedure(i, not_yet);
 		for(std::uint32_t i : { 176, 182, 188, 194, 201, 207, 280 })
 			vm.on_procedure(i, set_dynamics_vector);
+		vm.on_procedure(70, change_behaviours);
+		vm.on_procedure(71, change_behaviours);
+		for(std::uint32_t i : { 72, 73, 74, 75 })
+			vm.on_procedure(i, change_state_procedure);
+		vm.on_procedure(88, pending_signal);
+		vm.on_procedure(139, remove_actor);
+		vm.on_procedure(181, set_dynamics_xyz);
+		for(std::uint32_t i = 244; i <= 261; i++)
+			if(i != 255)
+				vm.on_procedure(i, dynamics_flag);
+		vm.on_procedure(312, super_object_flag);
+		for(std::uint32_t i = 321; i <= 332; i++)
+			vm.on_procedure(i, zone_mode);
+		vm.on_procedure(341, brain_period);
+		for(std::uint32_t i = 378; i <= 385; i++)
+			vm.on_procedure(i, gauge);
+		for(std::uint32_t i : { 396, 397, 398 })
+			vm.on_procedure(i, capabilities);
 		vm.on_procedure(174, set_custom_bits);
 		vm.on_procedure(175, set_custom_bits);
 	}
