@@ -61,6 +61,7 @@ namespace openrayman
 			std::size_t node = 0;
 			affine world;
 			std::optional<std::uint16_t> animation; // what it plays now
+			bool loops = true;                      // whether that animation starts over at its end
 			std::optional<memory_location> family;  // see actor
 			std::vector<std::optional<std::uint16_t>> states;
 			std::vector<memory_location> state_at;

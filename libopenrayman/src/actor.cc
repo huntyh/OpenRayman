@@ -218,7 +218,7 @@ namespace openrayman
 			add(0, actor.world);
 			return;
 		}
-		std::vector<channel_pose> channels = pose(bank, *actor.animation, frame);
+		std::vector<channel_pose> channels = pose(bank, *actor.animation, frame, actor.loops);
 		for(std::size_t c = 0; c < channels.size(); c++)
 		{
 			if(!channels[c].object)

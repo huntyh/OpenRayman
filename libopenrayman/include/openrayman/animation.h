@@ -110,7 +110,8 @@ namespace openrayman
 
 	// Evaluates an animation at a frame, which may lie between frames and wraps around the
 	// animation's length. Positions, scales and rotations are blended between keyframes; which
-	// objects show and how channels link come from the whole frame. Throws format_error on indices
-	// outside the bank.
-	std::vector<channel_pose> pose(const animation_bank& bank, std::size_t animation_index, double frame);
+	// objects show and how channels link come from the whole frame. A looping animation blends from
+	// its last keyframe back to its first; one that doesn't holds its last keyframe. Throws
+	// format_error on indices outside the bank.
+	std::vector<channel_pose> pose(const animation_bank& bank, std::size_t animation_index, double frame, bool loops = true);
 }

@@ -1043,6 +1043,9 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 				std::cout << std::format("tick {:>4}: playing 0x{:X}, asked 0x{:X}, behaviour 0x{:X}{}\n", f, std::get<0>(now), std::get<1>(now), std::get<2>(now),
 					vm.removed(tree.node(*trace).at.address()) ? " (removed)" : "");
 			last = now;
+			if(f % 30 == 0)
+				if(auto p = game::global_placement(memory, tree.node(*trace).at.address()))
+					std::cout << std::format("tick {:>4}: at {:.2f} {:.2f} {:.2f}\n", f, p->m[0][3], p->m[1][3], p->m[2][3]);
 		}
 	}
 	for(std::size_t i = 0; i < brains.actors.size(); i++)

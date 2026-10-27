@@ -295,6 +295,12 @@ namespace
 			const auto& states = a.state_addresses[i];
 			for(std::size_t k = 0; k < states.size() && k < actor.states.size(); k++)
 			{
+				if(states[k] == current)
+				{
+					// It loops if it doesn't move on to another state when its animation ends.
+					std::uint32_t after = a.live->u32(current + 0x20);
+					actor.loops = after == 0 || after == current;
+				}
 				if(states[k] == current && actor.state != k)
 				{
 					actor.state = k;
@@ -323,6 +329,18 @@ namespace
 				std::uint16_t speed = a.bank.animations[*actor.animation].speed;
 				double since = i < a.state_since.size() ? a.state_since[i] : 0.0;
 				frame = (a.animation_time - since) * (speed ? speed : 30);
+				if(a.vm && a.scripts && i < a.actor_at.size())
+				{
+					// With the scripts on, the game's animation player decides: its time into the current
+					// animation (3D data +0xC0, ms), plus how far we are towards the next tick.
+					std::uint32_t data = a.live->u32(a.actor_at[i]);
+					if(data)
+						frame = (a.live->u32(data + 0xC0) + a.script_clock * 1000.0) * (speed ? speed : 30) / 1000.0;
+					// A state that moves on to another holds its last frame until the next tick switches.
+					std::uint16_t frames = a.bank.animations[*actor.animation].frames;
+					if(!actor.loops && frames)
+						frame = std::min(frame, double(frames - 1));
+				}
 			}
 			try
 			{
