@@ -3,6 +3,7 @@
 #include <bit>
 #include <cmath>
 #include <cstdlib>
+#include <map>
 
 // The conditions, functions and procedures scripts call, each written from what its handler in
 // Rayman2.exe does (the address is given with each). Names are ours. See docs/formats/scripts.md.
@@ -13,7 +14,7 @@ namespace openrayman::game
 	{
 		namespace actor_field
 		{
-			constexpr std::uint32_t data_3d = 0x00, standard_game = 0x04, brain = 0x0C, collision = 0x14;
+			constexpr std::uint32_t data_3d = 0x00, standard_game = 0x04, dynamics = 0x08, brain = 0x0C, collision = 0x14;
 		}
 		namespace standard_game_field
 		{
@@ -406,6 +407,50 @@ namespace openrayman::game
 
 		// --- Procedures --------------------------------------------------------------------------
 
+		// Calls whose systems don't exist yet: their arguments are evaluated (they may have side
+		// effects) and nothing else happens. 115..119 (0x4691E0): messages to the engine's mailboxes
+		// (not identified yet); 503: start a particle effect; 505: an on-screen text slot.
+		std::uint32_t not_yet(call& c)
+		{
+			std::uint32_t at = c.args;
+			std::uint8_t indent = c.vm.memory().u8(at - 8 + 6);
+			while(c.vm.memory().u8(at + 6) > indent)
+			{
+				value ignored;
+				at = c.vm.eval(c.self, at, ignored);
+			}
+			return at;
+		}
+
+		// 176, 182, 188, 194, 201, 207, 280 (0x46CBD0): set a vector of the actor's dynamics (the
+		// physics, milestone 3c) and mark it as set in the dynamics flags (+8). Pairs differ in one
+		// flag bit, meaning not known yet.
+		std::uint32_t set_dynamics_vector(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value v;
+			next_arg(c, v);
+			live_memory& m = c.vm.memory();
+			std::uint32_t dynamics = actor_part(c.vm, self, actor_field::dynamics);
+			std::uint32_t base = dynamics && m.contains(dynamics, 4) ? m.u32(dynamics) : 0;
+			if(!base || !m.contains(base, 0x1A8))
+				return c.args;
+			struct target_field { std::uint32_t offset, set, bit; bool bit_on; };
+			static const std::map<std::uint32_t, target_field> fields = {
+				{ 176, { 0x24, 0xE0000, 0x4000, false } }, { 182, { 0x24, 0xE0000, 0x4000, true } },
+				{ 188, { 0x30, 0x700000, 0x8000, false } }, { 194, { 0x30, 0x700000, 0x8000, true } },
+				{ 201, { 0x190, 0x3800000, 0x10000, false } }, { 207, { 0x190, 0x3800000, 0x10000, true } },
+				{ 280, { 0x19C, 0x1C000000, 0, false } },
+			};
+			const target_field& f = fields.at(c.index);
+			for(int i = 0; i < 3; i++)
+				m.write<float>(base + f.offset + std::uint32_t(i) * 4, v.component(i));
+			std::uint32_t flags = m.u32(base + 8) | f.set;
+			flags = f.bit_on ? flags | f.bit : flags & ~f.bit;
+			m.write<std::uint32_t>(base + 8, flags);
+			return c.args;
+		}
+
 		// 174, 175 (0x4698A0): set or clear custom bit n (1-based), or the bits of a mask.
 		std::uint32_t set_custom_bits(call& c)
 		{
@@ -478,6 +523,10 @@ namespace openrayman::game
 		vm.on_function(249, bit_array);
 
 		vm.on_procedure(69, change_behaviour);
+		for(std::uint32_t i : { 115, 116, 117, 118, 119, 503, 505 })
+			vm.on_procedure(i, not_yet);
+		for(std::uint32_t i : { 176, 182, 188, 194, 201, 207, 280 })
+			vm.on_procedure(i, set_dynamics_vector);
 		vm.on_procedure(174, set_custom_bits);
 		vm.on_procedure(175, set_custom_bits);
 	}

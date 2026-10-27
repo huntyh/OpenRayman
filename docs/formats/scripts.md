@@ -140,6 +140,50 @@ Conditions, functions, procedures and meta-actions are numbered for now; each ge
 handler is read from the exe and implemented (milestone 3b). `ortool brain <game> <level> <node>`
 prints an actor's scripts in this form.
 
+## Running the scripts
+
+Each frame, for each actor (0x4120D0):
+
+1. Its brain may be slowed: 3D data +0xFE is a period set by the scripts (procedure 341), +0xFF counts
+   frames, and the brain runs only when the count wraps to 0. A 1999 time saver; OpenRayman runs
+   every brain every frame unless asked to honour it.
+2. 3D data +0x100 (u16) counts the frames the actor has thought; its low byte is what the
+   every-N-frames ifs test.
+3. The reflex intelligence runs first (mind +0x10 = 0 while it does). If it didn't start a
+   meta-action, the normal intelligence runs (mind +0x10 = 1).
+
+Running an intelligence (0x480D80): run the behaviour's rules, then, unless a rule stopped or a
+meta-action ran, its schedule from where it last stopped. If a behaviour changed (flag 8), run the
+new behaviour's rules the same frame. The rules (0x480E00) run in order and the first one that
+doesn't reach its end stops the rest. The schedule (0x480ED0) starts over once it reaches its end.
+
+A statement block (0x480BD0) runs statements in order and stops on these flags in a statement's
+result: 0x01 stop for this frame, 0x02 wait here (the schedule resumes at this statement), 0x08
+the behaviour changed, 0x10 end of the script. Procedures report flags through a global the
+procedure node returns (changing behaviour sets 0x08).
+
+**Actions in progress** (intelligence +0x10): +0x00 entries, +0x04 u8 capacity, +0x05 u8 used,
++0x06 u8 current. An entry (0x68 bytes) is 0x60 bytes of scratch for the meta-action, +0x60 the node
+to resume, +0x64 u8 used, +0x65 u8 which script (0 the schedule, n rule n), +0x66 and +0x67 saved
+signal state. Meta-actions and macros waiting inside a script keep their place here.
+
+**Changing behaviour** (procedure 69, 0x469600, 0x481080): the old behaviour goes to intelligence
++0x0C (scripts read it as fields 7 and 8), the new one to +0x08, the actions in progress are
+cleared, and the schedule starts at the new behaviour's beginning.
+
+**Fields** (type 9, table 0x4A6598, 12-byte entries: kind, get, set): 0 position (super object
++0x24, the global transform: position at +4), 1 a direction, 2 and 3 speed (vector, length), 4 to 6
+not used, 7 and 8 the previous normal and reflex behaviours, 9 and 10 the shadow size (3D data
++0xD4, +0xD8, settable), 11 to 17 seven global registers shared by every actor (a vector, two
+16-bit integers, three floats, an integer; settable).
+
+**Variable types** (table 0x4A4278, 12-byte entries: size, get, set): 0 to 6 integers (signed and
+unsigned 8, 16, 32 bits), 7 float, 8 waypoint, 9 actor, 10 a buffer reference, 11 vector, 12
+behaviour, 13 state, 14 an id (-1 = none), 15 to 17 references not identified yet, 18 to 23 arrays
+(u32 element type, u8 count, elements from +8; vectors take 12 bytes), 24 super object.
+
+From an actor to its super object: actor +0x04 (standard game) +0x0C (0x4136D0).
+
 ## Numbers
 
 Over all 70 levels: 5,020 actors with a brain, 1,944 AI models, 15,679 behaviours, 2,151 reflexes,
