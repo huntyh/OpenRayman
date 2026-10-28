@@ -177,3 +177,12 @@ by Fix and the level, which turned out to be the large pointer-free part of each
 - Sources: own analysis (where the bank lives, the Fix/level split, alignment, actor offsets);
   animation structures and posing from Raymap (reference only), checked across all 70 levels and by
   eye on Learn_10.
+
+## The game camera
+
+See [formats/camera.md](formats/camera.md): the camera actor's camera object and its four parameter
+blocks, the script procedures that fill them, the solve that picks a wanted position, and the
+mechanics that moves the camera there.
+
+- Sources: own analysis of `Rayman2.exe` with capstone, checked against Learn_10's data (the camera
+  actor, its default block, the camera controllers' zones).

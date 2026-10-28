@@ -63,6 +63,15 @@ namespace openrayman::game
 			return v.word();
 		}
 
+		// The super object a value names. Designer variables of the level's actors sometimes hold
+		// the super object itself where a script would name the actor, so both are accepted.
+		std::uint32_t super_object_value(interpreter& vm, const value& v)
+		{
+			if(vm.actor_of(v.word()))
+				return v.word();
+			return vm.super_object_of(actor_value(vm, v));
+		}
+
 		std::uint32_t next_arg(call& c, value& v)
 		{
 			c.args = c.vm.eval(c.self, c.args, v);
@@ -839,6 +848,276 @@ namespace openrayman::game
 				m.write<std::uint32_t>(t, 4);
 		}
 
+		// --- Zone tests ----------------------------------------------------------------------------
+		// An actor's collision set (actor +0x14) keeps one zone list per kind (+0x00..+0x0C), one
+		// group list per kind (+0x20, +0x28, +0x24, +0x2C) and four words of 2-bit zone states
+		// (+0x30 kind 0, +0x3C kind 1, +0x34 kind 2, +0x38 kind 3; 0x417BC0, 0x417C10). A list
+		// node is a next pointer (+0), then either the zone's 3D object (+4) in a kind list or the
+		// zone's number (u16 at +4) in a group list. A zone is such a 3D object: +0 its vertices,
+		// +0x10 its elements' kinds, +0x14 their data and +0x2e how many (0x48F3B0).
+
+		std::uint32_t safe_u32(const live_memory& m, std::uint32_t at) { return m.contains(at, 4) ? m.u32(at) : 0; }
+		std::uint16_t safe_u16(const live_memory& m, std::uint32_t at) { return m.contains(at, 2) ? m.read<std::uint16_t>(at) : 0; }
+		std::int16_t safe_i16(const live_memory& m, std::uint32_t at) { return m.contains(at, 2) ? m.read<std::int16_t>(at) : 0; }
+		float safe_f32(const live_memory& m, std::uint32_t at) { return m.contains(at, 4) ? m.f32(at) : 0.0f; }
+
+		std::uint32_t collision_set(interpreter& vm, std::uint32_t super_object)
+		{
+			live_memory& m = vm.memory();
+			std::uint32_t actor = vm.actor_of(super_object);
+			return actor && m.contains(actor + actor_field::collision, 4) ? m.u32(actor + actor_field::collision) : 0;
+		}
+
+		// 0x417BC0: the header of one kind's group list (0 = none); 0x417C10: the kind's zone states.
+		std::uint32_t zone_group_of(interpreter& vm, std::uint32_t set, std::uint32_t kind)
+		{
+			static constexpr std::uint32_t offsets[] = { 0x20, 0x28, 0x24, 0x2C };
+			return kind < 4 ? safe_u32(vm.memory(), set + offsets[kind]) : 0;
+		}
+		std::uint32_t zone_states_of(interpreter& vm, std::uint32_t set, std::uint32_t kind)
+		{
+			static constexpr std::uint32_t offsets[] = { 0x30, 0x3C, 0x34, 0x38 };
+			return kind < 4 ? safe_u32(vm.memory(), set + offsets[kind]) : 0;
+		}
+
+		// 0x417D60: zone `index`'s 2-bit state. 0 means "not on by the state word", 3 that the
+		// actor has no collision set at all.
+		std::uint32_t zone_state(interpreter& vm, std::uint32_t set, std::uint32_t kind, std::uint32_t index)
+		{
+			if(!set || index > 15)
+				return 3;
+			return zone_states_of(vm, set, kind) >> (2 * index) & 3;
+		}
+
+		// 0x40CC70: the zone at `index` of a kind's list: the list's first node, then `index` next
+		// pointers, and the zone object is that node's +4.
+		std::uint32_t zone_at(interpreter& vm, std::uint32_t set, std::uint32_t kind, std::uint32_t index)
+		{
+			live_memory& m = vm.memory();
+			std::uint32_t head = set && kind < 4 ? safe_u32(m, set + kind * 4) : 0;
+			std::uint32_t node = head ? safe_u32(m, head) : 0;
+			for(std::uint32_t i = 0; i < index && node; i++)
+				node = safe_u32(m, node);
+			return node ? safe_u32(m, node + 4) : 0;
+		}
+
+		// 0x40C700: zone `index` (from 0) of kind `kind` of an actor (a 3D object), or 0. State 1
+		// means the kind's list holds it; state 0 only when the kind's group list names that zone
+		// number. Other states leave the zone out.
+		std::uint32_t find_zone(interpreter& vm, std::uint32_t super_object, std::uint32_t kind, std::uint32_t index)
+		{
+			live_memory& m = vm.memory();
+			std::uint32_t set = collision_set(vm, super_object);
+			if(!set)
+				return 0;
+			std::uint32_t state = zone_state(vm, set, kind, index);
+			if(state == 1)
+				return zone_at(vm, set, kind, index);
+			if(state != 0)
+				return 0;
+			std::uint32_t group = zone_group_of(vm, set, kind);
+			if(!group)
+				return 0;
+			std::uint32_t node = safe_u32(m, group);
+			std::uint32_t count = safe_u32(m, group + 8);
+			for(std::uint32_t i = 0; node && i < count && safe_u16(m, node + 4) < index; i++)
+				node = safe_u32(m, node);
+			if(!node || safe_u16(m, node + 4) != index)
+				return 0;
+			return zone_at(vm, set, kind, index);
+		}
+
+		// 0x48F3B0: is a point, given in the zone's own axes, inside one of the zone's collision
+		// elements? The element kinds are 1 triangles (like the level's collision), 7 spheres (a
+		// vertex index and a radius each), 8 boxes (two vertex indices) and 9 capsules; 2..6 never
+		// hold a point. Only 7 and 8 are read here, which is what the camera zones use; the tests
+		// for 1 and 9 (0x491250, 0x492250) are their own geometry and are left out.
+		bool zone_contains(interpreter& vm, std::uint32_t zone, const vec3& p)
+		{
+			live_memory& m = vm.memory();
+			if(!zone || !m.contains(zone, 0x30))
+				return false;
+			std::uint32_t vertices = safe_u32(m, zone);
+			std::uint32_t kinds = safe_u32(m, zone + 0x10);
+			std::uint32_t data = safe_u32(m, zone + 0x14);
+			std::uint16_t elements = safe_u16(m, zone + 0x2E);
+			for(std::uint16_t i = 0; i < elements; i++)
+			{
+				std::uint32_t element = data ? safe_u32(m, data + std::uint32_t(i) * 4) : 0;
+				if(!element)
+					continue;
+				std::int16_t kind = kinds ? safe_i16(m, kinds + std::uint32_t(i) * 2) : 0;
+				std::uint32_t entries = safe_u32(m, element);
+				std::uint16_t count = safe_u16(m, element + 4);
+				if(!entries)
+					continue;
+				for(std::uint16_t j = 0; j < count; j++)
+				{
+					if(kind == 7)
+					{
+						// 0x4915E0: a sphere around a vertex, radius from the table.
+						float radius = safe_f32(m, entries + std::uint32_t(j) * 12);
+						std::int16_t at = safe_i16(m, entries + std::uint32_t(j) * 12 + 8);
+						std::uint32_t centre = vertices + std::uint32_t(at) * 12;
+						if(vertices && m.contains(centre, 12))
+						{
+							vec3 d = sub(p, read3(m, centre));
+							if(dot(d, d) <= radius * radius)
+								return true;
+						}
+					}
+					else if(kind == 8)
+					{
+						// 0x490510: the axis-aligned box between two vertices.
+						std::int16_t a = safe_i16(m, entries + std::uint32_t(j) * 8);
+						std::int16_t b = safe_i16(m, entries + std::uint32_t(j) * 8 + 2);
+						std::uint32_t first = vertices + std::uint32_t(a) * 12, second = vertices + std::uint32_t(b) * 12;
+						if(!vertices || a < 0 || b < 0 || !m.contains(first, 12) || !m.contains(second, 12))
+							continue;
+						vec3 va = read3(m, first);
+						vec3 vb = read3(m, second);
+						if(p[0] >= std::min(va[0], vb[0]) && p[0] <= std::max(va[0], vb[0])
+							&& p[1] >= std::min(va[1], vb[1]) && p[1] <= std::max(va[1], vb[1])
+							&& p[2] >= std::min(va[2], vb[2]) && p[2] <= std::max(va[2], vb[2]))
+							return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		// A world point in a transform's own axes and origin: the inverse transform 0x444D60 builds
+		// and 0x444800 applies. The rows at +0x10 are the axes, so the inverse is their dot products.
+		vec3 in_frame(live_memory& m, std::uint32_t transform, const vec3& world)
+		{
+			if(!transform || !m.contains(transform, 0x58))
+				return world;
+			vec3 d = sub(world, read3(m, transform + 4)), local{};
+			for(int i = 0; i < 3; i++)
+				local[std::size_t(i)] = dot(d, read3(m, transform + 0x10 + std::uint32_t(i) * 12));
+			return local;
+		}
+
+		// The engine sets standard-game +0x29 bit 2 when it puts an actor into the world (0x40614F);
+		// ours never does, so the flag test would hide every actor. Left out for now.
+		constexpr bool world_flag_always_set = true;
+
+		// 0x40C960: is the other actor's position inside this zone? Only actors whose standard game
+		// +0x29 has bit 2 set are tested at all.
+		bool zone_holds(interpreter& vm, std::uint32_t zone, std::uint32_t transform, std::uint32_t other)
+		{
+			live_memory& m = vm.memory();
+			std::uint32_t actor = vm.actor_of(other);
+			std::uint32_t standard = actor && m.contains(actor + actor_field::standard_game, 4) ? m.u32(actor + actor_field::standard_game) : 0;
+			std::uint8_t sflags = standard && m.contains(standard + standard_game_field::flags) ? m.u8(standard + standard_game_field::flags) : 0;
+			if(!standard || (!world_flag_always_set && !(sflags & 4)))
+				return false;
+			return zone_contains(vm, zone, in_frame(m, transform, position_of(vm, other)));
+		}
+
+		// 0x40D290: zone `number` (from 1) of the owner's kind-`kind` zone table, and the transform
+		// its elements are written in. Kind 0 is the collision set's own list, in the owner's frame.
+		// The other kinds read the 20-byte-entry table at the 3D data's +0x90 (an entry's object
+		// gives the 3D object, the entry's +0x24 the frame); an entry without byte +0 bits 3 and 4
+		// comes from the second half of the table (index + 0x8000).
+		std::uint32_t find_zone_with_frame(interpreter& vm, std::uint32_t owner, std::uint32_t kind, std::uint32_t number, std::uint32_t& frame)
+		{
+			frame = 0;
+			if(number == 0)
+				return 0;
+			if(kind == 0)
+			{
+				std::uint32_t zone = find_zone(vm, owner, 0, number - 1);
+				if(zone)
+					frame = transform_of(vm, owner);
+				return zone;
+			}
+			live_memory& m = vm.memory();
+			std::uint32_t actor = vm.actor_of(owner);
+			std::uint32_t data = actor ? safe_u32(m, actor) : 0;
+			std::uint32_t table = data ? safe_u32(m, data + 0x90) : 0;
+			if(!table)
+				return 0;
+			auto entry_at = [&](std::uint32_t index) {
+				std::uint32_t at = table + index * 20;
+				return m.contains(at, 20) ? m.u32(at) : 0;
+			};
+			std::uint32_t entry = entry_at(number & 0xFF);
+			if(!entry)
+				return 0;
+			if(!(m.contains(entry) && (m.u8(entry) & 0x18)))
+			{
+				entry = entry_at((number + 0x8000) & 0xFFFF);
+				if(!entry)
+					return 0;
+			}
+			// 0x42DE30 twice: the entry's object, then its actor (0x444790 picks the list by kind).
+			std::uint32_t object = safe_u32(m, entry + 4);
+			std::uint32_t target = object ? safe_u32(m, object + 4) : 0;
+			std::uint32_t zone = 0;
+			if(target)
+				zone = kind == 1 ? safe_u32(m, target) : kind == 2 ? safe_u32(m, target + 0xC) : safe_u32(m, target + 8);
+			if(!zone)
+				return 0;
+			frame = safe_u32(m, entry + 0x24);
+			return zone;
+		}
+
+		// Every zone of the owner's kind-0 list that holds the other actor. Condition 12 asks this;
+		// the exe also skips zones whose group number says they are switched off, which needs the
+		// group list's running state and is left out (nothing in Learn_10 uses it).
+		bool inside_any_zone(interpreter& vm, std::uint32_t owner, std::uint32_t other)
+		{
+			live_memory& m = vm.memory();
+			std::uint32_t set = collision_set(vm, owner);
+			std::uint32_t head = set ? safe_u32(m, set) : 0;
+			std::uint32_t count = head ? safe_u32(m, head + 8) : 0;
+			std::uint32_t frame = transform_of(vm, owner);
+			for(std::uint32_t i = 0; i < count; i++)
+				if(std::uint32_t zone = zone_at(vm, set, 0, i))
+					if(zone_holds(vm, zone, frame, other))
+						return true;
+			return false;
+		}
+
+		// 10..14 (0x489D60): zone tests. 10 asks whether B lies inside zone `index` of A's kind-0
+		// table, 11 the same for kind 1; 12 whether B lies inside any of A's kind-0 zones; 13 and 14
+		// ask the other way round, which actors lie inside zone `index` (kind 0 and 1), by looking
+		// through the sectors' object lists (0x483870, 0x40D9D0) - lists our engine does not keep,
+		// so 13 and 14 always answer false here.
+		std::uint32_t actor_inside_zone(call& c, bool& result)
+		{
+			value who;
+			next_arg(c, who);
+			std::uint32_t a = super_object_value(c.vm, who);
+			result = false;
+			if(c.index == 12)
+			{
+				value other;
+				next_arg(c, other);
+				std::uint32_t b = super_object_value(c.vm, other);
+				if(a && b)
+					result = inside_any_zone(c.vm, a, b);
+				return c.args;
+			}
+			value index_value;
+			next_arg(c, index_value);
+			std::uint32_t number = std::uint32_t(index_value.as_int()) & 0xFF;
+			if(c.index == 13 || c.index == 14)
+				return c.args;
+			value other;
+			next_arg(c, other);
+			std::uint32_t b = super_object_value(c.vm, other);
+			result = false;
+			if(a && b)
+			{
+				std::uint32_t frame = 0;
+				std::uint32_t zone = find_zone_with_frame(c.vm, a, c.index == 11 ? 1 : 0, number, frame);
+				result = zone && zone_holds(c.vm, zone, frame, b);
+			}
+			return c.args;
+		}
+
 		// --- The script camera ---------------------------------------------------------------------
 		// A camera object (the target actor's +0x10) points at four 0x7C-byte parameter blocks:
 		// +0x00 the default values, +0x04 the current ones, +0x08 a spare copy and +0x0C the
@@ -1073,6 +1352,80 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 467 (0x47E200): the camera's target, the super object at block +0x68. Args: mode_temp,
+		// mode, actor. mode -1 takes the default block's target, 0 names nobody, anything else the
+		// actor's super object (0x4136D0). mode_temp == 1 writes the override block only (after the
+		// backup); otherwise the current, spare and override blocks all get it. The exe resets the
+		// camera when the target changes (0x413E30, which zeroes the camera object's runtime
+		// scratch, compared against the global 0x4B9C14); our carried state lives in camera_state,
+		// and a new target that the current block did not already name starts it over.
+		// One deliberate difference: the target also goes into the current block, so it survives
+		// the frames in which no script names it. The exe can keep it in the override alone because
+		// its camera controller scripts (or the engine's camera set-up) name it every frame; ours
+		// sometimes do not, and the override is refilled from the current block each frame.
+		std::uint32_t set_camera_target(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value mode_temp, mode, who;
+			next_arg(c, mode_temp);
+			next_arg(c, mode);
+			next_arg(c, who);
+			live_memory& m = c.vm.memory();
+			std::uint32_t cam = camera_object(c.vm, self);
+			if(!cam)
+				return c.args;
+			std::uint32_t target = super_object_value(c.vm, who);
+			if(mode.as_int() == -1)
+			{
+				std::uint32_t at_default = camera_block(c.vm, cam, camera_field::block_default);
+				target = at_default ? safe_u32(m, at_default + 0x68) : 0;
+			}
+			else if(mode.as_int() == 0)
+				target = 0;
+			std::uint32_t current = camera_block(c.vm, cam, camera_field::block_current);
+			std::uint32_t previous = current ? safe_u32(m, current + 0x68) : 0;
+			if(mode_temp.as_int() == 1)
+				back_up_camera_block(c.vm, cam);
+			std::uint32_t written = camera_block(c.vm, cam, mode_temp.as_int() == 1 ? camera_field::block_override : camera_field::block_current);
+			if(written)
+				m.write<std::uint32_t>(written + 0x68, target);
+			if(mode_temp.as_int() != 1)
+				for(std::uint32_t which : { camera_field::block_spare, camera_field::block_override })
+					if(std::uint32_t block = camera_block(c.vm, cam, which))
+						m.write<std::uint32_t>(block + 0x68, target);
+			if(current)
+				m.write<std::uint32_t>(current + 0x68, target);
+			if(previous != target)
+				c.vm.camera_motion().valid = false;
+			return c.args;
+		}
+
+		// 159 (0x467CF0): start the camera's eight tracked points at the target's position, each with
+		// the small weight 0.03 (camera +0x78 three floats each, +0xD8 the point, +0x138 the weight).
+		// The exe only does it when the target's camera object is the main actor's camera; our own
+		// solve does not track the eight points yet (docs/formats/camera.md), so this only keeps the
+		// data the exe's solver would use up to date.
+		std::uint32_t start_camera_points(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			live_memory& m = c.vm.memory();
+			std::uint32_t cam = camera_object(c.vm, self);
+			if(!cam || cam != camera_object(c.vm, c.vm.main_actor()))
+				return c.args;
+			std::uint32_t transform = transform_of(c.vm, self);
+			if(!transform || !m.contains(cam + 0x78, 0xC8) || !m.contains(cam + 0x138, 0x20))
+				return c.args;
+			vec3 at = read3(m, transform + 4);
+			for(int i = 0; i < 8; i++)
+			{
+				std::uint32_t offsets = cam + 0x78 + std::uint32_t(i) * 12;
+				write3(m, offsets, { 0, 0, 0 });
+				write3(m, offsets + 0x60, at);
+				m.write<float>(cam + 0x138 + std::uint32_t(i) * 4, 0.03f);
+			}
+			return c.args;
+		}
+
 		// 491 (0x47EA70): write one entry of the camera's global settings block. index < 0x11 is a
 		// float at +0x30 + 4*index, 0x11..0x16 an int16 at +0x52 + 2*index, 0x1E..0x26 a float at
 		// +0x08 + 4*index and 0x29..0x2B a float at +0x00 + 4*index. 0x27 sets the bits of int(value)
@@ -1151,7 +1504,27 @@ namespace openrayman::game
 			live_memory& m = c.vm.memory();
 			if(std::uint32_t cam = camera_object(c.vm, c.self))
 			{
+				// The file's current block is empty: the game's camera set-up copies the level's
+				// defaults into it when the camera object is made (the default block holds the
+				// vector, the distances, the speeds). Our loader does not, so do it here once.
+				std::uint32_t current = camera_block(c.vm, cam, camera_field::block_current);
+				std::uint32_t at_default = camera_block(c.vm, cam, camera_field::block_default);
+				if(current && at_default)
+				{
+					bool empty = true;
+					for(std::uint32_t at = 0; at < camera_field::block_size && empty; at += 4)
+						empty = m.u32(current + at) == 0;
+					if(empty)
+						std::memcpy(m.span(current, camera_field::block_size).data(), m.span(at_default, camera_field::block_size).data(), camera_field::block_size);
+				}
 				back_up_camera_block(c.vm, cam);
+				if(!c.vm.camera_motion().valid)
+				{
+					// 0x4858F6: a camera that has not been placed yet starts over and snaps (+0x70 =
+					// 0x55, mode 4 in cam+0x60). Our mechanics takes bit 0 as the snap.
+					if(std::uint32_t block = camera_block(c.vm, cam, camera_field::block_override))
+						m.write<std::uint16_t>(block + 0x70, std::uint16_t(m.read<std::uint16_t>(block + 0x70) | 5));
+				}
 				solve_camera(c.vm, c.self);
 				m.write<std::uint8_t>(cam + camera_field::override_active, 0);
 			}
@@ -1206,6 +1579,117 @@ namespace openrayman::game
 			}
 			m.write<std::uint32_t>(cam + 0x60, 0);
 			m.write<std::uint8_t>(cam + 0x75, std::uint8_t(m.u8(cam + 0x75) & 0xF7));
+			return c.args;
+		}
+
+		// 310 (0x488CB0): the movement the camera would make this frame, without committing it.
+		// The exe backs the current block up into the override block, builds the camera context,
+		// turns bit 0 of its +0x72 option word on and bit 0x1000 of the current block's off, runs
+		// the first two stages of the solve (0x483F90 the wanted position, 0x4840A0 the offset
+		// point) and returns their translation (context +0xA0). Nothing is committed. Here the
+		// solve our camera code does stands in for those stages, and its result (which includes
+		// the distance clamp and the height limits of 0x485810) is put back afterwards so the
+		// frame's commit is unaffected. Bit 0 of +0x72 means nothing to our solve; 0x1000 (the
+		// script's fixed offset point) is cleared in the block the solve reads, as the exe does.
+		std::uint32_t camera_move_vector(call& c, value& out)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			live_memory& m = c.vm.memory();
+			out = value::vector(0, 0, 0);
+			std::uint32_t cam = camera_object(c.vm, self);
+			if(!cam)
+				return c.args;
+			back_up_camera_block(c.vm, cam);
+			std::uint32_t block = camera_block(c.vm, cam, camera_field::block_override);
+			std::uint16_t saved = block ? m.read<std::uint16_t>(block + 0x72) : 0;
+			if(block)
+				m.write<std::uint16_t>(block + 0x72, std::uint16_t((saved | 1) & ~0x1000u));
+			camera_state before = c.vm.camera_motion();
+			solve_camera(c.vm, self);
+			out = value_of(c.vm.camera_motion().move);
+			c.vm.camera_motion() = before;
+			if(block)
+				m.write<std::uint16_t>(block + 0x72, saved);
+			return c.args;
+		}
+
+		// 186 (0x479BE0, shared with 187 and 188): the angle between two directions. Both are
+		// normalised first; a first direction that is (nearly) zero gives 0 and the third argument
+		// is skipped. 186 returns degrees, signed by the component of the two directions' cross
+		// product that the third argument's low byte names (0 the x axis, 1 y, 2 z; anything else
+		// keeps the angle positive). 187 returns the cosine instead. 188 (an axis-angle built with
+		// the lookup table at 0x50DB80) is not read, so it is not registered.
+		std::uint32_t direction_angle(call& c, value& out)
+		{
+			value first, second;
+			next_arg(c, first);
+			next_arg(c, second);
+			vec3 a = vec_of(first), b = vec_of(second);
+			auto tiny = [](const vec3& v) {
+				return std::abs(v[0]) < 1e-5f && std::abs(v[1]) < 1e-5f && std::abs(v[2]) < 1e-5f;
+			};
+			if(tiny(a))
+			{
+				out = value::real(0);
+				c.args = c.vm.skip(c.args);
+				return c.args;
+			}
+			a = normalised(a);
+			if(!tiny(b))
+				b = normalised(b);
+			if(c.index == 187)
+			{
+				out = value::real(std::max(-1.0f, std::min(1.0f, dot(a, b))));
+				return c.args;
+			}
+			float cosine = std::max(-1.0f, std::min(1.0f, dot(a, b)));
+			float angle = std::acos(cosine) * 57.29578f;
+			value axis;
+			next_arg(c, axis);
+			float side = 0;
+			switch(axis.word() & 0xFF)
+			{
+			case 0: side = b[1] * a[0] - b[0] * a[1]; break;
+			case 1: side = b[2] * a[1] - b[1] * a[2]; break;
+			case 2: side = b[0] * a[2] - b[2] * a[0]; break;
+			}
+			out = value::real(side < 0 ? -angle : angle);
+			return c.args;
+		}
+
+		// 190 (0x4785B0, shared with 191): the direction an actor's movement flags add up to. The
+		// movement report (dynamics base +0x150) holds a flag word (+4) and the vectors the flags
+		// name: bit 0x10000 +0x84, bit 0x1 +0x34, bit 0x4 +0x5C, bit 0x40 +0xAC, bit 0x10 +0xD4,
+		// and with no flags at all +0x0C. The sum comes back normalised. Our dynamics does not fill
+		// that report yet (the collision half of it is all that is read so far), so this answers a
+		// zero direction until the physics writes it; 191 (one of six movement points, chosen by an
+		// argument) is not registered.
+		std::uint32_t movement_direction(call& c, value& out)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			live_memory& m = c.vm.memory();
+			std::uint32_t base = dynamics_base(c, self, 0x10);
+			std::uint32_t report = base ? safe_u32(m, base + 0x150) : 0;
+			vec3 sum{};
+			if(report && m.contains(report, 0xFC))
+			{
+				static constexpr std::pair<std::uint32_t, std::uint32_t> parts[] = {
+					{ 0x10000, 0x84 }, { 0x1, 0x34 }, { 0x4, 0x5C }, { 0x40, 0xAC }, { 0x10, 0xD4 },
+				};
+				std::uint32_t flags = m.u32(report + 4);
+				for(auto [bit, at] : parts)
+					if(flags & bit)
+					{
+						vec3 v = read3(m, report + at);
+						sum = { sum[0] + v[0], sum[1] + v[1], sum[2] + v[2] };
+					}
+				if(!flags)
+				{
+					vec3 v = read3(m, report + 0x0C);
+					sum = { sum[0] + v[0], sum[1] + v[1], sum[2] + v[2] };
+				}
+			}
+			out = value_of(normalised(sum));
 			return c.args;
 		}
 
@@ -2319,6 +2803,8 @@ namespace openrayman::game
 		vm.on_condition(75, custom_bit);
 		vm.on_condition(119, is_kind);
 		vm.on_condition(120, is_kind);
+		for(std::uint32_t i = 10; i <= 14; i++)
+			vm.on_condition(i, actor_inside_zone);
 
 		vm.on_function(0, position);
 		for(std::uint32_t i : { 43, 44, 45, 46, 47, 48 })
@@ -2344,6 +2830,10 @@ namespace openrayman::game
 		for(std::uint32_t i = 180; i <= 185; i++)
 			vm.on_function(i, vector_ops);
 		vm.on_function(240, parent_actor);
+		vm.on_function(186, direction_angle);
+		vm.on_function(187, direction_angle);
+		vm.on_function(190, movement_direction);
+		vm.on_function(310, camera_move_vector);
 		vm.on_function(31, absolute);
 		vm.on_function(42, smooth);
 		vm.on_function(62, frame_time);
@@ -2409,6 +2899,8 @@ namespace openrayman::game
 		for(std::uint32_t i = 495; i <= 497; i++)
 			vm.on_procedure(i, set_camera_fixed_vector);
 		vm.on_procedure(444, camera_commit);
+		vm.on_procedure(467, set_camera_target);
+		vm.on_procedure(159, start_camera_points);
 		vm.on_procedure(491, set_camera_setting);
 		vm.on_procedure(492, camera_settings_copy);
 		vm.on_procedure(493, camera_settings_copy);
