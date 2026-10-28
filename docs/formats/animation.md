@@ -115,6 +115,29 @@ the actor in the middle of the view into its family's next / previous state (wit
 actor of that family), and `--actor-state <node>:<state>` does it from the command line.
 `ortool motion <game> <level>` lists each actor's animation and how far its parts move over a loop.
 
+## Events
+
+An animation reference's +4 points to its events (12 bytes each, sorted by frame) and +0x1A holds
+their count. An event: +0 a descriptor, +6 u16 the frame it fires at, +8 u16 a part (index into the
+actor's part list, 3D data +0x90, 0x14-byte entries whose +0 is the part's super object); +4 and +0xA
+are never read. Descriptors are shared between animations: +0 u32 id, +4 u8 type, +6 u8 start gate,
++7 u8 rearm gate.
+
+As the frames pass, every event whose frame the animation has reached fires once per pass, in order
+(a cursor at 3D data +0x77; the rest of the pass is flushed when the animation runs out). The gates
+count passes: fire after skipping that many, 0xFF in the start gate means never from the frames, only
+when the state changes to one without the same event. Only two types do something:
+
+- type 0: play a sound (the id points to the sound),
+- type 3 with id 6..13: arm marker bit id - 6 of 3D data +0xFD with the part's world position (3D
+  data +0xF0). The markers are cleared at the start of every animation update, so they last one
+  frame; script conditions 42 and 43 test them. Rayman's shot is one: his shoot animation arms
+  marker 0 from his hand (part 11) at frame 2, and his script creates the fist there.
+
+Learn_10: 197 animations with events, 448 events, only types 0 (401) and 3 (47), markers 0 to 2.
+OpenRayman fires markers on every pass (the gates aren't counted yet) and arms them at the actor's
+position rather than the part's; sounds wait for milestone 3d.
+
 ## Checks
 
 - All 70 levels: Fix's and the level's descriptions agree, the level's data ends where the event
@@ -149,6 +172,9 @@ the size being half its extent. So it follows creases and steps instead of sinki
 them a look later) get no shadow yet.
 
 ## Where this came from
+
+- Events: own analysis of Rayman2.exe (0x40E800, 0x40E9E0, 0x41A930..0x41B100), from a helper
+  model's reading re-checked at the frame field, the part list and the marker clear.
 
 - Own analysis: the shadow fields of the 3D data, followed back from the shadow texture through
   its visual and game material; checked across all 70 levels by the tests.

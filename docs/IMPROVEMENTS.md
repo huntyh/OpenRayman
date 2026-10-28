@@ -44,8 +44,10 @@ as those arrive:
   scripts that work around the camera (the floating specks) do so around the view. Learn_10 only
   starts the specks once the camera has started up, so for now they need `--behaviour 4:1`.
 - Input: the keyboard only (no gamepad yet), and cheat codes (typed key sequences) don't fire.
-  Tab switches the keyboard between the viewer's fly camera and the game. Animation markers
-  (conditions 42/43) never arm, since animation events aren't run yet.
+  Tab switches the keyboard between the viewer's fly camera and the game.
+- Animation events: markers fire on every pass (the event gates aren't counted) and carry the
+  actor's position instead of the body part's; sound events wait for milestone 3d. Actors the
+  scripts create (function 66, e.g. Rayman's fist) aren't made yet.
 - Only particle effects 23 and 28 are known; the others are started but do nothing.
 - Messages to the engine, on-screen text and the scripts' fog override are read
   but have no effect yet.

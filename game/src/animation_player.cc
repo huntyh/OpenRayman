@@ -1,6 +1,7 @@
 #include <openrayman/game/animation_player.h>
 #include <openrayman/error.h>
 
+#include <array>
 #include <format>
 
 namespace openrayman::game
@@ -9,8 +10,46 @@ namespace openrayman::game
 	{
 		// A transition: next, target state, state to play on the way (0x4199B0, 0x42DE30, 0x4194B0).
 		constexpr std::uint32_t transition_next = 0x00, transition_target = 0x04, transition_via = 0x08;
-		// The animation reference: u16 frame count, u8 frames per second.
-		constexpr std::uint32_t reference_frames = 0x00, reference_speed = 0x02;
+		// The animation reference: u16 frame count, u8 frames per second, events and their count.
+		constexpr std::uint32_t reference_frames = 0x00, reference_speed = 0x02, reference_events = 0x04, reference_event_count = 0x1A;
+		// An event (12 bytes): descriptor, u16 frame at +6, u16 part at +8. Its descriptor: u32 id,
+		// u8 type at +4, u8 start gate at +6 (0xFF: never from the playhead).
+		constexpr std::uint32_t event_size = 12, event_frame = 6, event_part = 8;
+		constexpr std::uint32_t descriptor_type = 4, descriptor_start_gate = 6;
+		constexpr std::uint8_t event_marker = 3; // type 3, ids 6..13: arm marker id - 6 (0x41AFB0)
+
+		// Plays the events of the current state's animation from the cursor (3D data +0x77) up to
+		// `frame`, all of them with `to_end` (0x41ACB0, 0x41AE80). Only markers do something yet;
+		// sounds (type 0) wait for milestone 3d. The exe also counts passes per event (the
+		// descriptor's gates) before firing; here every pass fires.
+		void play_events(live_memory& m, std::uint32_t data, std::uint32_t frame, bool to_end, const std::array<float, 3>& point)
+		{
+			std::uint32_t s = m.u32(data + data_3d::current_state);
+			std::uint32_t reference = s ? m.u32(s + state::animation) : 0;
+			std::uint32_t events = reference ? m.u32(reference + reference_events) : 0;
+			if(!events)
+				return;
+			std::uint8_t count = m.u8(reference + reference_event_count);
+			std::uint8_t i = m.u8(data + data_3d::event_cursor);
+			for(; i < count; i++)
+			{
+				std::uint32_t e = events + i * event_size;
+				if(!to_end && m.read<std::uint16_t>(e + event_frame) > frame)
+					break;
+				std::uint32_t descriptor = m.u32(e);
+				if(!descriptor || m.u8(descriptor + descriptor_start_gate) == 0xFF || m.u8(descriptor + descriptor_type) != event_marker)
+					continue;
+				std::uint32_t id = m.u32(descriptor);
+				if(id < 6 || id > 13)
+					continue;
+				// 0x4189C0: the bit, and the point it came with (the part's world position in the
+				// game; the actor's here, until parts are placed in game memory).
+				m.write<std::uint8_t>(data + data_3d::markers, std::uint8_t(m.u8(data + data_3d::markers) | 1u << (id - 6)));
+				for(int k = 0; k < 3; k++)
+					m.write<float>(data + data_3d::marker_point + std::uint32_t(k) * 4, point[std::size_t(k)]);
+			}
+			m.write<std::uint8_t>(data + data_3d::event_cursor, to_end ? 0 : i);
+		}
 
 		std::uint16_t frame_count(const live_memory& m, std::uint32_t s)
 		{
@@ -27,6 +66,7 @@ namespace openrayman::game
 			m.write<std::uint8_t>(data + data_3d::changed, 0);
 			m.write<std::uint8_t>(data + data_3d::finished, 0);
 			m.write<std::uint8_t>(data + data_3d::reached_end, 0);
+			m.write<std::uint8_t>(data + data_3d::event_cursor, 0);
 		}
 	}
 
@@ -71,13 +111,15 @@ namespace openrayman::game
 		return true;
 	}
 
-	void play_animation(live_memory& m, std::uint32_t data, std::uint32_t ms)
+	void play_animation(live_memory& m, std::uint32_t data, std::uint32_t ms, const std::array<float, 3>& point)
 	{
 		std::uint32_t s = m.u32(data + data_3d::current_state);
 		std::uint32_t reference = s ? m.u32(s + state::animation) : 0;
 		if(!reference)
 			return;
-		// Recomputed every tick (0x40EDF0): set on the tick the animation runs out.
+		// Markers last one tick (0x40E841); recomputed every tick too (0x40EDF0): set on the tick
+		// the animation runs out.
+		m.write<std::uint8_t>(data + data_3d::markers, 0);
 		m.write<std::uint8_t>(data + data_3d::reached_end, 0);
 		std::uint16_t frames = frame_count(m, s);
 		std::uint8_t speed = m.u8(reference + reference_speed);
@@ -85,6 +127,8 @@ namespace openrayman::game
 		std::uint32_t frame = elapsed * (speed ? speed : 30) / 1000;
 		if(frames && frame >= frames)
 		{
+			// The rest of this pass's events, then the next pass or the next state.
+			play_events(m, data, 0, true, point);
 			m.write<std::uint8_t>(data + data_3d::finished, 1);
 			std::uint8_t loops = m.u8(data + data_3d::loops);
 			std::uint32_t after = m.u32(s + state::after);
@@ -94,6 +138,7 @@ namespace openrayman::game
 			{
 				start(m, data, after);
 				m.write<std::uint8_t>(data + data_3d::reached_end, 1);
+				play_events(m, data, 0, false, point);
 				return;
 			}
 			m.write<std::uint8_t>(data + data_3d::reached_end, 1);
@@ -104,6 +149,7 @@ namespace openrayman::game
 		}
 		m.write<std::uint32_t>(data + data_3d::elapsed, elapsed);
 		m.write<std::uint16_t>(data + data_3d::frame, std::uint16_t(frame));
+		play_events(m, data, frame, false, point);
 	}
 }
 
@@ -209,7 +255,12 @@ namespace openrayman::game
 			std::uint32_t actor = vm.actor_of(self);
 			std::uint32_t data = actor ? m.u32(actor) : 0;
 			if(data && !vm.removed(self))
-				play_animation(m, data, vm.frame_ms());
+			{
+				std::array<float, 3> at{};
+				if(auto placed = global_placement(m, self))
+					at = { placed->m[0][3], placed->m[1][3], placed->m[2][3] };
+				play_animation(m, data, vm.frame_ms(), at);
+			}
 			if(actor && !vm.removed(self))
 				apply_speed(m, self, actor, vm.frame_ms());
 		}

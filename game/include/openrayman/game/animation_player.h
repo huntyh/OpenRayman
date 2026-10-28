@@ -4,6 +4,7 @@
 #include <openrayman/game/interpreter.h>
 #include <openrayman/game/live_memory.h>
 
+#include <array>
 #include <cstdint>
 #include <exception>
 #include <functional>
@@ -22,6 +23,9 @@ namespace openrayman::game
 		constexpr std::uint32_t previous_state = 0x84;
 		constexpr std::uint32_t finished = 0x8E;        // u8: the animation played to its end
 		constexpr std::uint32_t reached_end = 0x8F;     // u8: it ran out this tick (condition 106)
+		constexpr std::uint32_t event_cursor = 0x77;    // u8: the next event of the animation to play
+		constexpr std::uint32_t marker_point = 0xF0;    // vec3: where the last marker was armed
+		constexpr std::uint32_t markers = 0xFD;         // u8: marker bits armed this tick (events, type 3)
 		constexpr std::uint32_t next_state = 0x88;      // what plays next: requested, or a transition on the way
 		constexpr std::uint32_t elapsed = 0xC0;         // ms into the current animation
 		constexpr std::uint32_t changed_at = 0xC4;      // game clock when the state changed
@@ -48,7 +52,9 @@ namespace openrayman::game
 
 	// Advances an actor's animation by one tick of `ms`; at the end of an animation it plays again
 	// (while loops remain) or moves on to the state's "after" state.
-	void play_animation(live_memory& memory, std::uint32_t data, std::uint32_t ms);
+	// Also plays the animation's events as frames pass: markers (scripts' conditions 42/43) are
+	// armed at `point` and last one tick.
+	void play_animation(live_memory& memory, std::uint32_t data, std::uint32_t ms, const std::array<float, 3>& point = {});
 
 	// Where a super object is in the world as the game keeps it (its global transform, +0x24), or
 	// nothing if it has none.

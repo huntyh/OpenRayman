@@ -1632,18 +1632,23 @@ namespace openrayman::game
 			return c.args;
 		}
 
-		// 42, 43 (0x48AEA0): bit `n` (0..7) of the 3D data's marker byte (+0xFD), which animation events
-		// arm with a point (+0xF0, 0x4189C0 called from 0x41B06F) and a new animation clears. 43 also
-		// hands the point on, to the place named by the raw node after its argument. Nothing arms the
-		// markers yet (animation events aren't run), so both are false.
+		// 42, 43 (0x48AEA0): bit `n` (0..7) of the 3D data's marker byte, which animation events arm
+		// for one tick with a point (the shot leaving Rayman's hand). 43 also hands the point to the
+		// variable named by the node after its argument (only that node's index is read).
 		std::uint32_t animation_marker(call& c, bool& result)
 		{
 			value n;
 			next_arg(c, n);
+			live_memory& m = c.vm.memory();
 			std::uint32_t data = actor_part(c.vm, c.self, actor_field::data_3d);
 			std::int32_t bit = n.as_int();
-			result = data && bit >= 0 && bit <= 7 && (c.vm.memory().u8(data + 0xFD) >> bit & 1);
-			return c.index == 43 ? c.args + 8 : c.args;
+			result = data && bit >= 0 && bit <= 7 && (m.u8(data + data_3d::markers) >> bit & 1);
+			if(c.index == 42)
+				return c.args;
+			if(!result)
+				return c.args + 8;
+			std::uint32_t at = data + data_3d::marker_point;
+			return c.vm.assign(c.self, c.args, value::vector(m.f32(at), m.f32(at + 4), m.f32(at + 8)));
 		}
 
 		// 77 (0x48B620 -> 0x410310): the current animation has played to its end. 106 (-> 0x410340):
