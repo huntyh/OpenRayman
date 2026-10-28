@@ -163,6 +163,8 @@ namespace openrayman::game
 			float real_a = 0, real_b = 0, real_c = 0; // 0x4B9B78..0x4B9B80: fields 14..16
 			std::int32_t integer = 0;               // 0x4B9B84, field 17
 			std::array<std::uint32_t, 5> actions{}; // 0x4B9B88..: up, down, left, right, walk (procedure 435)
+			bool snap = false;                      // 0x4B9B9C: skip the next smoothing (procedure 347)
+			float axis_h = 0, axis_v = 0;           // 0x4B9BA0, 0x4B9BA4: last smoothed key axes
 		};
 		movement_input movement;
 

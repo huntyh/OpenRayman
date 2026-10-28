@@ -21,6 +21,7 @@ namespace openrayman::game
 		constexpr std::uint32_t loops = 0x76;           // u8: plays left before moving on
 		constexpr std::uint32_t previous_state = 0x84;
 		constexpr std::uint32_t finished = 0x8E;        // u8: the animation played to its end
+		constexpr std::uint32_t reached_end = 0x8F;     // u8: it ran out this tick (condition 106)
 		constexpr std::uint32_t next_state = 0x88;      // what plays next: requested, or a transition on the way
 		constexpr std::uint32_t elapsed = 0xC0;         // ms into the current animation
 		constexpr std::uint32_t changed_at = 0xC4;      // game clock when the state changed

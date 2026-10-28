@@ -23,6 +23,7 @@ namespace openrayman::game
 			m.write<std::uint32_t>(data + data_3d::elapsed, 0);
 			m.write<std::uint8_t>(data + data_3d::changed, 0);
 			m.write<std::uint8_t>(data + data_3d::finished, 0);
+			m.write<std::uint8_t>(data + data_3d::reached_end, 0);
 		}
 	}
 
@@ -69,6 +70,8 @@ namespace openrayman::game
 		std::uint32_t reference = s ? m.u32(s + state::animation) : 0;
 		if(!reference)
 			return;
+		// Recomputed every tick (0x40EDF0): set on the tick the animation runs out.
+		m.write<std::uint8_t>(data + data_3d::reached_end, 0);
 		std::uint16_t frames = frame_count(m, s);
 		std::uint8_t speed = m.u8(reference + reference_speed);
 		std::uint32_t elapsed = m.u32(data + data_3d::elapsed) + ms;
@@ -83,8 +86,10 @@ namespace openrayman::game
 			else if(after && after != s)
 			{
 				start(m, data, after);
+				m.write<std::uint8_t>(data + data_3d::reached_end, 1);
 				return;
 			}
+			m.write<std::uint8_t>(data + data_3d::reached_end, 1);
 			// Loop: keep the time past the end.
 			std::uint32_t length = std::uint32_t(frames) * 1000 / (speed ? speed : 30);
 			elapsed = length ? elapsed % length : 0;

@@ -115,8 +115,12 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
 
 **Milestone 3c: Rayman ⬅ we are here**
 
-- Collision with the level and with actors, and the game's physics
-- Input mapped to the game's controls (keyboard, gamepad)
+- Collision with the level and with actors, and the game's physics. Level collision read and shown
+  (C), surface types grabbable and water confirmed; physics next ⬅
+- Input mapped to the game's controls (keyboard, gamepad). Keyboard done: the game's own input
+  actions are read from Fix and fed every tick (Tab in the viewer), and the movement input
+  (procedure 346) turns the arrows into the camera-relative vector Rayman's scripts read. Rayman
+  reacts (jump, shoot), but stays airborne until the physics lands him. Gamepad not yet
 - Rayman himself walking, running and jumping, moved by his own scripts
 - The game's camera following him
 - An optional modern camera, turned freely with the right stick like in today's platformers, next

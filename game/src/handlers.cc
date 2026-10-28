@@ -1,5 +1,6 @@
 #include <openrayman/game/handlers.h>
 #include <openrayman/game/animation_player.h>
+#include <openrayman/input.h>
 
 #include <array>
 #include <bit>
@@ -1337,6 +1338,236 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 346 (0x46E450): the movement input. Turns the direction actions into the vector and numbers
+		// scripts read as fields 11..17. Rayman calls it as "camera: procedure_346(...)", so the
+		// running super object is Rayman and the target the camera: up moves along the camera's
+		// view, down towards the camera, sideways across. Args: dead zone, turn threshold (degrees),
+		// turn rate, smoothing, mode (0 release, 2 in the actor's own axes, other: the camera's),
+		// turn (1 = turn the actor towards the input), direction code wanted. Joystick input (when
+		// no key is held) isn't read yet. Each tick is one of the exe's reference frames, so its
+		// frame exponent is 1 and smoothing factors apply once per tick.
+		std::uint32_t read_movement(call& c)
+		{
+			std::uint32_t self = c.self;
+			std::uint32_t target = c.vm.target(c.self, true);
+			value v[7];
+			for(value& a : v)
+				next_arg(c, a);
+			float dead_zone = v[0].as_float();
+			float threshold = v[1].as_float() * 0.0174532924f;
+			float rate = v[2].as_float();
+			float smoothing = v[3].as_float();
+			std::int32_t mode = v[4].as_int();
+			std::uint32_t turn = v[5].word(), code = v[6].word();
+			interpreter::movement_input& out = c.vm.movement;
+			live_memory& m = c.vm.memory();
+
+			std::int32_t h = 0, vert = 0;
+			vec3 dir{};
+			float raw = 0, smooth = 0, angle = 0;
+			auto write = [&] {
+				out.short_a = std::int16_t(h);
+				out.short_b = std::int16_t(vert);
+				out.vector = dir;
+				out.real_a = smooth;
+				out.real_b = raw;
+				out.real_c = angle;
+				out.integer = std::int32_t(code);
+				return c.args;
+			};
+			if(mode == 0)
+			{
+				code = 0;
+				return write();
+			}
+
+			// The keys: up -100, down +100, right +100, left -100; walking halves them; diagonals
+			// keep the length; then eased towards last tick's values.
+			auto held = [&](std::uint32_t action) { return action && m.read<std::int32_t>(action + input_action::counter) > 0; };
+			float axis_h = 0, axis_v = 0;
+			bool any = false;
+			if(held(out.actions[0])) { axis_v = -100; any = true; }
+			if(held(out.actions[1])) { axis_v += 100; any = true; }
+			if(held(out.actions[3])) { axis_h = 100; any = true; }
+			if(held(out.actions[2])) { axis_h -= 100; any = true; }
+			if(any)
+			{
+				float curve = 0.6f;
+				if(held(out.actions[4]))
+				{
+					curve = 0.95f;
+					axis_h *= 0.5f;
+					axis_v *= 0.5f;
+				}
+				if(axis_h != 0 && axis_v != 0)
+				{
+					axis_h *= 0.70710677f;
+					axis_v *= 0.70710677f;
+				}
+				if(out.snap)
+					out.snap = false;
+				else
+				{
+					axis_h += (out.axis_h - axis_h) * curve;
+					axis_v += (out.axis_v - axis_v) * curve;
+				}
+			}
+			out.axis_h = axis_h;
+			out.axis_v = axis_v;
+			if(mode == 2)
+			{
+				rate = 0;
+				turn = 0;
+			}
+			h = std::int32_t(axis_h);
+			vert = std::int32_t(axis_v);
+
+			// Length, dead zone, and the eased length (field 14).
+			dir = mode == 2 ? vec3{ float(-h), 0, float(-vert) } : vec3{ float(-h), float(vert), 0 };
+			raw = length(dir);
+			if(raw <= dead_zone)
+			{
+				raw = 0;
+				dir = {};
+				turn = 0;
+			}
+			smooth = raw;
+			if(smoothing > 0)
+				smooth = raw + (out.real_a - raw) * smoothing;
+			if(smooth - raw > dead_zone)
+			{
+				dir = {};
+				turn = 0;
+			}
+			if(smooth < dead_zone)
+			{
+				h = vert = 0;
+				dir = {};
+				code = 0;
+				return write();
+			}
+
+			std::uint32_t own = transform_of(c.vm, self), aim = transform_of(c.vm, target);
+			if(!own || !aim)
+				return write();
+			auto axis = [&](std::uint32_t t, int k) { return read3(m, t + 0x10 + std::uint32_t(k) * 12); };
+			auto zero = [](const vec3& a) { return a[0] == 0 && a[1] == 0 && a[2] == 0; };
+			if(mode == 2)
+			{
+				// In the actor's own axes, leaning towards the target's.
+				if(!zero(dir))
+					dir = normalised(dir);
+				dir = { dir[0] * smooth, dir[1] * smooth, dir[2] * smooth };
+				auto lean = [](float d) {
+					float q = std::min(1.0f, std::pow(std::abs(d), 0.3f) * 1.5f);
+					return d == 0 ? 0.0f : std::copysign(q, d);
+				};
+				vec3 a0 = axis(own, 0), a2 = axis(own, 2);
+				float q0 = lean(dot(axis(aim, 0), a0)), q1 = lean(dot(axis(aim, 1), a2));
+				float x = q0 * dir[0], z = q1 * dir[2];
+				dir = { a0[0] * x + a2[0] * z, a0[1] * x + a2[1] * z, a0[2] * x + a2[2] * z };
+			}
+			else
+			{
+				// Forward: from the actor towards the camera, flattened; pushing up (away from the
+				// camera), or when the camera is right above or on the actor, the camera's own
+				// view instead (its Y axis, flattened).
+				vec3 to = normalised(sub(read3(m, aim + 4), read3(m, own + 4)));
+				vec3 forward;
+				if(zero(to) || vert < 0 || std::abs(to[2]) > 0.8f)
+				{
+					forward = axis(aim, 1);
+					forward[2] = 0;
+					if(zero(forward))
+					{
+						forward = axis(aim, 2);
+						forward[2] = 0;
+					}
+				}
+				else
+				{
+					forward = { to[0], to[1], 0 };
+					if(zero(forward))
+						forward = { axis(aim, 2)[0], axis(aim, 2)[1], 0 };
+				}
+				if(zero(forward))
+					return write();
+				forward = normalised(forward);
+				vec3 right{ forward[1], -forward[0], 0 };
+				dir = { -h * right[0] + vert * forward[0], -h * right[1] + vert * forward[1], 0 };
+				if(zero(dir))
+					return write();
+				dir = normalised(dir);
+
+				// The turn from where the actor faces (-Y) to the input, signed (left positive).
+				vec3 facing = axis(own, 1);
+				facing = { -facing[0], -facing[1], 0 };
+				if(zero(facing))
+					return write();
+				facing = normalised(facing);
+				float d = std::clamp(facing[0] * dir[0] + facing[1] * dir[1], -1.0f, 1.0f);
+				angle = std::acos(d);
+				if(facing[0] * dir[1] - facing[1] * dir[0] < 0)
+					angle = -angle;
+				dir = { dir[0] * smooth, dir[1] * smooth, dir[2] * smooth };
+
+				// Turning the actor about Z, part of the way each tick.
+				if(turn == 1 && rate != 0 && raw != 0)
+				{
+					float step = float(c.vm.frame_ms()) * 0.0001f * rate * angle * smooth;
+					float by = std::abs(angle) < std::abs(step) ? angle : step;
+					if(std::abs(by) > threshold)
+					{
+						float cs = std::cos(by), sn = std::sin(by);
+						for(int k = 0; k < 3; k++)
+						{
+							vec3 a = axis(own, k), scaled = read3(m, own + 0x34 + std::uint32_t(k) * 12);
+							vec3 turned{ a[0] * cs - a[1] * sn, a[0] * sn + a[1] * cs, a[2] };
+							float scale = length(scaled) / std::max(length(a), 1e-9f);
+							write3(m, own + 0x10 + std::uint32_t(k) * 12, turned);
+							write3(m, own + 0x34 + std::uint32_t(k) * 12, { turned[0] * scale, turned[1] * scale, turned[2] * scale });
+						}
+					}
+				}
+				angle *= 57.29578f;
+			}
+
+			// Which way, as 1..4 (forward, right, back, left), if asked.
+			if(code != 0)
+			{
+				if(mode == 2)
+					code = h > vert ? (h > -vert ? 2 : 1) : (h <= -vert ? 4 : 3);
+				else if(std::abs(angle) <= 45)
+					code = 1;
+				else if(std::abs(angle) >= 135)
+					code = 3;
+				else
+					code = angle > 0 ? 4 : 2;
+			}
+			return write();
+		}
+
+		// 263 (0x46C710, case 0x46C78B): a dynamics value at base +0x10, stored as given. 274
+		// (0x46CA40, case 0x46CB2B): the vector at base +0x178, but only its components the
+		// argument makes positive. What the physics does with them isn't read yet.
+		std::uint32_t set_dynamics_value(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value v;
+			next_arg(c, v);
+			std::uint32_t base = dynamics_base(c, self, 0x184);
+			if(!base)
+				return c.args;
+			live_memory& m = c.vm.memory();
+			if(c.index == 263)
+				m.write<std::uint32_t>(base + 0x10, v.word());
+			else
+				for(int i = 0; i < 3; i++)
+					if(float f = v.component(i); f > 0)
+						m.write<float>(base + 0x178 + std::uint32_t(i) * 4, f);
+			return c.args;
+		}
+
 		// 435 (0x46FAA0): the input actions procedure 346 moves by: up, down, left, right, walk.
 		std::uint32_t set_movement_actions(call& c)
 		{
@@ -1349,10 +1580,86 @@ namespace openrayman::game
 			return c.args;
 		}
 
-		// 77 (0x48B620): the current animation has played to its end.
+		// 19 (0x47BCE0): a number as an integer (floats truncate). 20: a random integer between two
+		// numbers, both included (0x449C10 reads a table of pre-made random numbers; any uniform
+		// source does).
+		std::uint32_t to_integer(call& c, value& out)
+		{
+			value a;
+			next_arg(c, a);
+			std::int32_t x = a.as_int();
+			if(c.index == 20)
+			{
+				value b;
+				next_arg(c, b);
+				std::int32_t y = b.as_int();
+				static std::uint32_t seed = 54321;
+				seed = seed * 1664525u + 1013904223u;
+				std::int64_t span = std::int64_t(y) - x + 1;
+				x = span > 0 ? std::int32_t(x + std::int64_t(seed >> 8) * span / (1 << 24)) : x;
+			}
+			out = value::integer(x);
+			return c.args;
+		}
+
+		// 36..41 (0x47BB70): one of two numbers, as a float. 36..40 compare two numbers first (<, >,
+		// ==, <=, >=), 41 takes a condition. Only the chosen number is evaluated.
+		std::uint32_t choose(call& c, value& out)
+		{
+			value a;
+			next_arg(c, a);
+			bool pick;
+			if(c.index == 41)
+				pick = (a.word() & 0xFF) != 0;
+			else
+			{
+				value b;
+				next_arg(c, b);
+				float x = a.as_float(), y = b.as_float();
+				bool r[] = { x < y, x > y, x == y, x <= y, x >= y };
+				pick = r[c.index - 36];
+			}
+			value chosen;
+			if(pick)
+			{
+				next_arg(c, chosen);
+				c.args = c.vm.skip(c.args);
+			}
+			else
+			{
+				c.args = c.vm.skip(c.args);
+				next_arg(c, chosen);
+			}
+			out = value::real(chosen.as_float());
+			return c.args;
+		}
+
+		// 42, 43 (0x48AEA0): bit `n` (0..7) of the 3D data's marker byte (+0xFD), which animation events
+		// arm with a point (+0xF0, 0x4189C0 called from 0x41B06F) and a new animation clears. 43 also
+		// hands the point on, to the place named by the raw node after its argument. Nothing arms the
+		// markers yet (animation events aren't run), so both are false.
+		std::uint32_t animation_marker(call& c, bool& result)
+		{
+			value n;
+			next_arg(c, n);
+			std::uint32_t data = actor_part(c.vm, c.self, actor_field::data_3d);
+			std::int32_t bit = n.as_int();
+			result = data && bit >= 0 && bit <= 7 && (c.vm.memory().u8(data + 0xFD) >> bit & 1);
+			return c.index == 43 ? c.args + 8 : c.args;
+		}
+
+		// 77 (0x48B620 -> 0x410310): the current animation has played to its end. 106 (-> 0x410340):
+		// it ran out this tick (3D data +0x8F).
 		std::uint32_t animation_done(call& c, bool& result)
 		{
-			result = animation_finished(c.vm, c.vm.target(c.self, true));
+			std::uint32_t target = c.vm.target(c.self, true);
+			if(c.index == 77)
+				result = animation_finished(c.vm, target);
+			else
+			{
+				std::uint32_t data = actor_part(c.vm, target, actor_field::data_3d);
+				result = data && c.vm.memory().u8(data + data_3d::reached_end);
+			}
 			return c.args;
 		}
 
@@ -1512,11 +1819,17 @@ namespace openrayman::game
 		for(std::uint32_t i = 27; i <= 32; i++)
 			vm.on_condition(i, contact);
 		vm.on_condition(77, animation_done);
+		vm.on_condition(106, animation_done);
+		vm.on_condition(42, animation_marker);
+		vm.on_condition(43, animation_marker);
 		for(std::uint32_t i = 79; i <= 102; i++)
 			vm.on_condition(i, dynamics_bit);
 		vm.on_procedure(198, set_dynamics_xy);
 		vm.on_procedure(288, set_dynamics_xy);
 		vm.on_procedure(435, set_movement_actions);
+		vm.on_procedure(346, read_movement);
+		vm.on_procedure(263, set_dynamics_value);
+		vm.on_procedure(274, set_dynamics_value);
 		vm.on_procedure(102, show_parts);
 		vm.on_procedure(103, show_parts);
 		vm.on_condition(65, bits_overlap);
@@ -1535,6 +1848,10 @@ namespace openrayman::game
 		for(std::uint32_t i : { 43, 44, 45, 46, 47, 48 })
 			vm.on_function(i, hit_points);
 		vm.on_function(10, distance);
+		vm.on_function(19, to_integer);
+		vm.on_function(20, to_integer);
+		for(std::uint32_t i = 36; i <= 41; i++)
+			vm.on_function(i, choose);
 		vm.on_function(3, distance_to);
 		for(std::uint32_t i : { 2, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17 })
 			vm.on_function(i, relative);
