@@ -137,6 +137,10 @@ namespace
 		// and flying the camera).
 		std::unique_ptr<openrayman::game::input> input;
 		bool playing = false;
+		// --keys Up:60-200,A:100-110: keys held over script ticks, to replay input for screenshots.
+		struct held_key { std::uint8_t key; long from, to; };
+		std::vector<held_key> held_keys;
+		long tick = 0;
 		std::vector<std::uint32_t> thinkers;     // super objects of the actors with a brain
 		// The game's camera actor (the placed Fix actor with a camera part). Until the game's camera
 		// runs (milestone 3c) it stands where ours is, for the scripts that work around it.
@@ -336,8 +340,27 @@ namespace
 		}
 	}
 
+	void run_ticks(app& a, double seconds);
+
 	// Runs the game's scripts for `seconds`, in ticks of 1/60 s, then shows the states they picked.
+	// An error outside one actor's scripts (input, placing the actors) is logged and the scripts
+	// stop, rather than closing the viewer.
 	void run_scripts(app& a, double seconds)
+	{
+		try
+		{
+			run_ticks(a, seconds);
+		}
+		catch(const std::exception& e)
+		{
+			SDL_Log("Scripts stopped at tick %ld: %s", a.tick, e.what());
+			a.scripts = false;
+			a.actor_note = "scripts stopped (see log)";
+			update_title(a);
+		}
+	}
+
+	void run_ticks(app& a, double seconds)
 	{
 		if(!a.vm || !a.scripts)
 			return;
@@ -372,7 +395,18 @@ namespace
 				openrayman::game::set_global_placement(*a.live, a.camera_super_object, placed);
 			}
 			if(a.input)
+			{
+				if(!a.held_keys.empty())
+				{
+					std::array<bool, 256> down{};
+					for(const app::held_key& h : a.held_keys)
+						down[h.key] = down[h.key] || (a.tick >= h.from && a.tick < h.to);
+					for(const app::held_key& h : a.held_keys)
+						a.input->set_key(h.key, down[h.key]);
+				}
 				a.input->step();
+			}
+			a.tick++;
 			openrayman::game::step(*a.vm, a.thinkers, [](std::uint32_t self, const std::exception& e) {
 				SDL_Log("Script error, actor 0x%08X: %s", self, e.what());
 			});
@@ -644,6 +678,7 @@ namespace
 			a.vm = std::make_unique<openrayman::game::interpreter>(*a.live, main_actor);
 			openrayman::game::register_handlers(*a.vm);
 			a.input.reset();
+			a.tick = 0;
 			try
 			{
 				a.input = std::make_unique<openrayman::game::input>(*a.live, read_input_actions(files));
@@ -1015,6 +1050,22 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 			unsigned long node = std::strtoul(argv[n + 1], &end, 10);
 			if(end && *end == ':')
 				a->start_behaviours.push_back({ node, std::strtoul(end + 1, nullptr, 10) });
+		}
+		else if(arg == "--keys") // name:from-to ticks, comma separated, as ortool input names keys
+		{
+			std::string list = argv[n + 1];
+			for(std::size_t at = 0; at < list.size();)
+			{
+				std::size_t end = std::min(list.find(',', at), list.size());
+				std::string item = list.substr(at, end - at);
+				std::size_t colon = item.find(':'), dash = item.find('-');
+				int k = 1;
+				while(colon != std::string::npos && k < 256 && openrayman::key_name(std::uint16_t(k)) != item.substr(0, colon))
+					k++;
+				if(colon != std::string::npos && dash != std::string::npos && k < 256)
+					a->held_keys.push_back({ std::uint8_t(k), std::strtol(item.c_str() + colon + 1, nullptr, 10), std::strtol(item.c_str() + dash + 1, nullptr, 10) });
+				at = end + 1;
+			}
 		}
 		else if(arg == "--collision") // on or off (default): what the level collides with; C in the viewer
 			a->show_collision = std::string_view(argv[n + 1]) == "on";

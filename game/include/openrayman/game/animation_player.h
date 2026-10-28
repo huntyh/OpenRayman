@@ -41,8 +41,10 @@ namespace openrayman::game
 
 	// Switches an actor (its 3D data) to a state as procedure 72 does: through the transition the
 	// current state lists for it, if any; refused (false) when the current state forbids it or allows
-	// leaving only by transitions. `forced` skips those rules. The new state plays at once.
-	bool change_state(live_memory& memory, std::uint32_t data, std::uint32_t target, bool forced, std::uint32_t clock);
+	// leaving only by transitions. `again` changes even to the state already asked for (procedure
+	// 73), `direct` skips the transitions and those rules (procedure 75's number, 0x40FAC2). The
+	// new state plays at once.
+	bool change_state(live_memory& memory, std::uint32_t data, std::uint32_t target, bool again, std::uint32_t clock, bool direct = false);
 
 	// Advances an actor's animation by one tick of `ms`; at the end of an animation it plays again
 	// (while loops remain) or moves on to the state's "after" state.

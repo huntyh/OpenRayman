@@ -1231,9 +1231,31 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 		for(const held& h : holds)
 			keys.set_key(h.key, f >= h.from && f < h.to);
 		keys.step();
-		game::step(vm, actors, [&](std::uint32_t self, const std::exception& e) {
-			errors.try_emplace(node_of[self], std::format("frame {}, node 0x{:08X}: {}", f, vm.last_node(), e.what()));
-		});
+		try
+		{
+			game::step(vm, actors, [&](std::uint32_t self, const std::exception& e) {
+				errors.try_emplace(node_of[self], std::format("frame {}, node 0x{:08X}: {}", f, vm.last_node(), e.what()));
+			});
+		}
+		catch(const std::exception& e)
+		{
+			throw format_error(std::format("tick {}, outside the actors' scripts (last node 0x{:08X}): {}", f, vm.last_node(), e.what()));
+		}
+		// A script that writes through a wrong address can break an actor's own links.
+		for(std::uint32_t so : actors)
+		{
+			std::uint32_t actor = memory.u32(so + 4);
+			std::uint32_t data = actor && memory.contains(actor, 4) ? memory.u32(actor) : 0;
+			if(data && !memory.contains(data, 4))
+				throw format_error(std::format("tick {}: node {}'s 3D data pointer is now 0x{:X} (last node 0x{:08X})", f, node_of[so], data, vm.last_node()));
+			std::uint32_t brain = actor && memory.contains(actor + 0xC, 4) ? memory.u32(actor + 0xC) : 0;
+			std::uint32_t mind = brain && memory.contains(brain, 4) ? memory.u32(brain) : 0;
+			if(brain && (!memory.contains(brain, 4) || (mind && !memory.contains(mind, 0x10))))
+				throw format_error(std::format("tick {}: node {}'s brain 0x{:X} -> mind 0x{:X} (last node 0x{:08X})", f, node_of[so], brain, mind, vm.last_node()));
+			for(std::uint32_t k = 0; mind && k < 4; k++)
+				if(std::uint32_t p = memory.u32(mind + k * 4); p && !memory.contains(p, 4))
+					throw format_error(std::format("tick {}: node {}'s mind +0x{:X} is now 0x{:X} (last node 0x{:08X})", f, node_of[so], k * 4, p, vm.last_node()));
+		}
 		if(traced)
 		{
 			auto now = state_of(traced);

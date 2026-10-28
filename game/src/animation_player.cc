@@ -1,4 +1,7 @@
 #include <openrayman/game/animation_player.h>
+#include <openrayman/error.h>
+
+#include <format>
 
 namespace openrayman::game
 {
@@ -27,13 +30,17 @@ namespace openrayman::game
 		}
 	}
 
-	bool change_state(live_memory& m, std::uint32_t data, std::uint32_t target, bool forced, std::uint32_t clock)
+	bool change_state(live_memory& m, std::uint32_t data, std::uint32_t target, bool again, std::uint32_t clock, bool direct)
 	{
 		std::uint32_t current = m.u32(data + data_3d::current_state);
-		if(!target || (target == m.u32(data + data_3d::requested_state) && !forced))
+		if(!target || (target == m.u32(data + data_3d::requested_state) && !again))
 			return true;
+		// The game would take any number; here a script handing over something that isn't a state
+		// (often a handler we don't have yet, reading 0 or a stray number) stops at the script.
+		if(!m.contains(target, state::after + 4))
+			throw format_error(std::format("0x{:X} is not a state", target));
 		std::uint32_t play = target;
-		if(!forced && current)
+		if(!direct && current)
 		{
 			std::uint32_t via = 0;
 			for(std::uint32_t t = m.u32(current + state::transitions); t; t = m.u32(t + transition_next))

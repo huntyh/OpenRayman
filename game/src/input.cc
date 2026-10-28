@@ -1,6 +1,8 @@
 #include <openrayman/game/input.h>
 
+#include <format>
 #include <limits>
+#include <stdexcept>
 
 namespace openrayman::game
 {
@@ -112,7 +114,15 @@ namespace openrayman::game
 			m_memory.write<float>(a + input_action::analog, 0.0f);
 			std::uint32_t expression = m_memory.u32(a + input_action::expression);
 			std::uint32_t at = expression;
-			bool down = expression && evaluate(at, expression + m_memory.u32(a + input_action::slots) * slot); // none: up
+			bool down = false; // no expression: up
+			try
+			{
+				down = expression && evaluate(at, expression + m_memory.u32(a + input_action::slots) * slot);
+			}
+			catch(const std::exception& e)
+			{
+				throw std::runtime_error(std::format("input action {} (expression 0x{:08X}, slot 0x{:08X}): {}", i, expression, at, e.what()));
+			}
 			std::int32_t counter = m_memory.read<std::int32_t>(a + input_action::counter);
 			if(down && counter > 0)
 				counter = counter == std::numeric_limits<std::int32_t>::max() ? counter : counter + 1;
