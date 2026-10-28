@@ -137,9 +137,10 @@ namespace openrayman::game
 		std::uint8_t rate = rate_of(m, data, s);
 		if(!rate)
 			return;
-		// Markers last one tick (0x40E841); recomputed every tick too (0x40EDF0): set on the tick
-		// the animation runs out.
+		// Markers last one tick (0x40E841). "Ran out" (+0x8F) is recomputed every tick (0x40EF1B):
+		// set while the last frame holds, for one tick, before the next pass or state starts.
 		m.write<std::uint8_t>(data + data_3d::markers, 0);
+		bool held_end = m.u8(data + data_3d::reached_end) != 0;
 		m.write<std::uint8_t>(data + data_3d::reached_end, 0);
 		std::uint16_t frames = frame_count(m, s);
 		std::uint32_t elapsed = m.u32(data + data_3d::elapsed) + ms;
@@ -148,9 +149,20 @@ namespace openrayman::game
 		std::uint32_t frame = elapsed * rate / 1000;
 		if(frames && frame >= frames)
 		{
-			// The rest of this pass's events, then the next pass or the next state.
-			play_events(m, data, 0, true, point);
-			m.write<std::uint8_t>(data + data_3d::finished, 1);
+			if(!held_end)
+			{
+				// The tick it runs out: the rest of this pass's events, and the last frame holds so
+				// the scripts see condition 106 with this state still current (0x40E800, 0x40E945).
+				// Moving on at once let the next state's first tick look finished: Rayman's hand
+				// return after a throw was cut after one tick.
+				play_events(m, data, 0, true, point);
+				m.write<std::uint8_t>(data + data_3d::finished, 1);
+				m.write<std::uint8_t>(data + data_3d::reached_end, 1);
+				m.write<std::uint32_t>(data + data_3d::elapsed, elapsed);
+				m.write<std::uint16_t>(data + data_3d::frame, std::uint16_t(frames - 1));
+				return;
+			}
+			// The tick after: the next pass or the next state.
 			std::uint8_t loops = m.u8(data + data_3d::loops);
 			std::uint32_t after = m.u32(s + state::after);
 			if(loops)
@@ -158,11 +170,9 @@ namespace openrayman::game
 			else if(after && after != s)
 			{
 				start(m, data, after);
-				m.write<std::uint8_t>(data + data_3d::reached_end, 1);
 				play_events(m, data, 0, false, point);
 				return;
 			}
-			m.write<std::uint8_t>(data + data_3d::reached_end, 1);
 			// Loop: keep the time past the end.
 			std::uint32_t length = std::uint32_t(frames) * 1000 / rate;
 			elapsed = length ? elapsed % length : 0;
