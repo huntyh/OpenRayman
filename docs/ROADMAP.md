@@ -142,6 +142,9 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
   - Next: the game camera following Rayman (camera actor 5's scripts, procedures 491-500 and the
     other handlers it reaches). The optional modern camera waits until the game is nearly complete
     (with HDR and the like).
+    In the game the player may turn the camera left/right (Q/W) only where the level allows it;
+    level camera presets often overrule it, and a camera icon with a red X shows when turning is
+    refused (user).
 - The game's camera following him
 - An optional modern camera, turned freely with the right stick like in today's platformers, next
   to the game's own guided camera. It will see what the guided camera never shows, which needs
