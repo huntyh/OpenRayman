@@ -106,6 +106,93 @@ namespace openrayman::game
 		}
 	}
 
+	namespace
+	{
+		constexpr float pi = 3.14159265f, two_pi = 6.28318531f;
+
+		float wrap_two_pi(float a)
+		{
+			a = std::fmod(a, two_pi);
+			return a < 0 ? a + two_pi : a;
+		}
+
+		float wrap_pi(float a)
+		{
+			a = wrap_two_pi(a);
+			return a > pi ? a - two_pi : a;
+		}
+
+		// 0x4841F0: the angle to use, given the measured one and a window (centre, half width, in
+		// radians). Half >= pi leaves it free, half <= 0 holds it at the centre; in between it stays
+		// where it is inside the window and goes to the nearer edge outside. (The exe also keeps a
+		// pi/8-a-frame walker in the context, but the angle it applies is this one; the camera's
+		// turn speed limits the swing.)
+		float window_angle(float a, float centre, float half)
+		{
+			if(half >= pi)
+				return a;
+			if(half <= 0)
+				return centre;
+			float lo = wrap_two_pi(centre - (half + 1e-4f)), hi = wrap_two_pi(centre + (half + 1e-4f));
+			bool inside = hi > lo ? (a >= lo && a <= hi) : (a <= hi || a >= lo);
+			if(inside)
+				return a;
+			return wrap_pi(a - centre) <= 0 ? lo : hi;
+		}
+
+		// The way back from the aim point to the camera (0x4847D0 section C): measure the current
+		// direction `d` against a reference axis as a turn about the up axis and an elevation
+		// (0x484390, 0x433390, 0x4335C0, folded by 0x473A40), pick the angles the block allows
+		// (yaw window +0x28/+0x2C, pitch window +0x30/+0x34; 0x4841F0) and rebuild (0x484470).
+		vec3 camera_direction(const live_memory& m, std::uint32_t cam, std::uint32_t block, std::uint32_t target_transform, vec3 d, std::uint16_t flags_72)
+		{
+			vec3 up{ 0, 0, 1 }, ref{};
+			if(flags_72 & 0x8000)
+			{
+				// 497's fixed axes (0x483BE0 with the 0x4E92FD flag).
+				ref = normalised(read3(m, cam + 0x40));
+				if(length(ref) < 0.5f)
+					ref = { 0, -1, 0 };
+				up = normalised(read3(m, cam + 0x4C));
+				if(length(up) < 0.5f)
+					up = { 0, 0, 1 };
+			}
+			else
+			{
+				// 0x473BB0: the target's second axis, negated.
+				ref = normalised(mul(read3(m, target_transform + 0x1C), -1.0f));
+				if(length(ref) < 0.5f)
+					ref = { 0, -1, 0 };
+			}
+			if(d[0] == up[0] && d[1] == up[1])
+				d[0] += 0.5f;
+			// 0x433390: the signed turn from ref to d about up, both flattened onto the plane.
+			auto flat = [&](const vec3& v) { return sub(v, mul(up, dot(v, up))); };
+			vec3 fr = flat(ref), fd = flat(d);
+			float yaw = 0;
+			if(length(fr) > 1e-6f && length(fd) > 1e-6f)
+				yaw = std::atan2(dot(up, cross(fr, fd)), dot(fr, fd));
+			// 0x4335C0: the difference of their elevations, folded to +-pi/2 (0x473A40).
+			auto elevation = [&](const vec3& v) {
+				float l = length(v);
+				return l > 1e-6f ? std::asin(std::clamp(dot(v, up) / l, -1.0f, 1.0f)) : 0.0f;
+			};
+			float pitch = elevation(d) - elevation(ref);
+			if(std::fabs(pitch) > pi / 2)
+				pitch = pitch > 0 ? pi - pitch : -pi - pitch;
+			yaw = wrap_two_pi(yaw);
+			pitch = wrap_two_pi(pitch);
+			// Bit 0x40 of +0x72 holds both at their centres.
+			bool hold = flags_72 & 0x40;
+			yaw = window_angle(yaw, m.f32(block + 0x28), hold ? 0 : m.f32(block + 0x2C));
+			pitch = window_angle(pitch, m.f32(block + 0x30), hold ? 0 : m.f32(block + 0x34));
+			// 0x484470: turn ref about up, then raise it about the axis across.
+			vec3 v1 = rotate_about(ref, up, yaw);
+			vec3 across = normalised(cross(v1, up));
+			return length(across) > 0.5f ? normalised(rotate_about(v1, across, pitch)) : normalised(v1);
+		}
+	}
+
 	void solve_camera(interpreter& vm, std::uint32_t super_object)
 	{
 		live_memory& m = vm.memory();
@@ -157,20 +244,11 @@ namespace openrayman::game
 		}
 		else
 		{
-			// C: on the sphere of the clamped distance around the aim point, along the direction the
-			// camera lies in from it now. The exe also turns that direction by at most pi/8 a frame
-			// towards the angle limits in block +0x28..+0x34 (0x484390, 0x484470); left out here.
+			// C: on the sphere of the clamped distance around the aim point, in the direction the
+			// block's angles ask for, measured from a reference axis (0x4847D0).
 			vec3 d = sub(position, aim);
 			float len = length(d);
-			if(len <= 0.001f)
-			{
-				// Looking straight at the aim point: the target's -X axis, or a fixed one.
-				back = normalised(mul(read3(m, target_transform + 0x10), -1.0f));
-				if(length(back) < 1e-6f)
-					back = { 1, 0, 0 };
-			}
-			else
-				back = mul(d, 1.0f / len);
+			back = camera_direction(m, cam, block, target_transform, d, flags_72);
 			float near = m.f32(block + camera_field::min_distance), far = m.f32(block + camera_field::max_distance);
 			float r = len;
 			if(len < near)
@@ -345,7 +423,7 @@ namespace openrayman::game
 						step = std::min(step, most / state.turn_ramp + state.carry_angle);
 					state.carry_angle = step;
 					if(step > 0)
-						v2 = rotate_about(v2, axis, step);
+						v2 = rotate_about(from, axis, step);
 				}
 				else
 					state.carry_angle = 0;

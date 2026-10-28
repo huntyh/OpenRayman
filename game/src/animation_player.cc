@@ -241,12 +241,19 @@ namespace openrayman::game
 	void step(interpreter& vm, std::span<const std::uint32_t> super_objects, const step_error& on_error)
 	{
 		vm.next_tick();
-		for(std::uint32_t self : super_objects)
-		{
+		live_memory& m = vm.memory();
+		// Cameras (actors with a camera object, actor +0x10) think after everyone else, so what
+		// other actors ask of them this frame (the portal naming itself the target) is in place
+		// when the camera commits.
+		auto is_camera = [&](std::uint32_t self) {
+			std::uint32_t actor = vm.actor_of(self);
+			return actor && m.contains(actor + 0x10, 4) && m.u32(actor + 0x10) != 0;
+		};
+		auto think = [&](std::uint32_t self) {
 			if(!on_error)
 			{
 				vm.think(self);
-				continue;
+				return;
 			}
 			try
 			{
@@ -256,8 +263,13 @@ namespace openrayman::game
 			{
 				on_error(self, e);
 			}
-		}
-		live_memory& m = vm.memory();
+		};
+		for(std::uint32_t self : super_objects)
+			if(!is_camera(self))
+				think(self);
+		for(std::uint32_t self : super_objects)
+			if(is_camera(self))
+				think(self);
 		for(std::uint32_t self : super_objects)
 		{
 			std::uint32_t actor = vm.actor_of(self);
