@@ -147,7 +147,13 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
     without room, e.g. dropping into the hole by the river cage, then flies after him; it seems to
     collide with walls and ground). Ctrl doesn't lock it to his back yet; Ctrl+left/right strafes
     correctly. Near the stone Murfy appears and the camera closes in on Rayman, then both freeze
-    (the tutorial cutscene starts but waits on something missing). The optional modern camera
+    (the tutorial cutscene starts but waits on something missing).
+    Second look (user): the camera follows him properly; the portal spin's direction and animation
+    are right. Still to do: hold Rayman at the swirl's centre while it spins (he isn't locked there);
+    Ctrl-strafing works forward but backward/left/right move in one fixed world direction; when he
+    runs towards the camera (Down) the game's camera backs off and pans to show his front, ours
+    crashes into him; he may look closer in the game (field of view?); his long-idle animations (the
+    "basketball" one) are missing. The optional modern camera
     waits until the game is nearly complete (with HDR and the like).
     In the game the player may turn the camera left/right (Q/W) only where the level allows it;
     level camera presets often overrule it, and a camera icon with a red X shows when turning is
