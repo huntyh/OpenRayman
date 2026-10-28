@@ -14,7 +14,7 @@ scripts to read on the next tick.
 | +0xC | more flags: 0x8000 no gravity |
 | +0x10 | gravity, units/s² downwards (procedure 263; 9.81 by default, Rayman's scripts use 25, 4, 30) |
 | +0x14, +0x18 | slope limit (tangent) and its cosine |
-| +0x24, +0x30, +0x190 | script speeds (procedures 176/182, 188/194, 201/207), units/s |
+| +0x24, +0x30, +0x190 | script speeds (procedures 176/182, 188/194 and 190 the forward walking speed alone, 201/207), units/s |
 | +0x3C | the actor's speed from the last tick; fields 2/3 read it |
 | +0x150 | contact block: +0 this tick's contact word, +4 the word conditions 27..32 test (1 on the ground, 0 nothing) |
 | +0x178 | per-axis speed limit (procedure 274) |

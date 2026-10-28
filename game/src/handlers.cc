@@ -1312,6 +1312,22 @@ namespace openrayman::game
 		// 198 (0x46CE00, case 0x46D2BC): the X and Y of the dynamics vector at +0x30, stored as given,
 		// with flags 0x308000. 288 (case 0x46D758): forget procedure 280's vector (+0x19C): clear
 		// flags 0x1C000000.
+		// 190 (0x46CFE1): the proposed speed's local Y (the actor's forward is -Y), its walking speed:
+		// stored as given, without converting (fld), y bit on, world bit off.
+		std::uint32_t set_forward_speed(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value v;
+			next_arg(c, v);
+			std::uint32_t base = dynamics_base(c, self, 0x38);
+			if(!base)
+				return c.args;
+			live_memory& m = c.vm.memory();
+			m.write<std::uint32_t>(base + 0x34, v.word());
+			m.write<std::uint32_t>(base + 8, (m.u32(base + 8) & ~0x8000u) | 0x200000);
+			return c.args;
+		}
+
 		std::uint32_t set_dynamics_xy(call& c)
 		{
 			std::uint32_t self = c.vm.target(c.self, true);
@@ -1828,6 +1844,7 @@ namespace openrayman::game
 		for(std::uint32_t i = 79; i <= 102; i++)
 			vm.on_condition(i, dynamics_bit);
 		vm.on_procedure(198, set_dynamics_xy);
+		vm.on_procedure(190, set_forward_speed);
 		vm.on_procedure(288, set_dynamics_xy);
 		vm.on_procedure(435, set_movement_actions);
 		vm.on_procedure(346, read_movement);
