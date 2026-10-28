@@ -131,6 +131,9 @@ namespace openrayman::game
 		// What actors stand on and bump into.
 		void set_world(world_collision world) { m_world = std::move(world); }
 		const world_collision& world() const { return m_world; }
+		// Sets a designer variable of an actor from outside the scripts (state carried over from
+		// an earlier level, tests).
+		void set_variable(std::uint32_t self, std::uint32_t index, const value& v) { write_variable(variable(self, index), v); }
 		std::uint32_t eval(std::uint32_t self, std::uint32_t node, value& out); // 0x480B90
 		// Skips a node and its arguments.
 		std::uint32_t skip(std::uint32_t node) const;

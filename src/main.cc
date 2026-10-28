@@ -679,6 +679,7 @@ namespace
 			a.vm = std::make_unique<openrayman::game::interpreter>(*a.live, main_actor);
 			openrayman::game::register_handlers(*a.vm);
 			a.vm->set_world(openrayman::game::world_collision(std::move(collision)));
+			openrayman::game::arrive_from_previous_level(*a.vm);
 			a.input.reset();
 			a.tick = 0;
 			try

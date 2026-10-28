@@ -28,7 +28,7 @@ namespace openrayman::game
 		constexpr std::uint32_t on_ground = 0x1;
 		// How far a grounded actor follows the floor down (slopes, steps) instead of falling, and how
 		// far up it climbs onto one. Ours: the exe works with the actor's collision spheres.
-		constexpr float follow_down = 0.3f, climb_up = 0.5f;
+		constexpr float follow_down = 0.3f, climb_up = 0.5f, foot_radius = 0.5f;
 		constexpr float floor_normal = 0.5f; // cos 60°, the support limit of 0x43A260
 
 		using vec = std::array<float, 3>;
@@ -198,7 +198,7 @@ namespace openrayman::game
 			}
 
 		// The floor. The exe gathers contacts with the actor's collision spheres and picks the
-		// nearest (0x43EEC0, 0x43F510); here the actor is a point at its origin, tested straight down.
+		// nearest (0x43EEC0, 0x43F510); here the actor is a small disc at its origin, tested straight down.
 		std::uint32_t block = m.u32(b + base::contacts);
 		bool has_block = block && m.contains(block, contacts_size);
 		bool landed = false;
@@ -207,7 +207,16 @@ namespace openrayman::game
 			bool was_grounded = has_block && (m.u32(block + 4) & on_ground);
 			float top = std::max(current[2], target[2]) + climb_up;
 			float bottom = target[2] - (was_grounded ? follow_down : 0.0f);
-			if(auto floor = world.floor_at(target[0], target[1], top, bottom))
+			// The actor's feet cover a small circle: the highest floor under any of nine points of it.
+			std::optional<float> floor;
+			for(int k = 0; k < 9; k++)
+			{
+				float angle = float(k) * 0.785398f;
+				float r = k == 8 ? 0.0f : foot_radius;
+				if(auto f = world.floor_at(target[0] + r * std::cos(angle), target[1] + r * std::sin(angle), top, bottom); f && (!floor || *f > *floor))
+					floor = f;
+			}
+			if(floor)
 			{
 				target[2] = *floor;
 				landed = true;

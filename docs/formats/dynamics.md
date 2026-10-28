@@ -48,7 +48,7 @@ The time step is the frame length rounded to the mechanics step 0x50043C (n step
 ## What we do differently (for now)
 
 The exe finds contacts with the actor's collision spheres and picks the nearest. We treat the actor
-as a point and look straight down for the highest triangle that faces up (at most 60° from flat),
+as a disc 0.5 units across its middle (Rayman spawns 12 cm off the grass edge in Learn_10) and look straight down for the highest triangle that faces up (at most 60° from flat),
 following the floor up to 0.3 units down while grounded. Water surfaces aren't floors. Walls, ceilings and moving supports are
 not handled yet. Rayman's mechanics has none of the resolver bits, only 0x2, so 0x2 also counts as
 colliding until his resolver is read.

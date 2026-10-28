@@ -1948,3 +1948,12 @@ namespace openrayman::game
 		vm.on_procedure(175, set_custom_bits);
 	}
 }
+
+namespace openrayman::game
+{
+	void arrive_from_previous_level(interpreter& vm)
+	{
+		if(vm.main_actor())
+			vm.set_variable(vm.main_actor(), 106, value::integer(1));
+	}
+}
