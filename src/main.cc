@@ -17,11 +17,13 @@
 #include <openrayman/game/animation_player.h>
 #include <openrayman/game/handlers.h>
 #include <openrayman/game/interpreter.h>
+#include <openrayman/game/input.h>
 #include <openrayman/game/live_memory.h>
 #include <openrayman/animation.h>
 #include <openrayman/brain.h>
 #include <openrayman/cnt_archive.h>
 #include <openrayman/collision.h>
+#include <openrayman/input.h>
 #include <openrayman/game_data.h>
 #include <openrayman/geometry.h>
 #include <openrayman/gf_texture.h>
@@ -131,6 +133,10 @@ namespace
 		// second. G switches them off (actors then keep their saved states).
 		std::unique_ptr<openrayman::game::live_memory> live;
 		std::unique_ptr<openrayman::game::interpreter> vm;
+		// The keyboard, fed to the game's input actions while playing (Tab switches between that
+		// and flying the camera).
+		std::unique_ptr<openrayman::game::input> input;
+		bool playing = false;
 		std::vector<std::uint32_t> thinkers;     // super objects of the actors with a brain
 		// The game's camera actor (the placed Fix actor with a camera part). Until the game's camera
 		// runs (milestone 3c) it stands where ours is, for the scripts that work around it.
@@ -266,6 +272,70 @@ namespace
 		update_title(a);
 	}
 
+	// The game reads the keyboard through DirectInput, whose scan codes number the keys by where they
+	// are on a US keyboard, as SDL's do. 0 for keys the game has no code for.
+	std::uint8_t game_key(SDL_Scancode s)
+	{
+		static const std::uint8_t letters[26] = { 0x1E, 0x30, 0x2E, 0x20, 0x12, 0x21, 0x22, 0x23, 0x17, 0x24, 0x25, 0x26, 0x32,
+			0x31, 0x18, 0x19, 0x10, 0x13, 0x1F, 0x14, 0x16, 0x2F, 0x11, 0x2D, 0x15, 0x2C }; // A..Z
+		static const std::uint8_t keypad[10] = { 0x4F, 0x50, 0x51, 0x4B, 0x4C, 0x4D, 0x47, 0x48, 0x49, 0x52 }; // 1..9, 0
+		if(s >= SDL_SCANCODE_A && s <= SDL_SCANCODE_Z)
+			return letters[s - SDL_SCANCODE_A];
+		if(s >= SDL_SCANCODE_1 && s <= SDL_SCANCODE_0)
+			return std::uint8_t(0x02 + (s - SDL_SCANCODE_1));
+		if(s >= SDL_SCANCODE_F1 && s <= SDL_SCANCODE_F10)
+			return std::uint8_t(0x3B + (s - SDL_SCANCODE_F1));
+		if(s >= SDL_SCANCODE_KP_1 && s <= SDL_SCANCODE_KP_0)
+			return keypad[s - SDL_SCANCODE_KP_1];
+		switch(s)
+		{
+		case SDL_SCANCODE_ESCAPE: return 0x01;
+		case SDL_SCANCODE_MINUS: return 0x0C;
+		case SDL_SCANCODE_EQUALS: return 0x0D;
+		case SDL_SCANCODE_BACKSPACE: return 0x0E;
+		case SDL_SCANCODE_TAB: return 0x0F;
+		case SDL_SCANCODE_LEFTBRACKET: return 0x1A;
+		case SDL_SCANCODE_RIGHTBRACKET: return 0x1B;
+		case SDL_SCANCODE_RETURN: return 0x1C;
+		case SDL_SCANCODE_LCTRL: return 0x1D;
+		case SDL_SCANCODE_SEMICOLON: return 0x27;
+		case SDL_SCANCODE_APOSTROPHE: return 0x28;
+		case SDL_SCANCODE_GRAVE: return 0x29;
+		case SDL_SCANCODE_LSHIFT: return 0x2A;
+		case SDL_SCANCODE_BACKSLASH: return 0x2B;
+		case SDL_SCANCODE_COMMA: return 0x33;
+		case SDL_SCANCODE_PERIOD: return 0x34;
+		case SDL_SCANCODE_SLASH: return 0x35;
+		case SDL_SCANCODE_RSHIFT: return 0x36;
+		case SDL_SCANCODE_KP_MULTIPLY: return 0x37;
+		case SDL_SCANCODE_LALT: return 0x38;
+		case SDL_SCANCODE_SPACE: return 0x39;
+		case SDL_SCANCODE_CAPSLOCK: return 0x3A;
+		case SDL_SCANCODE_NUMLOCKCLEAR: return 0x45;
+		case SDL_SCANCODE_SCROLLLOCK: return 0x46;
+		case SDL_SCANCODE_KP_MINUS: return 0x4A;
+		case SDL_SCANCODE_KP_PLUS: return 0x4E;
+		case SDL_SCANCODE_KP_PERIOD: return 0x53;
+		case SDL_SCANCODE_F11: return 0x57;
+		case SDL_SCANCODE_F12: return 0x58;
+		case SDL_SCANCODE_KP_ENTER: return 0x9C;
+		case SDL_SCANCODE_RCTRL: return 0x9D;
+		case SDL_SCANCODE_KP_DIVIDE: return 0xB5;
+		case SDL_SCANCODE_RALT: return 0xB8;
+		case SDL_SCANCODE_HOME: return 0xC7;
+		case SDL_SCANCODE_UP: return 0xC8;
+		case SDL_SCANCODE_PAGEUP: return 0xC9;
+		case SDL_SCANCODE_LEFT: return 0xCB;
+		case SDL_SCANCODE_RIGHT: return 0xCD;
+		case SDL_SCANCODE_END: return 0xCF;
+		case SDL_SCANCODE_DOWN: return 0xD0;
+		case SDL_SCANCODE_PAGEDOWN: return 0xD1;
+		case SDL_SCANCODE_INSERT: return 0xD2;
+		case SDL_SCANCODE_DELETE: return 0xD3;
+		default: return 0;
+		}
+	}
+
 	// Runs the game's scripts for `seconds`, in ticks of 1/60 s, then shows the states they picked.
 	void run_scripts(app& a, double seconds)
 	{
@@ -301,6 +371,8 @@ namespace
 				}
 				openrayman::game::set_global_placement(*a.live, a.camera_super_object, placed);
 			}
+			if(a.input)
+				a.input->step();
 			openrayman::game::step(*a.vm, a.thinkers, [](std::uint32_t self, const std::exception& e) {
 				SDL_Log("Script error, actor 0x%08X: %s", self, e.what());
 			});
@@ -571,6 +643,15 @@ namespace
 			std::uint32_t main_actor = header.placements.empty() ? 0 : header.placements[0].super_object.address();
 			a.vm = std::make_unique<openrayman::game::interpreter>(*a.live, main_actor);
 			openrayman::game::register_handlers(*a.vm);
+			a.input.reset();
+			try
+			{
+				a.input = std::make_unique<openrayman::game::input>(*a.live, read_input_actions(files));
+			}
+			catch(const std::exception& e)
+			{
+				SDL_Log("No input actions: %s", e.what());
+			}
 			a.thinkers.clear();
 			for(std::size_t n = 0; n < tree.nodes().size(); n++)
 			{
@@ -993,7 +1074,35 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 		case SDL_EVENT_QUIT:
 			return SDL_APP_SUCCESS;
 
+		case SDL_EVENT_WINDOW_FOCUS_LOST:
+			if(a.input)
+				a.input->release_all();
+			break;
+
+		case SDL_EVENT_KEY_UP:
+			if(a.input && a.playing)
+				if(std::uint8_t key = game_key(event->key.scancode))
+					a.input->set_key(key, false);
+			break;
+
 		case SDL_EVENT_KEY_DOWN:
+			if(a.mode == app::view::level && event->key.key == SDLK_TAB && !event->key.repeat)
+			{
+				a.playing = !a.playing && a.input;
+				if(a.input)
+					a.input->release_all();
+				a.actor_note = a.playing ? "playing: keys go to the game, Tab to fly" : "flying";
+				SDL_Log("%s", a.playing ? "Playing: the keyboard goes to the game (Tab to fly the camera)" : "Flying the camera");
+				update_title(a);
+				return SDL_APP_CONTINUE;
+			}
+			if(a.mode == app::view::level && a.playing && a.input)
+			{
+				// Everything but Tab goes to the game.
+				if(std::uint8_t key = game_key(event->key.scancode))
+					a.input->set_key(key, true);
+				return SDL_APP_CONTINUE;
+			}
 			if(a.mode == app::view::level)
 			{
 				switch(event->key.key)
@@ -1131,6 +1240,11 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 	{
 		// WASD to move, Space/E up, Ctrl/Q down, Shift for faster.
 		const bool* keys = SDL_GetKeyboardState(nullptr);
+		if(a.playing)
+		{
+			static const bool none[SDL_SCANCODE_COUNT] = {};
+			keys = none;
+		}
 		float forward = float(keys[SDL_SCANCODE_W]) - float(keys[SDL_SCANCODE_S]);
 		float right = float(keys[SDL_SCANCODE_D]) - float(keys[SDL_SCANCODE_A]);
 		float up = float(keys[SDL_SCANCODE_SPACE] || keys[SDL_SCANCODE_E]) - float(keys[SDL_SCANCODE_LCTRL] || keys[SDL_SCANCODE_Q]);

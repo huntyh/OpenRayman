@@ -6,6 +6,7 @@
 #include <openrayman/brain.h>
 #include <openrayman/game/animation_player.h>
 #include <openrayman/game/handlers.h>
+#include <openrayman/game/input.h>
 #include <openrayman/game/interpreter.h>
 #include <openrayman/game/live_memory.h>
 #include <openrayman/cnt_archive.h>
@@ -14,6 +15,7 @@
 #include <openrayman/game_data.h>
 #include <openrayman/geometry.h>
 #include <openrayman/gf_texture.h>
+#include <openrayman/input.h>
 #include <openrayman/memory_image.h>
 #include <openrayman/level_header.h>
 #include <openrayman/light.h>
@@ -61,10 +63,12 @@ static void usage()
 		"  brain <game folder> <level|all> [node | block+offset]\n"
 		"                                      Actors' AI models and script statistics; with a node\n"
 		"                                      or an actor address, its scripts as text\n"
-		"  run <game folder> <level> <ticks> [node]\n"
+		"  run <game folder> <level> <ticks> [node] [keys]\n"
 		"                                      Run the scripts for that many 60 Hz ticks: state and\n"
-		"                                      behaviour changes, missing handlers; with a node, its trace\n"
+		"                                      behaviour changes, missing handlers; with a node, its trace;\n"
+		"                                      keys held as Up:60-200,A:100-110 (ticks)\n"
 		"  collide <game folder> <level|all>   Collision data: collide set slots, element types, surface flags\n"
+		"  input <game folder> <level>         Input actions and the keys each one tests\n"
 		"  peek <game folder> <level> <block> <hex offset> <words>\n"
 		"                                      Print memory words, e.g. peek ... Learn_10 05/02 300 16\n"
 		"  motion <game folder> <level>       For each actor: its animation and how far its parts move\n"
@@ -493,6 +497,25 @@ static int cmd_actors(const fs::path& folder, const std::string& name)
 				std::cout << "  " << where(memory.follow(*p3d + o));
 		}
 		std::cout << "\n";
+	}
+	return EXIT_SUCCESS;
+}
+
+// Every input action: where it is, its starting counter, whether it's on, and its keys.
+static int cmd_input(const fs::path& folder, const std::string& name)
+{
+	game_data game = require_game(folder);
+	level_files files = load_level_files(game, name);
+	const memory_image& memory = files.memory;
+	input_actions actions = read_input_actions(files);
+	std::cout << std::format("{} actions at {} +0x{:X}\n", actions.count, actions.first.block->id.to_string(), actions.first.offset);
+	for(std::size_t i = 0; i < actions.count; i++)
+	{
+		memory_location at{ actions.first.block, actions.first.offset + std::uint32_t(i * input_action_size) };
+		std::int32_t counter = std::int32_t(memory.read_u32({ at.block, at.offset + input_action::counter }));
+		std::uint8_t enabled = std::uint8_t(at.block->data[at.offset + input_action::enabled]);
+		std::cout << std::format("  {:>3} +0x{:04X} counter {:>3} {}  {}\n", i, at.offset, counter, enabled == 1 ? "on " : "off",
+			describe_input_action(memory, actions, at));
 	}
 	return EXIT_SUCCESS;
 }
@@ -1110,7 +1133,7 @@ static int cmd_brain(const fs::path& folder, const std::string& name, std::optio
 
 // Runs the level's scripts for a number of frames, without drawing anything, and reports what
 // changed and which handlers the scripts reached that don't exist yet.
-static int cmd_run(const fs::path& folder, const std::string& name, int frames, std::optional<std::size_t> trace)
+static int cmd_run(const fs::path& folder, const std::string& name, int frames, std::optional<std::size_t> trace, const std::string& keys_held = {})
 {
 	game_data game = require_game(folder);
 	level_files files = load_level_files(game, name);
@@ -1128,6 +1151,28 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	std::cout << "\n";
 	game::interpreter vm(memory, main_actor);
 	game::register_handlers(vm);
+	// Keys to hold, as name:from-to ticks, comma separated (e.g. Up:60-200,A:100-110).
+	game::input keys(memory, read_input_actions(files));
+	struct held { std::uint8_t key; int from, to; };
+	std::vector<held> holds;
+	for(std::size_t at = 0; at < keys_held.size();)
+	{
+		std::size_t end = std::min(keys_held.find(',', at), keys_held.size());
+		std::string item = keys_held.substr(at, end - at);
+		std::size_t colon = item.find(':'), dash = item.find('-');
+		if(colon == std::string::npos || dash == std::string::npos)
+			throw std::runtime_error("keys look like Up:60-200,A:100-110");
+		held h{ 0, std::stoi(item.substr(colon + 1)), std::stoi(item.substr(dash + 1)) };
+		std::string key = item.substr(0, colon);
+		int k = 1;
+		while(k < 256 && key_name(std::uint16_t(k)) != key)
+			k++;
+		if(k == 256)
+			throw std::runtime_error("unknown key " + key);
+		h.key = std::uint8_t(k);
+		holds.push_back(h);
+		at = end + 1;
+	}
 	// Do the global transforms the game keeps agree with the placements computed from the tree?
 	{
 		actor_set set = read_actors(files.memory, tree, bank);
@@ -1183,6 +1228,9 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	auto last = traced ? state_of(traced) : std::tuple{ 0u, 0u, 0u };
 	for(int f = 0; f < frames; f++)
 	{
+		for(const held& h : holds)
+			keys.set_key(h.key, f >= h.from && f < h.to);
+		keys.step();
 		game::step(vm, actors, [&](std::uint32_t self, const std::exception& e) {
 			errors.try_emplace(node_of[self], std::format("frame {}, node 0x{:08X}: {}", f, vm.last_node(), e.what()));
 		});
@@ -1311,8 +1359,12 @@ int main(int argc, char** argv)
 			return cmd_run(args[1], args[2], std::stoi(args[3]), std::nullopt);
 		if(cmd == "run" && args.size() == 5)
 			return cmd_run(args[1], args[2], std::stoi(args[3]), std::stoul(args[4]));
+		if(cmd == "run" && args.size() == 6)
+			return cmd_run(args[1], args[2], std::stoi(args[3]), std::stoul(args[4]), args[5]);
 		if(cmd == "collide" && args.size() == 3)
 			return cmd_collide(args[1], args[2]);
+		if(cmd == "input" && args.size() == 3)
+			return cmd_input(args[1], args[2]);
 		if(cmd == "peek" && args.size() == 6)
 			return cmd_peek(args[1], args[2], args[3], args[4], args[5]);
 	}

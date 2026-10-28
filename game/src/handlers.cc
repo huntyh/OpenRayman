@@ -1337,6 +1337,18 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 435 (0x46FAA0): the input actions procedure 346 moves by: up, down, left, right, walk.
+		std::uint32_t set_movement_actions(call& c)
+		{
+			for(std::uint32_t& action : c.vm.movement.actions)
+			{
+				value v;
+				next_arg(c, v);
+				action = v.word();
+			}
+			return c.args;
+		}
+
 		// 77 (0x48B620): the current animation has played to its end.
 		std::uint32_t animation_done(call& c, bool& result)
 		{
@@ -1504,6 +1516,7 @@ namespace openrayman::game
 			vm.on_condition(i, dynamics_bit);
 		vm.on_procedure(198, set_dynamics_xy);
 		vm.on_procedure(288, set_dynamics_xy);
+		vm.on_procedure(435, set_movement_actions);
 		vm.on_procedure(102, show_parts);
 		vm.on_procedure(103, show_parts);
 		vm.on_condition(65, bits_overlap);

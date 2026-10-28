@@ -154,6 +154,18 @@ namespace openrayman::game
 		// The node evaluated last, to locate errors.
 		std::uint32_t last_node() const { return m_last_node; }
 
+		// The exe's movement input globals (0x4B9B68..0x4B9B98). Procedure 346 fills the first part
+		// from the direction actions, and scripts read and write it as fields 11..17.
+		struct movement_input
+		{
+			std::array<float, 3> vector{};          // 0x4B9B68, field 11
+			std::int16_t short_a = 0, short_b = 0;  // 0x4B9B74, 0x4B9B76: fields 12, 13
+			float real_a = 0, real_b = 0, real_c = 0; // 0x4B9B78..0x4B9B80: fields 14..16
+			std::int32_t integer = 0;               // 0x4B9B84, field 17
+			std::array<std::uint32_t, 5> actions{}; // 0x4B9B88..: up, down, left, right, walk (procedure 435)
+		};
+		movement_input movement;
+
 		// Handlers that don't exist yet, by kind and index, and how often scripts reached them.
 		// The key is the kind's name (a string literal) and the index.
 		std::map<std::pair<const char*, std::uint32_t>, std::size_t> missing;

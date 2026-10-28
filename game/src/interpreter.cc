@@ -54,16 +54,6 @@ namespace openrayman::game
 		constexpr std::uint32_t variable_info_size = 0x10;
 		constexpr std::uint32_t node_size = 8;
 
-		// Global registers scripts read and write as fields 11..17 (0x4B9B68..0x4B9B84).
-		struct registers
-		{
-			std::array<float, 3> vector{};
-			std::int16_t short_a = 0, short_b = 0;
-			float real_a = 0, real_b = 0, real_c = 0;
-			std::int32_t integer = 0;
-		};
-		registers g_registers;
-
 		bool is_float_math(value& a, value& b)
 		{
 			// Mixed integer and float arithmetic happens in floats (0x482F10).
@@ -269,13 +259,13 @@ namespace openrayman::game
 			case 9: case 10:
 				out = value::real(m_memory.f32(m_memory.u32(actor) + data_3d_field::shadow_size + (n.param - 9) * 4));
 				break;
-			case 11: out = value::vector(g_registers.vector[0], g_registers.vector[1], g_registers.vector[2]); break;
-			case 12: out = value::integer(g_registers.short_a); break;
-			case 13: out = value::integer(g_registers.short_b); break;
-			case 14: out = value::real(g_registers.real_a); break;
-			case 15: out = value::real(g_registers.real_b); break;
-			case 16: out = value::real(g_registers.real_c); break;
-			case 17: out = value::integer(g_registers.integer); break;
+			case 11: out = value::vector(movement.vector[0], movement.vector[1], movement.vector[2]); break;
+			case 12: out = value::integer(movement.short_a); break;
+			case 13: out = value::integer(movement.short_b); break;
+			case 14: out = value::real(movement.real_a); break;
+			case 15: out = value::real(movement.real_b); break;
+			case 16: out = value::real(movement.real_c); break;
+			case 17: out = value::integer(movement.integer); break;
 			default:
 				note_missing("field", n.param);
 				out = value::integer(0);
@@ -705,13 +695,13 @@ namespace openrayman::game
 			switch(p.field)
 			{
 			case 9: case 10: m_memory.write<float>(m_memory.u32(actor) + data_3d_field::shadow_size + (p.field - 9) * 4, v.as_float()); break;
-			case 11: g_registers.vector = { v.component(0), v.component(1), v.component(2) }; break;
-			case 12: g_registers.short_a = std::int16_t(v.as_int()); break;
-			case 13: g_registers.short_b = std::int16_t(v.as_int()); break;
-			case 14: g_registers.real_a = v.as_float(); break;
-			case 15: g_registers.real_b = v.as_float(); break;
-			case 16: g_registers.real_c = v.as_float(); break;
-			case 17: g_registers.integer = v.as_int(); break;
+			case 11: movement.vector = { v.component(0), v.component(1), v.component(2) }; break;
+			case 12: movement.short_a = std::int16_t(v.as_int()); break;
+			case 13: movement.short_b = std::int16_t(v.as_int()); break;
+			case 14: movement.real_a = v.as_float(); break;
+			case 15: movement.real_b = v.as_float(); break;
+			case 16: movement.real_c = v.as_float(); break;
+			case 17: movement.integer = v.as_int(); break;
 			default: break; // the others are read-only
 			}
 			(void)self;

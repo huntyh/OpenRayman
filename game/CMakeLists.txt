@@ -4,6 +4,7 @@
 add_library(openrayman_game STATIC
 	src/animation_player.cc
 	src/handlers.cc
+	src/input.cc
 	src/interpreter.cc
 	src/live_memory.cc
 	src/particles.cc

@@ -30,6 +30,7 @@ came from. Update this whenever a format is added or corrected.
 | Actors, animations | inside SNA, GPT | Object lists, animation bank, posing a frame; interpolation, events and morphs not yet | `actor.cc`, `animation.cc` |
 | Static geometry | inside SNA | Meshes, triangles, UVs, materials; sprites (type 3) not yet | `geometry.cc` |
 | Collision | inside SNA | The level's collision triangles and surface flags; actors' zones and flag meanings not yet | `collision.cc` |
+| Input | inside `Fix.gpt`, SNA | Input actions and their key expressions; joystick kinds partly, 17..32 not yet | `input.cc` |
 | PTX | `Fix.ptx`, `<Level>.ptx` | Texture slots and names; trailing values unknown | `texture_table.cc` |
 | Scripts (AI) | inside SNA | Brains, models, behaviours, reflexes, macros, variables, script nodes; keywords and operators named | `brain.cc`, `script_text.cc` |
 | BNM sound banks | `World/Sound/*.bnm` | Not started | |
@@ -152,6 +153,14 @@ surface flags through game material +0xC → collide material +2.
 
 - Sources: own analysis of the data of all 70 levels and of `Rayman2.exe`; a helper model's traces
   re-checked against both.
+
+## Input
+
+See [formats/input.md](formats/input.md). Fix.gpt names 138 input actions; each is a small prefix
+expression over keys (DirectInput scan codes), joystick buttons and other actions, and a counter
+scripts test (frames held, or negative frames since release).
+
+- Sources: own analysis of `Rayman2.exe` and the Fix data, checked against the game's controls.
 
 ## Actors and animations
 

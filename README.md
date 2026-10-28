@@ -113,6 +113,7 @@ In a level:
 | F6 / F7 | Darker / brighter, like the game's luminosity setting |
 | F5 / F4 | Put the actor you're looking at into its next / previous state (Shift: its whole family), to preview animations the game's scripts would pick |
 | T | Switch to the texture browser and back |
+| Tab | Play: the keyboard goes to the game (arrows, A jump, Space shoot, Shift walk, Q/W camera, Ctrl recentre) until Tab again. Rayman's scripts react, but he can't move yet (physics comes next) |
 
 In the texture browser:
 
@@ -140,7 +141,8 @@ ortool scene "<game folder>" <level>        Print a level's scene tree
 ortool lights "<game folder>" <level>       Sectors and their lights
 ortool collide "<game folder>" <level|all> Collision data: collide sets, element types, surface flags
 ortool brain "<game folder>" <level> [node|block+offset] The scripts of one actor by scene node or by memory address
-ortool run "<game folder>" <level> <ticks> [node]        Runs the level's scripts for that many 60 Hz ticks and lists what changed
+ortool run "<game folder>" <level> <ticks> [node] [keys] Runs the level's scripts for that many 60 Hz ticks and lists what changed (keys held as Up:60-200,A:100-110)
+ortool input "<game folder>" <level>        The input actions and the keys each one tests
 ortool dsb <file.dsb>                       Print a DSB script
 ortool cnt <file.cnt>                       List a texture archive
 ```

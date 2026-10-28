@@ -4,9 +4,11 @@
 #include <openrayman/animation.h>
 #include <openrayman/brain.h>
 #include <openrayman/collision.h>
+#include <openrayman/input.h>
 #include <openrayman/game/animation_player.h>
 #include <openrayman/game/handlers.h>
 #include <openrayman/game/interpreter.h>
+#include <openrayman/game/input.h>
 #include <openrayman/game/live_memory.h>
 #include <openrayman/cnt_archive.h>
 #include <openrayman/error.h>
@@ -735,4 +737,54 @@ TEST_CASE("real data: Learn_10's scripts run")
 				MESSAGE(std::format("tick {}, node 0x{:08X}: {}", tick, vm.last_node(), e.what()));
 		});
 	CHECK(errors == 0);
+}
+
+TEST_CASE("real data: input actions follow the keys")
+{
+	auto dir = real_game_dir();
+	if(!dir)
+	{
+		MESSAGE("OPENRAYMAN_GAME_DIR not set, skipping");
+		return;
+	}
+	auto game = game_data::locate(*dir);
+	REQUIRE(game.has_value());
+	level_files files = load_level_files(*game, "Learn_10");
+	input_actions actions = read_input_actions(files);
+	CHECK(actions.count == 138);
+	auto describe = [&](std::uint32_t i) {
+		return describe_input_action(files.memory, actions, { actions.first.block, actions.first.offset + i * input_action_size });
+	};
+	// The game's keyboard controls: arrows move, A jumps, Space shoots, LShift walks, Ctrl puts
+	// the camera back, Q and W turn it.
+	CHECK(describe(2) == "key Up");
+	CHECK(describe(5) == "key Left");
+	CHECK(describe(6) == "any(key LShift, key Num7)");
+	CHECK(describe(10) == "any(any(key A, key Num8), pad 0 button 11 (kind 26))");
+	CHECK(describe(11) == "any(any(key Space, key Num1), pad 0 button 10 (kind 26))");
+	CHECK(describe(13) == "any(any(key LCtrl, key RCtrl), held action 12)");
+	CHECK(describe(16) == "any(any(key W, key PgDn), pad 0 button 13 (kind 26))");
+
+	// The counter's timeline (0x42E710): 1 on the press tick, then up; -1 on release, then down.
+	game::live_memory memory(files.memory);
+	game::input keys(memory, actions);
+	std::uint32_t jump = keys.action(10);
+	auto counter = [&] { return memory.read<std::int32_t>(jump + input_action::counter); };
+	CHECK(counter() == -2);
+	keys.step();
+	CHECK(counter() == -3);
+	keys.set_key(0x1E, true); // A
+	keys.step();
+	CHECK(counter() == 1);
+	keys.step();
+	CHECK(counter() == 2);
+	keys.set_key(0x1E, false);
+	keys.step();
+	CHECK(counter() == -1);
+	keys.step();
+	CHECK(counter() == -2);
+	// Ctrl (action 13) through "held action 12" stays off with no joystick.
+	keys.set_key(0x1D, true);
+	keys.step();
+	CHECK(memory.read<std::int32_t>(keys.action(13) + input_action::counter) == 1);
 }
