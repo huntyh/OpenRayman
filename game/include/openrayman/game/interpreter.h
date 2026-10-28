@@ -1,6 +1,7 @@
 #pragma once
 
 #include <openrayman/game/live_memory.h>
+#include <openrayman/game/mechanics.h>
 #include <openrayman/game/particles.h>
 
 #include <array>
@@ -127,6 +128,9 @@ namespace openrayman::game
 		// The particles the scripts started (procedure 503).
 		game::particles& particles() { return m_particles; }
 		const game::particles& particles() const { return m_particles; }
+		// What actors stand on and bump into.
+		void set_world(world_collision world) { m_world = std::move(world); }
+		const world_collision& world() const { return m_world; }
 		std::uint32_t eval(std::uint32_t self, std::uint32_t node, value& out); // 0x480B90
 		// Skips a node and its arguments.
 		std::uint32_t skip(std::uint32_t node) const;
@@ -260,5 +264,6 @@ namespace openrayman::game
 		std::uint64_t m_ticks = 0;
 		std::uint32_t m_frame_ms = 16;
 		game::particles m_particles;
+		world_collision m_world;
 	};
 }

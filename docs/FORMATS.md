@@ -145,6 +145,13 @@ point, vector, game material, number); the engine moves, fades and draws the par
 
 - Sources: own analysis of `Rayman2.exe`; helper models' traces re-checked against the exe.
 
+## Dynamics
+
+See [formats/dynamics.md](formats/dynamics.md): the dynamics base at `[[actor+8]]`, the mechanics a
+state installs, gravity and one tick of movement.
+
+- Sources: own analysis of `Rayman2.exe`; a helper model's notes checked where marked.
+
 ## Collision
 
 See [formats/collision.md](formats/collision.md). Physical object +4 points to a collide set whose

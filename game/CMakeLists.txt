@@ -7,6 +7,7 @@ add_library(openrayman_game STATIC
 	src/input.cc
 	src/interpreter.cc
 	src/live_memory.cc
+	src/mechanics.cc
 	src/particles.cc
 )
 add_library(openrayman::game ALIAS openrayman_game)

@@ -1558,7 +1558,7 @@ namespace openrayman::game
 				return c.args;
 			live_memory& m = c.vm.memory();
 			if(c.index == 263)
-				m.write<std::uint32_t>(base + 0x10, v.word());
+				m.write<float>(base + 0x10, v.as_float()); // 0x4825B0 converts the argument
 			else
 				for(int i = 0; i < 3; i++)
 					if(float f = v.component(i); f > 0)

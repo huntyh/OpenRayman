@@ -1151,6 +1151,7 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	std::cout << "\n";
 	game::interpreter vm(memory, main_actor);
 	game::register_handlers(vm);
+	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
 	// Keys to hold, as name:from-to ticks, comma separated (e.g. Up:60-200,A:100-110).
 	game::input keys(memory, read_input_actions(files));
 	struct held { std::uint8_t key; int from, to; };

@@ -653,7 +653,8 @@ namespace
 			// What the level collides with, for the C overlay: one colour per surface kind (the
 			// lowest flag bit; grey for plain surfaces). Green (0x0004) is grabbable, blue (0x4000) water.
 			std::vector<openrayman::level_renderer::collision_face> faces;
-			for(const openrayman::collision_triangle& t : openrayman::static_collision(files.memory, tree))
+			std::vector<openrayman::collision_triangle> collision = openrayman::static_collision(files.memory, tree);
+			for(const openrayman::collision_triangle& t : collision)
 			{
 				static const glm::vec3 palette[16] = { { 1.0f, 0.55f, 0.1f }, { 1.0f, 0.2f, 0.8f }, { 0.2f, 0.9f, 0.2f }, { 0.6f, 0.3f, 1.0f },
 					{ 1.0f, 1.0f, 0.2f }, { 0.2f, 1.0f, 1.0f }, { 0.6f, 1.0f, 0.4f }, { 1.0f, 0.4f, 0.4f },
@@ -677,6 +678,7 @@ namespace
 			std::uint32_t main_actor = header.placements.empty() ? 0 : header.placements[0].super_object.address();
 			a.vm = std::make_unique<openrayman::game::interpreter>(*a.live, main_actor);
 			openrayman::game::register_handlers(*a.vm);
+			a.vm->set_world(openrayman::game::world_collision(std::move(collision)));
 			a.input.reset();
 			a.tick = 0;
 			try

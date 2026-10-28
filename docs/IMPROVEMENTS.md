@@ -51,3 +51,6 @@ as those arrive:
 - Only particle effects 23 and 28 are known; the others are started but do nothing.
 - Messages to the engine, on-screen text and the scripts' fog override are read
   but have no effect yet.
+- Physics is partial (docs/formats/dynamics.md): an actor is a point that finds the floor straight
+  below it, not the game's collision spheres. Walls, ceilings, slopes sliding and moving platforms
+  aren't handled yet.
