@@ -21,7 +21,7 @@ namespace openrayman::game
 
 		bool empty() const { return m_triangles.empty(); }
 
-		// The highest floor (a triangle facing up, at most 60° from flat) under (x, y) with a height
+		// The highest floor (a triangle facing up, at most 60° from flat, not water) under (x, y) with a height
 		// in [bottom, top], or nothing.
 		std::optional<float> floor_at(float x, float y, float top, float bottom) const;
 

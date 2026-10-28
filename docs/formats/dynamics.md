@@ -10,7 +10,7 @@ scripts to read on the next tick.
 | Offset | What |
 |---|---|
 | +4 | current mechanics |
-| +8 | flags: 0x4 gravity, 0x200 per-axis speed limit, 0x4000 script speeds in world axes, 0xE0000 / 0x700000 / 0x3800000 the three script speeds are set this tick, 0x10 / 0x20 / 0x40 the three floor resolvers |
+| +8 | flags: 0x4 gravity, 0x200 per-axis speed limit, 0x10 / 0x20 / 0x40 the three floor resolvers; for each script speed one bit per axis it sets and a world-axes bit: imposed 0x20000/0x40000/0x80000 and 0x4000, proposed 0x100000.. and 0x8000, third 0x800000.. and 0x10000 (0x46CCB7, 0x46CCE1, 0x46CD0B) |
 | +0xC | more flags: 0x8000 no gravity |
 | +0x10 | gravity, units/s² downwards (procedure 263; 9.81 by default, Rayman's scripts use 25, 4, 30) |
 | +0x14, +0x18 | slope limit (tangent) and its cosine |
@@ -49,7 +49,7 @@ The time step is the frame length rounded to the mechanics step 0x50043C (n step
 
 The exe finds contacts with the actor's collision spheres and picks the nearest. We treat the actor
 as a point and look straight down for the highest triangle that faces up (at most 60° from flat),
-following the floor up to 0.3 units down while grounded. Walls, ceilings and moving supports are
+following the floor up to 0.3 units down while grounded. Water surfaces aren't floors. Walls, ceilings and moving supports are
 not handled yet. Rayman's mechanics has none of the resolver bits, only 0x2, so 0x2 also counts as
 colliding until his resolver is read.
 

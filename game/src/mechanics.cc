@@ -16,7 +16,7 @@ namespace openrayman::game
 			constexpr std::uint32_t size = 0x1A8;
 		}
 		// Flags at base +8.
-		constexpr std::uint32_t has_gravity = 0x4, has_limit = 0x200, world_axes = 0x4000;
+		constexpr std::uint32_t has_gravity = 0x4, has_limit = 0x200;
 		constexpr std::uint32_t uses_imposed = 0xE0000, uses_proposed = 0x700000, uses_third = 0x3800000;
 		// The resolvers 0x439730, 0x431A10, 0x43A260 (0x10, 0x20, 0x40) and Rayman's mechanics, which has
 		// none of them but 0x2 (what resolves his is still to read).
@@ -120,8 +120,8 @@ namespace openrayman::game
 		for(std::uint32_t i : found->second)
 		{
 			const collision_triangle& t = m_triangles[i];
-			if(t.normal[2] < floor_normal)
-				continue;
+			if(t.normal[2] < floor_normal || (t.flags & surface::water))
+				continue; // walls, and water, which actors sink into
 			// Barycentric coordinates on the ground plane, then the height of the plane there.
 			const vec3 &a = t.corners[0], &b = t.corners[1], &c = t.corners[2];
 			float d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]);
@@ -162,9 +162,10 @@ namespace openrayman::game
 		float dt = float(ms / 1000);
 		vec current = read_vec(m, t + 4), target = current;
 
-		// A script speed (units per second) moves the target, in the actor's own axes unless the
-		// world-axes bit is set (procedure 182) (0x43E350, 0x43E680, 0x43E4E0).
-		auto add_speed = [&](std::uint32_t at) {
+		// A script speed (units per second) moves the target on the axes the script set (one bit
+		// each, `x_bit` and the next two), in the actor's own axes unless its world bit is set
+		// (procedures 182, 194, 207 set it: 0x46CCE1, 0x46CCB7, 0x46CD0B) (0x43E350, 0x43E680, 0x43E4E0).
+		auto add_speed = [&](std::uint32_t at, std::uint32_t x_bit, std::uint32_t world_axes) {
 			vec v = read_vec(m, b + at);
 			for(int i = 0; i < 3; i++)
 			{
@@ -175,18 +176,19 @@ namespace openrayman::game
 					for(int axis = 0; axis < 3; axis++)
 						world_i += v[std::size_t(axis)] * m.f32(t + 0x10 + std::uint32_t(axis * 3 + i) * 4);
 				}
-				target[std::size_t(i)] += world_i * dt;
+				if(flags & (x_bit << i))
+					target[std::size_t(i)] += world_i * dt;
 			}
 		};
 		if(flags & uses_proposed)
-			add_speed(base::proposed);
+			add_speed(base::proposed, 0x100000, 0x8000);
 		// Gravity (0x43DF40): from last tick's vertical speed, g in units per second squared, down.
 		if(gravity)
 			target[2] = current[2] + dt * (m.f32(b + base::speed + 8) - m.f32(b + base::gravity) * dt);
 		if(flags & uses_imposed)
-			add_speed(base::imposed);
+			add_speed(base::imposed, 0x20000, 0x4000);
 		if(flags & uses_third)
-			add_speed(base::third);
+			add_speed(base::third, 0x800000, 0x10000);
 		// The per-axis speed limit (0x43EAC0).
 		if(flags & has_limit)
 			for(int i = 0; i < 3; i++)
