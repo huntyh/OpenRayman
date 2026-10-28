@@ -179,8 +179,8 @@ namespace openrayman::game
 
 		// The camera scripts' global tuning: the exe's settings block 0x4FF62C..0x4FF6DF (`values`,
 		// by offset from its start) and the copy procedures 492 and 493 save and restore
-		// (0x4FF6E0..), then the gauge pair functions 102..107 work on (0x4E9308, 0x4E930C). Their
-		// initial values are still to be read from the exe, so they start at zero.
+		// (0x4FF6E0..), then the gauge pair functions 102..107 work on (0x4E9308, 0x4E930C). The
+		// settings start as the exe sets them up (the constructor); the gauges start at zero.
 		struct camera_globals
 		{
 			std::array<std::uint8_t, 0xB4> values{};

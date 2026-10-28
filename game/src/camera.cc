@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 // The game camera: the three stages of the solve its scripts run every frame (procedure 444 ->
 // 0x485810) and the mechanics tick that moves the camera super object towards the result (0x4359D0).
@@ -203,13 +204,65 @@ namespace openrayman::game
 		state.off = off;
 		state.back = back;
 		state.flags = m.read<std::uint16_t>(block + camera_field::flags_70);
-		state.speed = m.f32(block + camera_field::speed);
+		// The three speeds (0x484B50): the block's own when a script fixed them (+0x72 bit 0x80) or
+		// there is no target; otherwise worked out each frame from what is left to do, with the
+		// camera settings' gains and caps (offsets from 0x4FF62C, set up at 0x4138C0). The exe adds
+		// floors from the tracked points' average, which is zero unless scripts plant points.
+		auto setting = [&](std::size_t at) {
+			float f;
+			std::memcpy(&f, &vm.camera().values[at], 4);
+			return f;
+		};
+		const std::uint16_t flags_70 = m.read<std::uint16_t>(block + camera_field::flags_70);
+		const bool fixed_speeds = (flags_72 & 0x80) || !target_transform;
+		float position_speed = 0, turn_speed = 0;
+		if(fixed_speeds || (flags_72 & 0x2000))
+		{
+			position_speed = m.f32(block + camera_field::speed);
+			turn_speed = m.f32(block + camera_field::turn_speed);
+		}
+		else
+		{
+			// Position (0x484BCD): 3 x the distance still to go, at most 10 units/s; nothing while
+			// the snap flag puts the camera there at once.
+			if(!(flags_70 & 0x01))
+				position_speed = std::min(setting(0x80) * length(sub(want, position)), setting(0x84));
+			// Turn (0x484C67): 3 x the angle the camera must still swing round the look-at point,
+			// at most 3 rad/s, slower while it is nearer than its boom length (+0x18) and faster
+			// while it is more than a unit farther; the position speed when turning is held off.
+			if(flags_70 & 0x04)
+				turn_speed = position_speed;
+			else
+			{
+				vec3 u = sub(aim, position), w = sub(aim, want);
+				float lu = length(u), lw = length(w);
+				if(lu <= 0)
+					turn_speed = std::min(setting(0x8C) * position_speed, setting(0x90));
+				else
+				{
+					float a = lw > 0 ? std::acos(std::clamp(dot(u, w) / (lu * lw), -1.0f, 1.0f)) : 0;
+					turn_speed = std::min(setting(0x8C) * a, setting(0x90));
+				}
+				float t = m.f32(block + camera_field::min_distance) - lu;
+				if(t > 1)
+					turn_speed /= t;
+				else if(t < -1)
+					turn_speed *= -t;
+			}
+		}
+		state.speed = position_speed;
 		state.speed_ramp = std::max(m.f32(block + camera_field::speed_ramp), 0.001f);
 		state.arrive = m.f32(block + camera_field::arrive);
-		state.turn_speed = m.f32(block + camera_field::turn_speed);
+		state.turn_speed = turn_speed;
 		state.turn_ramp = std::max(m.f32(block + camera_field::turn_ramp), 0.001f);
 		state.turn_arrive = m.f32(block + camera_field::turn_arrive);
-		state.aim_speed = m.f32(block + camera_field::aim_speed);
+		// Aim point (0x484F35): 4 x the distance it must still travel, at most 10 units/s.
+		if(fixed_speeds)
+			state.aim_speed = m.f32(block + camera_field::aim_speed);
+		else if(flags_70 & 0x10)
+			state.aim_speed = 0;
+		else
+			state.aim_speed = std::min(setting(0x98) * length(sub(state.valid ? state.aim : off, off)), setting(0x9C));
 		state.aim_ramp = std::max(m.f32(block + camera_field::aim_ramp), 0.001f);
 		state.aim_arrive = m.f32(block + camera_field::aim_arrive);
 		if(cut)

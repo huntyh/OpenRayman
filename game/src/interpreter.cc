@@ -4,6 +4,7 @@
 
 #include <bit>
 #include <cmath>
+#include <cstring>
 #include <format>
 
 namespace openrayman::game
@@ -95,6 +96,17 @@ namespace openrayman::game
 	interpreter::interpreter(live_memory& memory, std::uint32_t main_actor)
 		: m_memory(memory), m_main_actor(main_actor)
 	{
+		// The camera settings the exe sets up at 0x4138C0..0x413A06 (offsets from 0x4FF62C).
+		auto real = [&](std::size_t at, float f) { std::memcpy(&m_camera.values[at], &f, 4); };
+		auto word = [&](std::size_t at, std::uint16_t w) { std::memcpy(&m_camera.values[at], &w, 2); };
+		real(0x3C, 0.1f); real(0x40, 0.1f); real(0x44, 0.7854f); real(0x48, 0.7854f);
+		real(0x4C, 0.4f); real(0x50, 0.4f); real(0x54, 0.005f); real(0x58, 0.01f); real(0x5C, 0.01f);
+		real(0x60, 0.7854f); real(0x64, 0.19635f); real(0x68, 0.5f); real(0x6C, 0.05f); real(0x70, 5.0f);
+		word(0x74, 3); word(0x76, 1); word(0x78, 4); word(0x7A, 20);
+		real(0x80, 3.0f); real(0x84, 10.0f); real(0x88, 1.5f); real(0x8C, 3.0f); real(0x90, 3.0f);
+		real(0x94, 0.0f); real(0x98, 4.0f); real(0x9C, 10.0f); real(0xA0, 1.0f); real(0xA4, 0.3927f);
+		real(0xA8, 1.0f); real(0xAC, 1.0f); word(0xB0, 0);
+		m_camera.saved = m_camera.values;
 	}
 
 	interpreter::node_view interpreter::node(std::uint32_t address) const
