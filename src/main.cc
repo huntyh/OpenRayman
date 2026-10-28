@@ -377,7 +377,7 @@ namespace
 				a.script_clock = 0;
 				break;
 			}
-			if(a.camera_super_object)
+			if(a.camera_super_object && !a.playing)
 			{
 				// Its -Y axis looks where ours does, Z as close to up as that allows.
 				glm::vec3 y = -a.camera.forward();
@@ -918,11 +918,30 @@ namespace
 		SDL_GetWindowSizeInPixels(a.window, &w, &h);
 		glViewport(0, 0, w, h);
 		bool level_view = a.game && a.mode == app::view::level;
+		// What the level view shows: the fly camera normally, and while the scripts run the game's own
+		// camera, which move_camera publishes as its super object's global transform (eye at +4, its
+		// -Y axis forward, Z up). The fly camera takes that position and direction too, so Tab back
+		// to flying starts from where the game camera was.
+		glm::vec3 eye = a.camera.position, forward = a.camera.forward(), up(0, 0, 1);
+		if(level_view && a.playing && a.live && a.camera_super_object)
+			if(auto placed = openrayman::game::global_placement(*a.live, a.camera_super_object))
+			{
+				eye = glm::vec3(placed->m[0][3], placed->m[1][3], placed->m[2][3]);
+				glm::vec3 back(-placed->m[0][1], -placed->m[1][1], -placed->m[2][1]);
+				glm::vec3 top(placed->m[0][2], placed->m[1][2], placed->m[2][2]);
+				if(glm::length(back) > 1e-4f)
+					forward = glm::normalize(back);
+				if(glm::length(top) > 1e-4f)
+					up = glm::normalize(top);
+				a.camera.position = eye;
+				a.camera.yaw = std::atan2(forward.y, forward.x);
+				a.camera.pitch = std::asin(std::clamp(forward.z, -1.0f, 1.0f));
+			}
 		if(level_view)
 		{
 			// Like the game: the background colour of the fog where the camera is; a plain sky elsewhere.
 			glm::vec3 sky(0.43f, 0.59f, 0.78f);
-			if(auto background = a.level->background(a.camera.position))
+			if(auto background = a.level->background(eye))
 				sky = *background;
 			glClearColor(sky.r, sky.g, sky.b, 1.0f);
 		}
@@ -931,7 +950,7 @@ namespace
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		if(level_view && w > 0 && h > 0)
-			a.level->draw(a.camera.view(), a.camera.projection(float(w) / float(h)));
+			a.level->draw(glm::lookAt(eye, eye + forward, up), a.camera.projection(float(w) / float(h)));
 		else if(a.texture && w > 0 && h > 0)
 		{
 			// Fit inside the window with a margin. Scale up by whole steps so pixels stay crisp.

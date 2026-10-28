@@ -1142,15 +1142,17 @@ namespace openrayman::game
 		}
 
 		// 444 (0x47DA40): commit the camera. The exe backs the current parameter block up into the
-		// override one, then runs the camera solve (0x485810) and applies its result to the camera's
-		// 3D object (0x474420); our engine's camera code does the solve, so only the bookkeeping that
-		// touches the blocks is here: the backup, and clearing cam+0x74 afterwards.
+		// override one, runs the camera solve (0x485810) and applies its result to the camera's 3D
+		// object (0x474420); our engine's camera code does the solve and the mechanics that moves it,
+		// so the bookkeeping that touches the blocks is here: the backup, the solve (which reads the
+		// override block), and clearing cam+0x74 afterwards.
 		std::uint32_t camera_commit(call& c)
 		{
 			live_memory& m = c.vm.memory();
 			if(std::uint32_t cam = camera_object(c.vm, c.self))
 			{
 				back_up_camera_block(c.vm, cam);
+				solve_camera(c.vm, c.self);
 				m.write<std::uint8_t>(cam + camera_field::override_active, 0);
 			}
 			return c.args;

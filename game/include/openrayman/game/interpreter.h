@@ -1,5 +1,6 @@
 #pragma once
 
+#include <openrayman/game/camera.h>
 #include <openrayman/game/live_memory.h>
 #include <openrayman/game/mechanics.h>
 #include <openrayman/game/particles.h>
@@ -189,6 +190,10 @@ namespace openrayman::game
 		};
 		camera_globals& camera() { return m_camera; }
 
+		// The game camera: what its scripts' last solve asked for, and what the mechanics that moves
+		// its super object carries from tick to tick (procedure 444, 0x4359D0; see camera.h).
+		camera_state& camera_motion() { return m_camera_motion; }
+
 		// Handlers that don't exist yet, by kind and index, and how often scripts reached them.
 		// The key is the kind's name (a string literal) and the index.
 		std::map<std::pair<const char*, std::uint32_t>, std::size_t> missing;
@@ -283,5 +288,6 @@ namespace openrayman::game
 		game::particles m_particles;
 		world_collision m_world;
 		camera_globals m_camera;
+		camera_state m_camera_motion;
 	};
 }

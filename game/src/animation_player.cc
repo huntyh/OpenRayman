@@ -270,7 +270,14 @@ namespace openrayman::game
 				play_animation(m, data, vm.frame_ms(), at);
 			}
 			if(actor && !vm.removed(self))
-				move_actor(m, self, actor, vm.frame_ms(), vm.world());
+			{
+				// The game camera is moved by its own mechanics (0x4359D0), not the actors' physics.
+				camera_state& camera = vm.camera_motion();
+				if(camera.valid && self == camera.super_object)
+					move_camera(m, self, camera, vm.frame_ms());
+				else
+					move_actor(m, self, actor, vm.frame_ms(), vm.world());
+			}
 		}
 		vm.particles().update(vm.clock() / 1000.0, vm.frame_ms() / 1000.0);
 	}
