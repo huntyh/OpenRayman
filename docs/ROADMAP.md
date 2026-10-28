@@ -153,7 +153,12 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
     Ctrl-strafing works forward but backward/left/right move in one fixed world direction; when he
     runs towards the camera (Down) the game's camera backs off and pans to show his front, ours
     crashes into him; he may look closer in the game (field of view?); his long-idle animations (the
-    "basketball" one) are missing. The optional modern camera
+    "basketball" one) are missing.
+    Third look (user): portal hold and strafing fixed. Left: the camera clips through walls (no
+    collision yet); Q/W turning makes it glitch and zoom onto his face; while hovering it looks off
+    in another direction; strafing left/right also drifts backwards a little each time; shooting
+    while strafing/hovering snaps the hand back (missing keyframe?); the waterfall at
+    `--level Learn_10 --camera 46.7,314.9,-2.4,120.0,-3.8` has collision. The optional modern camera
     waits until the game is nearly complete (with HDR and the like).
     In the game the player may turn the camera left/right (Q/W) only where the level allows it;
     level camera presets often overrule it, and a camera icon with a red X shows when turning is
