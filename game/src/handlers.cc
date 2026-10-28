@@ -830,7 +830,7 @@ namespace openrayman::game
 		// drifted from unit length.
 		vec3 to_local(interpreter& vm, std::uint32_t super_object, const vec3& v)
 		{
-			return { dot(v, normalised(axis_of(vm, super_object, 0))), dot(v, normalised(axis_of(vm, super_object, 1))), dot(v, normalised(axis_of(vm, super_object, 2))) };
+			return { dot(v, axis_of(vm, super_object, 0)), dot(v, axis_of(vm, super_object, 1)), dot(v, axis_of(vm, super_object, 2)) };
 		}
 
 		// Writes new axes into a transform, keeping each axis' scale in the second copy (0x445D00).

@@ -1223,15 +1223,65 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 			node_of[actors.back()] = n;
 		}
 	std::map<std::size_t, std::string> errors;
-	// With a node: every change of that actor's state and behaviour, by tick.
-	std::uint32_t traced = trace ? tree.node(*trace).data->address() : 0;
+	// With a node: what its brain is, every change of its state, behaviour and reflex by tick, and
+	// every scalar variable that changes (its own, and the main actor's while it is another actor).
+	std::uint32_t traced_super = trace ? tree.node(*trace).at.address() : 0;
+	std::uint32_t traced = trace ? tree.node(*trace).data->address() : 0; // its actor
+	if(traced)
+	{
+		std::uint32_t brain = memory.contains(traced + 0xC, 4) ? memory.u32(traced + 0xC) : 0;
+		std::uint32_t mind = brain && memory.contains(brain, 4) ? memory.u32(brain) : 0;
+		std::cout << std::format("traced node {}: super object 0x{:X}, actor 0x{:X}, model 0x{:X}, normal 0x{:X}, reflex 0x{:X}, 3D data {}{}, brain runs {}, mechanics runs {}\n",
+			*trace, traced_super, traced,
+			mind && memory.contains(mind, 4) ? memory.u32(mind) : 0,
+			mind && memory.contains(mind + 4, 8) ? memory.u32(mind + 4) : 0,
+			mind && memory.contains(mind + 8, 4) ? memory.u32(mind + 8) : 0,
+			memory.contains(traced, 4) ? std::format("0x{:X}", memory.u32(traced)) : std::string("none"),
+			mind && memory.contains(mind + 0xC, 4) ? std::format(", variables 0x{:X}", memory.u32(mind + 0xC)) : std::string(),
+			vm.brain_runs(traced_super), vm.mechanics_runs(traced_super));
+	}
 	auto state_of = [&](std::uint32_t actor) {
 		std::uint32_t data = memory.u32(actor);
 		std::uint32_t mind = memory.u32(memory.u32(actor + 0x0C));
 		std::uint32_t normal = mind ? memory.u32(mind + 4) : 0;
-		return std::tuple{ data ? memory.u32(data + 4) : 0u, data ? memory.u32(data + 8) : 0u, normal ? memory.u32(normal + 8) : 0u };
+		std::uint32_t reflex = mind ? memory.u32(mind + 8) : 0;
+		return std::tuple{ data ? memory.u32(data + 4) : 0u, data ? memory.u32(data + 8) : 0u,
+			normal ? memory.u32(normal + 8) : 0u, reflex ? memory.u32(reflex + 8) : 0u };
 	};
-	auto last = traced ? state_of(traced) : std::tuple{ 0u, 0u, 0u };
+	auto last = traced ? state_of(traced) : std::tuple{ 0u, 0u, 0u, 0u };
+	// With a node: its variables that change, and the ones of the main actor (Rayman): the scripts'
+	// mode and flag variables, which are small integers. Vectors, references, floats and the timers
+	// (the clock and elapsed times, larger than a byte) are left out.
+	auto variable_text = [&](std::uint32_t self, std::uint32_t index) -> std::string {
+		try
+		{
+			game::value v = vm.get_variable(self, index);
+			if(v.type != game::value_type::integer)
+				return {};
+			std::int32_t n = v.as_int();
+			return n >= -255 && n <= 255 ? std::format("{}", n) : std::string();
+		}
+		catch(const std::exception&)
+		{
+			return "?";
+		}
+	};
+	std::map<std::pair<std::uint32_t, std::uint32_t>, std::string> watched_last;
+	auto watch = [&](std::uint32_t who, const char* label, std::uint32_t count) {
+		if(!who)
+			return;
+		for(std::uint32_t index = 0; index < count; index++)
+		{
+			std::string text = variable_text(who, index);
+			if(text.empty())
+				continue; // not a number: vectors, arrays and references are not script modes
+			auto key = std::pair{ who, index };
+			auto it = watched_last.find(key);
+			if(it != watched_last.end() && it->second != text)
+				std::cout << std::format("             {} var{} {} -> {}\n", label, index, it->second, text);
+			watched_last[key] = text;
+		}
+	};
 	for(int f = 0; f < frames; f++)
 	{
 		for(const held& h : holds)
@@ -1266,9 +1316,12 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 		{
 			auto now = state_of(traced);
 			if(now != last)
-				std::cout << std::format("tick {:>4}: playing 0x{:X}, asked 0x{:X}, behaviour 0x{:X}{}\n", f, std::get<0>(now), std::get<1>(now), std::get<2>(now),
+				std::cout << std::format("tick {:>4}: playing 0x{:X}, asked 0x{:X}, behaviour 0x{:X}, reflex 0x{:X}{}\n", f, std::get<0>(now), std::get<1>(now), std::get<2>(now), std::get<3>(now),
 					vm.removed(tree.node(*trace).at.address()) ? " (removed)" : "");
 			last = now;
+			watch(traced_super, "traced", 97);
+			if(traced_super != main_actor)
+				watch(main_actor, "main", 115);
 			if(f % 30 == 0)
 				if(auto p = game::global_placement(memory, tree.node(*trace).at.address()))
 					std::cout << std::format("tick {:>4}: at {:.2f} {:.2f} {:.2f}\n", f, p->m[0][3], p->m[1][3], p->m[2][3]);
