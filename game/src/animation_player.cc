@@ -75,6 +75,8 @@ namespace openrayman::game
 			m.write<std::uint32_t>(data + data_3d::current_state, s);
 			m.write<std::uint32_t>(data + data_3d::next_state, s);
 			m.write<std::uint8_t>(data + data_3d::playback_rate, m.u8(s + state::rate));
+			// How many more times it plays before moving on (0x40ED75; counted down at 0x40EA4F).
+			m.write<std::uint8_t>(data + data_3d::loops, m.u8(s + state::repeats));
 			m.write<std::uint16_t>(data + data_3d::frame, 0);
 			m.write<std::uint32_t>(data + data_3d::elapsed, 0);
 			m.write<std::uint8_t>(data + data_3d::changed, 0);

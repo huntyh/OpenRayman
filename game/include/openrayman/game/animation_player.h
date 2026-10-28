@@ -41,6 +41,7 @@ namespace openrayman::game
 		constexpr std::uint32_t forbidden = 0x14;   // list: next, state; count at +0x1C
 		constexpr std::uint32_t forbidden_count = 0x1C;
 		constexpr std::uint32_t after = 0x20;       // where to go when the animation ends
+		constexpr std::uint32_t repeats = 0x28;     // u8: extra plays before going on (idle 3, blink 0 / 1)
 		constexpr std::uint32_t rate = 0x29;        // i8: frames per second this state plays at
 		constexpr std::uint32_t transitions_only = 0x2A; // u8: 1 = may leave only through a transition
 	}
