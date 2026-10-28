@@ -130,6 +130,9 @@ namespace openrayman::game
 		std::uint32_t eval(std::uint32_t self, std::uint32_t node, value& out); // 0x480B90
 		// Skips a node and its arguments.
 		std::uint32_t skip(std::uint32_t node) const;
+		// Writes a value to what the node names (a variable, a field, an actor's variable), as an
+		// assignment would. Returns the node after it.
+		std::uint32_t assign(std::uint32_t self, std::uint32_t node, const value& v);
 		// The actor a procedure acts on: normally `self`, or the one an "actor: ..." operator named.
 		std::uint32_t target(std::uint32_t self, bool allow_override);
 		// Procedures report a change of flow (e.g. flow::restart after changing behaviour).

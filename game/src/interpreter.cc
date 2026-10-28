@@ -251,6 +251,21 @@ namespace openrayman::game
 				out = value::of(value_type::behaviour, intelligence ? m_memory.u32(intelligence + intelligence_field::previous) : 0);
 				break;
 			}
+			case 2: case 3:
+			{
+				// The actor's speed (dynamics +0x3C), or its length (0x48D000, 0x48D060).
+				std::uint32_t dynamics = actor ? m_memory.u32(actor + actor_field::dynamics) : 0;
+				std::uint32_t base = dynamics ? m_memory.u32(dynamics) : 0;
+				float v[3] = {};
+				if(base && m_memory.contains(base + 0x3C, 12))
+					for(int i = 0; i < 3; i++)
+						v[i] = m_memory.f32(base + 0x3C + i * 4);
+				if(n.param == 2)
+					out = value::vector(v[0], v[1], v[2]);
+				else
+					out = value::real(std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]));
+				break;
+			}
 			case 9: case 10:
 				out = value::real(m_memory.f32(m_memory.u32(actor) + data_3d_field::shadow_size + (n.param - 9) * 4));
 				break;
@@ -570,6 +585,14 @@ namespace openrayman::game
 		default:
 			throw format_error(std::format("unknown operator {}", n.param));
 		}
+	}
+
+	std::uint32_t interpreter::assign(std::uint32_t self, std::uint32_t node, const value& v)
+	{
+		place p;
+		std::uint32_t next = resolve_place(self, node, p);
+		write_place(self, p, v);
+		return next;
 	}
 
 	std::uint32_t interpreter::resolve_place(std::uint32_t self, std::uint32_t at, place& p)

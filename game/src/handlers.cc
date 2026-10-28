@@ -1310,6 +1310,105 @@ namespace openrayman::game
 			return data && m.u8(data + data_3d::finished) && m.u32(data + data_3d::current_state) == m.u32(data + data_3d::next_state);
 		}
 
+		// 198 (0x46CE00, case 0x46D2BC): the X and Y of the dynamics vector at +0x30, stored as given,
+		// with flags 0x308000. 288 (case 0x46D758): forget procedure 280's vector (+0x19C): clear
+		// flags 0x1C000000.
+		std::uint32_t set_dynamics_xy(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value x, y;
+			if(c.index == 198)
+			{
+				next_arg(c, x);
+				next_arg(c, y);
+			}
+			std::uint32_t base = dynamics_base(c, self, 0x38);
+			if(!base)
+				return c.args;
+			live_memory& m = c.vm.memory();
+			if(c.index == 198)
+			{
+				m.write<std::uint32_t>(base + 0x30, x.word());
+				m.write<std::uint32_t>(base + 0x34, y.word());
+				m.write<std::uint32_t>(base + 8, m.u32(base + 8) | 0x308000);
+			}
+			else
+				m.write<std::uint32_t>(base + 8, m.u32(base + 8) & ~0x1C000000u);
+			return c.args;
+		}
+
+		// 77 (0x48B620): the current animation has played to its end.
+		std::uint32_t animation_done(call& c, bool& result)
+		{
+			result = animation_finished(c.vm, c.vm.target(c.self, true));
+			return c.args;
+		}
+
+		// 79..102 (0x48B380): one bit of the dynamics flag words (+8, +0xC), the same bits procedures
+		// 244..261 set. 79/80 and 100 clear the bit they test. 101 also hands the vector at dynamics
+		// +0x1FC to the variable given as its argument when the bit is set.
+		std::uint32_t dynamics_bit(call& c, bool& result)
+		{
+			static const std::pair<std::uint32_t, std::uint32_t> bits[24] = {
+				{ 0xC, 0x10000 }, { 0xC, 0x10000 }, { 8, 0x1 }, { 8, 0x2 }, { 8, 0x4 }, { 8, 0x8 }, { 8, 0x10 }, { 8, 0x40 },
+				{ 8, 0x20 }, { 0xC, 0x100 }, { 0xC, 0x200 }, { 0xC, 0x200 }, { 0xC, 0x200000 }, { 8, 0x80 }, { 8, 0x100 },
+				{ 8, 0x200 }, { 8, 0x400 }, { 8, 0x800 }, { 8, 0x1000 }, { 0xC, 0x20 }, { 8, 0x2000 }, { 0xC, 0x2000 },
+				{ 0xC, 0x40 }, { 0xC, 0x80000 },
+			};
+			std::uint32_t self = c.vm.target(c.self, true);
+			std::uint32_t base = dynamics_base(c, self, 0x208);
+			result = false;
+			if(!base)
+				return c.index == 101 ? c.vm.skip(c.args) : c.args;
+			live_memory& m = c.vm.memory();
+			auto [word, bit] = bits[c.index - 79];
+			std::uint32_t flags = m.u32(base + word);
+			result = (flags & bit) != 0;
+			if(c.index == 79 || c.index == 80 || c.index == 100)
+				m.write<std::uint32_t>(base + word, flags & ~bit);
+			if(c.index != 101)
+				return c.args;
+			if(!result)
+				return c.vm.skip(c.args);
+			return c.vm.assign(c.self, c.args, value::vector(m.f32(base + 0x1FC), m.f32(base + 0x200), m.f32(base + 0x204)));
+		}
+
+		// 102, 103 (0x468B10 -> 0x4195A0): hide (102) or show (103) one part of the actor, or all of
+		// them for 0xFFFF. Parts: 3D data +0x90, count +0x94, 0x14 bytes each: super object at +4 (+0
+		// when that is null), the flag kept at +0x11; hiding clears bits 0, 1 and 7 of the part's
+		// super object flags (+0x30), showing sets them.
+		std::uint32_t show_parts(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value which;
+			next_arg(c, which);
+			live_memory& m = c.vm.memory();
+			std::uint32_t data = actor_part(c.vm, self, actor_field::data_3d);
+			std::uint32_t parts = data && m.contains(data + 0x90, 8) ? m.u32(data + 0x90) : 0;
+			if(!parts)
+				return c.args;
+			std::uint32_t count = m.u32(data + 0x94);
+			std::uint8_t hide = c.index == 102;
+			std::uint16_t index = std::uint16_t(which.as_int());
+			auto apply = [&](std::uint32_t entry) {
+				if(!m.contains(entry, 0x14))
+					return;
+				m.write<std::uint8_t>(entry + 0x11, hide);
+				std::uint32_t part = m.u32(entry + 4) ? m.u32(entry + 4) : m.u32(entry);
+				if(part && m.contains(part + 0x30, 4))
+				{
+					std::uint32_t flags = m.u32(part + 0x30);
+					m.write<std::uint32_t>(part + 0x30, hide ? flags & ~0x83u : flags | 0x83u);
+				}
+			};
+			if(index != 0xFFFF)
+				apply(parts + index * 0x14u);
+			else
+				for(std::uint32_t i = 0; i < count; i++)
+					apply(parts + i * 0x14);
+			return c.args;
+		}
+
 		meta_handler change_state_and_wait()
 		{
 			// 1: change state, then wait until it plays (slot 0: success, slot 1: the state).
@@ -1400,6 +1499,13 @@ namespace openrayman::game
 		vm.on_condition(66, collision_event_flag);
 		for(std::uint32_t i = 27; i <= 32; i++)
 			vm.on_condition(i, contact);
+		vm.on_condition(77, animation_done);
+		for(std::uint32_t i = 79; i <= 102; i++)
+			vm.on_condition(i, dynamics_bit);
+		vm.on_procedure(198, set_dynamics_xy);
+		vm.on_procedure(288, set_dynamics_xy);
+		vm.on_procedure(102, show_parts);
+		vm.on_procedure(103, show_parts);
 		vm.on_condition(65, bits_overlap);
 		vm.on_condition(72, bits_overlap);
 		vm.on_condition(74, inside_waypoint);
