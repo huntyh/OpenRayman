@@ -123,6 +123,19 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
   (procedure 346) turns the arrows into the camera-relative vector Rayman's scripts read. Rayman
   reacts (jump, shoot), but stays airborne until the physics lands him. Gamepad not yet
 - Rayman himself walking, running and jumping, moved by his own scripts
+  Walking, turning and walls feel right (user, 2026-10-28). Seen in the game, still to do:
+  - Jumping doesn't work yet.
+  - Animations play too fast: idle, blinking (also too often, the loop looks incomplete), shooting
+    (the hand snaps back; the forehand and backhand throws alternate in the game). Likely the same
+    cause: the exe plays a state at its own rate (state +0x29) scaled by procedure 89 (3D data
+    +0xE0), and we use the animation's speed.
+  - Learn_10 has two starts: a new game (cutscene: Rayman falls from the pirate ship, runs down a
+    path and jumps in) and the return from the hub (out of the portal, what runs now). On the return,
+    Rayman should stay in his spin state 04/00 +0x1210 for about 3 s before he falls; ours falls at
+    once (H:/r2export notes portal.md, intro.md: not his start-up procedures; next suspect the camera
+    actor's intro).
+  - The portal's sparkling particles; splashes when he lands in water.
+  - Seen from afar, faint straight lines like a crosshair on X and Y around Rayman, turning with him.
 - The game's camera following him
 - An optional modern camera, turned freely with the right stick like in today's platformers, next
   to the game's own guided camera. It will see what the guided camera never shows, which needs
