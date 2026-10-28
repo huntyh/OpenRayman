@@ -2158,8 +2158,10 @@ namespace openrayman::game
 		}
 
 		// 166 (0x46AB20, case 0x46ACD1): turn about a world axis (any length) by degrees. The exe
-		// negates the angle here, unlike 163..165, then shares their rotation (0x46B096). The portal
-		// spins Rayman with it as he comes out (node 77, about 0.5 degrees per millisecond).
+		// negates the angle here, unlike 163..165, then shares their rotation (0x46B096), whose
+		// second jump table isn't read yet. Compared with the game, turning the axes as below by
+		// +angle is the right way: the portal spins Rayman with it as he comes out (node 77, about
+		// 0.5 degrees per millisecond), and with -angle he spun the wrong way (user).
 		std::uint32_t rotate_about_axis(call& c)
 		{
 			std::uint32_t self = c.vm.target(c.self, true);
@@ -2172,7 +2174,7 @@ namespace openrayman::game
 				return c.args;
 			k = normalised(k);
 			live_memory& m = c.vm.memory();
-			float a = -degrees.as_float() * 0.0174533f, cs = std::cos(a), sn = std::sin(a);
+			float a = degrees.as_float() * 0.0174533f, cs = std::cos(a), sn = std::sin(a);
 			vec3 axes[3] = { read3(m, t + 0x10), read3(m, t + 0x1C), read3(m, t + 0x28) };
 			for(vec3& v : axes)
 			{
