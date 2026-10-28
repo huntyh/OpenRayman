@@ -66,6 +66,7 @@ namespace openrayman
 				base.node = node;
 				if(auto material = memory.follow(*element))
 				{
+					base.material = material->address();
 					if(auto collide = memory.follow(*material + game_material_collide))
 					{
 						base.has_material = true;

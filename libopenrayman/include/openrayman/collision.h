@@ -30,6 +30,7 @@ namespace openrayman
 		vec3 normal{};               // unit length, from the data, turned into world space
 		surface_flags flags = 0;     // 0 when the triangle has no collide material
 		bool has_material = false;   // whether its game material has a collide material at all
+		std::uint32_t material = 0;  // its game material's address, 0 when it has none
 		std::size_t node = 0;        // the super object it belongs to, in the scene
 	};
 

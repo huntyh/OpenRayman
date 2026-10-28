@@ -81,7 +81,7 @@ namespace openrayman::game
 		// --- Conditions --------------------------------------------------------------------------
 
 		// 0..3 (0x489B40): and, or (short-circuit: the second argument is skipped when it can't
-		// matter), not, and an "xor" that compares its first argument with itself (always false).
+		// matter), not, and exclusive or: both are evaluated, true when their values differ.
 		std::uint32_t logic(call& c, bool& result)
 		{
 			value a;
@@ -107,12 +107,11 @@ namespace openrayman::game
 				result = !x;
 				return c.args;
 			case 3:
-				result = false;
-				return c.args;
+				break;
 			}
 			value b;
 			next_arg(c, b);
-			result = b.word() != 0;
+			result = c.index == 3 ? b.word() != a.word() : b.word() != 0;
 			return c.args;
 		}
 
@@ -505,7 +504,8 @@ namespace openrayman::game
 			return c.args;
 		}
 
-		// 70 (0x469710): switch the reflex behaviour. 71 (0x469760): switch both, normal first.
+		// 70 (0x469710): switch the reflex behaviour. 71 (0x469760): switch both, normal first, each
+		// passing 0x469600 a "don't restart" flag of 0.
 		std::uint32_t change_behaviours(call& c)
 		{
 			live_memory& m = c.vm.memory();
@@ -523,9 +523,9 @@ namespace openrayman::game
 			value second;
 			next_arg(c, second);
 			if(std::uint32_t normal = m.u32(mind + mind_field::normal))
-				c.vm.change_behaviour(normal, first.word(), from_reflex);
+				c.vm.change_behaviour(normal, first.word(), false);
 			if(std::uint32_t reflex = m.u32(mind + mind_field::reflex))
-				c.vm.change_behaviour(reflex, second.word(), !from_reflex);
+				c.vm.change_behaviour(reflex, second.word(), false);
 			return c.args;
 		}
 
@@ -1682,6 +1682,77 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// The surface flags of the game material a contact slot names at +0x20 (0x479220: the game
+		// material's collide material, its u16 at +2), 0 without one.
+		std::uint32_t slot_surface(const live_memory& m, std::uint32_t report, std::uint32_t slot)
+		{
+			std::uint32_t material = safe_u32(m, report + 8 + slot * 0x28 + 0x20);
+			if(material == 0 || material == 0xCDCDCDCD)
+				return 0;
+			std::uint32_t collide = safe_u32(m, material + 0xC);
+			if(collide == 0 || collide == 0xFFFFFFFF || !m.contains(collide + 2, 2))
+				return 0;
+			return m.read<std::uint16_t>(collide + 2);
+		}
+
+		std::uint32_t contact_report(call& c)
+		{
+			std::uint32_t base = dynamics_base(c, c.vm.target(c.self, true), 0x10);
+			return base ? safe_u32(c.vm.memory(), base + 0x150) : 0;
+		}
+
+		// 196, 197 (0x479260): the surface flags of the actor's contacts. 197: of slot 0..5 (any
+		// other gives 0). 196: of every slot its contact word names, together (bit 0x1 ground, 0x4
+		// slot 2, 0x10000 slot 3, 0x40 slot 4, 0x10 slot 5; a word of 0 means slot 0).
+		std::uint32_t contact_surface(call& c, value& out)
+		{
+			value which;
+			if(c.index == 197)
+				next_arg(c, which);
+			live_memory& m = c.vm.memory();
+			std::uint32_t report = contact_report(c);
+			std::uint32_t bits = 0;
+			if(report && c.index == 197)
+			{
+				std::int32_t n = which.as_int();
+				if(n >= 0 && n <= 5)
+					bits = slot_surface(m, report, std::uint32_t(n));
+			}
+			else if(report)
+			{
+				std::uint32_t word = safe_u32(m, report + 4);
+				const std::pair<std::uint32_t, std::uint32_t> slots[] = { { 0x10000, 3 }, { 0x1, 1 }, { 0x4, 2 }, { 0x40, 4 }, { 0x10, 5 } };
+				for(auto [bit, slot] : slots)
+					if(word & bit)
+						bits |= slot_surface(m, report, slot);
+				if(word == 0)
+					bits |= slot_surface(m, report, 0);
+			}
+			out = value::of(value_type::mask, bits);
+			return c.args;
+		}
+
+		// 61..64 (0x48B000): the surface of a contact has every bit of the mask. 61: any contact
+		// (slot 0), 62: slot 2 (word bit 0x4), 63: the ground (slot 1, bit 0x1), 64: slot 5 (bit
+		// 0x10). False without that contact.
+		std::uint32_t contact_has_surface(call& c, bool& result)
+		{
+			value mask;
+			next_arg(c, mask);
+			result = false;
+			std::uint32_t report = contact_report(c);
+			if(!report)
+				return c.args;
+			std::uint32_t word = safe_u32(c.vm.memory(), report + 4);
+			const std::uint32_t need[] = { 0, 0x4, 0x1, 0x10 }, slot[] = { 0, 2, 1, 5 };
+			std::size_t k = std::size_t(c.index - 61);
+			if(k > 3 || (k == 0 ? word == 0 : (word & need[k]) == 0))
+				return c.args;
+			std::uint32_t want = mask.word() & 0xFFFF;
+			result = want != 0 && (slot_surface(c.vm.memory(), report, slot[k]) & want) == want;
+			return c.args;
+		}
+
 		// 3 (0x47B6C0): distance between the actors' positions (far away when there's no other).
 		std::uint32_t distance_to(call& c, value& out)
 		{
@@ -2824,6 +2895,10 @@ namespace openrayman::game
 		vm.on_procedure(102, show_parts);
 		vm.on_procedure(103, show_parts);
 		vm.on_condition(65, bits_overlap);
+		for(std::uint32_t i = 61; i <= 64; i++)
+			vm.on_condition(i, contact_has_surface);
+		vm.on_function(196, contact_surface);
+		vm.on_function(197, contact_surface);
 		vm.on_condition(72, bits_overlap);
 		vm.on_condition(74, inside_waypoint);
 		vm.on_condition(78, state_flag);

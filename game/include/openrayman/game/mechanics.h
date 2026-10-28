@@ -22,9 +22,15 @@ namespace openrayman::game
 
 		bool empty() const { return m_triangles.empty(); }
 
+		struct floor_hit
+		{
+			float height = 0;
+			std::uint32_t material = 0; // the triangle's game material, 0 when it has none
+		};
+
 		// The highest floor (a triangle facing up, at most 60° from flat, not water) under (x, y) with a height
 		// in [bottom, top], or nothing.
-		std::optional<float> floor_at(float x, float y, float top, float bottom) const;
+		std::optional<floor_hit> floor_at(float x, float y, float top, float bottom) const;
 
 		// How far (x, y) must move to take a vertical cylinder of `radius` out of every wall (a
 		// triangle steeper than 60°, not water) it overlaps between `bottom` and `top`; 0 when it is

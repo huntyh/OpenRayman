@@ -26,6 +26,9 @@ namespace openrayman::game
 		// The contact block (base +0x150, 0x16C bytes): +0 this tick's word, +4 the word scripts read.
 		constexpr std::uint32_t contacts_size = 0x16C;
 		constexpr std::uint32_t on_ground = 0x1;
+		// After the two words come six 0x28-byte contact slots (0 any, 1 ground, 2 wall, ...); each
+		// names the touched surface's game material at +0x20.
+		constexpr std::uint32_t ground_slot_material = 8 + 1 * 0x28 + 0x20;
 		// How far a grounded actor follows the floor down (slopes, steps) instead of falling, and how
 		// far up it climbs onto one. Ours: the exe works with the actor's collision spheres.
 		constexpr float follow_down = 0.3f, climb_up = 0.5f, foot_radius = 0.5f;
@@ -147,12 +150,12 @@ namespace openrayman::game
 		}
 	}
 
-	std::optional<float> world_collision::floor_at(float x, float y, float top, float bottom) const
+	std::optional<world_collision::floor_hit> world_collision::floor_at(float x, float y, float top, float bottom) const
 	{
 		auto found = m_cells.find({ int(std::floor(x / cell)), int(std::floor(y / cell)) });
 		if(found == m_cells.end())
 			return std::nullopt;
-		std::optional<float> best;
+		std::optional<floor_hit> best;
 		for(std::uint32_t i : found->second)
 		{
 			const collision_triangle& t = m_triangles[i];
@@ -169,8 +172,8 @@ namespace openrayman::game
 			if(u < -1e-5f || v < -1e-5f || w < -1e-5f)
 				continue;
 			float z = u * a[2] + v * b[2] + w * c[2];
-			if(z <= top && z >= bottom && (!best || z > *best))
-				best = z;
+			if(z <= top && z >= bottom && (!best || z > best->height))
+				best = floor_hit{ z, t.material };
 		}
 		return best;
 	}
@@ -326,6 +329,7 @@ namespace openrayman::game
 		std::uint32_t block = m.u32(b + base::contacts);
 		bool has_block = block && m.contains(block, contacts_size);
 		bool landed = false;
+		std::uint32_t ground_material = 0;
 		if((flags & collides) && !world.empty())
 		{
 			bool was_grounded = has_block && (m.u32(block + 4) & on_ground);
@@ -334,17 +338,18 @@ namespace openrayman::game
 			// refuses moves into a surface).
 			float bottom = target[2] - (was_grounded && target[2] <= current[2] ? follow_down : 0.0f);
 			// The actor's feet cover a small circle: the highest floor under any of nine points of it.
-			std::optional<float> floor;
+			std::optional<world_collision::floor_hit> floor;
 			for(int k = 0; k < 9; k++)
 			{
 				float angle = float(k) * 0.785398f;
 				float r = k == 8 ? 0.0f : foot_radius;
-				if(auto f = world.floor_at(target[0] + r * std::cos(angle), target[1] + r * std::sin(angle), top, bottom); f && (!floor || *f > *floor))
+				if(auto f = world.floor_at(target[0] + r * std::cos(angle), target[1] + r * std::sin(angle), top, bottom); f && (!floor || f->height > floor->height))
 					floor = f;
 			}
 			if(floor)
 			{
-				target[2] = *floor;
+				target[2] = floor->height;
+				ground_material = floor->material;
 				landed = true;
 			}
 		}
@@ -361,6 +366,8 @@ namespace openrayman::game
 		{
 			m.write<std::uint32_t>(block, landed ? on_ground : 0);
 			m.write<std::uint32_t>(block + 4, landed ? on_ground : 0); // published at the end of the tick
+			// Slot 1 (the ground) names the floor's game material, for the surface tests (0x479220).
+			m.write<std::uint32_t>(block + ground_slot_material, landed ? ground_material : 0);
 		}
 		// The script speeds last one tick (0x4327D9).
 		m.write<std::uint32_t>(b + base::flags, flags & kept_after_tick);
