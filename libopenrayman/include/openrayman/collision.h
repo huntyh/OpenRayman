@@ -11,9 +11,14 @@
 
 namespace openrayman
 {
-	// Surface flags of a collide material (u16 at collide material +2). Which bit means what is
-	// still being confirmed against the scripts; see docs/formats/collision.md.
+	// Surface flags of a collide material (u16 at collide material +2). The meanings known so far
+	// were confirmed in the game (docs/formats/collision.md); the other bits are still unknown.
 	using surface_flags = std::uint16_t;
+	namespace surface
+	{
+		constexpr surface_flags grabbable = 0x0004; // Rayman can hang from its edge (ledges, column tops)
+		constexpr surface_flags water = 0x4000;
+	}
 
 	// One triangle the level collides with, in world space.
 	struct collision_triangle

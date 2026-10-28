@@ -38,11 +38,21 @@ segment casts only hit surfaces with some of the given bits.
 
 Bits in use, by triangle count over all levels: 0x0004 (10213), 0x0001 (5857), 0x0800 (2321),
 0x0100 (1115), 0x0040 (1037), 0x4000 (524), 0x8000 (281), 0x0002, 0x0008, 0x0020, 0x0200, 0x0400,
-0x1000, and some combinations (0x0408, 0x1001, 0x4400, 0x8200, ...). In Learn_10 the grass floor
-is 0x0004. What each bit means is still to be confirmed from Rayman's scripts and the dynamics.
+0x1000, and some combinations (0x0408, 0x1001, 0x4400, 0x8200, ...).
+
+Confirmed in the game (Learn_10, by comparing the collision overlay with what Rayman does):
+
+| Bit | Meaning |
+| --- | --- |
+| 0x0004 | grabbable: Rayman hangs from the edge of such a surface (the ledge by the Globox children, the tops of the columns near the end); he doesn't grab plain edges. Whole floors carry it, and also some ceilings, where it does nothing |
+| 0x4000 | water |
+
+The other bits are still unknown.
 
 ## Where this came from
 
+- Bit meanings: compared in the game by the project lead, with the viewer's collision overlay
+  (`--collision on`) next to the real game.
 - Own analysis of the level data: the collide set and its slots, element types and counts, and the
   collide material flags, surveyed over all 70 levels with `ortool collide`.
 - Own analysis of `Rayman2.exe` with capstone: the element type switch (0x48E86D), the game

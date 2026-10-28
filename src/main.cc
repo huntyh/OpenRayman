@@ -545,7 +545,7 @@ namespace
 			a.level->load_effect_materials(effect_materials, a.archives);
 
 			// What the level collides with, for the C overlay: one colour per surface kind (the
-			// lowest flag bit; grey for surfaces without a collide material).
+			// lowest flag bit; grey for plain surfaces). Green (0x0004) is grabbable, blue (0x4000) water.
 			std::vector<openrayman::level_renderer::collision_face> faces;
 			for(const openrayman::collision_triangle& t : openrayman::static_collision(files.memory, tree))
 			{
