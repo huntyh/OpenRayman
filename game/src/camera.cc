@@ -159,8 +159,9 @@ namespace openrayman::game
 			}
 			else
 			{
-				// 0x473BB0: the target's second axis, negated.
-				ref = normalised(mul(read3(m, target_transform + 0x1C), -1.0f));
+				// 0x473BB0: behind the target. Actors look along -Y, so that is their +Y axis
+				// (taking -Y put the camera in front of Rayman; user).
+				ref = normalised(read3(m, target_transform + 0x1C));
 				if(length(ref) < 0.5f)
 					ref = { 0, -1, 0 };
 			}

@@ -2157,11 +2157,12 @@ namespace openrayman::game
 			return c.args;
 		}
 
-		// 166 (0x46AB20, case 0x46ACD1): turn about a world axis (any length) by degrees. The exe
-		// negates the angle here, unlike 163..165, then shares their rotation (0x46B096), whose
-		// second jump table isn't read yet. Compared with the game, turning the axes as below by
-		// +angle is the right way: the portal spins Rayman with it as he comes out (node 77, about
-		// 0.5 degrees per millisecond), and with -angle he spun the wrong way (user).
+		// 166 (0x46AB20, case 0x46ACD1): turn about an axis given in the actor's own frame (any
+		// length) by degrees: the axis goes to the world through the actor's rotation (0x4449A0),
+		// then the actor turns about it, right-handed. The portal spins Rayman about its own Z axis
+		// this way as he comes out (node 77: the axis is the portal's Z brought into Rayman's frame
+		// by function 54, 0.5 degrees per millisecond). Our first version took the axis as a world
+		// one, so it wobbled with his own turning.
 		std::uint32_t rotate_about_axis(call& c)
 		{
 			std::uint32_t self = c.vm.target(c.self, true);
@@ -2169,13 +2170,19 @@ namespace openrayman::game
 			next_arg(c, axis_value);
 			next_arg(c, degrees);
 			std::uint32_t t = transform_of(c.vm, self);
-			vec3 k = vec_of(axis_value);
-			if(!t || length(k) < 1e-9f)
+			vec3 local = vec_of(axis_value);
+			if(!t || length(local) < 1e-9f)
+				return c.args;
+			live_memory& m = c.vm.memory();
+			vec3 axes[3] = { read3(m, t + 0x10), read3(m, t + 0x1C), read3(m, t + 0x28) };
+			vec3 k{};
+			for(std::size_t i = 0; i < 3; i++)
+				for(std::size_t j = 0; j < 3; j++)
+					k[j] += local[i] * axes[i][j];
+			if(length(k) < 1e-9f)
 				return c.args;
 			k = normalised(k);
-			live_memory& m = c.vm.memory();
 			float a = degrees.as_float() * 0.0174533f, cs = std::cos(a), sn = std::sin(a);
-			vec3 axes[3] = { read3(m, t + 0x10), read3(m, t + 0x1C), read3(m, t + 0x28) };
 			for(vec3& v : axes)
 			{
 				vec3 kv = cross(k, v);
