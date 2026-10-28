@@ -191,6 +191,12 @@ namespace openrayman::game
 		}
 
 		camera_state& state = vm.camera_motion();
+		// Ours: a look-at point that jumped far in one frame (the target was teleported, as Rayman
+		// is to the portal when the level starts) cuts to the new view instead of travelling there.
+		// The exe resets its camera when the target changes (0x413E30); how it handles a teleported
+		// target isn't read yet.
+		constexpr float teleported = 10;
+		bool cut = state.valid && target_transform && length(sub(aim, state.look_at)) > teleported;
 		state.super_object = super_object;
 		state.move = sub(want, position);
 		state.look_at = aim;
@@ -206,6 +212,14 @@ namespace openrayman::game
 		state.aim_speed = m.f32(block + camera_field::aim_speed);
 		state.aim_ramp = std::max(m.f32(block + camera_field::aim_ramp), 0.001f);
 		state.aim_arrive = m.f32(block + camera_field::aim_arrive);
+		if(cut)
+		{
+			state.flags |= snap_position;
+			state.aim = off;
+			state.previous_move = 0;
+			state.previous_aim = 0;
+			state.carry_angle = 0;
+		}
 		if(!state.valid)
 		{
 			// The mechanics starts its own aim point at the first solve's.

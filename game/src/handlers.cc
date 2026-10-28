@@ -1359,10 +1359,9 @@ namespace openrayman::game
 		// camera when the target changes (0x413E30, which zeroes the camera object's runtime
 		// scratch, compared against the global 0x4B9C14); our carried state lives in camera_state,
 		// and a new target that the current block did not already name starts it over.
-		// One deliberate difference: the target also goes into the current block, so it survives
-		// the frames in which no script names it. The exe can keep it in the override alone because
-		// its camera controller scripts (or the engine's camera set-up) name it every frame; ours
-		// sometimes do not, and the override is refilled from the current block each frame.
+		// A target set in the override block lasts one frame (444 refills it from the current block),
+		// so scripts that want the camera for a while name it every frame; only a lasting change
+		// starts the camera over.
 		std::uint32_t set_camera_target(call& c)
 		{
 			std::uint32_t self = c.vm.target(c.self, true);
@@ -1393,9 +1392,7 @@ namespace openrayman::game
 				for(std::uint32_t which : { camera_field::block_spare, camera_field::block_override })
 					if(std::uint32_t block = camera_block(c.vm, cam, which))
 						m.write<std::uint32_t>(block + 0x68, target);
-			if(current)
-				m.write<std::uint32_t>(current + 0x68, target);
-			if(previous != target)
+			if(previous != target && mode_temp.as_int() != 1)
 				c.vm.camera_motion().valid = false;
 			return c.args;
 		}
@@ -1516,6 +1513,11 @@ namespace openrayman::game
 						empty = m.u32(current + at) == 0;
 					if(empty)
 						std::memcpy(m.span(current, camera_field::block_size).data(), m.span(at_default, camera_field::block_size).data(), camera_field::block_size);
+					// The set-up also aims the main camera at the main actor: the scripts only name
+					// other targets for a frame at a time (in the override block, like the portal's
+					// 467 while Rayman comes out), and the camera goes back to him after.
+					if(!m.u32(current + 0x68) && !c.vm.camera_motion().valid)
+						m.write<std::uint32_t>(current + 0x68, c.vm.main_actor());
 				}
 				back_up_camera_block(c.vm, cam);
 				if(!c.vm.camera_motion().valid)
@@ -1657,39 +1659,23 @@ namespace openrayman::game
 			return c.args;
 		}
 
-		// 190 (0x4785B0, shared with 191): the direction an actor's movement flags add up to. The
-		// movement report (dynamics base +0x150) holds a flag word (+4) and the vectors the flags
-		// name: bit 0x10000 +0x84, bit 0x1 +0x34, bit 0x4 +0x5C, bit 0x40 +0xAC, bit 0x10 +0xD4,
-		// and with no flags at all +0x0C. The sum comes back normalised. Our dynamics does not fill
-		// that report yet (the collision half of it is all that is read so far), so this answers a
-		// zero direction until the physics writes it; 191 (one of six movement points, chosen by an
-		// argument) is not registered.
-		std::uint32_t movement_direction(call& c, value& out)
+		// 190 (0x4785B0, shared with 189 and 191): one of the six normals of the actor's contact
+		// report (dynamics base +0x150 points at it; 0x482E20): argument 0..5 picks the 0x28-byte
+		// entry, and its vector at +4 comes back (entry 1 is the ground, 2 a wall). Any other
+		// argument gives a zero vector. (189 adds up the entries its flags name; not registered.)
+		std::uint32_t contact_normal(call& c, value& out)
 		{
 			std::uint32_t self = c.vm.target(c.self, true);
+			value which;
+			next_arg(c, which);
 			live_memory& m = c.vm.memory();
 			std::uint32_t base = dynamics_base(c, self, 0x10);
 			std::uint32_t report = base ? safe_u32(m, base + 0x150) : 0;
-			vec3 sum{};
-			if(report && m.contains(report, 0xFC))
-			{
-				static constexpr std::pair<std::uint32_t, std::uint32_t> parts[] = {
-					{ 0x10000, 0x84 }, { 0x1, 0x34 }, { 0x4, 0x5C }, { 0x40, 0xAC }, { 0x10, 0xD4 },
-				};
-				std::uint32_t flags = m.u32(report + 4);
-				for(auto [bit, at] : parts)
-					if(flags & bit)
-					{
-						vec3 v = read3(m, report + at);
-						sum = { sum[0] + v[0], sum[1] + v[1], sum[2] + v[2] };
-					}
-				if(!flags)
-				{
-					vec3 v = read3(m, report + 0x0C);
-					sum = { sum[0] + v[0], sum[1] + v[1], sum[2] + v[2] };
-				}
-			}
-			out = value_of(normalised(sum));
+			std::int32_t n = which.as_int();
+			vec3 normal{};
+			if(report && n >= 0 && n <= 5 && m.contains(report + 0xC + std::uint32_t(n) * 0x28, 12))
+				normal = read3(m, report + 0xC + std::uint32_t(n) * 0x28);
+			out = value_of(normal);
 			return c.args;
 		}
 
@@ -2860,7 +2846,7 @@ namespace openrayman::game
 		vm.on_function(240, parent_actor);
 		vm.on_function(186, direction_angle);
 		vm.on_function(187, direction_angle);
-		vm.on_function(190, movement_direction);
+		vm.on_function(190, contact_normal);
 		vm.on_function(310, camera_move_vector);
 		vm.on_function(31, absolute);
 		vm.on_function(42, smooth);
