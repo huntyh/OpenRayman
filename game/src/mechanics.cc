@@ -168,6 +168,9 @@ namespace openrayman::game
 		auto add_speed = [&](std::uint32_t at, std::uint32_t x_bit, std::uint32_t world_axes) {
 			vec v = read_vec(m, b + at);
 			for(int i = 0; i < 3; i++)
+				if(!(flags & (x_bit << i)))
+					v[std::size_t(i)] = 0; // the axes the script didn't set, in its own frame
+			for(int i = 0; i < 3; i++)
 			{
 				float world_i = v[std::size_t(i)];
 				if(!(flags & world_axes))
@@ -176,8 +179,7 @@ namespace openrayman::game
 					for(int axis = 0; axis < 3; axis++)
 						world_i += v[std::size_t(axis)] * m.f32(t + 0x10 + std::uint32_t(axis * 3 + i) * 4);
 				}
-				if(flags & (x_bit << i))
-					target[std::size_t(i)] += world_i * dt;
+				target[std::size_t(i)] += world_i * dt;
 			}
 		};
 		if(flags & uses_proposed)
