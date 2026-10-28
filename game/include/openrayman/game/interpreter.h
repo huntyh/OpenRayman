@@ -134,6 +134,7 @@ namespace openrayman::game
 		// Sets a designer variable of an actor from outside the scripts (state carried over from
 		// an earlier level, tests).
 		void set_variable(std::uint32_t self, std::uint32_t index, const value& v) { write_variable(variable(self, index), v); }
+		value get_variable(std::uint32_t self, std::uint32_t index) const { return read_variable(variable(self, index)); }
 		std::uint32_t eval(std::uint32_t self, std::uint32_t node, value& out); // 0x480B90
 		// Skips a node and its arguments.
 		std::uint32_t skip(std::uint32_t node) const;
