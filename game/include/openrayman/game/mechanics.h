@@ -3,6 +3,7 @@
 #include <openrayman/game/live_memory.h>
 #include <openrayman/collision.h>
 
+#include <array>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -24,6 +25,11 @@ namespace openrayman::game
 		// The highest floor (a triangle facing up, at most 60° from flat, not water) under (x, y) with a height
 		// in [bottom, top], or nothing.
 		std::optional<float> floor_at(float x, float y, float top, float bottom) const;
+
+		// How far (x, y) must move to take a vertical cylinder of `radius` out of every wall (a
+		// triangle steeper than 60°, not water) it overlaps between `bottom` and `top`; 0 when it is
+		// free. Corners of two walls resolve over a few passes.
+		std::array<float, 2> wall_push(float x, float y, float bottom, float top, float radius) const;
 
 	private:
 		static constexpr float cell = 4.0f;

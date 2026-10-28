@@ -52,5 +52,5 @@ as those arrive:
 - Messages to the engine, on-screen text and the scripts' fog override are read
   but have no effect yet.
 - Physics is partial (docs/formats/dynamics.md): an actor is a small disc that finds the floor straight
-  below it, not the game's collision spheres. Walls, ceilings, slopes sliding and moving platforms
-  aren't handled yet.
+  below it, not the game's collision spheres. Walls now stop it, as a 0.5-radius cylinder from 0.5 to
+  1.8 above its feet; ceilings, slopes sliding and moving platforms aren't handled yet.

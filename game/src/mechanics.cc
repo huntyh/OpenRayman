@@ -29,9 +29,45 @@ namespace openrayman::game
 		// How far a grounded actor follows the floor down (slopes, steps) instead of falling, and how
 		// far up it climbs onto one. Ours: the exe works with the actor's collision spheres.
 		constexpr float follow_down = 0.3f, climb_up = 0.5f, foot_radius = 0.5f;
+		// How tall the cylinder walls push out of is, above the step height.
+		constexpr float body_height = 1.8f;
 		constexpr float floor_normal = 0.5f; // cos 60°, the support limit of 0x43A260
 
 		using vec = std::array<float, 3>;
+
+		// The point of a triangle's ground-plane footprint nearest (x, y): (x, y) itself when that is
+		// inside it, otherwise the nearest point of its three edges.
+		void closest_in_footprint(const collision_triangle& t, float x, float y, float& px, float& py)
+		{
+			auto side = [](const vec& a, const vec& b, float x, float y) {
+				return (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]);
+			};
+			float s0 = side(t.corners[0], t.corners[1], x, y);
+			float s1 = side(t.corners[1], t.corners[2], x, y);
+			float s2 = side(t.corners[2], t.corners[0], x, y);
+			if((s0 >= 0 && s1 >= 0 && s2 >= 0) || (s0 <= 0 && s1 <= 0 && s2 <= 0))
+			{
+				px = x;
+				py = y;
+				return;
+			}
+			float d_min = 0;
+			for(int i = 0; i < 3; i++)
+			{
+				const vec &a = t.corners[i], &b = t.corners[(i + 1) % 3];
+				float ex = b[0] - a[0], ey = b[1] - a[1];
+				float len = ex * ex + ey * ey;
+				float f = len > 0 ? std::clamp(((x - a[0]) * ex + (y - a[1]) * ey) / len, 0.0f, 1.0f) : 0.0f;
+				float cx = a[0] + ex * f, cy = a[1] + ey * f;
+				float d = (cx - x) * (cx - x) + (cy - y) * (cy - y);
+				if(i == 0 || d < d_min)
+				{
+					d_min = d;
+					px = cx;
+					py = cy;
+				}
+			}
+		}
 
 		// A mechanics (state +0x24): u32 kind at +0, flags at +4, gravity +8, slope +0x14 and, for
 		// actors whose base allows it, a few more values. 0x435DF0 installs it at base +4 and, for
@@ -139,6 +175,63 @@ namespace openrayman::game
 		return best;
 	}
 
+	std::array<float, 2> world_collision::wall_push(float x, float y, float bottom, float top, float radius) const
+	{
+		if(radius <= 0 || top <= bottom)
+			return { 0.0f, 0.0f };
+		// Every cell the cylinder covers, not only the one under its axis.
+		std::vector<std::uint32_t> walls;
+		for(int cx = int(std::floor((x - radius) / cell)); cx <= int(std::floor((x + radius) / cell)); cx++)
+			for(int cy = int(std::floor((y - radius) / cell)); cy <= int(std::floor((y + radius) / cell)); cy++)
+			{
+				auto found = m_cells.find({ cx, cy });
+				if(found != m_cells.end())
+					walls.insert(walls.end(), found->second.begin(), found->second.end());
+			}
+		std::sort(walls.begin(), walls.end());
+		walls.erase(std::unique(walls.begin(), walls.end()), walls.end());
+		float start_x = x, start_y = y;
+		// A few passes: pushed out of one wall, the cylinder may now be in the next.
+		for(int pass = 0; pass < 3; pass++)
+		{
+			bool pushed = false;
+			for(std::uint32_t i : walls)
+			{
+				const collision_triangle& t = m_triangles[i];
+				if(std::abs(t.normal[2]) >= floor_normal || (t.flags & surface::water))
+					continue; // floors, ceilings, and water, which actors swim through
+				float low = std::min({ t.corners[0][2], t.corners[1][2], t.corners[2][2] });
+				float high = std::max({ t.corners[0][2], t.corners[1][2], t.corners[2][2] });
+				if(high <= bottom || low >= top)
+					continue; // it doesn't meet the cylinder's height
+				float px, py;
+				closest_in_footprint(t, x, y, px, py);
+				// Out of the wall: from its nearest point towards the axis.
+				float dx = x - px, dy = y - py;
+				float d = std::sqrt(dx * dx + dy * dy);
+				if(d >= radius)
+					continue; // the axis is far enough from this wall
+				float amount = radius - d;
+				if(d < 1e-6f)
+				{
+					// The axis is in the wall: leave the way the triangle faces.
+					dx = t.normal[0];
+					dy = t.normal[1];
+					d = std::sqrt(dx * dx + dy * dy);
+					if(d < 1e-6f)
+						continue;
+					amount = radius;
+				}
+				x += dx / d * amount;
+				y += dy / d * amount;
+				pushed = true;
+			}
+			if(!pushed)
+				break;
+		}
+		return { x - start_x, y - start_y };
+	}
+
 	void move_actor(live_memory& m, std::uint32_t super_object, std::uint32_t actor, double ms, const world_collision& world)
 	{
 		std::uint32_t dynamics = m.u32(actor + 8);
@@ -198,6 +291,16 @@ namespace openrayman::game
 				float most = std::abs(m.f32(b + base::limit + std::uint32_t(i) * 4)) * dt;
 				target[std::size_t(i)] = std::clamp(target[std::size_t(i)], current[std::size_t(i)] - most, current[std::size_t(i)] + most);
 			}
+
+		// Walls push the target out of them: the actor is a cylinder from the step height up to
+		// body_height (docs/formats/dynamics.md). Run before the floor search, so the floor under
+		// where the actor ends up is the one it lands on.
+		if((flags & collides) && !world.empty())
+		{
+			std::array<float, 2> push = world.wall_push(target[0], target[1], target[2] + climb_up, target[2] + body_height, foot_radius);
+			target[0] += push[0];
+			target[1] += push[1];
+		}
 
 		// The floor. The exe gathers contacts with the actor's collision spheres and picks the
 		// nearest (0x43EEC0, 0x43F510); here the actor is a small disc at its origin, tested straight down.
