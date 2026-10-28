@@ -154,8 +154,11 @@ namespace openrayman::game
 		// Handlers that don't exist yet, by kind and index, and how often scripts reached them.
 		// The key is the kind's name (a string literal) and the index.
 		std::map<std::pair<const char*, std::uint32_t>, std::size_t> missing;
+		// The same, by the super object whose scripts reached them.
+		std::map<std::uint32_t, std::map<std::pair<const char*, std::uint32_t>, std::size_t>> missing_by_actor;
 
 	private:
+		std::uint32_t m_running = 0; // the super object whose scripts run now
 		struct node_view
 		{
 			std::uint32_t param;

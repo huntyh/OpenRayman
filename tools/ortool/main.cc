@@ -1228,6 +1228,18 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	for(const auto& [what, n] : vm.missing)
 		missing.push_back({ n, std::format("{} {}", what.first, what.second) });
 	std::ranges::sort(missing, std::greater<>());
+	if(trace)
+	{
+		std::vector<std::pair<std::size_t, std::string>> own;
+		if(auto it = vm.missing_by_actor.find(tree.node(*trace).at.address()); it != vm.missing_by_actor.end())
+			for(const auto& [what, n] : it->second)
+				own.push_back({ n, std::format("{} {}", what.first, what.second) });
+		std::ranges::sort(own, std::greater<>());
+		std::cout << std::format("node {} reached {} missing handlers:", *trace, own.size());
+		for(std::size_t i = 0; i < own.size(); i++)
+			std::cout << std::format("{}{} x{}", i % 6 ? ", " : "\n  ", own[i].second, own[i].first);
+		std::cout << "\n";
+	}
 	std::cout << std::format("{} handlers missing:", missing.size());
 	for(std::size_t i = 0; i < missing.size(); i++)
 		std::cout << std::format("{}{} x{}", i % 6 ? ", " : "\n  ", missing[i].second, missing[i].first);

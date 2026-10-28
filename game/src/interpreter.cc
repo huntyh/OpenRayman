@@ -167,6 +167,7 @@ namespace openrayman::game
 	void interpreter::note_missing(const char* kind, std::uint32_t index)
 	{
 		missing[{ kind, index }]++;
+		missing_by_actor[m_running][{ kind, index }]++;
 	}
 
 	// --- Evaluation ----------------------------------------------------------------------------
@@ -898,6 +899,7 @@ namespace openrayman::game
 	{
 		bool acted = false;
 		std::uint8_t flags = 0;
+		m_running = self;
 		do
 		{
 			m_acted = false;
