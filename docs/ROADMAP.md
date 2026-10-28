@@ -142,7 +142,12 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
   - The game camera (docs/formats/camera.md) runs: its scripts fill the parameter blocks, the solve
     and the camera mechanics move it, and the view follows it while playing (Tab). Left out so far:
     the 8 tracked points, the pi/8 turn towards the angle limits, stepping round obstacles and the
-    occlusion pass. ⬅ we are here: the user compares it with the game. The optional modern camera
+    occlusion pass. ⬅ we are here: the user compares it with the game.
+    First look (user): too slow, Rayman outruns it (the game's keeps up at his back and lags only
+    without room, e.g. dropping into the hole by the river cage, then flies after him; it seems to
+    collide with walls and ground). Ctrl doesn't lock it to his back yet; Ctrl+left/right strafes
+    correctly. Near the stone Murfy appears and the camera closes in on Rayman, then both freeze
+    (the tutorial cutscene starts but waits on something missing). The optional modern camera
     waits until the game is nearly complete (with HDR and the like).
     In the game the player may turn the camera left/right (Q/W) only where the level allows it;
     level camera presets often overrule it, and a camera icon with a red X shows when turning is
