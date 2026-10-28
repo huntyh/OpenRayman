@@ -90,7 +90,7 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
   and operators (the game keeps no names). Conditions, functions and procedures get theirs as each
   is read from the exe and implemented in 3b
 
-**Milestone 3b: the scripts run ⬅ we are here**
+**Milestone 3b: the scripts run ✅ (merged into master, 2026-10-28)**
 
 - ✅ The interpreter, rebuilt from `Rayman2.exe`: behaviours, reflexes, macros, designer variables,
   waits and other actions that take several frames, at the game's 60 ticks per second whatever the
@@ -113,7 +113,7 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
 - Moved to 3c, since they need collision: the Lum in the cage by the river door keeps inside its
   cage in the game, most likely by bumping into the bars; the condor's flight along its path
 
-**Milestone 3c: Rayman**
+**Milestone 3c: Rayman ⬅ we are here**
 
 - Collision with the level and with actors, and the game's physics
 - Input mapped to the game's controls (keyboard, gamepad)
