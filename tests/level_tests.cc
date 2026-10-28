@@ -383,10 +383,10 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 			CHECK(std::abs(t.normal[0] * t.normal[0] + t.normal[1] * t.normal[1] + t.normal[2] * t.normal[2] - 1) < 1e-3f);
 			with_material += t.has_material;
 		}
-		if(level == "Learn_10")
+		if(level == "Learn_10") // virtual sectors (lighting only) excluded
 		{
-			CHECK(collision.size() == 1781);
-			CHECK(with_material == 492);
+			CHECK(collision.size() == 1307);
+			CHECK(with_material == 192);
 		}
 
 		// Animations: Fix's 289 plus the level's. Reading actors cross-checks each one's animation

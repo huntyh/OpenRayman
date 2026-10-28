@@ -264,14 +264,9 @@ namespace openrayman::game
 				on_error(self, e);
 			}
 		};
-		for(std::uint32_t self : super_objects)
-			if(!is_camera(self))
-				think(self);
-		for(std::uint32_t self : super_objects)
-			if(is_camera(self))
-				think(self);
-		for(std::uint32_t self : super_objects)
-		{
+		// Each actor thinks and then moves before the next one (0x412230: brain 0x4120D0, then
+		// mechanics 0x412150), so the camera solves for where Rayman is this tick, not the last.
+		auto advance = [&](std::uint32_t self) {
 			std::uint32_t actor = vm.actor_of(self);
 			std::uint32_t data = actor ? m.u32(actor) : 0;
 			if(data && !vm.removed(self))
@@ -290,7 +285,19 @@ namespace openrayman::game
 				else
 					move_actor(m, self, actor, vm.frame_ms(), vm.world());
 			}
-		}
+		};
+		for(std::uint32_t self : super_objects)
+			if(!is_camera(self))
+			{
+				think(self);
+				advance(self);
+			}
+		for(std::uint32_t self : super_objects)
+			if(is_camera(self))
+			{
+				think(self);
+				advance(self);
+			}
 		vm.particles().update(vm.clock() / 1000.0, vm.frame_ms() / 1000.0);
 	}
 }

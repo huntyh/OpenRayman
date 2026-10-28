@@ -127,6 +127,10 @@ namespace openrayman
 		std::vector<collision_triangle> result;
 		auto visit = [&](auto& self, std::size_t index, const affine& parent) -> void {
 			const scene_node& node = tree.node(index);
+			// Virtual sectors (sector +0x7C) are only for lighting: the exe gathers no static geometry
+			// from them (0x494610 via 0x44C2C0), e.g. the Learn_10 waterfall.
+			if(node.type == super_object_type::sector && node.data && reader_at(*node.data + 0x7C, 1).u8() != 0)
+				return;
 			affine world = node.matrix ? parent * affine::from(read_transform(memory, *node.matrix)) : parent;
 			if(node.type == super_object_type::ipo && node.data)
 			{
