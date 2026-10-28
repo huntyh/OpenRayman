@@ -255,25 +255,44 @@ namespace openrayman::game
 		float dt = float(ms / 1000);
 		vec current = read_vec(m, t + 4), target = current;
 
-		// A script speed (units per second) moves the target on the axes the script set (one bit
-		// each, `x_bit` and the next two), in the actor's own axes unless its world bit is set
-		// (procedures 182, 194, 207 set it: 0x46CCE1, 0x46CCB7, 0x46CD0B) (0x43E350, 0x43E680, 0x43E4E0).
+		// A script speed (units per second) sets the axes of this tick's move the script chose (one
+		// bit each, `x_bit` and the next two), replacing what gravity or an earlier speed made of
+		// them, in the actor's own axes unless its world bit is set (procedures 182, 194, 207 set it:
+		// 0x46CCE1, 0x46CCB7, 0x46CD0B) (0x43E350, 0x43E42A..0x43E451, 0x43E680, 0x43E4E0).
 		auto add_speed = [&](std::uint32_t at, std::uint32_t x_bit, std::uint32_t world_axes) {
 			vec v = read_vec(m, b + at);
-			for(int i = 0; i < 3; i++)
-				if(!(flags & (x_bit << i)))
-					v[std::size_t(i)] = 0; // the axes the script didn't set, in its own frame
-			for(int i = 0; i < 3; i++)
+			vec d{ target[0] - current[0], target[1] - current[1], target[2] - current[2] };
+			bool local = !(flags & world_axes);
+			std::array<vec, 3> axes{};
+			if(local)
 			{
-				float world_i = v[std::size_t(i)];
-				if(!(flags & world_axes))
+				for(int k = 0; k < 3; k++)
 				{
-					world_i = 0;
-					for(int axis = 0; axis < 3; axis++)
-						world_i += v[std::size_t(axis)] * m.f32(t + 0x10 + std::uint32_t(axis * 3 + i) * 4);
+					axes[std::size_t(k)] = read_vec(m, t + 0x10 + std::uint32_t(k) * 12);
+					vec& a = axes[std::size_t(k)];
+					float l = std::sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+					if(l > 0)
+						a = { a[0] / l, a[1] / l, a[2] / l };
 				}
-				target[std::size_t(i)] += world_i * dt;
+				vec in{};
+				for(int k = 0; k < 3; k++)
+					for(int i = 0; i < 3; i++)
+						in[std::size_t(k)] += d[std::size_t(i)] * axes[std::size_t(k)][std::size_t(i)];
+				d = in;
 			}
+			for(int k = 0; k < 3; k++)
+				if(flags & (x_bit << k))
+					d[std::size_t(k)] = v[std::size_t(k)] * dt;
+			if(local)
+			{
+				vec out{};
+				for(int k = 0; k < 3; k++)
+					for(int i = 0; i < 3; i++)
+						out[std::size_t(i)] += d[std::size_t(k)] * axes[std::size_t(k)][std::size_t(i)];
+				d = out;
+			}
+			for(int i = 0; i < 3; i++)
+				target[std::size_t(i)] = current[std::size_t(i)] + d[std::size_t(i)];
 		};
 		if(flags & uses_proposed)
 			add_speed(base::proposed, 0x100000, 0x8000);
@@ -311,7 +330,9 @@ namespace openrayman::game
 		{
 			bool was_grounded = has_block && (m.u32(block + 4) & on_ground);
 			float top = std::max(current[2], target[2]) + climb_up;
-			float bottom = target[2] - (was_grounded ? follow_down : 0.0f);
+			// Following the floor down is for walking; a move up (a jump) leaves it (the exe only
+			// refuses moves into a surface).
+			float bottom = target[2] - (was_grounded && target[2] <= current[2] ? follow_down : 0.0f);
 			// The actor's feet cover a small circle: the highest floor under any of nine points of it.
 			std::optional<float> floor;
 			for(int k = 0; k < 9; k++)

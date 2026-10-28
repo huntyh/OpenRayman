@@ -29,17 +29,19 @@ namespace openrayman::game
 		constexpr std::uint32_t next_state = 0x88;      // what plays next: requested, or a transition on the way
 		constexpr std::uint32_t elapsed = 0xC0;         // ms into the current animation
 		constexpr std::uint32_t changed_at = 0xC4;      // game clock when the state changed
+		constexpr std::uint32_t playback_rate = 0xE0;   // u8: frames per second the animation plays at (state rate)
 		constexpr std::uint32_t changed = 0xE1;         // u8: a change waits to be played
 	}
 
 	// A family state.
 	namespace state
 	{
-		constexpr std::uint32_t animation = 0x04;   // animation reference: u16 frames, u8 frames per second
+		constexpr std::uint32_t animation = 0x04;   // animation reference: u16 frames, u8 its own speed
 		constexpr std::uint32_t transitions = 0x08; // list: next, target state, state to play on the way
 		constexpr std::uint32_t forbidden = 0x14;   // list: next, state; count at +0x1C
 		constexpr std::uint32_t forbidden_count = 0x1C;
 		constexpr std::uint32_t after = 0x20;       // where to go when the animation ends
+		constexpr std::uint32_t rate = 0x29;        // i8: frames per second this state plays at
 		constexpr std::uint32_t transitions_only = 0x2A; // u8: 1 = may leave only through a transition
 	}
 
@@ -55,6 +57,11 @@ namespace openrayman::game
 	// Also plays the animation's events as frames pass: markers (scripts' conditions 42/43) are
 	// armed at `point` and last one tick.
 	void play_animation(live_memory& memory, std::uint32_t data, std::uint32_t ms, const std::array<float, 3>& point = {});
+
+	// Sets how fast an actor's animation plays, in frames per second (3D data +0xE0), as 0x418790
+	// does: the time into the animation is re-based so the current frame does not jump. The rate of
+	// the state it is in gives the same value (procedure 89 scales that one).
+	void set_playback_rate(live_memory& memory, std::uint32_t data, std::uint8_t rate);
 
 	// Where a super object is in the world as the game keeps it (its global transform, +0x24), or
 	// nothing if it has none.

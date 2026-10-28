@@ -463,10 +463,14 @@ namespace
 				if(a.vm && a.scripts && i < a.actor_at.size())
 				{
 					// With the scripts on, the game's animation player decides: its time into the current
-					// animation (3D data +0xC0, ms), plus how far we are towards the next tick.
+					// animation (3D data +0xC0, ms), plus how far we are towards the next tick, at the
+					// rate it plays (3D data +0xE0, from the state, procedure 89).
 					std::uint32_t data = a.live->u32(a.actor_at[i]);
 					if(data)
-						frame = (a.live->u32(data + 0xC0) + a.script_clock * 1000.0) * (speed ? speed : 30) / 1000.0;
+					{
+						std::uint8_t rate = a.live->u8(data + openrayman::game::data_3d::playback_rate);
+						frame = (a.live->u32(data + 0xC0) + a.script_clock * 1000.0) * (rate ? rate : (speed ? speed : 30)) / 1000.0;
+					}
 					// A state that moves on to another holds its last frame until the next tick switches.
 					std::uint16_t frames = a.bank.animations[*actor.animation].frames;
 					if(!actor.loops && frames)

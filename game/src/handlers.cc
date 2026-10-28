@@ -544,6 +544,27 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 89 (0x4675A0, helper 0x4187E0): how fast the animation plays, as a percentage of the state's
+		// own rate (state +0x29): 100 keeps it, 50 halves it, 200 doubles it. The game takes state
+		// rate x number / 100 and ignores a result of 1 or less (0x41880D); otherwise that becomes
+		// the playback rate (3D data +0xE0) with the clock re-based so the frame doesn't jump.
+		std::uint32_t set_animation_speed(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value percent;
+			next_arg(c, percent);
+			live_memory& m = c.vm.memory();
+			std::uint32_t data = actor_part(c.vm, self, actor_field::data_3d);
+			std::uint32_t s = data ? m.u32(data + data_3d::current_state) : 0;
+			if(!s)
+				return c.args;
+			// The state's rate is signed and the number is a plain integer (a float is truncated).
+			std::int32_t rate = std::int8_t(m.u8(s + state::rate)) * percent.as_int() / 100;
+			if(std::uint8_t(rate) > 1)
+				set_playback_rate(m, data, std::uint8_t(rate));
+			return c.args;
+		}
+
 		// 139 (0x467850): take an actor out of the world. When it's the running actor, its scripts
 		// stop for this frame (flag 3).
 		std::uint32_t remove_actor(call& c)
@@ -678,6 +699,29 @@ namespace openrayman::game
 			auto [word, bit] = it->second;
 			std::uint32_t flags = m.u32(base + word);
 			m.write<std::uint32_t>(base + word, on.as_int() ? flags | bit : flags & ~bit);
+			return c.args;
+		}
+
+		// 177, 178, 179 (0x46CE6A, 0x46CE9A, 0x46CEC9): one axis of procedure 176's vector (x, y,
+		// z), in the actor's own axes: the float as given, the axis bit on, the world bit off. 180
+		// (0x46CEF8) sets x and y. Rayman's jump is 179 at 12 units per second, every tick.
+		std::uint32_t set_dynamics_axis(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value x, y;
+			next_arg(c, x);
+			if(c.index == 180)
+				next_arg(c, y);
+			std::uint32_t base = dynamics_base(c, self, 0x30);
+			if(!base)
+				return c.args;
+			live_memory& m = c.vm.memory();
+			std::uint32_t axis = c.index == 180 ? 0 : c.index - 177;
+			m.write<std::uint32_t>(base + 0x24 + axis * 4, x.word());
+			if(c.index == 180)
+				m.write<std::uint32_t>(base + 0x28, y.word());
+			std::uint32_t bits = c.index == 180 ? 0x60000u : 0x20000u << axis;
+			m.write<std::uint32_t>(base + 8, (m.u32(base + 8) | bits) & ~0x4000u);
 			return c.args;
 		}
 
@@ -1918,7 +1962,10 @@ namespace openrayman::game
 		for(std::uint32_t i : { 72, 73, 74, 75 })
 			vm.on_procedure(i, change_state_procedure);
 		vm.on_procedure(88, pending_signal);
+		vm.on_procedure(89, set_animation_speed);
 		vm.on_procedure(139, remove_actor);
+		for(std::uint32_t i : { 177, 178, 179, 180 })
+			vm.on_procedure(i, set_dynamics_axis);
 		vm.on_procedure(181, set_dynamics_xyz);
 		for(std::uint32_t i = 244; i <= 261; i++)
 			if(i != 255)

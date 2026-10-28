@@ -10,8 +10,9 @@ namespace openrayman::game
 	{
 		// A transition: next, target state, state to play on the way (0x4199B0, 0x42DE30, 0x4194B0).
 		constexpr std::uint32_t transition_next = 0x00, transition_target = 0x04, transition_via = 0x08;
-		// The animation reference: u16 frame count, u8 frames per second, events and their count.
-		constexpr std::uint32_t reference_frames = 0x00, reference_speed = 0x02, reference_events = 0x04, reference_event_count = 0x1A;
+		// The animation reference: u16 frame count, u8 the animation's own speed (the engine does not
+		// play by it: the state's rate does, see docs/formats/animation.md), events and their count.
+		constexpr std::uint32_t reference_frames = 0x00, reference_events = 0x04, reference_event_count = 0x1A;
 		// An event (12 bytes): descriptor, u16 frame at +6, u16 part at +8. Its descriptor: u32 id,
 		// u8 type at +4, u8 start gate at +6 (0xFF: never from the playhead).
 		constexpr std::uint32_t event_size = 12, event_frame = 6, event_part = 8;
@@ -57,10 +58,23 @@ namespace openrayman::game
 			return reference ? m.read<std::uint16_t>(reference + reference_frames) : 0;
 		}
 
+		// The frames per second the animation plays at (3D data +0xE0). Every state the game starts
+		// takes its own rate there (0x40EC23 reads state +0x29, 0x418790 stores it; 0x40FD30 and
+		// 0x40FE70 do the same); our memory image is the level's saved one, where the 3D data
+		// constructor's 0 (0x418213) still stands, so the first use takes the state's rate.
+		std::uint8_t rate_of(live_memory& m, std::uint32_t data, std::uint32_t s)
+		{
+			std::uint8_t rate = m.u8(data + data_3d::playback_rate);
+			if(!rate && s)
+				m.write<std::uint8_t>(data + data_3d::playback_rate, rate = m.u8(s + state::rate));
+			return rate;
+		}
+
 		void start(live_memory& m, std::uint32_t data, std::uint32_t s)
 		{
 			m.write<std::uint32_t>(data + data_3d::current_state, s);
 			m.write<std::uint32_t>(data + data_3d::next_state, s);
+			m.write<std::uint8_t>(data + data_3d::playback_rate, m.u8(s + state::rate));
 			m.write<std::uint16_t>(data + data_3d::frame, 0);
 			m.write<std::uint32_t>(data + data_3d::elapsed, 0);
 			m.write<std::uint8_t>(data + data_3d::changed, 0);
@@ -117,14 +131,19 @@ namespace openrayman::game
 		std::uint32_t reference = s ? m.u32(s + state::animation) : 0;
 		if(!reference)
 			return;
+		// 0x40E82A: a playback rate of 0 freezes the animation - its frame and marker bits stay.
+		std::uint8_t rate = rate_of(m, data, s);
+		if(!rate)
+			return;
 		// Markers last one tick (0x40E841); recomputed every tick too (0x40EDF0): set on the tick
 		// the animation runs out.
 		m.write<std::uint8_t>(data + data_3d::markers, 0);
 		m.write<std::uint8_t>(data + data_3d::reached_end, 0);
 		std::uint16_t frames = frame_count(m, s);
-		std::uint8_t speed = m.u8(reference + reference_speed);
 		std::uint32_t elapsed = m.u32(data + data_3d::elapsed) + ms;
-		std::uint32_t frame = elapsed * (speed ? speed : 30) / 1000;
+		// The frame the game shows is (clock 3D data +0xBC difference) x rate / 1000 (0x40E8E3);
+		// here +0xC0 counts the same difference up, so the frame is the same without the phase.
+		std::uint32_t frame = elapsed * rate / 1000;
 		if(frames && frame >= frames)
 		{
 			// The rest of this pass's events, then the next pass or the next state.
@@ -143,13 +162,25 @@ namespace openrayman::game
 			}
 			m.write<std::uint8_t>(data + data_3d::reached_end, 1);
 			// Loop: keep the time past the end.
-			std::uint32_t length = std::uint32_t(frames) * 1000 / (speed ? speed : 30);
+			std::uint32_t length = std::uint32_t(frames) * 1000 / rate;
 			elapsed = length ? elapsed % length : 0;
-			frame = elapsed * (speed ? speed : 30) / 1000;
+			frame = elapsed * rate / 1000;
 		}
 		m.write<std::uint32_t>(data + data_3d::elapsed, elapsed);
 		m.write<std::uint16_t>(data + data_3d::frame, std::uint16_t(frame));
 		play_events(m, data, frame, false, point);
+	}
+
+	void set_playback_rate(live_memory& m, std::uint32_t data, std::uint8_t rate)
+	{
+		// 0x418790: with a new rate above 1 the clock (+0xBC in the game, the time into the animation
+		// here) is re-based by old / new, so the frame stays where it is; a rate of 1 or less only
+		// gets stored.
+		std::uint8_t old = rate_of(m, data, m.u32(data + data_3d::current_state));
+		if(rate > 1)
+			m.write<std::uint32_t>(data + data_3d::elapsed,
+				std::uint32_t(std::uint64_t(m.u32(data + data_3d::elapsed)) * old / rate));
+		m.write<std::uint8_t>(data + data_3d::playback_rate, rate);
 	}
 }
 

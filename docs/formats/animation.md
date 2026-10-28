@@ -32,7 +32,9 @@ optional scale (3 floats), +0x04 physical object (the same structure static geom
 
 **Animation reference** (0x20 bytes): u16 frames, u8 speed, u8 channels, events pointer, 3 floats,
 morph data pointer, +0x18 u16 **animation index**, u8 number of events, u8 transition, u32 unknown.
-The frame and channel counts repeat the animation's own, which makes a good consistency check.
+The frame and channel counts repeat the animation's own, which makes a good consistency check; the
+speed byte probably repeats the animation's own speed too (not checked), but the game plays at the
+state's rate (see "Playing an animation").
 
 Actors without an animation reference (or without an object list) are usually invisible helpers:
 triggers, waypoints.
@@ -86,15 +88,44 @@ its own.
 
 ## Playing an animation
 
-The animation's speed (u16 at +0x00) is in frames per second: 30 for most, 25 or 60 for some, a
-handful between 15 and 55. Between keyframes the pose is blended: each frame names the keyframe at
-or before it, and unless that is the channel's last keyframe (flag 0x80), the next keyframe in the
-array is the next one in time. A survey of every channel and frame of all 70 levels confirmed both
-(the named keyframe is never after the frame, the next one always after it). Positions, scales and
-the position multiplier are blended linearly, rotations along the shorter way between the two
-quaternions. Every channel's first keyframe is at frame 0. After the last keyframe, a channel holds
-still until the animation loops. Which objects are shown and how channels link come from the whole
-frame, without blending.
+The animation's own speed (u16 at +0x00) is in frames per second: 30 for most, 25 or 60 for some, a
+handful between 15 and 55. The frame stepper does not play by it: what the game shows runs at the
+rate of the **state** it is in (see below). Between keyframes the pose is blended: each frame names
+the keyframe at or before it, and unless that is the channel's last keyframe (flag 0x80), the next
+keyframe in the array is the next one in time. A survey of every channel and frame of all 70 levels
+confirmed both (the named keyframe is never after the frame, the next one always after it).
+Positions, scales and the position multiplier are blended linearly, rotations along the shorter way
+between the two quaternions. Every channel's first keyframe is at frame 0. After the last keyframe,
+a channel holds still until the animation loops. Which objects are shown and how channels link come
+from the whole frame, without blending.
+
+### The playback rate
+
+How fast a state's animation runs is **the state's own rate**, state +0x29 (i8, frames per second;
+the sign is the direction the events are walked in). Every time a state starts the engine copies it
+into the 3D data's playback rate byte, **3D data +0xE0** (u8): 0x419980 reads state +0x29 and
+0x418790 stores it, called from the state-change path of the animation update (0x40EC23, then
+0x40ECB9 / 0x40ECD9 in 0x40E9E0), and from 0x40FD30 / 0x40FE70 when the engine sets a start frame or
+the first state (0x40FDDC, 0x40FEED). The 3D data constructor leaves +0xE0 at 0 (0x418213), and 0
+means **frozen**: the stepper returns before touching the frame or the marker bits (0x40E82A).
+
+The frame number is `(now - 3D data +0xBC) * rate / 1000` in whole numbers (0x40E8E3), where `now`
+is the game clock 0x5003EC and +0xBC is the clock's phase for this animation. The frame count it is
+compared with is the animation reference's u16 at +0x00. At the frame count the pass ends: the rest
+of the events are flushed and 3D data +0x8F is set ("reached the end"); if the state's repeat count
+(state +0x28, 3D data +0x76) is spent, the next state is state +0x20 - the same state again for a
+loop. Past the frame count the stepper keeps the milliseconds overshot in 3D data +0xC0 and wraps
+the frame.
+
+Scripts change the rate with **procedure 89** (handler 0x4675A0, helper 0x4187E0), as a percentage
+of the state's rate: `new = state +0x29 * number / 100`. A result of 1 or less changes nothing; above
+1 it becomes +0xE0, and the phase +0xBC is moved by `old rate / new rate` so the current frame does
+not jump. The next state change takes the new state's own rate again.
+
+In Learn_10, Rayman's idle states 0x1A2510 and 0x1A5F7C have +0x29 = 23 while their animation
+reference says 30 frames per second; his shot state 04/00+0x96F4 says 30 in both. Across the 312
+states of his family, 81 have a rate that differs from their reference's byte (40, 45, 60, 38, 25
+and 23 against 30, and 60 against 22 for three states).
 
 ## States the scripts choose
 
@@ -175,6 +206,10 @@ them a look later) get no shadow yet.
 
 - Events: own analysis of Rayman2.exe (0x40E800, 0x40E9E0, 0x41A930..0x41B100), from a helper
   model's reading re-checked at the frame field, the part list and the marker clear.
+
+- Playback rate: own analysis of Rayman2.exe (the stepper 0x40E800 and the state-change path of
+  0x40E9E0, 0x419980, 0x418790, procedure 89 0x4675A0 → 0x4187E0, the 3D data constructor 0x418170),
+  checked against the states of Learn_10 with `ortool peek` (dump in `H:\r2export\tmp_prt_dump\04_00.txt`).
 
 - Own analysis: the shadow fields of the 3D data, followed back from the shadow texture through
   its visual and game material; checked across all 70 levels by the tests.

@@ -14,7 +14,7 @@ scripts to read on the next tick.
 | +0xC | more flags: 0x8000 no gravity |
 | +0x10 | gravity, units/s² downwards (procedure 263; 9.81 by default, Rayman's scripts use 25, 4, 30) |
 | +0x14, +0x18 | slope limit (tangent) and its cosine |
-| +0x24, +0x30, +0x190 | script speeds (procedures 176/182, 188/194 and 190 the forward walking speed alone, 201/207), units/s |
+| +0x24, +0x30, +0x190 | script speeds (procedures 176/182 and 177..181 per axis, 188/194 and 190 the forward walking speed alone, 201/207), units/s |
 | +0x3C | the actor's speed from the last tick; fields 2/3 read it |
 | +0x150 | contact block: +0 this tick's contact word, +4 the word conditions 27..32 test (1 on the ground, 0 nothing) |
 | +0x178 | per-axis speed limit (procedure 274) |
@@ -35,9 +35,9 @@ per-actor entry (0x412150) installs the current state's every tick.
 
 ## One tick (0x431AD0)
 
-1. target = position, then the second script speed × dt is added.
+1. target = position; then the second script speed sets the axes it names (× dt) of the move.
 2. Gravity, if on (0x43DF40): target.z = z + dt·(last speed z − g·dt).
-3. The first and third script speeds × dt are added (0x43E350, 0x43E4E0), then the per-axis
+3. The first and third script speeds replace the axes they name (0x43E350, 0x43E42A; a jump is procedure 179 on z, overriding gravity while it is sent) (0x43E4E0), then the per-axis
    limit is applied (0x43EAC0).
 4. speed = (target − position) / dt (0x436A30). Landing drops it.
 5. Flags are masked with 0x5C003FFF, and the script speeds +0x24..+0x38 are cleared (0x4327D9).
