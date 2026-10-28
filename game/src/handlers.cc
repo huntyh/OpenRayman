@@ -2034,6 +2034,11 @@ namespace openrayman::game
 			std::uint32_t so = c.vm.super_object_of(actor_value(c.vm, who));
 			if(std::uint32_t t = transform_of(c.vm, so))
 				write3(c.vm.memory(), t + 4, vec_of(where));
+			// 0x432DA0: the dynamics forgets the speed it had (base +0x3C and +0x6C), so a held
+			// actor doesn't gather a fall.
+			if(std::uint32_t base = dynamics_base(c, so, 0x78))
+				for(std::uint32_t at : { 0x3Cu, 0x40u, 0x44u, 0x6Cu, 0x70u, 0x74u })
+					c.vm.memory().write<float>(base + at, 0.0f);
 			return c.args;
 		}
 

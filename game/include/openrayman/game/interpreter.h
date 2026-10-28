@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <span>
 #include <set>
 #include <string>
 #include <vector>
@@ -103,6 +104,13 @@ namespace openrayman::game
 		// over, its normal behaviour.
 		void think(std::uint32_t super_object);
 
+		// The engine's per-actor gate (0x412230) on the actor's custom bits (standard game +0x24)
+		// and flags (+0x29): whether its brain runs this frame, and whether its mechanics does.
+		// Scripts switch these off, e.g. the portal stops Rayman's brain (bit 0x10000) while it
+		// spins him.
+		bool brain_runs(std::uint32_t super_object) const;
+		bool mechanics_runs(std::uint32_t super_object) const;
+
 		// When false (the default), every actor thinks every frame. The game lets scripts slow an
 		// actor's brain to every Nth frame to save time on 1999 computers.
 		bool honour_brain_period = false;
@@ -136,6 +144,12 @@ namespace openrayman::game
 		// an earlier level, tests).
 		void set_variable(std::uint32_t self, std::uint32_t index, const value& v) { write_variable(variable(self, index), v); }
 		value get_variable(std::uint32_t self, std::uint32_t index) const { return read_variable(variable(self, index)); }
+
+		// Turn on story bit `n` (from 1) of the game's bit array: variable 42 of the global actor,
+		// the first of `candidates` that has it as a bit array (Learn_10: node 6). A save game keeps
+		// these; bit 1133 means Rayman arrived through the portal from the hub. False when no
+		// candidate has the array.
+		bool set_story_bit(std::span<const std::uint32_t> candidates, std::int32_t n);
 		std::uint32_t eval(std::uint32_t self, std::uint32_t node, value& out); // 0x480B90
 		// Skips a node and its arguments.
 		std::uint32_t skip(std::uint32_t node) const;

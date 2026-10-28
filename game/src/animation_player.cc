@@ -281,7 +281,7 @@ namespace openrayman::game
 					at = { placed->m[0][3], placed->m[1][3], placed->m[2][3] };
 				play_animation(m, data, vm.frame_ms(), at);
 			}
-			if(actor && !vm.removed(self))
+			if(actor && !vm.removed(self) && vm.mechanics_runs(self))
 			{
 				// The game camera is moved by its own mechanics (0x4359D0), not the actors' physics.
 				camera_state& camera = vm.camera_motion();

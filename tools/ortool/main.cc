@@ -1152,6 +1152,11 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	game::interpreter vm(memory, main_actor);
 	game::register_handlers(vm);
 	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
+	// As the viewer does: arrived from the hub through the portal (story bit 1133).
+	std::vector<std::uint32_t> fix_actors;
+	for(const auto& placed : header.placements)
+		fix_actors.push_back(placed.super_object.address());
+	vm.set_story_bit(fix_actors, 1133);
 	// Keys to hold, as name:from-to ticks, comma separated (e.g. Up:60-200,A:100-110).
 	game::input keys(memory, read_input_actions(files));
 	struct held { std::uint8_t key; int from, to; };

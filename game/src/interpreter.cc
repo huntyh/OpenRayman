@@ -955,10 +955,62 @@ namespace openrayman::game
 			signal(flow::restart);
 	}
 
+	namespace
+	{
+		// The custom bits and flags 0x412230 reads (standard game +0x24 and +0x29).
+		std::pair<std::uint32_t, std::uint8_t> custom_bits(const live_memory& m, std::uint32_t actor)
+		{
+			std::uint32_t standard = actor && m.contains(actor + 4, 4) ? m.u32(actor + 4) : 0;
+			if(!standard || !m.contains(standard + 0x24, 6))
+				return { 0, 0 };
+			return { m.u32(standard + 0x24), m.u8(standard + 0x29) };
+		}
+	}
+
+	bool interpreter::set_story_bit(std::span<const std::uint32_t> candidates, std::int32_t n)
+	{
+		for(std::uint32_t self : candidates)
+		{
+			value array;
+			try
+			{
+				array = get_variable(self, 42);
+			}
+			catch(const std::exception&)
+			{
+				continue;
+			}
+			// A bit array: u32 element type, u8 count of 32-bit words, the words from +8.
+			std::uint32_t word = std::uint32_t(n - 1) / 32;
+			if(n < 1 || array.type != value_type::buffer || word >= m_memory.u8(array.word() + 4))
+				continue;
+			std::uint32_t at = array.word() + 8 + word * 4;
+			m_memory.write<std::uint32_t>(at, m_memory.u32(at) | 1u << (std::uint32_t(n - 1) % 32));
+			return true;
+		}
+		return false;
+	}
+
+	bool interpreter::brain_runs(std::uint32_t self) const
+	{
+		auto [bits, flags] = custom_bits(m_memory, actor_of(self));
+		if((bits & 0x1800) == 0x1800 || (bits & 0x10000))
+			return false;
+		return !((bits & 0x80000) && (flags & 0x80));
+	}
+
+	bool interpreter::mechanics_runs(std::uint32_t self) const
+	{
+		auto [bits, flags] = custom_bits(m_memory, actor_of(self));
+		if((bits & 0x1800) == 0x1800 || (bits & 0x8000))
+			return false;
+		return !((bits & 0x400000) && (flags & 0x80));
+	}
+
 	void interpreter::think(std::uint32_t self)
 	{
 		std::uint32_t actor = actor_of(self);
-		if(!actor || removed(self))
+		if(!actor || removed(self) || !brain_runs(self))
 			return;
 		std::uint32_t data = m_memory.u32(actor + actor_field::data_3d);
 		if(data && honour_brain_period)

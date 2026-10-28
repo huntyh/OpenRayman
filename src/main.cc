@@ -140,6 +140,7 @@ namespace
 		// --keys Up:60-200,A:100-110: keys held over script ticks, to replay input for screenshots.
 		struct held_key { std::uint8_t key; long from, to; };
 		std::vector<held_key> held_keys;
+		bool new_game = false; // --start new: levels start as on a new game, not as reached from the hub
 		long tick = 0;
 		std::vector<std::uint32_t> thinkers;     // super objects of the actors with a brain
 		// The game's camera actor (the placed Fix actor with a camera part). Until the game's camera
@@ -683,6 +684,15 @@ namespace
 			a.vm = std::make_unique<openrayman::game::interpreter>(*a.live, main_actor);
 			openrayman::game::register_handlers(*a.vm);
 			a.vm->set_world(openrayman::game::world_collision(std::move(collision)));
+			// The story so far: arriving from the hub through the portal (story bit 1133), which
+			// Learn_10's start reads; a new game plays the pirate ship cutscene instead.
+			if(!a.new_game)
+			{
+				std::vector<std::uint32_t> fix_actors;
+				for(const fix_actor_placement& placed : header.placements)
+					fix_actors.push_back(placed.super_object.address());
+				a.vm->set_story_bit(fix_actors, 1133);
+			}
 			a.input.reset();
 			a.tick = 0;
 			try
@@ -1094,6 +1104,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 		}
 		else if(arg == "--collision") // on or off (default): what the level collides with; C in the viewer
 			a->show_collision = std::string_view(argv[n + 1]) == "on";
+		else if(arg == "--start") // portal (default): as reached from the hub; new: as on a new game
+			a->new_game = std::string_view(argv[n + 1]) == "new";
 		else if(arg == "--time") // seconds into the actors' animations, for screenshots
 			a->start_time = std::strtod(argv[n + 1], nullptr);
 		else if(arg == "--lighting") // on (default) or off: the game's lights and fog, or a plain light; L in the viewer
