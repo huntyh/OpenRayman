@@ -40,9 +40,11 @@ as those arrive:
   nobody as very far, instead of stopping the actor's scripts.
 - The game's physics isn't there yet: a speed the scripts set moves the actor straight on, with no
   gravity or collision (right for flying actors such as the fireflies).
-- The game's camera doesn't run yet: its actor is put where the viewer's camera is every tick, so
-  scripts that work around the camera (the floating specks) do so around the view. Learn_10 only
-  starts the specks once the camera has started up, so for now they need `--behaviour 4:1`.
+- The game's camera runs while playing; while flying (Tab), its actor is put where the viewer's
+  camera is every tick, so scripts that work around the camera do so around the view. It leaves out
+  the exe's tracked points, its limited turn towards angle limits and its way round obstacles
+  (docs/formats/camera.md). The main camera starts aimed at Rayman (the exe's camera set-up isn't
+  read yet), and a look-at point that jumps more than 10 units in a frame cuts the view there.
 - Input: the keyboard only (no gamepad yet), and cheat codes (typed key sequences) don't fire.
   Tab switches the keyboard between the viewer's fly camera and the game.
 - Animation events: markers fire on every pass (the event gates aren't counted) and carry the

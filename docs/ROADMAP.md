@@ -139,9 +139,11 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
   - Hover timed by the user: 1.4-1.6 s in both games, so its speed is right. Near the cliff by the
     spawn he can stop in mid-air while hovering and rise a little (probably the sloped cliff face
     taken as floor).
-  - Next: the game camera following Rayman (camera actor 5's scripts, procedures 491-500 and the
-    other handlers it reaches). The optional modern camera waits until the game is nearly complete
-    (with HDR and the like).
+  - The game camera (docs/formats/camera.md) runs: its scripts fill the parameter blocks, the solve
+    and the camera mechanics move it, and the view follows it while playing (Tab). Left out so far:
+    the 8 tracked points, the pi/8 turn towards the angle limits, stepping round obstacles and the
+    occlusion pass. ⬅ we are here: the user compares it with the game. The optional modern camera
+    waits until the game is nearly complete (with HDR and the like).
     In the game the player may turn the camera left/right (Q/W) only where the level allows it;
     level camera presets often overrule it, and a camera icon with a red X shows when turning is
     refused (user).
