@@ -300,7 +300,7 @@ namespace openrayman::game
 		case std::uint8_t(node_type::behaviour): out = value::of(value_type::behaviour, n.param); return next;
 		case std::uint8_t(node_type::sound_event): out = value::of(0x21, n.param); return next;
 		case std::uint8_t(node_type::reference_31): out = value::of(0x1D, n.param); return next;
-		case std::uint8_t(node_type::reference_32): out = value::of(0x26, n.param); return next;
+		case std::uint8_t(node_type::game_material): out = value::of(0x26, n.param); return next;
 		case 33: out = value::of(0x25, n.param); return next;
 		case 34: out = value::of(0x27, n.param); return next;
 		case std::uint8_t(node_type::model): out = value::of(value_type::model, n.param); return next;
@@ -522,6 +522,14 @@ namespace openrayman::game
 			next = eval(self, next, who);
 			std::uint32_t other = who.type == value_type::actor ? super_object_of(who.word()) : who.word();
 			node_view var = node(next);
+			// Or one of its fields (position, ...), read as that actor's own.
+			if(var.type == std::uint8_t(node_type::field))
+			{
+				if(other)
+					return eval(other, next, out);
+				out = value::integer(0);
+				return next + node_size;
+			}
 			out = other ? read_variable(variable(other, var.param)) : value::integer(0);
 			return next + node_size;
 		}
@@ -590,6 +598,8 @@ namespace openrayman::game
 				next = eval(self, next, who);
 				std::uint32_t other = who.type == value_type::actor ? super_object_of(who.word()) : who.word();
 				node_view var = node(next);
+				if(var.type == std::uint8_t(node_type::field))
+					return resolve_place(other ? other : self, next, p);
 				p.what = place::kind::variable;
 				p.slot = variable(other ? other : self, var.param);
 				return next + node_size;

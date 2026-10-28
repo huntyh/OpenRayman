@@ -1,6 +1,7 @@
 #pragma once
 
 #include <openrayman/game/live_memory.h>
+#include <openrayman/game/particles.h>
 
 #include <array>
 #include <cstdint>
@@ -123,6 +124,9 @@ namespace openrayman::game
 			m_frame_ms = m_clock - before;
 		}
 		std::uint32_t frame_ms() const { return m_frame_ms; }
+		// The particles the scripts started (procedure 503).
+		game::particles& particles() { return m_particles; }
+		const game::particles& particles() const { return m_particles; }
 		std::uint32_t eval(std::uint32_t self, std::uint32_t node, value& out); // 0x480B90
 		// Skips a node and its arguments.
 		std::uint32_t skip(std::uint32_t node) const;
@@ -235,5 +239,6 @@ namespace openrayman::game
 		std::set<std::uint32_t> m_removed;
 		std::uint64_t m_ticks = 0;
 		std::uint32_t m_frame_ms = 16;
+		game::particles m_particles;
 	};
 }

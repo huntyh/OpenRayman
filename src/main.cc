@@ -19,6 +19,7 @@
 #include <openrayman/game/interpreter.h>
 #include <openrayman/game/live_memory.h>
 #include <openrayman/animation.h>
+#include <openrayman/brain.h>
 #include <openrayman/cnt_archive.h>
 #include <openrayman/game_data.h>
 #include <openrayman/geometry.h>
@@ -129,6 +130,9 @@ namespace
 		std::unique_ptr<openrayman::game::live_memory> live;
 		std::unique_ptr<openrayman::game::interpreter> vm;
 		std::vector<std::uint32_t> thinkers;     // super objects of the actors with a brain
+		// The game's camera actor (the placed Fix actor with a camera part). Until the game's camera
+		// runs (milestone 3c) it stands where ours is, for the scripts that work around it.
+		std::uint32_t camera_super_object = 0;
 		std::vector<std::uint32_t> actor_at;     // per actors.actors entry: its actor in live memory
 		std::vector<std::uint32_t> super_object_at; // per entry: its super object
 		// Per entry: where each of its family's states is in live memory. (The entries' own
@@ -139,6 +143,7 @@ namespace
 		double script_clock = 0;                 // seconds not yet run as ticks
 		std::string actor_note;           // the state last picked with F4/F5, shown in the title
 		std::vector<std::pair<std::size_t, std::size_t>> start_states; // --actor-state <node>:<state>
+		std::vector<std::pair<std::size_t, std::size_t>> start_behaviours; // --behaviour <node>:<index>
 		float speed = 15.0f;                     // units per second
 		bool looking = false;
 		Uint64 last_frame = 0;
@@ -276,6 +281,23 @@ namespace
 				a.script_clock = 0;
 				break;
 			}
+			if(a.camera_super_object)
+			{
+				// Its -Y axis looks where ours does, Z as close to up as that allows.
+				glm::vec3 y = -a.camera.forward();
+				glm::vec3 x = glm::cross(y, glm::vec3(0, 0, 1));
+				x = glm::length(x) > 1e-4f ? glm::normalize(x) : glm::vec3(1, 0, 0);
+				glm::vec3 z = glm::cross(x, y);
+				affine placed;
+				for(int r = 0; r < 3; r++)
+				{
+					placed.m[r][0] = x[r];
+					placed.m[r][1] = y[r];
+					placed.m[r][2] = z[r];
+					placed.m[r][3] = a.camera.position[r];
+				}
+				openrayman::game::set_global_placement(*a.live, a.camera_super_object, placed);
+			}
 			openrayman::game::step(*a.vm, a.thinkers, [](std::uint32_t self, const std::exception& e) {
 				SDL_Log("Script error, actor 0x%08X: %s", self, e.what());
 			});
@@ -387,6 +409,20 @@ namespace
 			shadows.push_back({ model, glm::vec2(actor.shadow->width, actor.shadow->length) });
 		}
 		a.level->set_shadows(std::move(shadows));
+
+		// The particles the scripts started, where they show now.
+		std::vector<level_renderer::particle> particles;
+		if(a.vm && a.scripts)
+		{
+			const openrayman::game::particles& all = a.vm->particles();
+			double now = a.vm->clock() / 1000.0;
+			for(const auto& p : all.all())
+			{
+				auto at = all.shown_at(p, now);
+				particles.push_back({ glm::vec3(at[0], at[1], at[2]), p.size, p.alpha / 255.0f, p.material });
+			}
+		}
+		a.level->set_particles(std::move(particles));
 	}
 
 	// Debug: puts the actor you're looking at (the one nearest the middle of the view, within 150
@@ -478,6 +514,33 @@ namespace
 			}
 			a.level_stats = a.level->load(geometry, a.actors.meshes, a.archives, std::move(lights), sectors, shadow_material);
 
+			// The materials scripts draw particles with (procedure 503's game materials).
+			std::map<std::uint32_t, visual_material> effect_materials;
+			level_brains brains = read_brains(files.memory, tree);
+			for(const auto& [key, model] : brains.models)
+			{
+				auto take = [&](const script& sc) {
+					for(const script_node& n : sc.nodes)
+					{
+						if(n.type != std::uint8_t(node_type::game_material) || !n.target)
+							continue;
+						if(auto visual = files.memory.follow(*n.target))
+							effect_materials.try_emplace(n.target->address(), read_visual_material(files.memory, *visual));
+					}
+				};
+				for(const auto& list : { &model.behaviours, &model.reflexes })
+					for(const behaviour& b : *list)
+					{
+						for(const script& sc : b.rules)
+							take(sc);
+						if(b.schedule)
+							take(*b.schedule);
+					}
+				for(const macro& m : model.macros)
+					take(m.body);
+			}
+			a.level->load_effect_materials(effect_materials, a.archives);
+
 			// The scripts. Rayman, the game's main actor, is the first Fix actor the level places.
 			a.live = std::make_unique<openrayman::game::live_memory>(files.memory);
 			std::uint32_t main_actor = header.placements.empty() ? 0 : header.placements[0].super_object.address();
@@ -488,6 +551,12 @@ namespace
 			{
 				if(tree.node(n).type == super_object_type::actor)
 					a.thinkers.push_back(tree.node(n).at.address());
+			}
+			a.camera_super_object = 0;
+			for(const fix_actor_placement& placed : header.placements)
+			{
+				if(a.live->contains(placed.actor.address() + 0x10, 4) && a.live->u32(placed.actor.address() + 0x10))
+					a.camera_super_object = placed.super_object.address();
 			}
 			a.actor_at.clear();
 			a.super_object_at.clear();
@@ -525,14 +594,25 @@ namespace
 					}
 				}
 			}
+			// --behaviour: start an actor's scripts in another normal behaviour, to check parts that wait
+			// on what the engine can't do yet (the game's camera, Rayman).
+			for(const auto& [node, which] : a.start_behaviours)
+			{
+				if(node >= tree.nodes().size())
+					continue;
+				openrayman::game::live_memory& m = *a.live;
+				std::uint32_t actor = tree.node(node).data ? tree.node(node).data->address() : 0;
+				std::uint32_t brain = actor && m.contains(actor + 0xC, 4) ? m.u32(actor + 0xC) : 0;
+				std::uint32_t mind = brain && m.contains(brain, 4) ? m.u32(brain) : 0;
+				std::uint32_t model = mind ? m.u32(mind) : 0;
+				// The model's behaviour list: a pointer to the array, then its u8 count.
+				std::uint32_t list = model ? m.u32(model) : 0;
+				if(!list || which >= m.u8(list + 4))
+					continue;
+				a.vm->change_behaviour(m.u32(mind + 4), m.u32(list) + std::uint32_t(which) * 0xC, false);
+			}
+			a.start_behaviours.clear();
 			a.start_states.clear();
-			// --time: let the scripts run up to then, so screenshots show what they picked.
-			run_scripts(a, a.animation_time);
-			update_actors(a);
-			SDL_Log("%s: %zu meshes, %zu triangles, %zu textures (%zu missing), %llu ms", levels[index].c_str(),
-				a.level_stats.meshes, a.level_stats.triangles, a.level_stats.textures, a.level_stats.missing_textures,
-				static_cast<unsigned long long>(SDL_GetTicks() - start));
-
 			// Start where the game does. The first two Fix actors look like Rayman and the game camera
 			// (placed above and behind him), so look from the camera at Rayman. Levels without them
 			// start in the middle, looking along +X.
@@ -554,6 +634,13 @@ namespace
 				a.camera = *a.start_camera;
 				a.start_camera.reset();
 			}
+			// --time: let the scripts run up to then, so screenshots show what they picked.
+			run_scripts(a, a.animation_time);
+			update_actors(a);
+			SDL_Log("%s: %zu meshes, %zu triangles, %zu textures (%zu missing), %llu ms", levels[index].c_str(),
+				a.level_stats.meshes, a.level_stats.triangles, a.level_stats.textures, a.level_stats.missing_textures,
+				static_cast<unsigned long long>(SDL_GetTicks() - start));
+
 		}
 		catch(const std::exception& e)
 		{
@@ -815,6 +902,13 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 			unsigned long node = std::strtoul(argv[n + 1], &end, 10);
 			if(end && *end == ':')
 				a->start_states.push_back({ node, std::strtoul(end + 1, nullptr, 10) });
+		}
+		else if(arg == "--behaviour") // <node>:<index>, as ortool brain numbers them; may be repeated
+		{
+			char* end = nullptr;
+			unsigned long node = std::strtoul(argv[n + 1], &end, 10);
+			if(end && *end == ':')
+				a->start_behaviours.push_back({ node, std::strtoul(end + 1, nullptr, 10) });
 		}
 		else if(arg == "--time") // seconds into the actors' animations, for screenshots
 			a->start_time = std::strtod(argv[n + 1], nullptr);

@@ -6,6 +6,7 @@ add_library(openrayman_game STATIC
 	src/handlers.cc
 	src/interpreter.cc
 	src/live_memory.cc
+	src/particles.cc
 )
 add_library(openrayman::game ALIAS openrayman_game)
 target_include_directories(openrayman_game PUBLIC include)

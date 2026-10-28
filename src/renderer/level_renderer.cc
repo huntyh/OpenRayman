@@ -59,6 +59,8 @@ namespace openrayman
 				vec3 normal = normalize(mat3(u_model) * a_normal);
 				if(u_lighting == 3)
 					v_light = vec4(1.0);
+				else if(u_lighting == 4)
+					v_light = u_material_diffuse;
 				else if(u_lighting == 1)
 					v_light = lit(a_color);
 				else if(u_lighting == 2)
@@ -378,6 +380,8 @@ namespace openrayman
 		m_see_through.clear();
 		m_see_through_triangles.clear();
 		m_sprites.clear();
+		m_effect_materials.clear();
+		m_particles.clear();
 		m_meshes.clear();
 		m_parts.clear();
 		m_level_cards.clear();
@@ -446,6 +450,22 @@ namespace openrayman
 			glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 		else
 			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	}
+
+	void level_renderer::load_effect_materials(const std::map<std::uint32_t, visual_material>& materials,
+		std::span<const std::unique_ptr<cnt_archive>> archives)
+	{
+		statistics stats;
+		for(const auto& [address, material] : materials)
+		{
+			if(!material.texture)
+				continue;
+			gpu_texture texture = texture_for(*material.texture, archives, stats);
+			if(!texture.id)
+				continue;
+			m_effect_materials[address] = { glm::vec3(0), glm::vec2(1), texture.id, texture.mode,
+				glm::vec2(texture.mirror_u ? 2.0f : 1.0f, texture.mirror_v ? 2.0f : 1.0f), animation_for(material, archives, stats) };
+		}
 	}
 
 	level_renderer::gpu_texture level_renderer::texture_for(const texture_info& info, std::span<const std::unique_ptr<cnt_archive>> archives, statistics& stats)
@@ -1163,6 +1183,50 @@ namespace openrayman
 				glBindTexture(GL_TEXTURE_2D, sprites[first].texture);
 				glDrawArrays(GL_TRIANGLES, GLint(first * 6), GLsizei((last - first) * 6));
 				first = last;
+			}
+		}
+
+		// Particles, farthest first: each fades on its own, so each is its own draw.
+		if(!m_particles.empty() && !m_effect_materials.empty())
+		{
+			glm::vec3 right(view[0][0], view[1][0], view[2][0]);
+			glm::vec3 up(view[0][1], view[1][1], view[2][1]);
+			std::vector<const particle*> farthest_first;
+			for(const particle& p : m_particles)
+				if(m_effect_materials.contains(p.material))
+					farthest_first.push_back(&p);
+			std::ranges::sort(farthest_first, [&](const particle* a, const particle* b) {
+				return glm::dot(a->center - eye, a->center - eye) > glm::dot(b->center - eye, b->center - eye);
+			});
+			glm::vec3 lit = glm::normalize(glm::vec3(0.3f, 0.2f, 0.9f));
+			std::vector<vertex> quads;
+			quads.reserve(farthest_first.size() * 6);
+			for(const particle* p : farthest_first)
+			{
+				const sprite_instance& m = m_effect_materials.at(p->material);
+				glm::vec3 x = right * p->half_size, y = up * p->half_size;
+				const float u = m.uv_extent.x, v = m.uv_extent.y;
+				glm::vec4 bounds{ 0, 0, 1, 1 };
+				vertex bl{ p->center - x - y, { 0, v }, lit, bounds }, br{ p->center + x - y, { u, v }, lit, bounds };
+				vertex tl{ p->center - x + y, { 0, 0 }, lit, bounds }, tr{ p->center + x + y, { u, 0 }, lit, bounds };
+				quads.insert(quads.end(), { bl, tl, br, br, tl, tr });
+			}
+			glBindVertexArray(m_sprite_vao);
+			glBindBuffer(GL_ARRAY_BUFFER, m_sprite_vbo);
+			glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(quads.size() * sizeof(vertex)), quads.data(), GL_STREAM_DRAW);
+			glUniform1i(m_u_lighting, 4);
+			glUniform1f(m_u_light_alpha, 1.0f);
+			for(std::size_t i = 0; i < farthest_first.size(); i++)
+			{
+				const sprite_instance& m = m_effect_materials.at(farthest_first[i]->material);
+				if(m.mode != current)
+					set_blend(current = m.mode);
+				// Glowing ones fade by getting darker, see-through ones by their alpha.
+				float a = std::clamp(farthest_first[i]->alpha, 0.0f, 1.0f);
+				glm::vec4 tint = m.mode == blend::additive ? glm::vec4(a, a, a, a) : glm::vec4(1, 1, 1, a);
+				glUniform4fv(m_u_material_diffuse, 1, glm::value_ptr(tint));
+				glBindTexture(GL_TEXTURE_2D, texture_at(m.animation, m.texture));
+				glDrawArrays(GL_TRIANGLES, GLint(i * 6), 6);
 			}
 		}
 

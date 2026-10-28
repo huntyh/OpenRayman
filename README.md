@@ -31,7 +31,7 @@ What works today:
 - Things move: characters play their animations, water and waterfalls flow (animated and
   scrolling textures).
 - The game's own scripts run: the cages hang from their chains and swing, the mushrooms dance, the
-  Lums float and turn towards Rayman, the fireflies hover.
+  Lums float and turn towards Rayman, the fireflies hover, specks float up in the dark.
 - The game's own lighting and fog, worked out from the original program, plus the sky, glass,
   see-through water and characters' shadows. The Woods of Light look the same as the real game
   side by side.
@@ -86,6 +86,10 @@ Dependencies (SDL3, glm, doctest) are downloaded automatically during the first 
 openrayman [--game "<Rayman 2 folder>"] [--level <name>]
 ```
 
+For checking things by eye there are also `--camera x,y,z,yaw,pitch` (as P copies it), `--time <seconds>`,
+`--screenshot <file>`, `--actor-state <node>:<state>` and `--behaviour <node>:<index>` (start an actor's
+scripts in another behaviour, e.g. `--behaviour 4:1` for The Woods of Light's floating specks).
+
 On first start without `--game`, a folder picker asks for your Rayman 2 folder and remembers it.
 It opens The Woods of Light (`Learn_10`), or the level given with `--level`, seen from where the
 game's camera starts.
@@ -133,7 +137,8 @@ ortool level "<game folder>" <name|all>     Load a level and check all its point
 ortool obj "<game folder>" <level> <out>    Export a level's scenery as OBJ with textures
 ortool scene "<game folder>" <level>        Print a level's scene tree
 ortool lights "<game folder>" <level>       Sectors and their lights
-ortool brain "<game folder>" <level> [node] The actors' scripts (one actor's as text)
+ortool brain "<game folder>" <level> [node|block+offset] The scripts of one actor by scene node or by memory address
+ortool run "<game folder>" <level> <ticks> [node]        Runs the level's scripts for that many 60 Hz ticks and lists what changed
 ortool dsb <file.dsb>                       Print a DSB script
 ortool cnt <file.cnt>                       List a texture archive
 ```

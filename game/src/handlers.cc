@@ -452,7 +452,7 @@ namespace openrayman::game
 
 		// Calls whose systems don't exist yet: their arguments are evaluated (they may have side
 		// effects) and nothing else happens. 115..119 (0x4691E0): messages to the engine's mailboxes
-		// (not identified yet); 503: start a particle effect; 505: an on-screen text slot.
+		// (not identified yet); 505: an on-screen text slot.
 		std::uint32_t not_yet(call& c)
 		{
 			std::uint32_t at = c.args;
@@ -1122,6 +1122,20 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 503 (0x463390): start an effect: kind, a point, a vector, a game material, a number. Kinds
+		// 23 and 28 so far (game/src/particles.cc); the others do nothing yet.
+		std::uint32_t start_effect(call& c)
+		{
+			value kind, point, vector, material, number;
+			next_arg(c, kind);
+			next_arg(c, point);
+			next_arg(c, vector);
+			next_arg(c, material);
+			next_arg(c, number);
+			c.vm.particles().start(kind.as_int(), vec_of(point), vec_of(vector), material.word(), number.as_float(), c.vm.clock() / 1000.0);
+			return c.args;
+		}
+
 		// 433 (0x46A890): turn to face a horizontal direction (up stays (0,0,1); forward is -Y).
 		std::uint32_t face_horizontal(call& c)
 		{
@@ -1428,7 +1442,7 @@ namespace openrayman::game
 
 		vm.on_procedure(69, change_behaviour);
 		// 42..47: the scripts' fog override (0x468B90), until the renderer takes it.
-		for(std::uint32_t i : { 42, 43, 44, 45, 46, 47, 115, 116, 117, 118, 119, 503, 505, 506, 507 })
+		for(std::uint32_t i : { 42, 43, 44, 45, 46, 47, 115, 116, 117, 118, 119, 505, 506, 507 })
 			vm.on_procedure(i, not_yet);
 		for(std::uint32_t i : { 176, 182, 188, 194, 201, 207, 280 })
 			vm.on_procedure(i, set_dynamics_vector);
@@ -1453,6 +1467,7 @@ namespace openrayman::game
 		vm.on_procedure(200, teleport);
 		vm.on_procedure(433, face_horizontal);
 		vm.on_procedure(171, orient_from_vectors);
+		vm.on_procedure(503, start_effect);
 		vm.on_procedure(161, face_direction);
 		for(std::uint32_t i : { 163, 164, 165 })
 			vm.on_procedure(i, rotate_local);

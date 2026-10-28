@@ -45,7 +45,7 @@ namespace openrayman
 		behaviour = 28,      // a behaviour or reflex of some AI model
 		sound_event = 30,    // a sound event (procedure 115 plays it)
 		reference_31 = 31,
-		reference_32 = 32,   // points into the dynamic world's blocks, not identified yet
+		game_material = 32,  // a game material (its first word points to the visual material)
 		model = 35,          // an AI model (to read another actor's variables)
 		reference_36 = 36,
 		flags_37 = 37,

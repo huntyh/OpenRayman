@@ -106,6 +106,10 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
   around their spot, steered by their scripts (procedure 171, read from the exe), and fly to Rayman
   when he comes near. Until the physics of 3c, a speed the scripts set moves an actor freely. The
   invisible actors once taken for firefly emitters (nodes 31 and 32) play ambient sounds (3d)
+- ✅ Particles: the effect spawner the scripts use (procedure 503), read from the exe. The specks
+  floating up in the dark parts of The Woods of Light (and a twinkle at one spot) are in; other
+  effects (sparks when a cage breaks, Rayman's dust) follow as they're needed. Until the game's
+  camera runs (3c), the level only starts the specks with `--behaviour 4:1`
 - Moved to 3c, since they need collision: the Lum in the cage by the river door keeps inside its
   cage in the game, most likely by bumping into the bars; the condor's flight along its path
 

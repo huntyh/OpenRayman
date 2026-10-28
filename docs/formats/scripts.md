@@ -88,7 +88,8 @@ returns the next node and leaves a value and a value type (a u32 after 12 bytes 
 | 27 | not identified yet | mostly 0x5000..0x5100 |
 | 28 | behaviour or reflex | pointer, of any model |
 | 30 | sound event | an id the sound engine looks up (procedure 115 plays it; 3d) |
-| 31, 32, 36, 38 | pointers not identified yet | 32 points into the dynamic world's blocks |
+| 31, 36, 38 | pointers not identified yet | |
+| 32 | game material | pointer; +0 points to its visual material (procedure 503 draws particles with it) |
 | 35 | AI model | pointer |
 | 37 | flags, not identified yet | |
 | 39 | subroutine: runs a macro in place | pointer to the macro |

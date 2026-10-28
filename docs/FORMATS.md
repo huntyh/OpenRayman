@@ -135,6 +135,14 @@ the exe's tree-walking interpreter through 41 node types.
 
 - Sources: own analysis of `Rayman2.exe` and the data of all 70 levels; Raymap for orientation only.
 
+## Particles
+
+See [formats/particles.md](formats/particles.md). Scripts start effects with procedure 503 (kind,
+point, vector, game material, number); the engine moves, fades and draws the particles. Kinds 23
+(a gathering twinkle) and 28 (specks rising around the camera) are read so far.
+
+- Sources: own analysis of `Rayman2.exe`; helper models' traces re-checked against the exe.
+
 ## Actors and animations
 
 See [formats/animation.md](formats/animation.md). Actors' object lists, and the animation bank shared

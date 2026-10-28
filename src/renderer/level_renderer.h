@@ -67,6 +67,20 @@ namespace openrayman
 		};
 		void set_shadows(std::vector<shadow> shadows) { m_shadows = std::move(shadows); }
 
+		// The materials scripts start particles with (procedure 503), by game material address.
+		void load_effect_materials(const std::map<std::uint32_t, visual_material>& materials,
+			std::span<const std::unique_ptr<cnt_archive>> archives);
+
+		// A particle this frame: a square facing the camera, faded by alpha (0..1).
+		struct particle
+		{
+			glm::vec3 center{ 0 };
+			float half_size = 0;
+			float alpha = 1;
+			std::uint32_t material = 0; // a game material given to load_effect_materials
+		};
+		void set_particles(std::vector<particle> particles) { m_particles = std::move(particles); }
+
 		// The clock for animated textures, in seconds.
 		void set_time(double seconds) { m_time = seconds; }
 
@@ -203,6 +217,8 @@ namespace openrayman
 		std::map<std::size_t, batch> m_skies; // by sector: the sky's texture and where the dome is
 		std::vector<texture_animation> m_animations;
 		std::map<std::uint32_t, int> m_animation_by_material; // by visual material address
+		std::map<std::uint32_t, sprite_instance> m_effect_materials; // by game material address
+		std::vector<particle> m_particles;
 		double m_time = 0;
 		bool m_edge_clamp = true;
 		bool m_lighting = true;

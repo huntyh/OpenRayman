@@ -5,6 +5,7 @@ add_executable(openrayman_tests
 	format_tests.cc
 	game_data_tests.cc
 	animation_tests.cc
+	particle_tests.cc
 	level_tests.cc
 )
 target_link_libraries(openrayman_tests PRIVATE openrayman::lib openrayman::game doctest::doctest)

@@ -23,6 +23,7 @@ of them off may come later.
 | --- | --- | --- | --- |
 | Brain rate | Scripts can make an actor think only every Nth frame (3D data +0xFE, procedure 341) to save time | Every actor thinks every frame (`honour_brain_period` switches the game's way back on) | 3b |
 | Slow frames | Not known yet | At most 4 ticks per drawn frame: if the computer can't keep up, the game slows down instead of freezing | 3b |
+| Particles | At most 150 at a time, and 35 new ones a frame | Room for 2000 | 3b |
 | Ticks and frame rate | 60 ticks per second | The same 60 ticks per second; drawing runs at any frame rate, smoothed between ticks | 3b |
 
 Not changed yet, candidates for later: the every-2/4/8/16-frames checks in scripts (keywords 2 to 5)
@@ -38,5 +39,9 @@ as those arrive:
   nobody as very far, instead of stopping the actor's scripts.
 - The game's physics isn't there yet: a speed the scripts set moves the actor straight on, with no
   gravity or collision (right for flying actors such as the fireflies).
-- Messages to the engine, particle effects, on-screen text and the scripts' fog override are read
+- The game's camera doesn't run yet: its actor is put where the viewer's camera is every tick, so
+  scripts that work around the camera (the floating specks) do so around the view. Learn_10 only
+  starts the specks once the camera has started up, so for now they need `--behaviour 4:1`.
+- Only particle effects 23 and 28 are known; the others are started but do nothing.
+- Messages to the engine, on-screen text and the scripts' fog override are read
   but have no effect yet.

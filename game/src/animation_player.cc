@@ -201,5 +201,6 @@ namespace openrayman::game
 			if(actor && !vm.removed(self))
 				apply_speed(m, self, actor, vm.frame_ms());
 		}
+		vm.particles().update(vm.clock() / 1000.0, vm.frame_ms() / 1000.0);
 	}
 }
