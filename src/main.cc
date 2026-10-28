@@ -21,6 +21,7 @@
 #include <openrayman/animation.h>
 #include <openrayman/brain.h>
 #include <openrayman/cnt_archive.h>
+#include <openrayman/collision.h>
 #include <openrayman/game_data.h>
 #include <openrayman/geometry.h>
 #include <openrayman/gf_texture.h>
@@ -30,6 +31,7 @@
 #include <openrayman/scene.h>
 
 #include <algorithm>
+#include <bit>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -144,6 +146,7 @@ namespace
 		std::string actor_note;           // the state last picked with F4/F5, shown in the title
 		std::vector<std::pair<std::size_t, std::size_t>> start_states; // --actor-state <node>:<state>
 		std::vector<std::pair<std::size_t, std::size_t>> start_behaviours; // --behaviour <node>:<index>
+		bool show_collision = false; // C, --collision on
 		float speed = 15.0f;                     // units per second
 		bool looking = false;
 		Uint64 last_frame = 0;
@@ -541,6 +544,28 @@ namespace
 			}
 			a.level->load_effect_materials(effect_materials, a.archives);
 
+			// What the level collides with, for the C overlay: one colour per surface kind (the
+			// lowest flag bit; grey for surfaces without a collide material).
+			std::vector<openrayman::level_renderer::collision_face> faces;
+			for(const openrayman::collision_triangle& t : openrayman::static_collision(files.memory, tree))
+			{
+				static const glm::vec3 palette[16] = { { 1.0f, 0.55f, 0.1f }, { 1.0f, 0.2f, 0.8f }, { 0.2f, 0.9f, 0.2f }, { 0.6f, 0.3f, 1.0f },
+					{ 1.0f, 1.0f, 0.2f }, { 0.2f, 1.0f, 1.0f }, { 0.6f, 1.0f, 0.4f }, { 1.0f, 0.4f, 0.4f },
+					{ 1.0f, 0.1f, 0.1f }, { 0.9f, 0.6f, 0.9f }, { 1.0f, 0.5f, 0.0f }, { 0.5f, 0.0f, 0.0f },
+					{ 0.7f, 0.7f, 0.2f }, { 0.4f, 0.6f, 0.4f }, { 0.2f, 0.4f, 1.0f }, { 0.9f, 0.9f, 0.9f } };
+				glm::vec3 colour(0.55f, 0.6f, 0.7f);
+				if(t.flags)
+					colour = palette[std::countr_zero(unsigned(t.flags))];
+				openrayman::level_renderer::collision_face f;
+				for(int i = 0; i < 3; i++)
+					f.corners[i] = { t.corners[i][0], t.corners[i][1], t.corners[i][2] };
+				f.normal = { t.normal[0], t.normal[1], t.normal[2] };
+				f.colour = glm::vec4(colour, 0.45f);
+				faces.push_back(f);
+			}
+			a.level->set_collision(std::move(faces));
+			a.level->set_show_collision(a.show_collision);
+
 			// The scripts. Rayman, the game's main actor, is the first Fix actor the level places.
 			a.live = std::make_unique<openrayman::game::live_memory>(files.memory);
 			std::uint32_t main_actor = header.placements.empty() ? 0 : header.placements[0].super_object.address();
@@ -910,6 +935,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 			if(end && *end == ':')
 				a->start_behaviours.push_back({ node, std::strtoul(end + 1, nullptr, 10) });
 		}
+		else if(arg == "--collision") // on or off (default): what the level collides with; C in the viewer
+			a->show_collision = std::string_view(argv[n + 1]) == "on";
 		else if(arg == "--time") // seconds into the actors' animations, for screenshots
 			a->start_time = std::strtod(argv[n + 1], nullptr);
 		else if(arg == "--lighting") // on (default) or off: the game's lights and fog, or a plain light; L in the viewer
@@ -1004,6 +1031,12 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 					case SDLK_F4:
 					case SDLK_F5:
 						step_actor_state(a, event->key.key == SDLK_F5 ? 1 : -1, (event->key.mod & SDL_KMOD_SHIFT) != 0);
+						return SDL_APP_CONTINUE;
+					case SDLK_C:
+						a.show_collision = !a.show_collision;
+						if(a.level)
+							a.level->set_show_collision(a.show_collision);
+						SDL_Log("Collision %s", a.show_collision ? "shown" : "hidden");
 						return SDL_APP_CONTINUE;
 					case SDLK_G:
 						a.scripts = !a.scripts;

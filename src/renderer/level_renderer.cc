@@ -61,6 +61,8 @@ namespace openrayman
 					v_light = vec4(1.0);
 				else if(u_lighting == 4)
 					v_light = u_material_diffuse;
+				else if(u_lighting == 5)
+					v_light = a_color; // as given, for the collision overlay
 				else if(u_lighting == 1)
 					v_light = lit(a_color);
 				else if(u_lighting == 2)
@@ -382,6 +384,7 @@ namespace openrayman
 		m_sprites.clear();
 		m_effect_materials.clear();
 		m_particles.clear();
+		m_collision.clear();
 		m_meshes.clear();
 		m_parts.clear();
 		m_level_cards.clear();
@@ -1228,6 +1231,37 @@ namespace openrayman
 				glBindTexture(GL_TEXTURE_2D, texture_at(m.animation, m.texture));
 				glDrawArrays(GL_TRIANGLES, GLint(i * 6), 6);
 			}
+		}
+
+		// The collision overlay, last and slightly pulled forward so it shows on the surfaces it
+		// shares with the visible meshes.
+		if(m_show_collision && !m_collision.empty())
+		{
+			glm::vec3 sun = glm::normalize(glm::vec3(0.3f, 0.2f, 0.9f));
+			std::vector<vertex> faces;
+			faces.reserve(m_collision.size() * 3);
+			for(const collision_face& f : m_collision)
+			{
+				float shade = 0.55f + 0.45f * std::abs(glm::dot(f.normal, sun));
+				glm::vec4 colour(glm::vec3(f.colour) * shade, f.colour.a);
+				for(const glm::vec3& corner : f.corners)
+					faces.push_back(vertex{ corner, { 0, 0 }, f.normal, { -1e6f, -1e6f, 1e6f, 1e6f }, colour });
+			}
+			glBindVertexArray(m_sprite_vao);
+			glBindBuffer(GL_ARRAY_BUFFER, m_sprite_vbo);
+			glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(faces.size() * sizeof(vertex)), faces.data(), GL_STREAM_DRAW);
+			glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(glm::mat4(1)));
+			glUniform1i(m_u_lighting, 5);
+			glUniform1f(m_u_light_alpha, 1.0f);
+			glUniform4f(m_u_fog, 0, 0, 0, 0);
+			set_blend(current = blend::alpha);
+			glBindTexture(GL_TEXTURE_2D, m_white);
+			glDepthMask(GL_FALSE);
+			glEnable(GL_POLYGON_OFFSET_FILL);
+			glPolygonOffset(-1, -2);
+			glDrawArrays(GL_TRIANGLES, 0, GLsizei(faces.size()));
+			glDisable(GL_POLYGON_OFFSET_FILL);
+			glDepthMask(GL_TRUE);
 		}
 
 		set_blend(blend::none);

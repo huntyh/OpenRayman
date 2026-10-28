@@ -81,6 +81,18 @@ namespace openrayman
 		};
 		void set_particles(std::vector<particle> particles) { m_particles = std::move(particles); }
 
+		// What the level collides with, drawn see-through over everything when shown: one colour
+		// per kind of surface, shaded by which way each triangle faces.
+		struct collision_face
+		{
+			glm::vec3 corners[3]{};
+			glm::vec3 normal{ 0, 0, 1 };
+			glm::vec4 colour{ 1 };
+		};
+		void set_collision(std::vector<collision_face> faces) { m_collision = std::move(faces); }
+		void set_show_collision(bool show) { m_show_collision = show; }
+		bool show_collision() const { return m_show_collision; }
+
 		// The clock for animated textures, in seconds.
 		void set_time(double seconds) { m_time = seconds; }
 
@@ -219,6 +231,8 @@ namespace openrayman
 		std::map<std::uint32_t, int> m_animation_by_material; // by visual material address
 		std::map<std::uint32_t, sprite_instance> m_effect_materials; // by game material address
 		std::vector<particle> m_particles;
+		std::vector<collision_face> m_collision;
+		bool m_show_collision = false;
 		double m_time = 0;
 		bool m_edge_clamp = true;
 		bool m_lighting = true;

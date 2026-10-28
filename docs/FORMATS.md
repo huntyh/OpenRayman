@@ -28,7 +28,8 @@ came from. Update this whenever a format is added or corrected.
 | GPT | `Fix.gpt`, `<Level>.gpt` | Level header (Fix actors, world roots) and the animation bank; some header fields unknown | `pointer_stream.cc`, `level_header.cc` |
 | Super objects | inside SNA | Tree links complete | `scene.cc` |
 | Actors, animations | inside SNA, GPT | Object lists, animation bank, posing a frame; interpolation, events and morphs not yet | `actor.cc`, `animation.cc` |
-| Static geometry | inside SNA | Meshes, triangles, UVs, materials; sprites (type 3) and collision not yet | `geometry.cc` |
+| Static geometry | inside SNA | Meshes, triangles, UVs, materials; sprites (type 3) not yet | `geometry.cc` |
+| Collision | inside SNA | The level's collision triangles and surface flags; actors' zones and flag meanings not yet | `collision.cc` |
 | PTX | `Fix.ptx`, `<Level>.ptx` | Texture slots and names; trailing values unknown | `texture_table.cc` |
 | Scripts (AI) | inside SNA | Brains, models, behaviours, reflexes, macros, variables, script nodes; keywords and operators named | `brain.cc`, `script_text.cc` |
 | BNM sound banks | `World/Sound/*.bnm` | Not started | |
@@ -142,6 +143,15 @@ point, vector, game material, number); the engine moves, fades and draws the par
 (a gathering twinkle) and 28 (specks rising around the camera) are read so far.
 
 - Sources: own analysis of `Rayman2.exe`; helper models' traces re-checked against the exe.
+
+## Collision
+
+See [formats/collision.md](formats/collision.md). Physical object +4 points to a collide set whose
+last slot (+0xC) is the mesh the level collides with, often the visible one. Triangles carry
+surface flags through game material +0xC → collide material +2.
+
+- Sources: own analysis of the data of all 70 levels and of `Rayman2.exe`; a helper model's traces
+  re-checked against both.
 
 ## Actors and animations
 

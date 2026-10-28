@@ -3,6 +3,7 @@
 #include <openrayman/actor.h>
 #include <openrayman/animation.h>
 #include <openrayman/brain.h>
+#include <openrayman/collision.h>
 #include <openrayman/game/animation_player.h>
 #include <openrayman/game/handlers.h>
 #include <openrayman/game/interpreter.h>
@@ -368,6 +369,22 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 			// Recorded from the export checked by eye (top and side views of the whole level).
 			CHECK(meshes == 87);
 			CHECK(level_triangles == 2604);
+		}
+
+		// Collision: every level's static collision decodes (indices checked while reading) and
+		// has some; normals are unit length.
+		std::vector<collision_triangle> collision = static_collision(files.memory, tree);
+		CHECK(!collision.empty());
+		std::size_t with_material = 0;
+		for(const collision_triangle& t : collision)
+		{
+			CHECK(std::abs(t.normal[0] * t.normal[0] + t.normal[1] * t.normal[1] + t.normal[2] * t.normal[2] - 1) < 1e-3f);
+			with_material += t.has_material;
+		}
+		if(level == "Learn_10")
+		{
+			CHECK(collision.size() == 1781);
+			CHECK(with_material == 492);
 		}
 
 		// Animations: Fix's 289 plus the level's. Reading actors cross-checks each one's animation

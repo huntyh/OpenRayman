@@ -88,7 +88,8 @@ openrayman [--game "<Rayman 2 folder>"] [--level <name>]
 
 For checking things by eye there are also `--camera x,y,z,yaw,pitch` (as P copies it), `--time <seconds>`,
 `--screenshot <file>`, `--actor-state <node>:<state>` and `--behaviour <node>:<index>` (start an actor's
-scripts in another behaviour, e.g. `--behaviour 4:1` for The Woods of Light's floating specks).
+scripts in another behaviour, e.g. `--behaviour 4:1` for The Woods of Light's floating specks) and
+`--collision on` (what the level collides with, coloured by surface type; C in the viewer).
 
 On first start without `--game`, a folder picker asks for your Rayman 2 folder and remembers it.
 It opens The Woods of Light (`Learn_10`), or the level given with `--level`, seen from where the
@@ -137,6 +138,7 @@ ortool level "<game folder>" <name|all>     Load a level and check all its point
 ortool obj "<game folder>" <level> <out>    Export a level's scenery as OBJ with textures
 ortool scene "<game folder>" <level>        Print a level's scene tree
 ortool lights "<game folder>" <level>       Sectors and their lights
+ortool collide "<game folder>" <level|all> Collision data: collide sets, element types, surface flags
 ortool brain "<game folder>" <level> [node|block+offset] The scripts of one actor by scene node or by memory address
 ortool run "<game folder>" <level> <ticks> [node]        Runs the level's scripts for that many 60 Hz ticks and lists what changed
 ortool dsb <file.dsb>                       Print a DSB script

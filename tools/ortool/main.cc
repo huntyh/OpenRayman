@@ -64,6 +64,7 @@ static void usage()
 		"  run <game folder> <level> <ticks> [node]\n"
 		"                                      Run the scripts for that many 60 Hz ticks: state and\n"
 		"                                      behaviour changes, missing handlers; with a node, its trace\n"
+		"  collide <game folder> <level|all>   Collision data: collide set slots, element types, surface flags\n"
 		"  peek <game folder> <level> <block> <hex offset> <words>\n"
 		"                                      Print memory words, e.g. peek ... Learn_10 05/02 300 16\n"
 		"  motion <game folder> <level>       For each actor: its animation and how far its parts move\n"
@@ -493,6 +494,88 @@ static int cmd_actors(const fs::path& folder, const std::string& name)
 		}
 		std::cout << "\n";
 	}
+	return EXIT_SUCCESS;
+}
+
+// Survey of collision data: which collide set slots are used, element types, surface flags.
+static int cmd_collide(const fs::path& folder, const std::string& name)
+{
+	game_data game = require_game(folder);
+	std::vector<std::string> levels = name == "all" ? game.game_dsb().levels : std::vector<std::string>{ name };
+	std::map<std::string, int> slots, types, flags, same;
+	for(const std::string& level : levels)
+	{
+		level_files files = load_level_files(game, level);
+		const memory_image& memory = files.memory;
+		level_header header = read_level_header(files);
+		scene tree(memory, header);
+		auto u16 = [&](const memory_location& at) {
+			std::uint32_t word = memory.read_u32({ at.block, at.offset & ~3u });
+			return std::uint16_t(at.offset & 2 ? word >> 16 : word);
+		};
+		auto survey = [&](const std::string& kind, const memory_location& physical) {
+			auto set = memory.follow(physical + 4);
+			if(!set)
+			{
+				slots[kind + " none"]++;
+				return;
+			}
+			std::string pattern;
+			for(std::uint32_t slot = 0; slot < 4; slot++)
+				pattern += memory.follow(*set + slot * 4) ? "x" : ".";
+			slots[kind + " " + pattern]++;
+			auto visual = physical_object_geometry(memory, physical);
+			for(std::uint32_t slot = 0; slot < 4; slot++)
+			{
+				auto geom = memory.follow(*set + slot * 4);
+				if(!geom)
+					continue;
+				same[std::format("{} slot {} {}", kind, slot, visual && *visual == *geom ? "= visual" : "own mesh")]++;
+				std::uint16_t count = u16(*geom + 0x2E);
+				auto type_list = memory.follow(*geom + 0x10);
+				auto element_list = memory.follow(*geom + 0x14);
+				for(std::uint16_t e = 0; e < count && type_list && element_list; e++)
+				{
+					std::uint16_t type = u16(*type_list + e * 2);
+					types[std::format("{} slot {} type {}", kind, slot, type)]++;
+					auto element = memory.follow(*element_list + e * 4);
+					if(type != 1 || !element)
+						continue;
+					auto material = memory.follow(*element);
+					auto collide = material ? memory.follow(*material + 0xC) : std::nullopt;
+					flags[collide ? std::format("{:04X}", u16(*collide + 2)) : "none"] += u16(*element + 4);
+				}
+			}
+		};
+		for(std::size_t i = 0; i < tree.nodes().size(); i++)
+		{
+			const scene_node& node = tree.node(i);
+			if(node.type == super_object_type::ipo && node.data)
+				if(auto physical = memory.follow(*node.data))
+					survey("ipo", *physical);
+		}
+		animation_bank bank = read_animation_bank(files);
+		for(std::size_t child : tree.node(tree.dynamic_world()).children)
+		{
+			try
+			{
+				actor a = read_actor(memory, tree, bank, child);
+				for(const actor_object& object : a.objects)
+					if(object.physical_object)
+						survey("actor", *object.physical_object);
+			}
+			catch(const std::exception&)
+			{
+			}
+		}
+	}
+	for(auto* table : { &slots, &same, &types, &flags })
+	{
+		for(const auto& [key, count] : *table)
+			std::cout << std::format("  {:<28} {}\n", key, count);
+		std::cout << "\n";
+	}
+	std::cout << "(flags: triangles per collide material flag word)\n";
 	return EXIT_SUCCESS;
 }
 
@@ -1216,6 +1299,8 @@ int main(int argc, char** argv)
 			return cmd_run(args[1], args[2], std::stoi(args[3]), std::nullopt);
 		if(cmd == "run" && args.size() == 5)
 			return cmd_run(args[1], args[2], std::stoi(args[3]), std::stoul(args[4]));
+		if(cmd == "collide" && args.size() == 3)
+			return cmd_collide(args[1], args[2]);
 		if(cmd == "peek" && args.size() == 6)
 			return cmd_peek(args[1], args[2], args[3], args[4], args[5]);
 	}
