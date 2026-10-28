@@ -136,9 +136,12 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
     actor's intro).
   - The portal's sparkling particles; splashes when he lands in water.
   - Seen from afar, faint straight lines like a crosshair on X and Y around Rayman, turning with him.
-  - Hover: ours falls about 1.3 units/s steadily (jump at the spawn, hold A); the user feels the
-    game's is slower, not measured yet. Near the cliff by the spawn he can stop in mid-air while
-    hovering and even rise a little (probably the sloped cliff face taken as floor).
+  - Hover timed by the user: 1.4-1.6 s in both games, so its speed is right. Near the cliff by the
+    spawn he can stop in mid-air while hovering and rise a little (probably the sloped cliff face
+    taken as floor).
+  - Next: the game camera following Rayman (camera actor 5's scripts, procedures 491-500 and the
+    other handlers it reaches). The optional modern camera waits until the game is nearly complete
+    (with HDR and the like).
 - The game's camera following him
 - An optional modern camera, turned freely with the right stick like in today's platformers, next
   to the game's own guided camera. It will see what the guided camera never shows, which needs
