@@ -18,6 +18,9 @@ namespace openrayman
 	{
 		constexpr surface_flags grabbable = 0x0004; // Rayman can hang from its edge (ledges, column tops)
 		constexpr surface_flags water = 0x4000;
+		// Surfaces nothing stands on or bumps into: water and 0x8000 (0x43441C drops contacts with
+		// either; Learn_10's 0x8000 surface is an invisible quad by the waterfall).
+		constexpr surface_flags no_contact = 0xC000;
 	}
 
 	// One triangle the level collides with, in world space.

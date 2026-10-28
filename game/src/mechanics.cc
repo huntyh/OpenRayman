@@ -156,8 +156,8 @@ namespace openrayman::game
 		for(std::uint32_t i : found->second)
 		{
 			const collision_triangle& t = m_triangles[i];
-			if(t.normal[2] < floor_normal || (t.flags & surface::water))
-				continue; // walls, and water, which actors sink into
+			if(t.normal[2] < floor_normal || (t.flags & surface::no_contact))
+				continue; // walls, and water (actors sink into it) or surfaces without contact
 			// Barycentric coordinates on the ground plane, then the height of the plane there.
 			const vec3 &a = t.corners[0], &b = t.corners[1], &c = t.corners[2];
 			float d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]);
@@ -198,8 +198,8 @@ namespace openrayman::game
 			for(std::uint32_t i : walls)
 			{
 				const collision_triangle& t = m_triangles[i];
-				if(std::abs(t.normal[2]) >= floor_normal || (t.flags & surface::water))
-					continue; // floors, ceilings, and water, which actors swim through
+				if(std::abs(t.normal[2]) >= floor_normal || (t.flags & surface::no_contact))
+					continue; // floors, ceilings, and water (actors swim through it) or surfaces without contact
 				float low = std::min({ t.corners[0][2], t.corners[1][2], t.corners[2][2] });
 				float high = std::max({ t.corners[0][2], t.corners[1][2], t.corners[2][2] });
 				if(high <= bottom || low >= top)
