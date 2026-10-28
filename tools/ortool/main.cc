@@ -58,9 +58,9 @@ static void usage()
 		"  scene <game folder> <level>         Print a level's super object tree\n"
 		"  lights <game folder> <level> [x,y,z] Sectors (box, light kinds), every static light, each actor's sector;\n"
 		"                                      with a point: the static vertices near it and their light\n"
-		"  brain <game folder> <level|all> [node]\n"
-		"                                      Actors' AI models and script statistics; with a node,\n"
-		"                                      that actor's variables, behaviours and macros as text\n"
+		"  brain <game folder> <level|all> [node | block+offset]\n"
+		"                                      Actors' AI models and script statistics; with a node\n"
+		"                                      or an actor address, its scripts as text\n"
 		"  run <game folder> <level> <ticks> [node]\n"
 		"                                      Run the scripts for that many 60 Hz ticks: state and\n"
 		"                                      behaviour changes, missing handlers; with a node, its trace\n"
@@ -848,10 +848,46 @@ static void print_script(const script& s, const char* label, const ai_model& mod
 		std::cout << "      " << line << "\n";
 }
 
-static int cmd_brain(const fs::path& folder, const std::string& name, std::optional<std::size_t> only)
+// An AI model's variables and scripts: what brain prints below its header, for a node or an address.
+static void print_model_scripts(const ai_model& m, const level_files& files, const scene& tree)
+{
+	for(std::size_t i = 0; i < m.variables.size(); i++)
+		std::cout << std::format("  variable {:>2}: offset {:>3}, type {}\n", i, m.variables[i].offset, m.variables[i].type);
+	for(const auto& [list, label] : { std::pair{ &m.behaviours, "behaviour" }, std::pair{ &m.reflexes, "reflex" } })
+		for(std::size_t i = 0; i < list->size(); i++)
+		{
+			const behaviour& bh = (*list)[i];
+			std::cout << std::format("  {} {} at {} +0x{:X}\n", label, i, bh.at.block->id.to_string(), bh.at.offset);
+			for(const script& s : bh.rules)
+				print_script(s, "rule", m, files.memory, tree);
+			if(bh.schedule)
+				print_script(*bh.schedule, "schedule", m, files.memory, tree);
+		}
+	for(std::size_t i = 0; i < m.macros.size(); i++)
+		print_script(m.macros[i].body, std::format("macro {}", i).c_str(), m, files.memory, tree);
+}
+
+// Resolves "<block>+<hex offset>" (as in peek) to an actor's address in the level's memory.
+static memory_location parse_actor_address(const memory_image& memory, const std::string& text)
+{
+	std::size_t plus = text.find('+');
+	if(plus == std::string::npos)
+		throw format_error("an actor address is written block+offset, e.g. 04/01+1660");
+	const std::string block = text.substr(0, plus);
+	const std::string offset = text.substr(plus + 1);
+	block_id id{ std::uint8_t(std::stoul(block.substr(0, 2), nullptr, 16)), std::uint8_t(std::stoul(block.substr(3, 2), nullptr, 16)) };
+	const sna_block* found = memory.find(id);
+	if(!found)
+		throw format_error("no block " + block);
+	return { found, std::uint32_t(std::stoul(offset, nullptr, 16)) };
+}
+
+static int cmd_brain(const fs::path& folder, const std::string& name, std::optional<std::size_t> only, const std::optional<std::string>& address)
 {
 	game_data game = require_game(folder);
 	std::vector<std::string> levels = name == "all" ? game.game_dsb().levels : std::vector<std::string>{ name };
+	if(address && name == "all")
+		throw format_error("an actor address needs one level, not all");
 	std::map<int, std::size_t> types, pointing;
 	std::map<std::pair<int, std::uint32_t>, std::size_t> params; // non-pointer params of table types
 	std::size_t actors = 0, models = 0, behaviours = 0, reflexes = 0, scripts = 0, nodes = 0, variables = 0;
@@ -891,6 +927,21 @@ static int cmd_brain(const fs::path& folder, const std::string& name, std::optio
 		}
 		if(levels.size() != 1)
 			continue;
+		if(address)
+		{
+			// Not in the scene tree (a spawnable template): read the brain at the given actor address.
+			memory_location at = parse_actor_address(files.memory, *address);
+			level_brains one = read_brain_at(files.memory, at);
+			if(one.actors.empty())
+				throw format_error(std::format("the actor at {} +0x{:X} has no brain", at.block->id.to_string(), at.offset));
+			const actor_brain& b = one.actors.front();
+			const ai_model& m = one.model(b);
+			std::cout << std::format("actor {} +0x{:X}: model {} +0x{:X}, {} behaviours (current {}), {} reflexes (current {}), {} variables\n",
+				at.block->id.to_string(), at.offset, m.at.block->id.to_string(), m.at.offset, m.behaviours.size(), b.behaviour ? std::to_string(*b.behaviour) : "-",
+				m.reflexes.size(), b.reflex ? std::to_string(*b.reflex) : "-", m.variables.size());
+			print_model_scripts(m, files, tree);
+			return EXIT_SUCCESS;
+		}
 		if(!only)
 		{
 			// What pointer nodes point at, by kind of known structure.
@@ -944,20 +995,7 @@ static int cmd_brain(const fs::path& folder, const std::string& name, std::optio
 				m.reflexes.size(), b.reflex ? std::to_string(*b.reflex) : "-", m.variables.size());
 			if(!only)
 				continue;
-			for(std::size_t i = 0; i < m.variables.size(); i++)
-				std::cout << std::format("  variable {:>2}: offset {:>3}, type {}\n", i, m.variables[i].offset, m.variables[i].type);
-			for(const auto& [list, label] : { std::pair{ &m.behaviours, "behaviour" }, std::pair{ &m.reflexes, "reflex" } })
-				for(std::size_t i = 0; i < list->size(); i++)
-				{
-					const behaviour& bh = (*list)[i];
-					std::cout << std::format("  {} {} at {} +0x{:X}\n", label, i, bh.at.block->id.to_string(), bh.at.offset);
-					for(const script& s : bh.rules)
-						print_script(s, "rule", m, files.memory, tree);
-					if(bh.schedule)
-						print_script(*bh.schedule, "schedule", m, files.memory, tree);
-				}
-			for(std::size_t i = 0; i < m.macros.size(); i++)
-				print_script(m.macros[i].body, std::format("macro {}", i).c_str(), m, files.memory, tree);
+			print_model_scripts(m, files, tree);
 		}
 	}
 	std::cout << std::format("{} actors with a brain, {} models, {} behaviours, {} reflexes, {} scripts, {} nodes, {} variables\n",
@@ -1166,9 +1204,13 @@ int main(int argc, char** argv)
 			return cmd_lights(args[1], args[2], p);
 		}
 		if(cmd == "brain" && args.size() == 3)
-			return cmd_brain(args[1], args[2], std::nullopt);
+			return cmd_brain(args[1], args[2], std::nullopt, std::nullopt);
 		if(cmd == "brain" && args.size() == 4)
-			return cmd_brain(args[1], args[2], std::stoul(args[3]));
+		{
+			if(args[3].find('/') != std::string::npos)
+				return cmd_brain(args[1], args[2], std::nullopt, args[3]);
+			return cmd_brain(args[1], args[2], std::stoul(args[3]), std::nullopt);
+		}
 		if(cmd == "run" && args.size() == 4)
 			return cmd_run(args[1], args[2], std::stoi(args[3]), std::nullopt);
 		if(cmd == "run" && args.size() == 5)

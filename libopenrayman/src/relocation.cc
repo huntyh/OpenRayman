@@ -110,7 +110,7 @@ namespace openrayman
 		std::size_t m_position = 0;
 	};
 
-	static std::vector<std::byte> read_at(const std::filesystem::path& path, std::uint64_t offset, std::size_t size)
+	static std::vector<std::byte> read_brain_at(const std::filesystem::path& path, std::uint64_t offset, std::size_t size)
 	{
 		std::ifstream stream(path, std::ios::binary);
 		stream.seekg(static_cast<std::streamoff>(offset));
@@ -128,7 +128,7 @@ namespace openrayman
 	levels_dat::levels_dat(const std::filesystem::path& path) : m_path(path)
 	{
 		m_file_size = std::filesystem::file_size(path);
-		std::vector<std::byte> header = read_at(path, 0, 16 + 8 * 4);
+		std::vector<std::byte> header = read_brain_at(path, 0, 16 + 8 * 4);
 		binary_reader r(header);
 		dat_key key = read_key(r);
 
@@ -160,7 +160,7 @@ namespace openrayman
 		auto sector = static_cast<std::uint32_t>(x * m_sectors);
 		std::uint64_t index_offset = std::uint64_t(sector) * m_sector_size + m_base;
 
-		std::vector<std::byte> data = read_at(m_path, index_offset, 16 + (std::size_t(index) + 1) * 4);
+		std::vector<std::byte> data = read_brain_at(m_path, index_offset, 16 + (std::size_t(index) + 1) * 4);
 		binary_reader r(data);
 		dat_key key = read_key(r);
 		r.seek(16 + std::size_t(index) * 4);

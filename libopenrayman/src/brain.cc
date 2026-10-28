@@ -219,4 +219,35 @@ namespace openrayman
 		}
 		return result;
 	}
+
+	// An actor not in the scene tree (a spawnable template): its brain and model, without a node number.
+	level_brains read_brain_at(const memory_image& memory, const memory_location& actor)
+	{
+		level_brains result;
+		auto brain = memory.follow(actor + actor_brain_field);
+		if(!brain || brain->block->data.empty())
+			return result;
+		auto mind = memory.follow(*brain);
+		if(!mind)
+			return result;
+		auto model_at = memory.follow(*mind + mind_field::model);
+		if(!model_at)
+			return result;
+		std::uint64_t key = level_brains::model_key(*model_at);
+		result.models.emplace(key, read_model(memory, *model_at));
+		const ai_model& model = result.models.at(key);
+
+		actor_brain b;
+		b.model = *model_at;
+		if(auto intelligence = memory.follow(*mind + mind_field::intelligence))
+			b.behaviour = index_of(model.behaviours, memory.follow(*intelligence + intelligence_behaviour));
+		if(auto intelligence = memory.follow(*mind + mind_field::reflex_intelligence))
+			b.reflex = index_of(model.reflexes, memory.follow(*intelligence + intelligence_behaviour));
+		if(auto variables = memory.follow(*mind + mind_field::variables))
+			if(auto current = memory.follow(*variables + memory_current); current && !current->block->data.empty())
+				if(!model.defaults.empty())
+					b.variables = read_bytes(*current, model.defaults.size());
+		result.actors.push_back(std::move(b));
+		return result;
+	}
 }

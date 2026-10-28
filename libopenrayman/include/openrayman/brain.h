@@ -133,4 +133,8 @@ namespace openrayman
 
 	// Reads the brains of every actor in the scene that has one. Throws format_error.
 	level_brains read_brains(const memory_image& memory, const scene& tree);
+
+	// Reads the brain of one actor at its address in memory, even if it isn't in the scene (a
+	// spawnable template). Empty if the actor has no brain. Throws format_error.
+	level_brains read_brain_at(const memory_image& memory, const memory_location& actor);
 }
