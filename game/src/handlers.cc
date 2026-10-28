@@ -2171,6 +2171,34 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 166 (0x46AB20, case 0x46ACD1): turn about a world axis (any length) by degrees. The exe
+		// negates the angle here, unlike 163..165, then shares their rotation (0x46B096). The portal
+		// spins Rayman with it as he comes out (node 77, about 0.5 degrees per millisecond).
+		std::uint32_t rotate_about_axis(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value axis_value, degrees;
+			next_arg(c, axis_value);
+			next_arg(c, degrees);
+			std::uint32_t t = transform_of(c.vm, self);
+			vec3 k = vec_of(axis_value);
+			if(!t || length(k) < 1e-9f)
+				return c.args;
+			k = normalised(k);
+			live_memory& m = c.vm.memory();
+			float a = -degrees.as_float() * 0.0174533f, cs = std::cos(a), sn = std::sin(a);
+			vec3 axes[3] = { read3(m, t + 0x10), read3(m, t + 0x1C), read3(m, t + 0x28) };
+			for(vec3& v : axes)
+			{
+				vec3 kv = cross(k, v);
+				float along = k[0] * v[0] + k[1] * v[1] + k[2] * v[2];
+				for(std::size_t i = 0; i < 3; i++)
+					v[i] = v[i] * cs + kv[i] * sn + k[i] * along * (1 - cs);
+			}
+			set_axes(m, t, axes[0], axes[1], axes[2]);
+			return c.args;
+		}
+
 		// 173 (0x46AB20): set the scale along the actor's axes.
 		std::uint32_t set_scale(call& c)
 		{
@@ -2879,6 +2907,7 @@ namespace openrayman::game
 		vm.on_procedure(161, face_direction);
 		for(std::uint32_t i : { 163, 164, 165 })
 			vm.on_procedure(i, rotate_local);
+		vm.on_procedure(166, rotate_about_axis);
 		vm.on_procedure(173, set_scale);
 		vm.on_procedure(235, clear_contacts);
 		vm.on_procedure(236, clear_contacts);
