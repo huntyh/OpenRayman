@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <map>
 
 // The conditions, functions and procedures scripts call, each written from what its handler in
@@ -635,21 +636,52 @@ namespace openrayman::game
 		}
 
 		// 378..385 (0x470770): a global gauge, a value and its maximum (0x4E9308, 0x4E930C; functions
-		// 102 and 103 read them). What it measures isn't known yet.
-		float g_gauge = 0, g_gauge_max = 0;
+		// 102..107 read and change them). What it measures isn't known yet.
 		std::uint32_t gauge(call& c)
 		{
 			value v;
 			next_arg(c, v);
 			float x = v.as_float();
+			interpreter::camera_globals& g = c.vm.camera();
 			switch(c.index)
 			{
-			case 378: case 380: g_gauge = x; break;
-			case 379: case 381: g_gauge_max = x; break;
-			case 382: g_gauge = std::clamp(g_gauge + x, 0.0f, g_gauge_max); break;
-			case 383: g_gauge_max = std::max(g_gauge_max + x, 0.0f); g_gauge = std::min(g_gauge, g_gauge_max); break;
-			case 384: g_gauge = std::clamp(g_gauge - x, 0.0f, g_gauge_max); break;
-			case 385: g_gauge_max = std::max(g_gauge_max - x, 0.0f); g_gauge = std::min(g_gauge, g_gauge_max); break;
+			case 378: case 380: g.gauge = x; break;
+			case 379: case 381: g.gauge_max = x; break;
+			case 382: g.gauge = std::clamp(g.gauge + x, 0.0f, g.gauge_max); break;
+			case 383: g.gauge_max = std::max(g.gauge_max + x, 0.0f); g.gauge = std::min(g.gauge, g.gauge_max); break;
+			case 384: g.gauge = std::clamp(g.gauge - x, 0.0f, g.gauge_max); break;
+			case 385: g.gauge_max = std::max(g.gauge_max - x, 0.0f); g.gauge = std::min(g.gauge, g.gauge_max); break;
+			}
+			return c.args;
+		}
+
+		// 102..107 (0x475F90): the same gauge pair. 102 and 103 return the value and the maximum;
+		// 104/106 add or take away the argument from the value, kept between 0 and the maximum;
+		// 105/107 do the same for the maximum, pulling the value down with it. Each returns what it
+		// changed.
+		std::uint32_t gauge_function(call& c, value& out)
+		{
+			interpreter::camera_globals& g = c.vm.camera();
+			if(c.index == 102 || c.index == 103)
+			{
+				out = value::real(c.index == 102 ? g.gauge : g.gauge_max);
+				return c.args;
+			}
+			value v;
+			next_arg(c, v);
+			float delta = (c.index == 104 || c.index == 105 ? 1.0f : -1.0f) * v.as_float();
+			if(c.index == 104 || c.index == 106)
+			{
+				float changed = g.gauge + delta;
+				g.gauge = changed > g.gauge_max ? g.gauge_max : changed < 0.0f ? 0.0f : changed;
+				out = value::real(g.gauge);
+			}
+			else
+			{
+				float changed = g.gauge_max + delta;
+				g.gauge_max = changed < 0.0f ? 0.0f : changed;
+				g.gauge = std::min(g.gauge, g.gauge_max);
+				out = value::real(g.gauge_max);
 			}
 			return c.args;
 		}
@@ -805,6 +837,374 @@ namespace openrayman::game
 			// Rotation and scale from here on (type 4: the second copy is what places the object).
 			if(m.u32(t) < 4)
 				m.write<std::uint32_t>(t, 4);
+		}
+
+		// --- The script camera ---------------------------------------------------------------------
+		// A camera object (the target actor's +0x10) points at four 0x7C-byte parameter blocks:
+		// +0x00 the default values, +0x04 the current ones, +0x08 a spare copy and +0x0C the
+		// temporary override the scripts fill each frame. cam+0x74 bit 0 says the override holds a
+		// copy of the current block (0x4140A0), cam+0x75 bit 1 that the spare was saved.
+
+		namespace camera_field
+		{
+			constexpr std::uint32_t block_default = 0x00, block_current = 0x04, block_spare = 0x08, block_override = 0x0C;
+			constexpr std::uint32_t block_size = 0x7C;
+			constexpr std::uint32_t override_active = 0x74; // u8, bit 0
+			constexpr std::uint32_t snap = 0x17C;           // u8: the next update is an instant cut
+		}
+
+		// The camera object of an actor's super object, or 0 when it has none.
+		std::uint32_t camera_object(interpreter& vm, std::uint32_t super_object)
+		{
+			live_memory& m = vm.memory();
+			std::uint32_t actor = vm.actor_of(super_object);
+			std::uint32_t cam = actor && m.contains(actor + 0x10, 4) ? m.u32(actor + 0x10) : 0;
+			return cam && m.contains(cam, 0x80) ? cam : 0;
+		}
+
+		// One of those parameter blocks (an offset from camera_field above), or 0 when it isn't there.
+		std::uint32_t camera_block(interpreter& vm, std::uint32_t cam, std::uint32_t which)
+		{
+			live_memory& m = vm.memory();
+			std::uint32_t block = cam && m.contains(cam + which, 4) ? m.u32(cam + which) : 0;
+			return block && m.contains(block, camera_field::block_size) ? block : 0;
+		}
+
+		// 0x4140A0: copy the current block into the override block unless that already holds the
+		// copy, and remember that it does (cam+0x74 bit 0). Scripts edit the override every frame.
+		void back_up_camera_block(interpreter& vm, std::uint32_t cam)
+		{
+			live_memory& m = vm.memory();
+			std::uint8_t flags = m.u8(cam + camera_field::override_active);
+			if(flags & 1)
+				return;
+			std::uint32_t from = camera_block(vm, cam, camera_field::block_current);
+			std::uint32_t to = camera_block(vm, cam, camera_field::block_override);
+			if(from && to)
+				std::memcpy(m.span(to, camera_field::block_size).data(), m.span(from, camera_field::block_size).data(), camera_field::block_size);
+			m.write<std::uint8_t>(cam + camera_field::override_active, std::uint8_t(flags | 1));
+		}
+
+		// 0x4733A0: set (value != 0) or clear the bits of `mask` in the 16-bit option word at
+		// `offset` of the live blocks. mode_temp == 1 changes only the override block (after the
+		// backup); otherwise the current, spare and override blocks all change.
+		void set_camera_flags(interpreter& vm, std::uint32_t cam, std::uint32_t offset, std::int32_t mode_temp, std::int32_t value, std::uint32_t mask)
+		{
+			live_memory& m = vm.memory();
+			std::uint32_t current = camera_block(vm, cam, camera_field::block_current);
+			std::uint32_t spare = camera_block(vm, cam, camera_field::block_spare);
+			std::uint32_t override_ = camera_block(vm, cam, camera_field::block_override);
+			if(!current || !spare || !override_)
+				return;
+			if(mode_temp == 1)
+				back_up_camera_block(vm, cam);
+			auto apply = [&](std::uint32_t block) {
+				std::uint16_t word = m.read<std::uint16_t>(block + offset), bits = std::uint16_t(mask);
+				m.write<std::uint16_t>(block + offset, value ? std::uint16_t(word | bits) : std::uint16_t(word & ~bits));
+			};
+			if(mode_temp == 1)
+			{
+				apply(override_);
+				return;
+			}
+			apply(current);
+			apply(spare);
+			apply(override_);
+		}
+
+		// 0x47DBE0: one float of the parameter blocks. mode_temp == 1 writes only the override block
+		// (after the backup); otherwise the current, spare and override blocks all get it. mode -1
+		// takes the default block's value, 0 adds `value` to the one in force (the override while it
+		// is active, else the current one), 1 stores `value`.
+		void set_camera_float(interpreter& vm, std::uint32_t cam, std::uint32_t offset, std::int32_t mode_temp, std::int32_t mode, float value)
+		{
+			live_memory& m = vm.memory();
+			std::uint32_t current = camera_block(vm, cam, camera_field::block_current);
+			std::uint32_t spare = camera_block(vm, cam, camera_field::block_spare);
+			std::uint32_t override_ = camera_block(vm, cam, camera_field::block_override);
+			if(!current || !spare || !override_)
+				return;
+			if(mode_temp == 1)
+				back_up_camera_block(vm, cam);
+			std::uint32_t written = mode_temp == 1 ? override_ : current;
+			float result = 0;
+			if(mode == -1)
+			{
+				if(std::uint32_t at_default = camera_block(vm, cam, camera_field::block_default))
+					result = m.f32(at_default + offset);
+			}
+			else if(mode == 0)
+				result = m.f32((m.u8(cam + camera_field::override_active) & 1 ? override_ : current) + offset) + value;
+			else if(mode == 1)
+				result = value;
+			m.write<float>(written + offset, result);
+			if(mode_temp != 1)
+			{
+				m.write<float>(spare + offset, result);
+				m.write<float>(override_ + offset, result);
+			}
+		}
+
+		// 0x47DCE0: the same for one vector of the parameter blocks.
+		void set_camera_vector(interpreter& vm, std::uint32_t cam, std::uint32_t offset, std::int32_t mode_temp, std::int32_t mode, const vec3& value)
+		{
+			live_memory& m = vm.memory();
+			std::uint32_t current = camera_block(vm, cam, camera_field::block_current);
+			std::uint32_t spare = camera_block(vm, cam, camera_field::block_spare);
+			std::uint32_t override_ = camera_block(vm, cam, camera_field::block_override);
+			if(!current || !spare || !override_)
+				return;
+			if(mode_temp == 1)
+				back_up_camera_block(vm, cam);
+			std::uint32_t written = mode_temp == 1 ? override_ : current;
+			vec3 result{};
+			if(mode == -1)
+			{
+				if(std::uint32_t at_default = camera_block(vm, cam, camera_field::block_default))
+					result = read3(m, at_default + offset);
+			}
+			else if(mode == 0)
+			{
+				vec3 base = read3(m, (m.u8(cam + camera_field::override_active) & 1 ? override_ : current) + offset);
+				result = { base[0] + value[0], base[1] + value[1], base[2] + value[2] };
+			}
+			else if(mode == 1)
+				result = value;
+			write3(m, written + offset, result);
+			if(mode_temp != 1)
+			{
+				write3(m, spare + offset, result);
+				write3(m, override_ + offset, result);
+			}
+		}
+
+		// 445, 446 (0x47DDE0): one of the camera's two vectors: 445 +0x00 and 446 +0x0C. Args:
+		// mode_temp, mode, vector.
+		std::uint32_t set_camera_vector_procedure(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value mode_temp, mode, v;
+			next_arg(c, mode_temp);
+			next_arg(c, mode);
+			next_arg(c, v);
+			if(std::uint32_t cam = camera_object(c.vm, self))
+				set_camera_vector(c.vm, cam, c.index == 445 ? 0x00 : 0x0C, mode_temp.as_int(), mode.as_int(), vec_of(v));
+			return c.args;
+		}
+
+		// 447..466 (0x47DEB0): one float of the camera's parameter blocks each, 447 at +0x18 up to
+		// 466 at +0x64. Args: mode_temp, mode, value (the rules set_camera_float gives).
+		std::uint32_t set_camera_parameter(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value mode_temp, mode, v;
+			next_arg(c, mode_temp);
+			next_arg(c, mode);
+			next_arg(c, v);
+			if(std::uint32_t cam = camera_object(c.vm, self))
+				set_camera_float(c.vm, cam, 0x18 + (c.index - 447) * 4, mode_temp.as_int(), mode.as_int(), v.as_float());
+			return c.args;
+		}
+
+		// The two option-word setters' work: set or clear `mask`'s bits of the 16-bit word at
+		// `offset`, or with `whole` take the default block's word as the mask. value -1 copies the
+		// bit at `shift` from the default block. Args: mode_temp, value.
+		std::uint32_t set_camera_option_word(call& c, std::uint32_t offset, bool whole, std::uint32_t shift)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value mode_temp, v;
+			next_arg(c, mode_temp);
+			next_arg(c, v);
+			live_memory& m = c.vm.memory();
+			std::uint32_t cam = camera_object(c.vm, self);
+			if(!cam)
+				return c.args;
+			std::uint32_t def = camera_block(c.vm, cam, camera_field::block_default);
+			std::uint32_t mask = whole ? (def ? m.read<std::uint16_t>(def + offset) : 0) : 1u << shift;
+			std::int32_t value = v.as_int();
+			if(!whole && value == -1)
+				value = def ? (m.read<std::uint16_t>(def + offset) >> shift & 1) : 0;
+			set_camera_flags(c.vm, cam, offset, mode_temp.as_int(), value, mask);
+			return c.args;
+		}
+
+		// 472..480 (0x47E670): one bit of the block +0x72 option word, 473 bit 0 up to 480 bit 7.
+		// 472 takes the default block's whole word as the mask, i.e. "apply the default options".
+		std::uint32_t set_camera_options_72(call& c)
+		{
+			static constexpr std::uint32_t shifts[] = { 0, 1, 2, 3, 4, 5, 6, 7 }; // 473..480
+			bool whole = c.index == 472;
+			return set_camera_option_word(c, 0x72, whole, whole ? 0 : shifts[c.index - 473]);
+		}
+
+		// 481..490 (0x47E830): the same for the block +0x70 option word, bits 0..3, 4, 5, 7, 6 and 8
+		// (488 is bit 7 and 489 bit 6 in the exe's order). 481 takes the default block's whole word.
+		std::uint32_t set_camera_options_70(call& c)
+		{
+			static constexpr std::uint32_t shifts[] = { 0, 1, 2, 3, 4, 5, 7, 6, 8 }; // 482..490
+			bool whole = c.index == 481;
+			return set_camera_option_word(c, 0x70, whole, whole ? 0 : shifts[c.index - 482]);
+		}
+
+		// 495..497 (0x47EC20): set or clear bit 0x1000 (495), 0x2000 (496) or 0x4000 (497) of the
+		// block +0x72 word and, when value == 1, store the vectors straight into the camera object
+		// (495 +0x28, 496 +0x34, 497 +0x40 then +0x4C). Args: mode_temp, value, vector [, vector].
+		std::uint32_t set_camera_fixed_vector(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value mode_temp, on, first, second;
+			next_arg(c, mode_temp);
+			next_arg(c, on);
+			next_arg(c, first);
+			if(c.index == 497)
+				next_arg(c, second);
+			live_memory& m = c.vm.memory();
+			std::uint32_t cam = camera_object(c.vm, self);
+			if(!cam)
+				return c.args;
+			if(on.as_int() == 1)
+			{
+				write3(m, cam + (c.index == 495 ? 0x28 : c.index == 496 ? 0x34 : 0x40), vec_of(first));
+				if(c.index == 497)
+					write3(m, cam + 0x4C, vec_of(second));
+			}
+			std::uint32_t mask = c.index == 495 ? 0x1000 : c.index == 496 ? 0x2000 : 0x4000;
+			set_camera_flags(c.vm, cam, 0x72, mode_temp.as_int(), on.as_int(), mask);
+			return c.args;
+		}
+
+		// 491 (0x47EA70): write one entry of the camera's global settings block. index < 0x11 is a
+		// float at +0x30 + 4*index, 0x11..0x16 an int16 at +0x52 + 2*index, 0x1E..0x26 a float at
+		// +0x08 + 4*index and 0x29..0x2B a float at +0x00 + 4*index. 0x27 sets the bits of int(value)
+		// in the option word +0xB0, or clears them and the camera's override flag when bit 1 is set;
+		// 0x28 only clears them. 0x2C sets the camera's snap flag (value != 0). Other indices do
+		// nothing. Args: index, value.
+		std::uint32_t set_camera_setting(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value index_value, float_value;
+			next_arg(c, index_value);
+			next_arg(c, float_value);
+			std::int32_t index = index_value.as_int();
+			float value = float_value.as_float();
+			live_memory& m = c.vm.memory();
+			interpreter::camera_globals& settings = c.vm.camera();
+			auto read_word = [&](std::size_t at) {
+				return std::uint16_t(settings.values[at] | settings.values[at + 1] << 8);
+			};
+			auto write_word = [&](std::size_t at, std::uint16_t word) {
+				settings.values[at] = std::uint8_t(word);
+				settings.values[at + 1] = std::uint8_t(word >> 8);
+			};
+			auto write_float = [&](std::size_t at, float f) {
+				std::memcpy(&settings.values[at], &f, sizeof(f));
+			};
+			if(index == 0x27 || index == 0x28)
+			{
+				std::uint32_t mask = std::uint32_t(std::int32_t(value));
+				std::uint16_t word = read_word(0xB0);
+				if(index == 0x27 && !(mask & 2))
+					write_word(0xB0, std::uint16_t(word | mask));
+				else
+				{
+					if(index == 0x27)
+						if(std::uint32_t cam = camera_object(c.vm, self))
+							m.write<std::uint8_t>(cam + camera_field::override_active, std::uint8_t(m.u8(cam + camera_field::override_active) & 0xFE));
+					write_word(0xB0, std::uint16_t(word & ~mask));
+				}
+			}
+			else if(index >= 0 && index < 0x11)
+				write_float(0x30 + 4 * std::size_t(index), value);
+			else if(index >= 0x11 && index < 0x17)
+				write_word(0x52 + 2 * std::size_t(index), std::uint16_t(std::int32_t(value)));
+			else if(index >= 0x1E && index < 0x27)
+				write_float(0x08 + 4 * std::size_t(index), value);
+			else if(index >= 0x29 && index < 0x2C)
+				write_float(4 * std::size_t(index), value);
+			else if(index == 0x2C)
+				if(std::uint32_t cam = camera_object(c.vm, self))
+					m.write<std::uint8_t>(cam + camera_field::snap, value != 0.0f ? 1 : 0);
+			return c.args;
+		}
+
+		// 492, 493 (0x47EBD0): save the settings block from offset 0x34 on (0x4FF660..0x4FF6DF, 0x80
+		// bytes) into the copy, and put it back. The camera model saves once and restores at the end
+		// of every frame, so what 491 writes is per-frame scratch.
+		std::uint32_t camera_settings_copy(call& c)
+		{
+			interpreter::camera_globals& settings = c.vm.camera();
+			constexpr std::size_t at = 0x34, size = 0x80;
+			if(c.index == 492)
+				std::memcpy(settings.saved.data() + at, settings.values.data() + at, size);
+			else
+				std::memcpy(settings.values.data() + at, settings.saved.data() + at, size);
+			return c.args;
+		}
+
+		// 444 (0x47DA40): commit the camera. The exe backs the current parameter block up into the
+		// override one, then runs the camera solve (0x485810) and applies its result to the camera's
+		// 3D object (0x474420); our engine's camera code does the solve, so only the bookkeeping that
+		// touches the blocks is here: the backup, and clearing cam+0x74 afterwards.
+		std::uint32_t camera_commit(call& c)
+		{
+			live_memory& m = c.vm.memory();
+			if(std::uint32_t cam = camera_object(c.vm, c.self))
+			{
+				back_up_camera_block(c.vm, cam);
+				m.write<std::uint8_t>(cam + camera_field::override_active, 0);
+			}
+			return c.args;
+		}
+
+		// 499 (0x47EDD0): aim the camera at the target: cam+0x34 takes its position and bit 0x2000 of
+		// the +0x72 word is set (in the override block only). With the snap flag (cam+0x17C) set it
+		// is an instant cut instead: the exe backs the block up and runs the camera pipeline right
+		// here (the engine's camera code does that), sets bits 0 and 2 of the current block's +0x70
+		// and clears the flag.
+		std::uint32_t camera_focus(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			live_memory& m = c.vm.memory();
+			std::uint32_t cam = camera_object(c.vm, self);
+			if(!cam || !m.contains(cam + camera_field::snap))
+				return c.args;
+			if(!m.u8(cam + camera_field::snap))
+			{
+				write3(m, cam + 0x34, position_of(c.vm, self));
+				set_camera_flags(c.vm, cam, 0x72, 1, 1, 0x2000);
+				return c.args;
+			}
+			back_up_camera_block(c.vm, cam);
+			std::uint32_t at_default = camera_block(c.vm, cam, camera_field::block_default);
+			if(at_default && m.u32(at_default + 0x68))
+			{
+				if(std::uint32_t current = camera_block(c.vm, cam, camera_field::block_current))
+					m.write<std::uint16_t>(current + 0x70, std::uint16_t(m.read<std::uint16_t>(current + 0x70) | 5));
+				m.write<std::uint8_t>(cam + camera_field::snap, 0);
+			}
+			return c.args;
+		}
+
+		// 500 (0x47EF20): restore the current parameter block from the spare one when the spare was
+		// saved (cam+0x75 bit 1, which the copy clears), then clear cam+0x60 and cam+0x75 bit 3.
+		std::uint32_t restore_camera_parameters(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			live_memory& m = c.vm.memory();
+			std::uint32_t cam = camera_object(c.vm, self);
+			if(!cam)
+				return c.args;
+			if(m.u8(cam + 0x75) & 2)
+			{
+				std::uint32_t from = camera_block(c.vm, cam, camera_field::block_spare);
+				std::uint32_t to = camera_block(c.vm, cam, camera_field::block_current);
+				if(from && to)
+					std::memcpy(m.span(to, camera_field::block_size).data(), m.span(from, camera_field::block_size).data(), camera_field::block_size);
+				m.write<std::uint8_t>(cam + 0x75, std::uint8_t(m.u8(cam + 0x75) & 0xFD));
+			}
+			m.write<std::uint32_t>(cam + 0x60, 0);
+			m.write<std::uint8_t>(cam + 0x75, std::uint8_t(m.u8(cam + 0x75) & 0xF7));
+			return c.args;
 		}
 
 		// 3 (0x47B6C0): distance between the actors' positions (far away when there's no other).
@@ -1950,6 +2350,8 @@ namespace openrayman::game
 		vm.on_function(163, minus_y_axis);
 		vm.on_function(248, bit_array);
 		vm.on_function(249, bit_array);
+		for(std::uint32_t i = 102; i <= 107; i++)
+			vm.on_function(i, gauge_function);
 
 		vm.on_procedure(69, change_behaviour);
 		// 42..47: the scripts' fog override (0x468B90), until the renderer takes it.
@@ -1993,5 +2395,22 @@ namespace openrayman::game
 		vm.on_meta_action(2, wait_animation());
 		vm.on_procedure(174, set_custom_bits);
 		vm.on_procedure(175, set_custom_bits);
+		// 444..500: the script camera's parameter blocks and its global settings.
+		for(std::uint32_t i : { 445, 446 })
+			vm.on_procedure(i, set_camera_vector_procedure);
+		for(std::uint32_t i = 447; i <= 466; i++)
+			vm.on_procedure(i, set_camera_parameter);
+		for(std::uint32_t i = 472; i <= 480; i++)
+			vm.on_procedure(i, set_camera_options_72);
+		for(std::uint32_t i = 481; i <= 490; i++)
+			vm.on_procedure(i, set_camera_options_70);
+		for(std::uint32_t i = 495; i <= 497; i++)
+			vm.on_procedure(i, set_camera_fixed_vector);
+		vm.on_procedure(444, camera_commit);
+		vm.on_procedure(491, set_camera_setting);
+		vm.on_procedure(492, camera_settings_copy);
+		vm.on_procedure(493, camera_settings_copy);
+		vm.on_procedure(499, camera_focus);
+		vm.on_procedure(500, restore_camera_parameters);
 	}
 }

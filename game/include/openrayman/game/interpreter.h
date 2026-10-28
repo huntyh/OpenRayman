@@ -176,6 +176,19 @@ namespace openrayman::game
 		};
 		movement_input movement;
 
+		// The camera scripts' global tuning: the exe's settings block 0x4FF62C..0x4FF6DF (`values`,
+		// by offset from its start) and the copy procedures 492 and 493 save and restore
+		// (0x4FF6E0..), then the gauge pair functions 102..107 work on (0x4E9308, 0x4E930C). Their
+		// initial values are still to be read from the exe, so they start at zero.
+		struct camera_globals
+		{
+			std::array<std::uint8_t, 0xB4> values{};
+			std::array<std::uint8_t, 0xB4> saved{};
+			float gauge = 0;
+			float gauge_max = 0;
+		};
+		camera_globals& camera() { return m_camera; }
+
 		// Handlers that don't exist yet, by kind and index, and how often scripts reached them.
 		// The key is the kind's name (a string literal) and the index.
 		std::map<std::pair<const char*, std::uint32_t>, std::size_t> missing;
@@ -269,5 +282,6 @@ namespace openrayman::game
 		std::uint32_t m_frame_ms = 16;
 		game::particles m_particles;
 		world_collision m_world;
+		camera_globals m_camera;
 	};
 }
