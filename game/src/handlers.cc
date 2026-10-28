@@ -1594,6 +1594,16 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 221 (0x47A1B8): the actor's gravity (dynamics base +0x10); 0 without dynamics. Rayman's
+		// scripts read it and set it back (macro 35), so without it his gravity became 0.
+		std::uint32_t gravity_of(call& c, value& out)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			std::uint32_t base = dynamics_base(c, self, 0x14);
+			out = value::real(base ? c.vm.memory().f32(base + 0x10) : 0.0f);
+			return c.args;
+		}
+
 		// 19 (0x47BCE0): a number as an integer (floats truncate). 20: a random integer between two
 		// numbers, both included (0x449C10 reads a table of pre-made random numbers; any uniform
 		// source does).
@@ -1869,6 +1879,7 @@ namespace openrayman::game
 			vm.on_function(i, hit_points);
 		vm.on_function(10, distance);
 		vm.on_function(19, to_integer);
+		vm.on_function(221, gravity_of);
 		vm.on_function(20, to_integer);
 		for(std::uint32_t i = 36; i <= 41; i++)
 			vm.on_function(i, choose);
