@@ -147,9 +147,9 @@ namespace openrayman::game
 		vec3 camera_direction(const live_memory& m, std::uint32_t cam, std::uint32_t block, std::uint32_t target_transform, vec3 d, std::uint16_t flags_72)
 		{
 			vec3 up{ 0, 0, 1 }, ref{};
-			if(flags_72 & 0x8000)
+			if(flags_72 & 0x4000)
 			{
-				// 497's fixed axes (0x483BE0 with the 0x4E92FD flag).
+				// 497's fixed axes (0x483BE0 with the 0x4E92FD flag, bit 14 of +0x72; 0x485975).
 				ref = normalised(read3(m, cam + 0x40));
 				if(length(ref) < 0.5f)
 					ref = { 0, -1, 0 };
