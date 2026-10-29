@@ -123,17 +123,16 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
   (procedure 346) turns the arrows into the camera-relative vector Rayman's scripts read. Rayman
   reacts (jump, shoot), but stays airborne until the physics lands him. Gamepad not yet
 - Rayman himself walking, running and jumping, moved by his own scripts
-  Walking, turning and walls feel right (user, 2026-10-28). Seen in the game, still to do:
-  - Jumping doesn't work yet.
-  - Animations play too fast: idle, blinking (also too often, the loop looks incomplete), shooting
-    (the hand snaps back; the forehand and backhand throws alternate in the game). Likely the same
-    cause: the exe plays a state at its own rate (state +0x29) scaled by procedure 89 (3D data
-    +0xE0), and we use the animation's speed.
-  - Learn_10 has two starts: a new game (cutscene: Rayman falls from the pirate ship, runs down a
-    path and jumps in) and the return from the hub (out of the portal, what runs now). On the return,
-    Rayman should stay in his spin state 04/00 +0x1210 for about 3 s before he falls; ours falls at
-    once (H:/r2export notes portal.md, intro.md: not his start-up procedures; next suspect the camera
-    actor's intro).
+  Walking, turning and walls feel right (user, 2026-10-28). Seen in the game and working:
+  - ✅ Jumping: procedures 177..180 set the imposed speed, and a script speed replaces the axes it
+    names instead of adding to them, so a jump overrides gravity and leaves the ground (b621de7).
+  - ✅ Animations play at the state's rate (state +0x29 into 3D data +0xE0, scaled by procedure 89)
+    instead of the animation's own speed, which is what made idle, blinking and shooting run too
+    fast. Rayman's idles are 23 fps, not 30.
+  - ✅ Both of Learn_10's starts: the new game's cutscene, and the return from the hub, where he
+    stays in his spin state (04/00 +0x1210) before he falls (user, 2026-10-29; the portal exit is
+    04/00 +0x739C, played because his "came through a portal" variable is set at load, 3475231).
+  Still to do:
   - The portal's sparkling particles; splashes when he lands in water.
   - Seen from afar, faint straight lines like a crosshair on X and Y around Rayman, turning with him.
   - Hover timed by the user: 1.4-1.6 s in both games, so its speed is right. Near the cliff by the
@@ -194,7 +193,7 @@ animations reach a sound. Two findings shape the implementation:
 
 What to build, in order:
 
-1. ~~`libopenrayman`: a `bnm_bank` reader~~ **done** — `bnm_bank.h`/`bnm_bank.cc` read the header,
+1. ✅ `libopenrayman`: a `bnm_bank` reader — `bnm_bank.h`/`bnm_bank.cc` read the header,
    events, resources, PCM payloads, group and theme entries; `tests/bnm_tests.cc` validates it
    against all 405 banks, and `ortool bank` / `ortool sound` inspect and export from them.
    Still to do: an `snd_file` reader for the `(event id, slot address)` pairs. Tests store counts
