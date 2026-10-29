@@ -129,7 +129,7 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
   - ✅ Animations play at the state's rate (state +0x29 into 3D data +0xE0, scaled by procedure 89)
     instead of the animation's own speed, which is what made idle, blinking and shooting run too
     fast. Rayman's idles are 23 fps, not 30.
-  - ✅ Both of Learn_10's starts: the new game's cutscene, and the return from the hub, where he
+  - Both of Learn_10's starts: the new game's cutscene (not done yet), and the return from the hub (✅), where he
     stays in his spin state (04/00 +0x1210) before he falls (user, 2026-10-29; the portal exit is
     04/00 +0x739C, played because his "came through a portal" variable is set at load, 3475231).
   Still to do:
@@ -165,7 +165,9 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
     offset point). The decompile now covers every script handler. Left: Q/W turning collapses onto
     his face (the camera steps straight at a wanted point 90 degrees round; next: compare the yaw
     windows with 0x4841F0, task_qw_windows.md), wall collision, the shot while strafing, the
-    arrival pan, the field of view, Murfy's freeze, long-idle animations.
+    arrival pan, the field of view, Murfy's freeze, long-idle animations. Slippery slopes slide
+    Rayman uphill instead of down (likely a sign in the slope direction: contact normal, function
+    190, or the slide procedure; user, seen on another map).
     In the game the player may turn the camera left/right (Q/W) only where the level allows it;
     level camera presets often overrule it, and a camera icon with a red X shows when turning is
     refused (user).
