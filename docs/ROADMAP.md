@@ -167,7 +167,7 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
     windows with 0x4841F0, task_qw_windows.md), wall collision, the shot while strafing, the
     arrival pan, the field of view, Murfy's freeze, long-idle animations. Slippery slopes slide
     Rayman uphill instead of down (likely a sign in the slope direction: contact normal, function
-    190, or the slide procedure; user, seen on another map).
+    190, or the slide procedure; user: `--level Ly_10 --camera -4776.4,-8543.0,-8238.9,-122.6,-43.9`).
     In the game the player may turn the camera left/right (Q/W) only where the level allows it;
     level camera presets often overrule it, and a camera icon with a red X shows when turning is
     refused (user).
