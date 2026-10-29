@@ -81,8 +81,8 @@ camera controllers placed in the level) drive it through the same procedures. Pr
 | 500 | restore the current block from the spare one (cam+0x75 bit 1) and clear cam+0x60 |
 | 159 | start the eight tracked points at the target's position, weight 0.03 each |
 
-Function 310 asks the camera where it would move this frame without committing (it backs the block
-up, runs the first two solve stages and returns the translation); functions 186 and 190 give the
+Function 310 asks the camera where its offset point would be this frame without committing (it backs the block
+up, runs the first two solve stages and returns that world point, context +0xA0); the hover camera feeds it to 495; functions 186 and 190 give the
 scripts the signed angle between two directions and an actor's movement direction.
 
 ## The solve (0x485810, from procedure 444)

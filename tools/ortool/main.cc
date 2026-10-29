@@ -67,6 +67,9 @@ static void usage()
 		"                                      Run the scripts for that many 60 Hz ticks: state and\n"
 		"                                      behaviour changes, missing handlers; with a node, its trace;\n"
 		"                                      keys held as Up:60-200,A:100-110 (ticks)\n"
+		"  camrun <game folder> <level> <ticks> <keys>\n"
+		"                                      The same run, with the camera actor's block, solve numbers,\n"
+		"                                      aim point, Rayman's axes and the resulting view every tick\n"
 		"  collide <game folder> <level|all>   Collision data: collide set slots, element types, surface flags\n"
 		"  input <game folder> <level>         Input actions and the keys each one tests\n"
 		"  peek <game folder> <level> <block> <hex offset> <words>\n"
@@ -1133,7 +1136,7 @@ static int cmd_brain(const fs::path& folder, const std::string& name, std::optio
 
 // Runs the level's scripts for a number of frames, without drawing anything, and reports what
 // changed and which handlers the scripts reached that don't exist yet.
-static int cmd_run(const fs::path& folder, const std::string& name, int frames, std::optional<std::size_t> trace, const std::string& keys_held = {})
+static int cmd_run(const fs::path& folder, const std::string& name, int frames, std::optional<std::size_t> trace, const std::string& keys_held = {}, bool camera_trace = false)
 {
 	game_data game = require_game(folder);
 	level_files files = load_level_files(game, name);
@@ -1223,6 +1226,23 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 			node_of[actors.back()] = n;
 		}
 	std::map<std::size_t, std::string> errors;
+	// With a camera trace: the camera actor (the one with a camera object at actor +0x10), so every
+	// tick can print what its scripts write into the parameter block and where it ends up looking.
+	std::uint32_t camera_super = 0, camera_object = 0;
+	if(camera_trace)
+		for(std::uint32_t so : actors)
+		{
+			std::uint32_t actor = memory.u32(so + 4);
+			std::uint32_t candidate = actor && memory.contains(actor + 0x10, 4) ? memory.u32(actor + 0x10) : 0;
+			if(candidate && memory.contains(candidate, 0x80))
+			{
+				camera_super = so;
+				camera_object = candidate;
+				break;
+			}
+		}
+	if(camera_trace)
+		std::cout << std::format("camera trace: super object 0x{:X}, camera object 0x{:X}\n", camera_super, camera_object);
 	// With a node: what its brain is, every change of its state, behaviour and reflex by tick, and
 	// every scalar variable that changes (its own, and the main actor's while it is another actor).
 	std::uint32_t traced_super = trace ? tree.node(*trace).at.address() : 0;
@@ -1325,6 +1345,58 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 			if(f % 30 == 0)
 				if(auto p = game::global_placement(memory, tree.node(*trace).at.address()))
 					std::cout << std::format("tick {:>4}: at {:.2f} {:.2f} {:.2f}\n", f, p->m[0][3], p->m[1][3], p->m[2][3]);
+		}
+		if(camera_trace && camera_object)
+		{
+			auto at3 = [&](std::uint32_t at) {
+				if(!memory.contains(at, 12))
+					return std::array<float, 3>{};
+				return std::array<float, 3>{ memory.f32(at), memory.f32(at + 4), memory.f32(at + 8) };
+			};
+			auto vec = [](const std::array<float, 3>& v) {
+				return std::format("{:.2f} {:.2f} {:.2f}", v[0], v[1], v[2]);
+			};
+			std::uint32_t current = memory.contains(camera_object + 4, 4) ? memory.u32(camera_object + 4) : 0;
+			std::uint32_t override_ = memory.contains(camera_object + 0x0C, 4) ? memory.u32(camera_object + 0x0C) : 0;
+			bool in_override = (memory.u8(camera_object + 0x74) & 1) != 0;
+			std::uint32_t block = in_override ? override_ : current;
+			bool have_block = block && memory.contains(block, 0x7C);
+			std::uint32_t target = have_block ? memory.u32(block + 0x68) : 0;
+			std::uint16_t flags70 = have_block ? memory.read<std::uint16_t>(block + 0x70) : 0;
+			std::uint16_t flags72 = have_block ? memory.read<std::uint16_t>(block + 0x72) : 0;
+			// Rayman and the camera, as the solve sees them: his +Y axis is the reference the camera
+			// direction is measured from, and the camera's -Y is where it looks.
+			std::uint32_t rayman = main_actor ? memory.u32(main_actor + 0x24) : 0;
+			std::array<float, 3> rayman_at{}, rayman_y{};
+			if(rayman && memory.contains(rayman, 0x58))
+			{
+				rayman_at = at3(rayman + 4);
+				rayman_y = at3(rayman + 0x1C);
+			}
+			std::uint32_t transform = camera_super ? memory.u32(camera_super + 0x24) : 0;
+			std::array<float, 3> eye{}, forward{};
+			float yaw = 0, pitch = 0;
+			if(transform && memory.contains(transform, 0x58))
+			{
+				eye = at3(transform + 4);
+				std::array<float, 3> y = at3(transform + 0x1C);
+				float l = std::sqrt(y[0] * y[0] + y[1] * y[1] + y[2] * y[2]);
+				if(l > 1e-6f)
+				{
+					forward = { -y[0] / l, -y[1] / l, -y[2] / l };
+					yaw = std::atan2(forward[1], forward[0]) * 57.29578f;
+					pitch = std::asin(std::clamp(forward[2], -1.0f, 1.0f)) * 57.29578f;
+				}
+			}
+			const game::camera_state& state = vm.camera_motion();
+			std::cout << std::format(
+				"cam tick {:>4}: block {} tgt 0x{:X} f70 0x{:X} f72 0x{:X} A {} B {} cam28 {} cam40 {} cam4C {}"
+				" | look {} off {} aim {} back {} move {}"
+				" | ray {} rY {} | eye {} yaw {:.1f} pitch {:.1f}\n",
+				f, in_override ? "ovr" : "cur", target, unsigned(flags70), unsigned(flags72),
+				vec(at3(block + 0x00)), vec(at3(block + 0x0C)), vec(at3(camera_object + 0x28)), vec(at3(camera_object + 0x40)), vec(at3(camera_object + 0x4C)),
+				vec(state.look_at), vec(state.off), vec(state.aim), vec(state.back), vec(state.move),
+				vec(rayman_at), vec(rayman_y), vec(eye), yaw, pitch);
 		}
 	}
 	for(std::size_t i = 0; i < brains.actors.size(); i++)
@@ -1442,6 +1514,9 @@ int main(int argc, char** argv)
 			return cmd_run(args[1], args[2], std::stoi(args[3]), std::stoul(args[4]));
 		if(cmd == "run" && args.size() == 6)
 			return cmd_run(args[1], args[2], std::stoi(args[3]), std::stoul(args[4]), args[5]);
+		// The same run with a camera trace every tick: "camrun <folder> <level> <ticks> <keys>".
+		if(cmd == "camrun" && args.size() == 5)
+			return cmd_run(args[1], args[2], std::stoi(args[3]), std::nullopt, args[4], true);
 		if(cmd == "collide" && args.size() == 3)
 			return cmd_collide(args[1], args[2]);
 		if(cmd == "input" && args.size() == 3)

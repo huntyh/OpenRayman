@@ -1587,11 +1587,11 @@ namespace openrayman::game
 			return c.args;
 		}
 
-		// 310 (0x488CB0): the movement the camera would make this frame, without committing it.
+		// 310 (0x488CB0): the offset point the camera would aim for this frame, without committing it.
 		// The exe backs the current block up into the override block, builds the camera context,
 		// turns bit 0 of its +0x72 option word on and bit 0x1000 of the current block's off, runs
 		// the first two stages of the solve (0x483F90 the wanted position, 0x4840A0 the offset
-		// point) and returns their translation (context +0xA0). Nothing is committed. Here the
+		// point) and returns that point (context +0xA0, a world position). Nothing is committed. Here the
 		// solve our camera code does stands in for those stages, and its result (which includes
 		// the distance clamp and the height limits of 0x485810) is put back afterwards so the
 		// frame's commit is unaffected. Bit 0 of +0x72 means nothing to our solve; 0x1000 (the
@@ -1611,7 +1611,7 @@ namespace openrayman::game
 				m.write<std::uint16_t>(block + 0x72, std::uint16_t((saved | 1) & ~0x1000u));
 			camera_state before = c.vm.camera_motion();
 			solve_camera(c.vm, self);
-			out = value_of(c.vm.camera_motion().move);
+			out = value_of(c.vm.camera_motion().off);
 			c.vm.camera_motion() = before;
 			if(block)
 				m.write<std::uint16_t>(block + 0x72, saved);
