@@ -160,6 +160,13 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
     while strafing/hovering snaps the hand back (missing keyframe?); the waterfall at
     `--level Learn_10 --camera 46.7,314.9,-2.4,120.0,-3.8` has collision. The optional modern camera
     waits until the game is nearly complete (with HDR and the like).
+    Fourth look (user, 2026-10-29): waterfall passable (virtual sectors have no collision), strafing
+    right in every direction with no drift (each actor thinks then moves, 0x412230), the hover
+    camera works like the game's, tilting down to show where he lands (function 310 returns the
+    offset point). The decompile now covers every script handler. Left: Q/W turning collapses onto
+    his face (the camera steps straight at a wanted point 90 degrees round; next: compare the yaw
+    windows with 0x4841F0, task_qw_windows.md), wall collision, the shot while strafing, the
+    arrival pan, the field of view, Murfy's freeze, long-idle animations.
     In the game the player may turn the camera left/right (Q/W) only where the level allows it;
     level camera presets often overrule it, and a camera icon with a red X shows when turning is
     refused (user).
