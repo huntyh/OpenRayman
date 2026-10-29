@@ -3,6 +3,7 @@
 #include <openrayman/actor.h>
 #include <openrayman/animation.h>
 #include <openrayman/apm_audio.h>
+#include <openrayman/bnm_bank.h>
 #include <openrayman/brain.h>
 #include <openrayman/game/animation_player.h>
 #include <openrayman/game/handlers.h>
@@ -54,6 +55,10 @@ static void usage()
 		"  cnt <file.cnt>                      List the files in a CNT archive\n"
 		"  textures <game folder> <out folder> Export every texture as PNG\n"
 		"  music <game folder> <out folder>    Export every APM music file as WAV\n"
+		"  bank <game folder> <bank|all> [out folder]\n"
+		"                                      List a BNM sound bank's events and resources; with an\n"
+		"                                      output folder, export its embedded samples as WAV\n"
+		"  sound <game folder> <id>            Resolve a sound id (bank << 16 | event) to what it plays\n"
 		"  level <game folder> <level|all>     Load a level's memory and check its pointers\n"
 		"  gpt <game folder> <level>           List the pointers in Fix.gpt and a level's GPT\n"
 		"  obj <game folder> <level> <out>     Export a level's static geometry as OBJ with textures\n"
@@ -226,6 +231,162 @@ static int cmd_music(const fs::path& folder, const fs::path& out)
 		}
 	}
 	std::cout << exported << " music files exported to " << out.string() << ", " << failed << " failed\n";
+	return failed ? EXIT_FAILURE : EXIT_SUCCESS;
+}
+
+// Resolves a sound id the way the game does: bank << 16 | index, then the event's resource.
+// Used by the `sound` command, which answers "what does this id play?".
+static std::string describe_sound(const game_data& game, std::uint32_t id)
+{
+	bnm_id parts = bnm_id::of(id);
+	auto path = game.sound_bank(parts.bank);
+	if(!path)
+		return std::format("bank {} is not present", parts.bank);
+
+	bnm_bank bank = bnm_bank::load(*path);
+	const bnm_event* event = bank.event(parts.index);
+	if(!event)
+		return std::format("bank {} has no event {}", parts.bank, parts.index);
+
+	if(!event->plays())
+		return std::format("bank {} event {}: type {} (not a play)", parts.bank, parts.index, event->type);
+
+	bnm_id target = bnm_id::of(event->target);
+	if(target.bank == parts.bank)
+	{
+		if(const bnm_resource* resource = bank.resource(target.index))
+			return std::format("bank {} event {} -> resource {} type {} {}",
+				parts.bank, parts.index, target.index, resource->type, resource->name);
+	}
+
+	auto target_path = game.sound_bank(target.bank);
+	if(!target_path)
+		return std::format("bank {} event {} -> bank {} resource {} (bank missing)", parts.bank, parts.index, target.bank, target.index);
+
+	bnm_bank target_bank = bnm_bank::load(*target_path);
+	const bnm_resource* resource = target_bank.resource(target.index);
+	if(!resource)
+		return std::format("bank {} event {} -> bank {} resource {} (out of range)", parts.bank, parts.index, target.bank, target.index);
+	return std::format("bank {} event {} -> bank {} resource {} type {} {}",
+		parts.bank, parts.index, target.bank, target.index, resource->type, resource->name);
+}
+
+// bank <game folder> <bank|all>               summarize one bank or every bank
+// bank <game folder> <bank> <out folder>      export that bank's embedded samples as WAV
+static int cmd_bank(const fs::path& folder, const std::string& which, const std::optional<fs::path>& out)
+{
+	game_data game = require_game(folder);
+	auto banks = game.sound_banks();
+	if(banks.empty())
+		throw std::runtime_error("no BNM banks found in the sound directory");
+
+	std::vector<std::uint32_t> ids;
+	if(which == "all")
+	{
+		for(const auto& [id, path] : banks)
+			ids.push_back(id);
+	}
+	else
+	{
+		std::uint32_t id = static_cast<std::uint32_t>(std::stoul(which));
+		if(!banks.contains(id))
+			throw std::runtime_error(std::format("bank {} is not present", id));
+		ids.push_back(id);
+	}
+
+	std::ofstream sink;
+	if(out)
+	{
+		fs::create_directories(*out);
+		sink.open(*out / "format.txt");
+	}
+
+	int failed = 0, exported = 0;
+	for(std::uint32_t id : ids)
+	{
+		try
+		{
+			bnm_bank bank = bnm_bank::load(banks.at(id));
+			const bnm_header& header = bank.header();
+
+			std::ostream& o = out ? sink : std::cout;
+			o << std::format("bank {}  {} events, {} resources, {} bytes of samples\n", id,
+				header.event_count, header.resource_count, bank.pcm().size());
+
+			// The sound ids the scripts and animations can use: the events.
+			for(std::uint32_t i = 0; i < bank.events().size(); i++)
+			{
+				const bnm_event& event = bank.events()[i];
+				const char* kind = event.plays() ? "play" : event.type == bnm_event_type::stop ? "stop" : "other";
+				std::string target;
+				if(event.plays())
+				{
+					bnm_id t = bnm_id::of(event.target);
+					target = t.bank == id ? std::format("resource {}", t.index)
+						: std::format("bank {} resource {}", t.bank, t.index);
+					if(t.bank == id)
+					{
+						if(const bnm_resource* r = bank.resource(t.index))
+							target += std::format(" type {}", r->type);
+					}
+					if(event.pitch)
+						target += std::format(", pitch +-{}", double(event.pitch) / 0x10000);
+				}
+				o << std::format("  event {:>3}  id 0x{:08X}  {:<5}  {}\n", i, bnm_id{ id, i }.value(), kind, target);
+			}
+
+			for(std::uint32_t i = 0; i < bank.resources().size(); i++)
+			{
+				const bnm_resource& r = bank.resources()[i];
+				std::string kind;
+				switch(r.type)
+				{
+					case bnm_resource_type::sample:
+						kind = bnm_bank::is_external(r) ? std::format("sample, external {}", r.name)
+							: std::format("sample, {} bytes at 0x{:X}  {} ch {} bit {} Hz  {}",
+								r.size, r.offset, r.channels(), r.bits(), r.rate, r.name);
+						break;
+					case bnm_resource_type::theme:
+						kind = std::format("theme, {} segments{}", r.theme_count,
+							r.group4_count == 0xFFFFFFFF ? "" : std::format(", tail 0x{:08X}", bank.theme_tail(r)));
+						break;
+					default:
+						kind = std::format("type {}, {} entries", r.type, bnm_bank::entry_count(r));
+						break;
+				}
+				o << std::format("  resource {:>3}  vol {:>3}  {}\n", i, r.volume, kind);
+			}
+
+			if(!out)
+				continue;
+
+			// Export the embedded samples. The payload is headerless 16-bit PCM.
+			for(std::uint32_t i = 0; i < bank.resources().size(); i++)
+			{
+				const bnm_resource& r = bank.resources()[i];
+				if(r.type != bnm_resource_type::sample || bnm_bank::is_external(r))
+					continue;
+				auto payload = bank.sample(r);
+				std::vector<std::int16_t> samples(payload.size() / 2);
+				if(!samples.empty())
+					std::memcpy(samples.data(), payload.data(), samples.size() * 2);
+				// Prefix the resource index: a bank can hold several different samples under
+				// names that differ only in case (Bnk_0 has both ELECTRAY.WAV and Electray.wav),
+				// which would overwrite each other on a case-insensitive filesystem.
+				std::string name = r.name.empty() ? "unnamed" : r.name;
+				write_wav(*out / fs::path(std::format("{:03}_{}", i, name)).replace_extension(".wav"), samples, r.channels(), r.rate);
+				exported++;
+			}
+		}
+		catch(const std::exception& e)
+		{
+			std::cerr << "FAILED bank " << id << ": " << e.what() << "\n";
+			failed++;
+		}
+	}
+
+	if(out)
+		std::cout << exported << " samples exported to " << out->string() << ", " << failed << " failed\n";
 	return failed ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
@@ -1470,6 +1631,15 @@ int main(int argc, char** argv)
 			return cmd_textures(args[1], args[2]);
 		if(cmd == "music" && args.size() == 3)
 			return cmd_music(args[1], args[2]);
+		if(cmd == "bank" && args.size() == 3)
+			return cmd_bank(args[1], args[2], std::nullopt);
+		if(cmd == "bank" && args.size() == 4)
+			return cmd_bank(args[1], args[2], args[3]);
+		if(cmd == "sound" && args.size() == 3)
+		{
+			std::cout << describe_sound(require_game(args[1]), static_cast<std::uint32_t>(std::stoul(args[2], nullptr, 0))) << "\n";
+			return EXIT_SUCCESS;
+		}
 		if(cmd == "level" && args.size() == 3)
 			return cmd_level(args[1], args[2]);
 		if(cmd == "gpt" && args.size() == 3)

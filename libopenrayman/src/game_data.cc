@@ -65,4 +65,38 @@ namespace openrayman
 		std::ranges::sort(result);
 		return result;
 	}
+
+	std::map<std::uint32_t, std::filesystem::path> game_data::sound_banks() const
+	{
+		// The loader builds the names with "bnk_%d.BNM" (FUN_00453870); on disk they are
+		// Bnk_<id>.bnm. The id in the name is the bank number the sound ids refer to.
+		std::map<std::uint32_t, std::filesystem::path> result;
+		auto sound = directory("sound");
+		if(!sound)
+			return result;
+
+		for(const auto& entry : std::filesystem::directory_iterator(*sound))
+		{
+			if(!entry.is_regular_file() || entry.path().extension() != ".bnm")
+				continue;
+			const std::string stem = entry.path().stem().string();
+			auto underscore = stem.find('_');
+			if(underscore == std::string::npos)
+				continue;
+			const std::string digits = stem.substr(underscore + 1);
+			if(digits.empty() || !std::ranges::all_of(digits, [](unsigned char c) { return std::isdigit(c) != 0; }))
+				continue;
+			result.emplace(static_cast<std::uint32_t>(std::stoul(digits)), entry.path());
+		}
+		return result;
+	}
+
+	std::optional<std::filesystem::path> game_data::sound_bank(std::uint32_t id) const
+	{
+		auto banks = sound_banks();
+		auto it = banks.find(id);
+		if(it == banks.end())
+			return std::nullopt;
+		return it->second;
+	}
 }

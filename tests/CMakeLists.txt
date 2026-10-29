@@ -4,6 +4,7 @@ add_executable(openrayman_tests
 	checksum_tests.cc
 	format_tests.cc
 	game_data_tests.cc
+	bnm_tests.cc
 	animation_tests.cc
 	particle_tests.cc
 	level_tests.cc
@@ -24,7 +25,7 @@ function(ortool_check name expected)
 endfunction()
 
 ortool_check(help
-	e950b8e55fbdedf6daa99d546508490c15ee79252491e4f35b563a68a3b651c1
+	c604cdb77dac405928e8e4b8ab60eaa2eb010e9034c16a996a18522ec10c45df
 	help)
 ortool_check(level_learn_10
 	743b90c253503738472e50d824739146264cad8afae6aca4ed26cfb26a28f7f8

@@ -33,7 +33,7 @@ came from. Update this whenever a format is added or corrected.
 | Input | inside `Fix.gpt`, SNA | Input actions and their key expressions; joystick kinds partly, 17..32 not yet | `input.cc` |
 | PTX | `Fix.ptx`, `<Level>.ptx` | Texture slots and names; trailing values unknown | `texture_table.cc` |
 | Scripts (AI) | inside SNA | Brains, models, behaviours, reflexes, macros, variables, script nodes; keywords and operators named | `brain.cc`, `script_text.cc` |
-| BNM sound banks | `World/Sound/*.bnm` | Layout complete, all 405 banks validated; sound ids mapped | |
+| BNM sound banks | `World/Sound/*.bnm` | Reader complete for effects and themes; playback not wired yet | `bnm_bank.cc` |
 | SND | `<Level>.snd`, `Fix.snd` | Pair list understood; see [formats/sound.md](formats/sound.md) | |
 
 ## CNT texture archives

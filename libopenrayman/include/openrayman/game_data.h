@@ -6,6 +6,7 @@
 #include <openrayman/dsb_script.h>
 
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -37,6 +38,10 @@ namespace openrayman
 
 		// All APM music files in the sound directory, sorted by name.
 		std::vector<std::filesystem::path> music_files() const;
+
+		// The BNM sound banks in the sound directory, keyed by bank id, and the path of one bank.
+		std::map<std::uint32_t, std::filesystem::path> sound_banks() const;
+		std::optional<std::filesystem::path> sound_bank(std::uint32_t id) const;
 
 	private:
 		std::filesystem::path m_data_dir;

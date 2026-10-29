@@ -194,8 +194,10 @@ animations reach a sound. Two findings shape the implementation:
 
 What to build, in order:
 
-1. `libopenrayman`: a `bnm_bank` reader (header, events, resources, PCM payload accessor, group and
-   theme entries) and an `snd_file` reader (`(event id, slot address)` pairs). Tests store counts
+1. ~~`libopenrayman`: a `bnm_bank` reader~~ **done** — `bnm_bank.h`/`bnm_bank.cc` read the header,
+   events, resources, PCM payloads, group and theme entries; `tests/bnm_tests.cc` validates it
+   against all 405 banks, and `ortool bank` / `ortool sound` inspect and export from them.
+   Still to do: an `snd_file` reader for the `(event id, slot address)` pairs. Tests store counts
    and checksums only, never assets.
 2. `game`: a sound module holding the loaded banks for the level (its DSB list, plus Fix), resolving
    a slot to an event, expanding groups, and queueing play/stop requests. Wire it to
