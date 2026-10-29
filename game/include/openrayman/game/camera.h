@@ -36,10 +36,15 @@ namespace openrayman::game
 
 		// What the mechanics carries between ticks.
 		bool valid = false;             // a solve has stored a wanted position
-		float previous_move = 0;        // the last position step's length ([base+0x150]+0xF8)
+		std::array<float, 3> previous_move{}; // the last tick's movement, step and orbit together
+		                                      // ([base+0x150]+0xF8, written by the movement pass 0x434660)
 		float carry_angle = 0;          // the last tick's turn (X+0x0C)
 		std::array<float, 3> aim{};     // the smoothed aim point (X+0x10)
-		float previous_aim = 0;         // the last aim point step's length ([base+0x150]+0x130)
+		std::array<float, 3> previous_aim{}; // the last aim point step ([base+0x150]+0x130)
+		// The direction smoothing divisors 0x474420 copies to the mechanics (+0x26C, +0x27C) from the
+		// camera settings (+0xA8, +0xAC); 1 means no smoothing and is what the defaults give.
+		float position_smoothing = 1;
+		float aim_smoothing = 1;
 	};
 
 	// Procedure 444's solve (0x47DA40 -> 0x485810): the camera's scripts have filled the parameter

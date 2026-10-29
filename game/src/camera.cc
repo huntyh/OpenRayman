@@ -36,9 +36,9 @@ namespace openrayman::game
 		// Flags of the block +0x72 word the solve reads.
 		constexpr std::uint32_t fixed_vector_a = 0x1000, fixed_position = 0x2000;
 		// Flags of the block +0x70 word the mechanics reads (the exe's latched +0x25E has the same
-		// first meanings: 0x01 snaps the position, 0x04 keeps the orientation, 0x80 takes the aim
-		// point from the camera's own axes).
-		constexpr std::uint32_t snap_position = 0x01, keep_orientation = 0x04, fixed_aim = 0x80;
+		// first meanings: 0x01 snaps the position, 0x04 keeps the orientation, 0x10 snaps the aim
+		// point, 0x80 takes the aim point from the camera's own axes).
+		constexpr std::uint32_t snap_position = 0x01, keep_orientation = 0x04, aim_snap = 0x10, fixed_aim = 0x80;
 
 		float dot(const vec3& a, const vec3& b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 		vec3 add(const vec3& a, const vec3& b) { return { a[0] + b[0], a[1] + b[1], a[2] + b[2] }; }
@@ -103,6 +103,30 @@ namespace openrayman::game
 			float c = std::cos(angle), s = std::sin(angle);
 			vec3 a = cross(axis, v), d = mul(axis, dot(axis, v));
 			return add(add(mul(v, c), mul(a, s)), mul(d, 1.0f - c));
+		}
+
+		// 0x433930: the movement's direction is turned a part of the way towards the previous tick's
+		// direction and keeps the movement's length. The angle between the two unit vectors is cut by
+		// the divisor (2 leaves the movement halfway between them, less than 1 overshoots). A divisor
+		// of 1, or either vector shorter than 0.1, leaves the movement alone (the exe's constants
+		// 0x49C6FC = 1 and 0x49C708 = 0.1).
+		vec3 smoothed_movement(const vec3& move, const vec3& previous, float divisor)
+		{
+			if(divisor == 1.0f)
+				return move;
+			float move_length = length(move), previous_length = length(previous);
+			if(!(move_length > 0.1f && previous_length > 0.1f))
+				return move;
+			vec3 from = mul(previous, 1.0f / previous_length), to = mul(move, 1.0f / move_length);
+			vec3 axis = cross(from, to);
+			float sine = length(axis);
+			// 0x4407A0 sorts the angle out of the cross product; parallel vectors have no axis, and
+			// the exe's rotation about a zero axis is degenerate, so leave the movement as it is.
+			if(sine < 1e-6f)
+				return move;
+			float angle = std::acos(std::max(-1.0f, std::min(1.0f, dot(from, to))));
+			axis = mul(axis, 1.0f / sine);
+			return mul(normalised(rotate_about(from, axis, angle / divisor)), move_length);
 		}
 	}
 
@@ -283,15 +307,32 @@ namespace openrayman::game
 		state.off = off;
 		state.back = back;
 		state.flags = m.read<std::uint16_t>(block + camera_field::flags_70);
-		// The three speeds (0x484B50): the block's own when a script fixed them (+0x72 bit 0x80) or
-		// there is no target; otherwise worked out each frame from what is left to do, with the
-		// camera settings' gains and caps (offsets from 0x4FF62C, set up at 0x4138C0). The exe adds
-		// floors from the tracked points' average, which is zero unless scripts plant points.
 		auto setting = [&](std::size_t at) {
 			float f;
 			std::memcpy(&f, &vm.camera().values[at], 4);
 			return f;
 		};
+		// The two direction smoothing divisors (0x474420): the camera settings' +0xA8/+0xAC
+		// (0x4FF6D4/0x4FF6D8, 1 at start-up, 0x4138B0) become mechanics +0x26C/+0x27C, but stay 1
+		// while the block snaps the position or keeps the orientation (+0x70 bits 0x01 and 0x04), while
+		// it snaps the aim (bit 0x10), and while the target's tracked points stand still (0x473570 ->
+		// 0x414420: their weighted average under 0.01). We have no tracked points, so having a target
+		// stands in for points that move.
+		state.position_smoothing = setting(0xA8);
+		state.aim_smoothing = setting(0xAC);
+		if(state.flags & (snap_position | keep_orientation))
+			state.position_smoothing = 1;
+		if(state.flags & aim_snap)
+			state.aim_smoothing = 1;
+		if(!target_transform)
+		{
+			state.position_smoothing = 1;
+			state.aim_smoothing = 1;
+		}
+		// The three speeds (0x484B50): the block's own when a script fixed them (+0x72 bit 0x80) or
+		// there is no target; otherwise worked out each frame from what is left to do, with the
+		// camera settings' gains and caps (offsets from 0x4FF62C, set up at 0x4138C0). The exe adds
+		// floors from the tracked points' average, which is zero unless scripts plant points.
 		const std::uint16_t flags_70 = m.read<std::uint16_t>(block + camera_field::flags_70);
 		const bool fixed_speeds = (flags_72 & 0x80) || !target_transform;
 		float position_speed = 0, turn_speed = 0;
@@ -348,16 +389,16 @@ namespace openrayman::game
 		{
 			state.flags |= snap_position;
 			state.aim = off;
-			state.previous_move = 0;
-			state.previous_aim = 0;
+			state.previous_move = {};
+			state.previous_aim = {};
 			state.carry_angle = 0;
 		}
 		if(!state.valid)
 		{
 			// The mechanics starts its own aim point at the first solve's.
 			state.aim = aim;
-			state.previous_move = 0;
-			state.previous_aim = 0;
+			state.previous_move = {};
+			state.previous_aim = {};
 			state.carry_angle = 0;
 			state.valid = true;
 		}
@@ -372,9 +413,9 @@ namespace openrayman::game
 		const vec3 position = read3(m, transform + 4);
 		vec3 pos = position;
 
-		// 1. The position: the exe's "step towards" (0x433B00, called at 0x433DF2). A snap flag or a
+		// 1. The position: the exe's "step towards" (0x433B00, called at 0x433E46). A snap flag or a
 		//    step that fits takes the whole movement; otherwise a maximum step, an arrival ease and a
-		//    rate that builds on the last step's length bound it.
+		//    rate that builds on the last movement's length ([base+0x150]+0xF8) bound it.
 		float maxstep = float(state.speed * dt);
 		float len = length(state.move);
 		if((state.flags & snap_position) || len <= 0.001f || len <= maxstep)
@@ -390,13 +431,12 @@ namespace openrayman::game
 			}
 			if(state.speed_ramp != 0)
 			{
-				float grows = maxstep / state.speed_ramp + state.previous_move;
+				float grows = maxstep / state.speed_ramp + length(state.previous_move);
 				if(grows < step)
 					step = grows;
 			}
 			pos = add(position, mul(state.move, step / len));
 		}
-		state.previous_move = length(sub(pos, position));
 
 		// 2. The orientation: the camera orbits the look-at point (0x433E6D..0x4340E3). The distance
 		//    is the one after the position step, and turning the view by a limited angle puts the
@@ -432,35 +472,50 @@ namespace openrayman::game
 			}
 		}
 
+		// 3. The movement's direction (0x433930, called at 0x434139 with the mechanics' +0x26C): the
+		//    whole tick's movement, step and orbit together, is turned a part of the way towards the
+		//    last tick's direction and keeps its length, so a sideways push carries the old direction
+		//    for a while. A block that both snaps the position and keeps the orientation skips it
+		//    (0x434127). With the default divisor 1 it leaves the movement alone.
+		if(!((state.flags & snap_position) && (state.flags & keep_orientation)))
+			pos = add(position, smoothed_movement(sub(pos, position), state.previous_move, state.position_smoothing));
+
 		// 4. The aim point the camera looks at: the same kind of step towards the offset point
-		//    (0x434230..0x434380), unless the scripts take it from the camera's own axes (bit 7):
-		//    then it is a point in front of where the camera was (0x4341BF).
+		//    (0x434230..0x434380, 0x433B00 at 0x434314), unless the scripts take it from the camera's
+		//    own axes (bit 7): then it is a point in front of where the camera was (0x4341BF).
 		if(state.flags & fixed_aim)
 		{
 			state.aim = sub(position, normalised(read3(m, transform + 0x1C)));
-			state.previous_aim = 0;
+			state.previous_aim = {};
 		}
 		else
 		{
 			vec3 need = sub(state.off, state.aim);
 			float want = length(need);
-			if(want <= 0.001f)
-			{
-				state.aim = state.off;
-				state.previous_aim = want;
-			}
+			vec3 step{};
+			if((state.flags & aim_snap) || want <= 0.001f)
+				step = need; // a snap or a movement smaller than 0.001 takes all of it (0x433B00)
 			else
 			{
-				float step = float(state.aim_speed * dt);
+				float reach = float(state.aim_speed * dt);
 				if(state.aim_arrive != 0)
-					step = std::min(step, want / state.aim_arrive);
+					reach = std::min(reach, want / state.aim_arrive);
 				if(state.aim_ramp != 0)
-					step = std::min(step, float(state.aim_speed * dt) / state.aim_ramp + state.previous_aim);
-				step = std::min(step, want);
-				state.aim = add(state.aim, mul(need, step / want));
-				state.previous_aim = step;
+					reach = std::min(reach, float(state.aim_speed * dt) / state.aim_ramp + length(state.previous_aim));
+				reach = std::min(reach, want);
+				step = mul(need, reach / want);
 			}
+			// 0x433930 again (0x43432B, the mechanics' +0x27C): the step's direction is turned
+			// towards the last step's, and what comes out is kept for the next tick's ramp.
+			step = smoothed_movement(step, state.previous_aim, state.aim_smoothing);
+			state.aim = add(state.aim, step);
+			state.previous_aim = step;
 		}
+
+		// What the next tick starts from (0x434660, the movement pass that follows 0x433D70): the
+		// tick's movement, kept at [base+0x150]+0xF8. Its length is the step the step law 0x433B00
+		// grows from, and its direction is what the next tick's smoothing turns towards.
+		state.previous_move = sub(pos, position);
 
 		// 6. Publish (0x435930, 0x435640): the second axis is the way back from the aim point to the
 		//    camera, so -Y is what it looks along; the first stays as close to world Z as that allows.

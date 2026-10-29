@@ -136,6 +136,18 @@ Per frame, with dt in seconds (0x50043C):
    X = Y × world Z, Z = X × Y, position as found. The exe's occlusion pass and the two dead blend
    steps are left out (see below).
 
+The mechanics also smooths directions (0x433930, called at 0x434139 for the position and 0x43432B
+for the aim point, with the mechanics' +0x26C/+0x27C). It turns the tick's movement, and the aim
+point's step, a part of the way from the previous tick's direction towards its own and keeps the
+length: the angle between the two unit directions is divided by the divisor (2 leaves it halfway),
+and a divisor of 1, or either vector under 0.1, leaves the movement alone (0x49C6FC = 1, 0x49C708 =
+0.1). The divisors are the camera settings' +0xA8/+0xAC (0x4FF6D4/0x4FF6D8, 1 at start-up, 0x4138B0),
+which 0x474420 copies to the mechanics and holds at 1 while the block snaps the position or keeps the
+orientation (+0x70 bits 0x01 and 0x04), snaps the aim (bit 0x10), or the tracked points stand still
+(0x473570), and procedure 491's indices 42 and 43 set them (Learn_10 never does). The carried vectors
+are the tick's whole movement at +0xF8 (written by 0x434660; its length is what the step law 0x433B00
+grows from) and the smoothed aim step at +0x130 (written at the end of 0x433D70).
+
 The block's `+0x20` settle distance belongs to the other follow path (mode 0, 0x4870C0): the camera
 is "close enough" when the distance between the current and the desired position is under it, and
 0x486710's orbit search uses 1.25 as the epsilon at which a direction counts as settled.
