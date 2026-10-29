@@ -33,8 +33,8 @@ came from. Update this whenever a format is added or corrected.
 | Input | inside `Fix.gpt`, SNA | Input actions and their key expressions; joystick kinds partly, 17..32 not yet | `input.cc` |
 | PTX | `Fix.ptx`, `<Level>.ptx` | Texture slots and names; trailing values unknown | `texture_table.cc` |
 | Scripts (AI) | inside SNA | Brains, models, behaviours, reflexes, macros, variables, script nodes; keywords and operators named | `brain.cc`, `script_text.cc` |
-| BNM sound banks | `World/Sound/*.bnm` | Not started | |
-| SND | `<Level>.snd` | Not started | |
+| BNM sound banks | `World/Sound/*.bnm` | Layout complete, all 405 banks validated; sound ids mapped | |
+| SND | `<Level>.snd`, `Fix.snd` | Pair list understood; see [formats/sound.md](formats/sound.md) | |
 
 ## CNT texture archives
 
@@ -68,8 +68,26 @@ first; mono files (only `outro1.apm`) are one nibble per sample.
 - Open question: Ray2Get's README says the game's own decoder DLL clears the 3 lowest bits of `step`
   for every sample, which builds up a DC offset. We decode standard IMA ADPCM, which may sound slightly
   different from the game. To compare by ear later.
-- Music is adaptive: most files are 2–3 second pieces the game sequences at runtime. Ray2Get ships a
-  list of the sequences; where the game stores them is not yet known (probably the BNM banks).
+- Music is adaptive: most files are 2–3 second pieces the game sequences at runtime. The sequence
+  lists are in the BNM banks, as resource type 11 (see below): [formats/sound.md](formats/sound.md)
+  has the layout.
+
+## BNM sound banks and SND files
+
+Full details in [formats/sound.md](formats/sound.md). In short: a bank is a 0x2C header, events of
+`0x20` bytes, resources of `0x5C` bytes, a group-data area and up to four sample-data regions
+(MPEG, MIDI, PCM, ADPCM; only PCM is used in the shipped banks). Ids are
+`(bank << 16) | index` and name an event: type 1 plays its resource, type 2 stops the voices a
+given event started. Type-1 resources are either headerless 16-bit mono 22050 Hz PCM in the bank's
+PCM region or external `.apm` files. Types 4, 8 and 10 group samples; **type 11 is a music theme**,
+an ordered list of external `.apm` pieces — that is where the adaptive sequencing lives.
+`<Level>.snd` / `Fix.snd` list `(event id, slot address)` pairs; at load the engine writes the
+resolved event pointer into the slot, which is how the scripts (node type 30) and the animation
+events (type 0) get their sound pointers.
+
+- Sources: own analysis of all 405 banks and of `FUN_00453990`, `FUN_00453BF0`,
+  `FUN_00453F50`/`FUN_00453F90` (id lookups), `FUN_00452D50`/`FUN_00457E60` (play dispatch) and
+  `FUN_0044D2F0` (`.snd` fix-up).
 
 ## DSB scripts
 

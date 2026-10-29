@@ -181,6 +181,35 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
 - BNM sound banks: sound effects and voices, played when the scripts ask for them
 - The adaptive music sequencing
 
+The format work is done: [formats/sound.md](formats/sound.md) has the bank layout (validated on all
+405 banks), the event/resource ids and types, the `.snd` slot fix-up, and how the scripts and
+animations reach a sound. Two findings shape the implementation:
+
+- an **event** is what the data names (`(bank << 16) | index`); event type 1 plays its resource,
+  **event type 2 stops** the voices that a given event started (1472 of the 11880 level `.snd`
+  pairs are stops — the ambient loops get switched off this way)
+- a **type-11 resource is a music theme**: an ordered list of external `.apm` segments, 147 of
+  them in 85 banks, referenced by 1425 `.snd` pairs across 58 levels. The adaptive sequencing is
+  therefore not a separate format — the playlist is the theme record.
+
+What to build, in order:
+
+1. `libopenrayman`: a `bnm_bank` reader (header, events, resources, PCM payload accessor, group and
+   theme entries) and an `snd_file` reader (`(event id, slot address)` pairs). Tests store counts
+   and checksums only, never assets.
+2. `game`: a sound module holding the loaded banks for the level (its DSB list, plus Fix), resolving
+   a slot to an event, expanding groups, and queueing play/stop requests. Wire it to
+   `game/src/animation_player.cc` (animation event type 0, currently skipped) and to script node
+   type 30 plus procedures 115/117/118/119 (`not_yet` in `handlers.cc`).
+3. `src/audio`: an SDL mixer for the 16-bit mono 22050 PCM samples and the external `.apm` pieces,
+   alongside the existing `music_player`. Honour the static volume (resource `+0x14`) and the
+   event's pitch variation (`+0x0C`, `0x10000 ± v`).
+4. adaptive music: play a theme's segments in order from `+0x1C`, then the `+0x28` tail; treat
+   `silence.apm` as a fade-out. Which segment to move to, and when, is still the open question (see
+   the `SXD_DIST_*` options in `Snd_Cpa.ini`).
+
+Implementation is deferred; the research above is complete enough to start from.
+
 ## Phase 4: the whole game
 
 Everything the PC game has, working before we port it anywhere:
