@@ -51,7 +51,7 @@ namespace openrayman::game
 		}
 		// Variable memory: model's declaration (through a pointer), initial buffer, current buffer.
 		constexpr std::uint32_t variables_current = 0x08;
-		constexpr std::uint32_t declaration_info = 0x04;
+		constexpr std::uint32_t declaration_info = 0x04, declaration_count = 0x0C; // u8 count
 		constexpr std::uint32_t variable_info_size = 0x10;
 		constexpr std::uint32_t node_size = 8;
 
@@ -423,6 +423,10 @@ namespace openrayman::game
 			return {};
 		std::uint32_t variables = m_memory.u32(mind + mind_field::variables);
 		std::uint32_t declaration = m_memory.u32(m_memory.u32(variables));
+		// A variable the actor doesn't declare has no slot: reading past the declaration would land
+		// in another actor's memory (story bits are set by trying each Fix actor's variable 42).
+		if((index & 0xFF) >= m_memory.u8(declaration + declaration_count))
+			return {};
 		std::uint32_t info = m_memory.u32(declaration + declaration_info) + (index & 0xFF) * variable_info_size;
 		return { m_memory.u32(variables + variables_current) + m_memory.u32(info), m_memory.u32(info + 4) };
 	}
