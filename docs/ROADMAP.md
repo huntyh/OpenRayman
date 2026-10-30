@@ -133,7 +133,7 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
     stays in his spin state (04/00 +0x1210) before he falls (user, 2026-10-29; the portal exit is
     04/00 +0x739C, played because his "came through a portal" variable is set at load, 3475231).
   Still to do:
-  - The portal's sparkling particles; splashes when he lands in water.
+  - ~~The portal's sparkling particles~~ (kinds 9 and 55, 2026-10-30); ~~splashes when he lands in water~~.
   - Seen from afar, faint straight lines like a crosshair on X and Y around Rayman, turning with him.
   - Hover timed by the user: 1.4-1.6 s in both games, so its speed is right. Near the cliff by the
     spawn he can stop in mid-air while hovering and rise a little (probably the sloped cliff face
@@ -174,9 +174,10 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
     (`--start new`) needs the intro cutscene. Still to check: an invisible wall at the cave exit,
     `--level Learn_10 --camera -31.0,291.2,-24.4,-178.0,-20.1`: fixed, walls push only by their slice
     at body height (user confirmed). Lums can be collected but vanish without their effect. Rayman
-    doesn't grab ledges yet (edges onto the green, grabbable collision; function 193 reads the grab
-    point). Since function 51 exists he jumps sideways out of the arrival portal; the game drops him
-    under it (being traced).
+    grabs ledges and hangs (2026-10-30: his front probe sphere touching a grabbable top, seen live
+    with tools/r2live.py); climbing up still needs animation-driven motion (procedure 297, dynamics
+    flag 0x1 and base +0x54) and the hands on the edge procedure 218. The arrival portal drops him
+    under it as in the game (procedures 67/68, inertia, wall contacts; landing within 5 cm).
     Our default start is a half-revisit: only story bit 1133 is set, so the trapdoor opens and the
     Teensies leave, but the hanging cage (node 67) is still there, asleep (brain-off bit in the data; its
     wake-up chain: trigger node 82 -> counter node 83 -> clear bit 17). A real revisit has the cage broken.
