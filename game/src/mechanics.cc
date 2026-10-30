@@ -36,6 +36,10 @@ namespace openrayman::game
 		// (0x43F940, 0x479260).
 		constexpr std::uint32_t slots_at = 0x08, slot_size = 0x28;
 		constexpr std::uint32_t slot_normal = 0x04, slot_point = 0x10, slot_material = 0x20;
+		// +0x1C is the actor's own zone that touched (its game material): conditions 34..37 test its
+		// collide flags (0x48A4F0).
+		constexpr std::uint32_t slot_own = 0x1C;
+		constexpr std::uint16_t ledge_probe = 0x8, grabbable = 0x4; // collide flags
 		// How far a grounded actor follows the floor down (slopes, steps) instead of falling, and how
 		// far up it climbs onto one. Ours: the exe works with the actor's collision spheres.
 		constexpr float follow_down = 0.3f, climb_up = 0.5f, foot_radius = 0.5f;
@@ -297,6 +301,33 @@ namespace openrayman::game
 		}
 	}
 
+	std::optional<world_collision::segment_hit> world_collision::sphere_touch(const std::array<float, 3>& centre, float radius, std::uint16_t flags) const
+	{
+		std::optional<segment_hit> best;
+		float nearest = radius;
+		for(int x = int(std::floor((centre[0] - radius) / cell)); x <= int(std::floor((centre[0] + radius) / cell)); x++)
+			for(int y = int(std::floor((centre[1] - radius) / cell)); y <= int(std::floor((centre[1] + radius) / cell)); y++)
+			{
+				auto it = m_cells.find({ x, y });
+				if(it == m_cells.end())
+					continue;
+				for(std::uint32_t i : it->second)
+				{
+					const collision_triangle& t = m_triangles[i];
+					if((t.flags & flags) != flags || (t.flags & surface::no_contact))
+						continue;
+					vec q = closest_on_triangle(centre, t.corners[0], t.corners[1], t.corners[2]);
+					float l = vlen(vsub(centre, q));
+					if(l <= nearest)
+					{
+						nearest = l;
+						best = segment_hit{ q, t.normal, t.material };
+					}
+				}
+			}
+		return best;
+	}
+
 	std::array<float, 3> world_collision::slide_sphere(const std::array<float, 3>& start, const std::array<float, 3>& end, float radius) const
 	{
 		if(m_triangles.empty() || radius <= 0)
@@ -479,23 +510,59 @@ namespace openrayman::game
 
 	namespace
 	{
-		// How far walls keep the actor away: the radius of the first sphere in its kind-1 zone list
-		// (collide set +8, the list the exe's sphere cast gathers, 0x494290 -> 0x417870). Rayman's is
-		// 0.8, centred 0.8 above his feet, and the real game leaves him that far from the wall by the
-		// Learn_10 portal. The exe takes the zones the scripts switched on (0x40DBD0); the first one
-		// stands in for them until those are read. Others keep foot_radius.
-		float body_radius(const live_memory& m, std::uint32_t actor)
+		// The spheres of an actor's kind-1 zone list (collide set +8, the list the exe's sphere cast
+		// gathers: 0x494290 -> 0x417870): each zone's first element when it is spheres (kind 7), its
+		// first entry (radius, game material, vertex index, a word that is 5 for the zones in use and 2
+		// for the others, by what the real game's contact report shows of Rayman's) and the vertex.
+		struct zone_sphere
 		{
+			vec centre{};               // in the actor's own axes
+			float radius = 0;
+			std::uint32_t material = 0; // the zone's game material: its collide flags say what it is for
+			bool in_use = false;
+		};
+		std::vector<zone_sphere> zone_spheres(const live_memory& m, std::uint32_t actor)
+		{
+			std::vector<zone_sphere> out;
 			auto word = [&](std::uint32_t at) { return m.contains(at, 4) ? m.u32(at) : 0u; };
 			std::uint32_t set = word(actor + 0x14);
 			std::uint32_t head = set ? word(set + 8) : 0;
-			std::uint32_t node = head ? word(head) : 0;
-			std::uint32_t zone = node ? word(node + 4) : 0;
-			std::uint32_t kinds = zone ? word(zone + 0x10) : 0, data = zone ? word(zone + 0x14) : 0;
-			if(!kinds || !data || !m.contains(kinds, 2) || m.read<std::int16_t>(kinds) != 7)
-				return foot_radius;
-			std::uint32_t entries = word(word(data));
-			float r = entries && m.contains(entries, 4) ? m.f32(entries) : 0.0f;
+			for(std::uint32_t node = head ? word(head) : 0, i = 0; node && i < 32; node = word(node), i++)
+			{
+				std::uint32_t zone = word(node + 4);
+				std::uint32_t vertices = zone ? word(zone) : 0;
+				std::uint32_t kinds = zone ? word(zone + 0x10) : 0, data = zone ? word(zone + 0x14) : 0;
+				if(!kinds || !data || !m.contains(kinds, 2) || m.read<std::int16_t>(kinds) != 7)
+					continue;
+				std::uint32_t entry = word(word(data));
+				if(!entry || !m.contains(entry, 0x10))
+					continue;
+				zone_sphere z;
+				z.radius = m.f32(entry);
+				z.material = m.u32(entry + 4);
+				z.in_use = m.u32(entry + 0xC) == 5;
+				std::uint32_t at = vertices + std::uint32_t(m.read<std::uint16_t>(entry + 8)) * 12;
+				if(vertices && m.contains(at, 12))
+					z.centre = read_vec(m, at);
+				out.push_back(z);
+			}
+			return out;
+		}
+
+		// A game material's collide flags (+0xC collide material, its u16 at +2; 0x42DB30, 0x42DDD0).
+		std::uint16_t material_flags(const live_memory& m, std::uint32_t material)
+		{
+			std::uint32_t collide = material && m.contains(material + 0xC, 4) ? m.u32(material + 0xC) : 0;
+			return collide && m.contains(collide + 2, 2) ? m.read<std::uint16_t>(collide + 2) : 0;
+		}
+
+		// How far walls keep the actor away: the radius of its first kind-1 sphere. Rayman's is 0.8,
+		// centred 0.8 above his feet (his body: collide flags 0x4001), and the real game leaves him
+		// that far from the wall by the Learn_10 portal. The exe takes the zones the scripts switched
+		// on (0x40DBD0); the first one stands in for them until those are read. Others keep foot_radius.
+		float body_radius(const std::vector<zone_sphere>& zones)
+		{
+			float r = zones.empty() ? 0.0f : zones.front().radius;
 			return r > 0.05f && r < 3.0f ? r : foot_radius;
 		}
 	}
@@ -632,9 +699,10 @@ namespace openrayman::game
 		// where the actor ends up is the one it lands on.
 		vec wall_normal{};
 		const vec asked = move();
+		const std::vector<zone_sphere> zones = zone_spheres(m, actor);
 		if((flags & collides) && !world.empty() && !placed)
 		{
-			const float radius = body_radius(m, actor);
+			const float radius = body_radius(zones);
 			std::array<float, 2> push = world.wall_push(target[0], target[1], target[2] + climb_up, target[2] + body_height, radius);
 			target[0] += push[0];
 			target[1] += push[1];
@@ -711,19 +779,42 @@ namespace openrayman::game
 			// its game material; nothing touched leaves them clear. Scripts read them through
 			// functions 190..197 and conditions 61..64.
 			const vec point = { target[0], target[1], target[2] };
+			// In the air, a ledge probe (a zone in use whose material has collide flag 0x8: Rayman's
+			// is 2 units ahead, 1.9 up, radius 1) touching a grabbable surface (0x4) is the tick's
+			// contact instead, with the probe's material as the actor's own (+0x1C). Rayman's macro 3
+			// grabs the ledge on it (condition 34 with 0x8, function 193). Seen in the real game with
+			// tools/r2live.py: the touch point lies on the ledge's top, 1.0 from the probe's centre.
+			std::optional<world_collision::segment_hit> probe;
+			std::uint32_t probe_material = 0;
+			if(!landed && !world.empty())
+				for(const zone_sphere& z : zones)
+				{
+					if(!z.in_use || !(material_flags(m, z.material) & ledge_probe))
+						continue;
+					vec c = to_world(z.centre);
+					for(int i = 0; i < 3; i++)
+						c[std::size_t(i)] += target[std::size_t(i)];
+					if((probe = world.sphere_touch(c, z.radius, grabbable)))
+					{
+						probe_material = z.material;
+						break;
+					}
+				}
+			const std::uint32_t own = landed && !zones.empty() ? zones.front().material : probe_material;
 			for(std::uint32_t slot : { 0u, 1u })
 			{
 				std::uint32_t entry = block + slots_at + slot * slot_size;
-				write_vec(m, entry + slot_normal, landed ? ground.normal : vec{});
-				write_vec(m, entry + slot_point, landed ? point : vec{});
-				m.write<std::uint32_t>(entry + slot_material, landed ? ground.material : 0);
+				write_vec(m, entry + slot_normal, landed ? ground.normal : probe ? probe->normal : vec{});
+				write_vec(m, entry + slot_point, landed ? point : probe ? probe->point : vec{});
+				m.write<std::uint32_t>(entry + slot_own, landed || probe ? own : 0);
+				m.write<std::uint32_t>(entry + slot_material, landed ? ground.material : probe ? probe->material : 0);
 			}
 			// Slot 4 is the water (0x43F940: report bit 0x40 into slots_at + 4 * slot_size), with
 			// the surface's normal, the point on it above the actor and its game material; the
 			// word's 0x40 bit alongside the ground's. Out of the water both are cleared.
 			// Slot 2 is a wall (bit 0x4): the way it pushed the actor out, and where. Rayman's macro 40
 			// bounces his push (var87) off it, which ends the portal hop against the tablet's wall.
-			std::uint32_t word = (landed ? on_ground : 0) | (water ? in_water : 0) | (on_wall ? against_wall : 0);
+			std::uint32_t word = (landed || probe ? on_ground : 0) | (water ? in_water : 0) | (on_wall ? against_wall : 0);
 			m.write<std::uint32_t>(block, word);
 			m.write<std::uint32_t>(block + 4, word);
 			std::uint32_t wall = block + slots_at + wall_slot * slot_size;

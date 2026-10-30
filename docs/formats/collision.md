@@ -46,6 +46,25 @@ Confirmed in the game (Learn_10, by comparing the collision overlay with what Ra
 | --- | --- |
 | 0x0004 | grabbable: Rayman hangs from the edge of such a surface (the ledge by the Globox children, the tops of the columns near the end); he doesn't grab plain edges. Whole floors carry it, and also some ceilings, where it does nothing |
 | 0x4000 | water |
+| 0x0008 | on an actor's own zone: a ledge probe. Rayman's are four spheres (radius 1) 2 units ahead, behind and to each side at 1.9 up; only the front one is in use (its entry's last word is 5, the others 2) |
+
+## Actor zones and ledges
+
+An actor's kind-1 zone list (collide set +8) holds spheres (element kind 7; entry: radius, game
+material, u16 vertex index, a word 5 for zones in use, 2 for the others). Their materials' collide
+flags say what each is: Rayman's body 0x4001 (radius 0.8, centred 0.8 up), water sensor 0x4000,
+ledge probes 0x8. The dynamics contact report's slots hold, besides the touched surface's game
+material (+0x20), the actor's own zone that touched (+0x1C); conditions 34..37 test its collide
+flags (0x48A4F0: 34 slot 1 with word bit 0x1, 35 slot 2 with 0x4, 37 slot 5 with 0x10, 36 none of
+them has the flags). In the real game (tools/r2live.py) a ledge grab starts on the frame the front
+probe touches the **top** of a grabbable (0x4) floor: word 0x1, slots 0 and 1 with the probe as
++0x1C, the ledge as +0x20, its up normal and the touch point 1.0 from the probe's centre. Rayman's
+macro 3 then finds the edge with segment casts (functions 198, 199) in a script loop (procedures
+76..78) and puts him at the hanging point (procedure 157); behaviour 37 checks he got there and
+hands over to 32 (hanging). OpenRayman tests the probes in use against grabbable triangles only, in
+the air. Not done yet: the hands on the edge (procedure 218) and the climb, which the animation
+drives (procedure 297 sets flags 0x182 and a target height at +0x1EC; flag 0x1 adds base +0x54
+each tick, 0x437A40).
 
 ## Water
 

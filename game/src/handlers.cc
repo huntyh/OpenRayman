@@ -2257,6 +2257,54 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 34..37 (0x48A4F0): the actor's own zone that made a contact (slot +0x1C, its game material)
+		// has all the given collide flags: 34 the slot-1 contact (word bit 0x1), 35 the wall (0x4,
+		// slot 2), 37 slot 5 (0x10); 36 is true when there is no contact at all or the first of
+		// those present does NOT have them. Rayman's macro 3 grabs a ledge on 34 with 0x8 (his
+		// ledge probes); his landing skips contacts that are probes.
+		std::uint32_t own_zone_flags(call& c, bool& result)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value mask;
+			next_arg(c, mask);
+			live_memory& m = c.vm.memory();
+			std::uint32_t base = dynamics_base(c, self, 0x154);
+			std::uint32_t report = base ? safe_u32(m, base + 0x150) : 0;
+			result = false;
+			if(!report || !m.contains(report, 0x100))
+				return c.args;
+			std::uint32_t word = m.u32(report + 4);
+			std::uint16_t want = std::uint16_t(mask.as_int());
+			auto has = [&](std::uint32_t slot) {
+				std::uint32_t material = m.u32(report + 8 + slot * 0x28 + 0x1C);
+				if(!material || material == 0xCDCDCDCDu || !m.contains(material + 0xC, 4))
+					return false;
+				std::uint32_t collide = m.u32(material + 0xC);
+				if(!collide || collide == 0xFFFFFFFFu || !m.contains(collide + 2, 2))
+					return false;
+				return (m.read<std::uint16_t>(collide + 2) & want) == want;
+			};
+			switch(c.index)
+			{
+			case 34: result = (word & 1) && has(1); break;
+			case 35: result = (word & 4) && has(2); break;
+			case 37: result = (word & 0x10) && has(5); break;
+			case 36:
+				if(word == 0)
+					result = true;
+				else if(word & 1)
+					result = !has(1);
+				else if(word & 4)
+					result = !has(2);
+				else if(word & 0x10)
+					result = !has(5);
+				else
+					result = true;
+				break;
+			}
+			return c.args;
+		}
+
 		// 65 (0x48A950): the two numbers share a bit. 72: the game mode (0x500380) isn't 9.
 		std::uint32_t bits_overlap(call& c, bool& result)
 		{
@@ -2314,6 +2362,92 @@ namespace openrayman::game
 		}
 
 		// --- Transform procedures ----------------------------------------------------------------
+
+		// 157 (0x46AB20, case 0x9D -> 0x46B864): put the actor itself at a position: its transform,
+		// and the dynamics forgets its speed (0x432D30; the exe queues the move for the mechanics).
+		// Rayman's ledge grab (macro 3) puts him at the hanging point this way.
+		std::uint32_t place_self(call& c)
+		{
+			value where;
+			next_arg(c, where);
+			std::uint32_t so = c.vm.target(c.self, true);
+			if(std::uint32_t t = transform_of(c.vm, so))
+				write3(c.vm.memory(), t + 4, vec_of(where));
+			if(std::uint32_t base = dynamics_base(c, so, 0x48))
+				for(std::uint32_t at : { 0x3Cu, 0x40u, 0x44u })
+					c.vm.memory().write<float>(base + at, 0.0f);
+			return c.args;
+		}
+
+		// 76..78 (0x472E90, 0x472F00, 0x472F30): loops inside a script. 76(n) runs what follows up
+		// to its matching 77 n times (none: it goes on after that 77), 77 goes back while the count
+		// lasts, 78(k) leaves k + 1 levels of loops at once. One stack for every script, as in the
+		// exe (0x4E9420 return points, 0x4E9540 counts, 0x4E9660 the 76 nodes, depth 0x4B9BC4).
+		struct script_loop
+		{
+			std::uint32_t start = 0;  // the procedure_76 node
+			std::int32_t count = 0;
+			std::uint32_t back = 0;   // the node after its argument
+		};
+		std::vector<script_loop>& loops()
+		{
+			static std::vector<script_loop> stack;
+			return stack;
+		}
+		// 0x472E20: the node after the 77 that closes the loop opened at `start` (nested 76/77 pairs
+		// counted), or the script's end.
+		std::uint32_t after_loop(const live_memory& m, std::uint32_t start)
+		{
+			int depth = 0;
+			for(std::uint32_t node = start; m.contains(node, 8); node += 8)
+			{
+				std::uint8_t type = m.u8(node + 7);
+				if(type == 8)
+					return node;
+				if(type == 4)
+				{
+					std::uint32_t p = m.u32(node);
+					if(p == 76)
+						depth++;
+					else if(p == 77 && --depth < 1)
+						return node + 8;
+				}
+			}
+			return start + 8;
+		}
+		std::uint32_t loop_procedure(call& c)
+		{
+			live_memory& m = c.vm.memory();
+			auto& stack = loops();
+			if(c.index == 76)
+			{
+				std::uint32_t node = c.args - 8;
+				value n;
+				next_arg(c, n);
+				if(n.as_int() <= 0)
+					return after_loop(m, node);
+				stack.push_back({ node, n.as_int(), c.args });
+				return c.args;
+			}
+			if(c.index == 77)
+			{
+				if(!stack.empty())
+				{
+					if(--stack.back().count > 0)
+						return stack.back().back;
+					stack.pop_back();
+				}
+				return c.args;
+			}
+			value k;
+			next_arg(c, k);
+			if(stack.empty())
+				return c.args;
+			std::size_t levels = std::min<std::size_t>(std::size_t(std::max(0, k.as_int())), stack.size() - 1);
+			std::uint32_t start = stack[stack.size() - 1 - levels].start;
+			stack.resize(stack.size() - 1 - levels);
+			return after_loop(m, start);
+		}
 
 		// 200 (0x46BF20): move an actor (the first argument, not the usual target) to a position.
 		std::uint32_t teleport(call& c)
@@ -3192,6 +3326,11 @@ namespace openrayman::game
 		for(std::uint32_t i : { 49, 50, 51, 52, 53 })
 			vm.on_condition(i, valid);
 		vm.on_condition(66, collision_event_flag);
+		vm.on_procedure(157, place_self);
+		for(std::uint32_t i : { 76, 77, 78 })
+			vm.on_procedure(i, loop_procedure);
+		for(std::uint32_t i = 34; i <= 37; i++)
+			vm.on_condition(i, own_zone_flags);
 		for(std::uint32_t i = 27; i <= 32; i++)
 			vm.on_condition(i, contact);
 		vm.on_condition(77, animation_done);

@@ -62,6 +62,11 @@ namespace openrayman::game
 		// (0x434390 skips collide flags 0xC000). Returns where it ends.
 		std::array<float, 3> slide_sphere(const std::array<float, 3>& start, const std::array<float, 3>& end, float radius) const;
 
+		// The nearest surface carrying all of `flags` that a sphere at `centre` touches: the point on
+		// it closest to the centre, within `radius`, its normal and material. What a ledge probe of
+		// Rayman's finds (his collision zones with flag 0x8 against grabbable 0x4 surfaces).
+		std::optional<segment_hit> sphere_touch(const std::array<float, 3>& centre, float radius, std::uint16_t flags) const;
+
 	private:
 		// The triangles of the cell (x, y) lies in, or an empty list.
 		const std::vector<std::uint32_t>& under(float x, float y) const;
