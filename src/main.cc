@@ -533,7 +533,11 @@ namespace
 			for(const auto& p : all.all())
 			{
 				auto at = all.shown_at(p, now);
-				particles.push_back({ glm::vec3(at[0], at[1], at[2]), p.size, p.alpha / 255.0f, p.material });
+				// 0x460A10: flag 0x10000000 lies flat on the ground; 0x8000000 stands on its point.
+				const bool flat = (p.flags & 0xF0000000) == 0x10000000;
+				const float lift = !flat && (p.flags & 0x8000000) ? p.height : 0.0f;
+				particles.push_back({ glm::vec3(at[0], at[1], at[2] + lift), p.size, p.alpha / 255.0f, p.material,
+					p.flags ? p.height : -1.0f, flat });
 			}
 		}
 		a.level->set_particles(std::move(particles));

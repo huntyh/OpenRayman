@@ -71,13 +71,16 @@ namespace openrayman
 		void load_effect_materials(const std::map<std::uint32_t, visual_material>& materials,
 			std::span<const std::unique_ptr<cnt_archive>> archives);
 
-		// A particle this frame: a square facing the camera, faded by alpha (0..1).
+		// A particle this frame: a rectangle facing the camera (or lying flat on the ground, like
+		// a ripple), faded by alpha (0..1).
 		struct particle
 		{
 			glm::vec3 center{ 0 };
 			float half_size = 0;
 			float alpha = 1;
 			std::uint32_t material = 0; // a game material given to load_effect_materials
+			float half_height = -1;     // its own half height; below 0 the same as half_size
+			bool flat = false;          // in the world's X/Y plane instead of facing the camera
 		};
 		void set_particles(std::vector<particle> particles) { m_particles = std::move(particles); }
 

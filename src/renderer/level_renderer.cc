@@ -1207,7 +1207,9 @@ namespace openrayman
 			for(const particle* p : farthest_first)
 			{
 				const sprite_instance& m = m_effect_materials.at(p->material);
-				glm::vec3 x = right * p->half_size, y = up * p->half_size;
+				const float half_height = p->half_height < 0 ? p->half_size : p->half_height;
+				glm::vec3 x = (p->flat ? glm::vec3(1, 0, 0) : right) * p->half_size;
+				glm::vec3 y = (p->flat ? glm::vec3(0, 1, 0) : up) * half_height;
 				const float u = m.uv_extent.x, v = m.uv_extent.y;
 				glm::vec4 bounds{ 0, 0, 1, 1 };
 				vertex bl{ p->center - x - y, { 0, v }, lit, bounds }, br{ p->center + x - y, { u, v }, lit, bounds };

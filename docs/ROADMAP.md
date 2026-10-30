@@ -187,8 +187,9 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
     the side (world +X, his facing) and the speed lingers ~10 ticks. Next: why the exe's hop has no
     horizontal part (facing at release, or how the mechanics applies proposed speeds; procedure 198
     0x46CE00 local/world bits). Water: contact slot 4 / bit 0x40 done; jumping into shallow water no
-    longer makes him swim (functions 166..168, 175..177, 198, 199: the scripts' depth cast); the splash needs procedures
-    232-234, 237, 245, 258, 302 and particle kinds 7, 39, 60, 62. Slope slide: the rerun of
+    longer makes him swim (functions 166..168, 175..177, 198, 199: the scripts' depth cast); splashes
+    and ripples (particle kinds 7, 39, 60, 62) done. Swimming itself still needs procedures 232-234,
+    237, 245, 258, 302. Slope slide: the rerun of
     task_slope_projection.md starts from Rayman's resolver 0x437E60.
     In the game the player may turn the camera left/right (Q/W) only where the level allows it;
     level camera presets often overrule it, and a camera icon with a red X shows when turning is

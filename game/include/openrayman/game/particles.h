@@ -29,6 +29,15 @@ namespace openrayman::game
 			float wobble = 0;      // type 11: radius of its circling, and how fast it turns
 			float turn = 0;
 			std::uint32_t material = 0; // a game material
+			// The water effects (kinds 7, 39, 60, 62) follow the exe's flag word (+0 of a pool entry):
+			// the low byte is the type (0 stays, 1 falls, 3 drifts), 0xF00 how fast it grows, 0xF000
+			// how fast it fades, 0x10000 "dies after `life` seconds", 0x20000 "turns into a ripple
+			// when it falls to `floor`", 0x10000000 drawn flat on the ground, 0x8000000 drawn
+			// standing on its point. 0 for the older effects (types 11 and 14 above).
+			std::uint32_t flags = 0;
+			float height = 0;      // half its height (size is half its width)
+			double born = 0;
+			float life = 0;        // +0x3C: seconds to live with 0x10000, the floor with 0x20000
 		};
 
 		// Procedure 503's arguments: effect kind, a point, a vector, a game material, a number.
@@ -49,6 +58,14 @@ namespace openrayman::game
 
 		std::vector<particle> m_particles;
 		double m_rising_clock = 0; // effect 28 starts at most one particle every 0.05 s
+		double m_ripple_clock = 0; // effect 7 starts at most one ripple every 0.2 s (0x4B9B0C)
+		std::uint32_t m_ripple_material = 0; // effect 7's material, which falling drops become (0x4B9AD8)
+		bool m_fewer = false;      // effect 167's switch (0x4B9AF8): no drops, quieter ripples
+
+		// Adds a particle the way 0x4600C0 does for the flag-word effects.
+		void add(std::uint32_t flags, const vec3& point, const vec3& motion, float life, float size, std::uint32_t material, double now);
+		// One tick of a flag-word particle (0x461120); false when it is done.
+		void step(particle& p, double now, float dt);
 		std::mt19937 m_random{ 1999 };
 	};
 }

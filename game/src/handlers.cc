@@ -2333,7 +2333,7 @@ namespace openrayman::game
 		}
 
 		// 503 (0x463390): start an effect: kind, a point, a vector, a game material, a number. Kinds
-		// 23 and 28 so far (game/src/particles.cc); the others do nothing yet.
+		// 23 and 28 and the water ones (7, 39, 60, 62, and 167 their switch; game/src/particles.cc).
 		std::uint32_t start_effect(call& c)
 		{
 			value kind, point, vector, material, number;
