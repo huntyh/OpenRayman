@@ -176,8 +176,10 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
     `--level Learn_10 --camera -31.0,291.2,-24.4,-178.0,-20.1`: fixed, walls push only by their slice
     at body height (user confirmed). Lums can be collected but vanish without their effect. Rayman
     grabs ledges and hangs (2026-10-30: his front probe sphere touching a grabbable top, seen live
-    with tools/r2live.py); grabbing only while falling is working (user confirmed). Climbing up still needs animation-driven motion (procedure 297, dynamics
-    flag 0x1 and base +0x54) and the hands on the edge procedure 218. The arrival portal drops him
+    with tools/r2live.py); grabbing only while falling is working (user confirmed). He climbs up onto the ledge by the climb animation's own motion (frame
+    vectors, dynamics flag 0x1, base +0x54; procedures 297/298), to be checked by the user; the hands
+    on the edge (procedure 218) are still missing. The portal draws sparks from Rayman into itself
+    when he is near (particle kind 175), to be checked. The arrival portal drops him
     under it as in the game (procedures 67/68, inertia, wall contacts; landing within 5 cm).
     Our default start is a half-revisit: only story bit 1133 is set, so the trapdoor opens and the
     Teensies leave, but the hanging cage (node 67) is still there, asleep (brain-off bit in the data; its

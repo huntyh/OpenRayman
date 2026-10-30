@@ -35,6 +35,13 @@ per-actor entry (0x412150) installs the current state's every tick.
 
 ## One tick (0x431AD0)
 
+0. The animation's own motion, if flag 0x1 (the state mechanics' bit 0x1, 0x435B80): target +=
+   the actor's rotation × base +0x54 × dt (0x437A40, the vector turned at 0x444AC0). The animation
+   update fills +0x54 (0x412060 via 0x40FF90): each frame record (10 bytes, the animation's frames
+   from its +0x2E) names a vector at u16 +2 in the bank's vector array (0xFFFF none); the frames
+   played this tick (after 3D data +0xC8 up to the current +0x74) are averaged and multiplied by
+   the playback rate (3D data +0xE0), giving units per second in the actor's axes. Rayman's ledge
+   climb (state @04/00 +0x1FA4) rises about 1.8 units and steps onto the ledge this way.
 1. target = position; then the second script speed sets the axes it names (× dt) of the move.
    Inertia, if flag 0x400 (0x43DF70 -> 0x43DDA0): per axis in the actor's own axes (formula below),
    last = speed (+0x3C) × dt (minus +0x1B4 unless end flag 0x10), f = 1 − (1 − k)⁴ from k at +0x154.., the share of last tick's move kept: move = wanted + (last − wanted) × f (the state
@@ -50,6 +57,15 @@ per-actor entry (0x412150) installs the current state's every tick.
 The time step is the frame length rounded to the mechanics step 0x50043C (n steps per tick).
 
 ## What we do differently (for now)
+
+- Procedure 297 (climbing over a ledge, 0x46C710 case 0x129) sets end flag 0x400000, flags 0x182,
+  +0x1C = 1, +0x20 = 0 and the height +0x1EC; 298 (0x46CE00 case 0x12A) clears 0x400000 only. With
+  0x400000 the exe's collision (0x43EEC0 → 0x4377F0) leaves out floor contacts and contacts below
+  the height; flag 0x80 uses +0x1C/+0x20 as the contact response, 0x100 keeps a move's vertical part
+  against suitable walls (0x437E60). We store these but don't act on them yet: the climb in
+  Learn_10 works without them. When an actor's state changes, its mechanics are installed in our
+  dynamics step, after the scripts, so a 297 in the same tick loses 0x182 (the exe installs them at
+  once, 0x472345).
 
 The exe finds contacts with the actor's collision spheres and picks the nearest. We treat the actor
 as a disc 0.5 units across its middle (Rayman spawns 12 cm off the grass edge in Learn_10) and look straight down for the highest triangle that faces up (at most 60° from flat),
@@ -76,6 +92,9 @@ game with tools/r2live.py: one frame after the release var87 is zero). Ceilings 
 none of the resolver bits, only 0x2, so 0x2 also counts as colliding until his resolver is read.
 
 ## Where this came from
+
+- The animation motion (flag 0x1, +0x54, 0x412060, 0x40FF90, 0x41A830) and procedures 297/298
+  were traced by GPT 6.1 Terra through Codex and checked against the exe and the Learn_10 climb.
 
 Own analysis of `Rayman2.exe` with capstone. Two studies by a helper model (DeepSeek) found the
 functions. The gravity formula, the mechanics copy (0x435B80, read in full), the install after a

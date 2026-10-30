@@ -3018,6 +3018,33 @@ namespace openrayman::game
 			return write();
 		}
 
+		// 297 (0x46C710 case 0x129): climbing over a ledge. End flags |= 0x400000 (contacts below
+		// the height are left out, 0x4377F0), flags |= 0x182 (contact response from +0x1C = 1 and
+		// +0x20 = 0), the height at +0x1EC (0x4331D0; relative to a carrying platform's, +0x284,
+		// which Learn_10's ledges don't have). 298 (0x46CE00 case 0x12A) clears only 0x400000.
+		std::uint32_t climb_over(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value v;
+			if(c.index == 297)
+				next_arg(c, v);
+			std::uint32_t base = dynamics_base(c, self, 0x1F0);
+			if(!base)
+				return c.args;
+			live_memory& m = c.vm.memory();
+			if(c.index == 298)
+			{
+				m.write<std::uint32_t>(base + 0xC, m.u32(base + 0xC) & ~0x400000u);
+				return c.args;
+			}
+			m.write<std::uint32_t>(base + 0xC, m.u32(base + 0xC) | 0x400000);
+			m.write<std::uint32_t>(base + 8, m.u32(base + 8) | 0x182);
+			m.write<float>(base + 0x1C, 1.0f);
+			m.write<float>(base + 0x20, 0.0f);
+			m.write<float>(base + 0x1EC, v.as_float());
+			return c.args;
+		}
+
 		// 263 (0x46C710, case 0x46C78B): a dynamics value at base +0x10, stored as given. 274
 		// (0x46CA40, case 0x46CB2B): the vector at base +0x178, but only its components the
 		// argument makes positive. What the physics does with them isn't read yet.
@@ -3345,6 +3372,8 @@ namespace openrayman::game
 		vm.on_procedure(435, set_movement_actions);
 		vm.on_procedure(346, read_movement);
 		vm.on_procedure(263, set_dynamics_value);
+		vm.on_procedure(297, climb_over);
+		vm.on_procedure(298, climb_over);
 		vm.on_procedure(274, set_dynamics_value);
 		vm.on_procedure(102, show_parts);
 		vm.on_procedure(103, show_parts);

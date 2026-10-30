@@ -12,12 +12,13 @@ namespace openrayman::game
 		namespace base
 		{
 			constexpr std::uint32_t flags = 0x08, end_flags = 0x0C, gravity = 0x10;
+			constexpr std::uint32_t animation_motion = 0x54;
 			constexpr std::uint32_t imposed = 0x24, proposed = 0x30, speed = 0x3C, previous_position = 0x7C;
 			constexpr std::uint32_t contacts = 0x150, limit = 0x178, third = 0x190;
 			constexpr std::uint32_t size = 0x1A8;
 		}
 		// Flags at base +8.
-		constexpr std::uint32_t has_gravity = 0x4, has_limit = 0x200, has_inertia = 0x400;
+		constexpr std::uint32_t has_animation_motion = 0x1, has_gravity = 0x4, has_limit = 0x200, has_inertia = 0x400;
 		constexpr std::uint32_t uses_imposed = 0xE0000, uses_proposed = 0x700000, uses_third = 0x3800000;
 		// The resolvers 0x439730, 0x431A10, 0x43A260 (0x10, 0x20, 0x40) and Rayman's mechanics, which has
 		// none of them but 0x2 (what resolves his is still to read).
@@ -592,7 +593,7 @@ namespace openrayman::game
 			install_mechanics(m, b, mech);
 		std::uint32_t flags = m.u32(b + base::flags);
 		bool gravity = (flags & has_gravity) && !(m.u32(b + base::end_flags) & no_gravity);
-		if(!gravity && !(flags & (uses_imposed | uses_proposed | uses_third)))
+		if(!gravity && !(flags & (has_animation_motion | uses_imposed | uses_proposed | uses_third)))
 			return;
 		float dt = float(ms / 1000);
 		vec current = read_vec(m, t + 4), target = current;
@@ -650,6 +651,16 @@ namespace openrayman::game
 					d[std::size_t(k)] = v[std::size_t(k)] * dt;
 			set_move(local ? to_world(d) : d);
 		};
+		// The animation's own motion (0x437A40): base +0x54, units per second in the actor's axes,
+		// which the animation player fills from the frames it played (see animation_player.cc).
+		// Rayman's ledge climb lifts him onto the ledge this way.
+		if(flags & has_animation_motion)
+		{
+			vec v = read_vec(m, b + base::animation_motion), d = move(), w = to_world(v);
+			for(int i = 0; i < 3; i++)
+				d[std::size_t(i)] += w[std::size_t(i)] * dt;
+			set_move(d);
+		}
 		if(flags & uses_proposed)
 			add_speed(base::proposed, 0x100000, 0x8000);
 		// Inertia (0x43DF70 -> 0x43DDA0): per axis in the actor's own axes, the move keeps the share

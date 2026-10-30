@@ -706,6 +706,7 @@ namespace
 			a.vm = std::make_unique<openrayman::game::interpreter>(*a.live, main_actor);
 			openrayman::game::register_handlers(*a.vm);
 			a.vm->set_world(openrayman::game::world_collision(std::move(collision)));
+			a.vm->set_animations(&a.bank);
 			// The story so far: arriving from the hub through the portal (story bit 1133), which
 			// Learn_10's start reads; a new game plays the pirate ship cutscene instead.
 			if(!a.new_game)

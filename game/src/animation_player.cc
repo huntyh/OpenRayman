@@ -1,4 +1,5 @@
 #include <openrayman/game/animation_player.h>
+#include <openrayman/animation.h>
 #include <openrayman/error.h>
 
 #include <array>
@@ -83,6 +84,45 @@ namespace openrayman::game
 			m.write<std::uint8_t>(data + data_3d::finished, 0);
 			m.write<std::uint8_t>(data + data_3d::reached_end, 0);
 			m.write<std::uint8_t>(data + data_3d::event_cursor, 0);
+		}
+
+		// The motion the animation's frames carry, for the dynamics (base +0x54, 0x412060 via
+		// 0x40FF90): each frame record names a vector (u16 +2, 0xFFFF none) in the bank. The frames
+		// played this tick (after `before` up to the current one; only the current one when it
+		// didn't advance or the state changed) are averaged and times the rate: units per second in
+		// the actor's own axes. Rayman's ledge climb moves him up and onto the ledge with it.
+		void animation_motion(live_memory& m, const animation_bank& bank, std::uint32_t actor, std::uint32_t data, std::uint32_t state_before, int before)
+		{
+			std::uint32_t dynamics = m.u32(actor + 8);
+			std::uint32_t b = dynamics && m.contains(dynamics, 4) ? m.u32(dynamics) : 0;
+			if(!b || !m.contains(b, 0x60))
+				return;
+			std::array<float, 3> sum{};
+			std::uint32_t s = m.u32(data + data_3d::current_state);
+			std::uint32_t reference = s ? m.u32(s + state::animation) : 0;
+			std::uint16_t index = reference ? m.read<std::uint16_t>(reference + 0x18) : 0xFFFF;
+			if(index < bank.animations.size())
+			{
+				const animation& a = bank.animations[index];
+				int now = m.read<std::uint16_t>(data + data_3d::frame);
+				int from = s == state_before && before < now ? before + 1 : now;
+				int count = 0;
+				for(int f = from; f <= now; f++, count++)
+				{
+					std::size_t at = std::size_t(a.start_frames) + std::size_t(f);
+					if(f >= a.frames || at >= bank.frames.size())
+						continue;
+					std::uint16_t v = bank.frames[at].vector;
+					if(v != 0xFFFF && v < bank.vectors.size())
+						for(int i = 0; i < 3; i++)
+							sum[std::size_t(i)] += bank.vectors[v][std::size_t(i)];
+				}
+				float rate = m.u8(data + data_3d::playback_rate);
+				for(float& c : sum)
+					c = count ? c / float(count) * rate : 0;
+			}
+			for(int i = 0; i < 3; i++)
+				m.write<float>(b + 0x54 + std::uint32_t(i) * 4, sum[std::size_t(i)]);
 		}
 	}
 
@@ -274,7 +314,11 @@ namespace openrayman::game
 				std::array<float, 3> at{};
 				if(auto placed = global_placement(m, self))
 					at = { placed->m[0][3], placed->m[1][3], placed->m[2][3] };
+				std::uint32_t state_before = m.u32(data + data_3d::current_state);
+				int before = m.read<std::uint16_t>(data + data_3d::frame);
 				play_animation(m, data, vm.frame_ms(), at);
+				if(actor && vm.animations())
+					animation_motion(m, *vm.animations(), actor, data, state_before, before);
 			}
 			if(actor && !vm.removed(self) && vm.mechanics_runs(self))
 			{

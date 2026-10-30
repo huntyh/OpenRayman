@@ -1316,6 +1316,7 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	game::interpreter vm(memory, main_actor);
 	game::register_handlers(vm);
 	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
+	vm.set_animations(&bank);
 	// As the viewer does: arrived from the hub through the portal (story bit 1133).
 	std::vector<std::uint32_t> fix_actors;
 	for(const auto& placed : header.placements)

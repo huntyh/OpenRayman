@@ -1,5 +1,6 @@
 #pragma once
 
+#include <openrayman/animation.h>
 #include <openrayman/game/camera.h>
 #include <openrayman/game/live_memory.h>
 #include <openrayman/game/mechanics.h>
@@ -144,6 +145,9 @@ namespace openrayman::game
 		// What actors stand on and bump into.
 		void set_world(world_collision world) { m_world = std::move(world); }
 		const world_collision& world() const { return m_world; }
+		// The level's animations, for the motion their frames carry (kept by the caller).
+		void set_animations(const animation_bank* bank) { m_animations = bank; }
+		const animation_bank* animations() const { return m_animations; }
 		// Sets a designer variable of an actor from outside the scripts (state carried over from
 		// an earlier level, tests).
 		void set_variable(std::uint32_t self, std::uint32_t index, const value& v) { write_variable(variable(self, index), v); }
@@ -306,6 +310,7 @@ namespace openrayman::game
 		game::particles m_particles;
 		game::screen_text m_screen_text;
 		world_collision m_world;
+		const animation_bank* m_animations = nullptr;
 		camera_globals m_camera;
 		camera_state m_camera_motion;
 	};
