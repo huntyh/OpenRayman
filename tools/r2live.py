@@ -166,7 +166,41 @@ def active_zones(m, actor):
 	return s
 
 
-def snapshot(m, variables, contacts=False, zones=False, camera=False):
+# The pool of generated actors (function 66, 0x40BCC0): slot count, super objects (0x48 each), and
+# per slot the super object of whoever made it (0 = free). See docs/formats/generated.md.
+POOL_COUNT = 0x4A6B18
+POOL_SUPER_OBJECTS = 0x4A6B28
+POOL_CREATORS = 0x4A6B30
+
+
+def generated_actors(m):
+	s = {}
+	count = m.u32(POOL_COUNT)
+	objects = m.u32(POOL_SUPER_OBJECTS)
+	creators = m.u32(POOL_CREATORS)
+	if not count or not objects or not creators:
+		return s
+	s["pool"] = str(count)
+	live = 0
+	for i in range(min(count, 256)):
+		creator = m.u32(creators + 4 * i)
+		so = objects + 0x48 * i
+		actor = m.u32(so + 4)
+		if not creator or not actor or not m.u32(actor):
+			continue
+		live += 1
+		t = m.u32(so + 0x24)
+		mind = m.u32(m.u32(actor + 0xC)) if m.u32(actor + 0xC) else 0
+		line = f"by 0x{creator:X} at " + (fmt(m.f32s(t + 4, 3)) if t else "-") + f" state 0x{m.u32(m.u32(actor) + 4):X}"
+		if mind:
+			# The shot's timers: var1 its rank among Rayman's shots, var3 bounces left, var16 when it fades.
+			line += " var1 " + variable(m, mind, 1) + " var3 " + variable(m, mind, 3) + " var16 " + variable(m, mind, 16)
+		s[f"gen{i}"] = line
+	s["generated"] = str(live)
+	return s
+
+
+def snapshot(m, variables, contacts=False, zones=False, camera=False, generated=False):
 	s = {}
 	super_object = m.u32(MAIN_ACTOR)
 	actor = m.u32(super_object + 4) if super_object else 0
@@ -210,6 +244,8 @@ def snapshot(m, variables, contacts=False, zones=False, camera=False):
 			s.update(contact_report(m, base))
 	if zones:
 		s.update(active_zones(m, actor))
+	if generated:
+		s.update(generated_actors(m))
 	brain = m.u32(actor + 0xC)
 	mind = m.u32(brain) if brain else 0
 	if mind:
@@ -232,6 +268,7 @@ def main():
 	parser.add_argument("--contacts", action="store_true", help="also the contact report: word and slots with both materials' flags")
 	parser.add_argument("--zones", action="store_true", help="also which of Rayman's kind-1 collision zones are switched on")
 	parser.add_argument("--camera", action="store_true", help="also camera position, distance, mode and renderer projection")
+	parser.add_argument("--generated", action="store_true", help="also the generated actors (Rayman's shots): slot, maker, position, state, timers")
 	args = parser.parse_args()
 	variables = [int(v) for v in args.vars.split(",") if v.strip()]
 	quiet = set(f for f in args.quiet.split(",") if f)
@@ -257,7 +294,7 @@ def main():
 			if clock == last_clock:
 				time.sleep(0.0005)
 				continue
-			now = snapshot(m, variables, args.contacts, args.zones, args.camera)
+			now = snapshot(m, variables, args.contacts, args.zones, args.camera, args.generated)
 			# Average world-space movement between observed game frames, in units per game second.
 			# If frames are missed this is their net displacement, not the exact path travelled.
 			if args.camera and last_clock is not None and clock > last_clock and "camera_at" in now and "camera_at" in last:

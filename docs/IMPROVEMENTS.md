@@ -23,7 +23,7 @@ of them off may come later.
 
 | What | The game | OpenRayman | Since |
 | --- | --- | --- | --- |
-| Brain rate | Scripts can make an actor think only every Nth frame (3D data +0xFE, procedure 341) to save time | Every actor thinks every frame (`honour_brain_period` switches the game's way back on) | 3b |
+| Brain rate | Scripts can make an actor think only every Nth frame (3D data +0xFE, procedure 341) to save time | Every actor thinks every frame (`honour_brain_period` switches the game's way back on); "every N frames" checks still count only the frames the game would think, so timers built on them (the shot's countdown) keep the game's pace | 3b |
 | Slow frames | Not known yet | At most 4 ticks per drawn frame: if the computer can't keep up, the game slows down instead of freezing | 3b |
 | Particles | At most 150 at a time, and 35 new ones a frame | Room for 2000 | 3b |
 | Random numbers | A table of pre-made numbers read in turn | Any uniform source | 3c |

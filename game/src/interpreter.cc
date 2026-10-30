@@ -1037,14 +1037,16 @@ namespace openrayman::game
 		if(!actor || removed(self) || !brain_runs(self))
 			return;
 		std::uint32_t data = m_memory.u32(actor + actor_field::data_3d);
-		if(data && honour_brain_period)
+		// 0x418880, 0x4188C0: the game thinks on every (period + 1)th frame (procedure 341).
+		bool game_thinks = true;
+		if(data)
 		{
-			// 0x418880, 0x4188C0: think on every (period + 1)th frame.
 			std::int8_t counter = std::int8_t(m_memory.u8(data + data_3d_field::brain_counter) + 1);
 			if(counter >= std::int8_t(m_memory.u8(data + data_3d_field::brain_period)))
 				counter = 0;
 			m_memory.write<std::int8_t>(data + data_3d_field::brain_counter, counter);
-			if(counter != 0)
+			game_thinks = counter == 0;
+			if(!game_thinks && honour_brain_period)
 				return;
 		}
 		std::uint32_t brain = m_memory.u32(actor + actor_field::brain);
@@ -1053,12 +1055,19 @@ namespace openrayman::game
 		std::uint32_t mind = m_memory.u32(brain);
 		if(!mind || !m_memory.u32(mind + mind_field::model))
 			return;
-		if(data)
+		// The frames thought so far, which "every N frames" ifs test (keywords 2..5). Thinking on
+		// every tick anyway (our default), the count still only goes up when the game would think, and
+		// in between those ifs don't fire: a slowed brain keeps the game's timing there. The shot
+		// thinks every 2nd frame, so its "every 4 frames" countdown of shots too many is 128 ms, as
+		// in the real game (tools/r2live.py --generated).
+		if(data && game_thinks)
 		{
 			std::uint16_t frame = std::uint16_t(m_memory.read<std::uint16_t>(data + data_3d_field::frame) + 1);
 			m_memory.write<std::uint16_t>(data + data_3d_field::frame, frame);
 			m_frame = std::uint8_t(frame);
 		}
+		else if(data)
+			m_frame = 1; // odd: no "every N frames" if passes
 		else
 			m_frame = 0;
 

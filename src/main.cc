@@ -142,6 +142,7 @@ namespace
 		struct held_key { std::uint8_t key; long from, to; };
 		std::vector<held_key> held_keys;
 		bool new_game = false; // --start new: levels start as on a new game, not as reached from the hub
+		std::vector<std::int32_t> story_bits; // --story-bits 1095,1143: more of a save's story, set at load
 		long tick = 0;
 		std::vector<std::uint32_t> thinkers;     // super objects of the actors with a brain
 		// The game's camera actor (the placed Fix actor with a camera part). Until the game's camera
@@ -765,6 +766,9 @@ namespace
 									if(n.type == std::uint8_t(node_type::reference_31) && n.target)
 										lists.push_back(*n.target);
 							});
+						// Its scripts' particle materials are loaded with the rest (the shot's bounce
+						// sparkles), so its model joins the level's.
+						brains.models.merge(own.models);
 						for(const memory_location& list : lists)
 						{
 							if(look.lists.contains(list.address()))
@@ -840,12 +844,16 @@ namespace
 			a.vm->set_animations(&a.bank);
 			// The story so far: arriving from the hub through the portal (story bit 1133), which
 			// Learn_10's start reads; a new game plays the pirate ship cutscene instead.
-			if(!a.new_game)
+			// Further bits stand in for a save game until saves are read (Phase 4): 1095 gives
+			// Rayman the silver (blue) shot, 1143 the golden one that charges.
 			{
 				std::vector<std::uint32_t> fix_actors;
 				for(const fix_actor_placement& placed : header.placements)
 					fix_actors.push_back(placed.super_object.address());
-				a.vm->set_story_bit(fix_actors, 1133);
+				if(!a.new_game)
+					a.vm->set_story_bit(fix_actors, 1133);
+				for(std::int32_t bit : a.story_bits)
+					a.vm->set_story_bit(fix_actors, bit);
 			}
 			a.input.reset();
 			a.tick = 0;
@@ -1275,6 +1283,16 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 			a->show_collision = std::string_view(argv[n + 1]) == "on";
 		else if(arg == "--start") // portal (default): as reached from the hub; new: as on a new game
 			a->new_game = std::string_view(argv[n + 1]) == "new";
+		else if(arg == "--story-bits") // comma-separated story bits to set at load, e.g. 1095,1143
+		{
+			std::string_view list = argv[n + 1];
+			for(std::size_t at = 0; at < list.size();)
+			{
+				std::size_t end = std::min(list.find(',', at), list.size());
+				a->story_bits.push_back(std::atoi(std::string(list.substr(at, end - at)).c_str()));
+				at = end + 1;
+			}
+		}
 		else if(arg == "--time") // seconds into the actors' animations, for screenshots
 			a->start_time = std::strtod(argv[n + 1], nullptr);
 		else if(arg == "--lighting") // on (default) or off: the game's lights and fog, or a plain light; L in the viewer

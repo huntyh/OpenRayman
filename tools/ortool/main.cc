@@ -79,6 +79,8 @@ static void usage()
 		"  input <game folder> <level>         Input actions and the keys each one tests\n"
 		"  peek <game folder> <level> <block> <hex offset> <words>\n"
 		"                                      Print memory words, e.g. peek ... Learn_10 05/02 300 16\n"
+		"  mesh <game folder> <level> <block> <hex offset>\n"
+		"                                      What a physical object shows: elements, sprites, materials\n"
 		"  motion <game folder> <level>       For each actor: its animation and how far its parts move\n"
 		"  states <game folder> <level> <node>\n"
 		"                                      The states of an actor's family and their animations\n"
@@ -859,6 +861,43 @@ static int cmd_peek(const fs::path& folder, const std::string& name, const std::
 	return EXIT_SUCCESS;
 }
 
+// Prints what a physical object shows: its mesh's elements and sprites, with each material's
+// flags, colours and texture.
+static int cmd_mesh(const fs::path& folder, const std::string& name, const std::string& block, const std::string& offset)
+{
+	game_data game = require_game(folder);
+	memory_image memory = load_level_memory(game, name);
+	block_id id{ std::uint8_t(std::stoul(block.substr(0, 2), nullptr, 16)), std::uint8_t(std::stoul(block.substr(3, 2), nullptr, 16)) };
+	const sna_block* found = memory.find(id);
+	if(!found)
+		throw format_error("no block " + block);
+	memory_location at{ found, std::uint32_t(std::stoul(offset, nullptr, 16)) };
+	auto geometry = physical_object_geometry(memory, at);
+	if(!geometry)
+		throw format_error("no geometric object behind that physical object");
+	geometric_object mesh = read_geometric_object(memory, *geometry);
+	auto describe = [](const std::optional<visual_material>& m) {
+		if(!m)
+			return std::string("no material");
+		std::string out = std::format("material {} +0x{:X} flags 0x{:X} ambient {:.2f} {:.2f} {:.2f} {:.2f} diffuse {:.2f} {:.2f} {:.2f} {:.2f} specular {:.2f} {:.2f} {:.2f} {:.2f}",
+			m->at.block->id.to_string(), m->at.offset, m->flags, m->ambient[0], m->ambient[1], m->ambient[2], m->ambient[3],
+			m->diffuse[0], m->diffuse[1], m->diffuse[2], m->diffuse[3], m->specular[0], m->specular[1], m->specular[2], m->specular[3]);
+		if(m->texture)
+			out += std::format(", texture {} (flags 0x{:X})", m->texture->name, m->texture->flags);
+		if(!m->frames.empty())
+			out += std::format(", {} frames", m->frames.size());
+		return out;
+	};
+	std::cout << std::format("geometric object {} +0x{:X}: {} vertices, look-at {}\n", geometry->block->id.to_string(), geometry->offset, mesh.vertices.size(), int(mesh.look));
+	for(const triangle_element& e : mesh.elements)
+		std::cout << std::format("  triangles {}: {}\n", e.triangles.size(), describe(e.material));
+	for(const sprite& sp : mesh.sprites)
+		std::cout << std::format("  sprite at vertex {} half size {:.2f} x {:.2f}: {}\n", sp.vertex, sp.half_size[0], sp.half_size[1], describe(sp.material));
+	for(std::uint16_t t : mesh.skipped_types)
+		std::cout << std::format("  element type {} not read\n", t);
+	return EXIT_SUCCESS;
+}
+
 // Prints which objects each channel of an animation shows at a frame (an index into the actor's
 // object list; "-" means hidden).
 static int cmd_anim(const fs::path& folder, const std::string& name, const std::string& index, const std::string& frame)
@@ -1466,8 +1505,12 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	};
 	for(int f = 0; f < frames; f++)
 	{
+		// A key held in several spans is down in any of them.
+		std::array<bool, 256> down{};
 		for(const held& h : holds)
-			keys.set_key(h.key, f >= h.from && f < h.to);
+			down[h.key] = down[h.key] || (f >= h.from && f < h.to);
+		for(const held& h : holds)
+			keys.set_key(h.key, down[h.key]);
 		keys.step();
 		try
 		{
@@ -1507,6 +1550,16 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 			if(f % 30 == 0)
 				if(auto p = game::global_placement(memory, tree.node(*trace).at.address()))
 					std::cout << std::format("tick {:>4}: at {:.2f} {:.2f} {:.2f}\n", f, p->m[0][3], p->m[1][3], p->m[2][3]);
+				// Actors the scripts created (shots): where each is, and its behaviour.
+				for(std::uint32_t so : vm.generated().alive())
+				{
+					std::uint32_t mind = memory.u32(memory.u32(vm.actor_of(so) + 0x0C));
+					std::uint32_t behaviour = memory.u32(memory.u32(mind + 4) + 8);
+					if(auto p = game::global_placement(memory, so))
+						std::cout << std::format("tick {:>4}: generated 0x{:X} at {:.2f} {:.2f} {:.2f}, behaviour 0x{:X}, state 0x{:X}, var1 {} var3 {} var16 {}\n", f, so, p->m[0][3], p->m[1][3], p->m[2][3], behaviour, memory.u32(memory.u32(vm.actor_of(so)) + 4), vm.get_variable(so, 1).as_int(), vm.get_variable(so, 3).as_int(), vm.get_variable(so, 16).as_float());
+					for(const auto& [k, n] : vm.missing_by_actor[so])
+						std::cout << std::format("   missing {} {} x{}\n", k.first, k.second, n);
+				}
 		}
 		if(camera_trace && camera_object)
 		{
@@ -1692,6 +1745,8 @@ int main(int argc, char** argv)
 			return cmd_collide(args[1], args[2]);
 		if(cmd == "input" && args.size() == 3)
 			return cmd_input(args[1], args[2]);
+		if(cmd == "mesh" && args.size() == 5)
+			return cmd_mesh(args[1], args[2], args[3], args[4]);
 		if(cmd == "peek" && args.size() == 6)
 			return cmd_peek(args[1], args[2], args[3], args[4], args[5]);
 	}

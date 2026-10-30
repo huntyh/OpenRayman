@@ -27,7 +27,8 @@ a transform from the engine's default (no rotation) with the given position, and
   for one, stay as copied (0x412F20 clears only in modes 0..4).
 
 It returns the new actor (super object +4), or none. Function 67 (case 0x43 -> 0x40C2A0) counts the
-live slots a given actor made: the shot's scripts ask how many of Rayman's are out.
+live slots a given actor made: the shot's scripts ask how many of Rayman's are out. In the real
+game's Learn_10 the pool has 40 slots (read live); a second maker besides Rayman showed up there too.
 
 | Part | Size | What the copy does |
 |---|---|---|
@@ -61,6 +62,12 @@ end. Its animations carry no events.
   vector of length 25 along Rayman's facing (`var13`), a lifetime of 1500 ms (`var2`), moves itself
   0.8 up in Rayman's axes (procedure 160) and sets the vector as its imposed speed (procedure 182),
   then switches to behaviour 1.
+- Its rank: `var1` = how many of Rayman's shots are out, itself included. It thinks every 2nd
+  frame (procedure 341(2)), and every 4th of those (128 ms) while 5 or more are out (condition 9 is
+  "at least"), every shot counts its rank down; at 0 it fades early. Fading shots still count, so
+  with five out the oldest fade one after another until fewer than five are left. Seen live (real
+  game, five shots 190 ms apart): ranks 1..5, the countdown in 128 ms steps, the oldest four fading
+  after 0.9, 0.8, 0.7, 0.7 s, the fifth at its 1.5 s timeout; the fade itself takes about 0.43 s.
 - Its state's mechanics (05/01 +0x62A454, kind 1, flags 0x300) puts flag 0x200 in base +0xC: the
   fast mechanics, which moves it by its speed every tick (see [dynamics.md](dynamics.md)).
 - Behaviour 1 casts ahead (functions 198/199, macro 3) and bounces off what it meets up to twice
@@ -78,6 +85,7 @@ Own analysis of Rayman2.exe (Ghidra decompile and disassembly, read for understa
 GPT-6.1 Terra (Codex, read-only) tracing the pool, the copy callbacks, the fast mechanics and the
 sweep; every size and offset above was checked against the Learn_10 template's memory with
 `ortool peek` (actor 04/00 +0x14708, its mind at 0d/00 +0x4E3EC, its intelligence at 0d/00 +0x52164,
-its variables at 0d/00 +0x4E8A0) and the dynamics allocator 0x412CA0. Not done yet in OpenRayman:
-the pool's real capacity (from the level setup; we allow 32), the touched-actors query behind
+its variables at 0d/00 +0x4E8A0) and the dynamics allocator 0x412CA0. The rank countdown and the pool size
+were checked against the real game with `tools/r2live.py --generated`. Not done yet in OpenRayman:
+where the pool's capacity comes from (we use Learn_10's 40), the touched-actors query behind
 procedure 22 (ours finds nobody, so shots pass through actors), and function 113's target search.

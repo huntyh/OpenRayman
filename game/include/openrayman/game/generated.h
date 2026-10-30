@@ -24,9 +24,9 @@ namespace openrayman::game
 			std::vector<std::uint32_t> memory; // the blocks the copy got, in order, reused next time
 		};
 
-		// How many can exist at once. The game's count comes from the level's setup and isn't read
-		// yet; this is a generous stand-in (Rayman's scripts keep his own shots to a handful).
-		static constexpr std::size_t capacity = 32;
+		// How many can exist at once: 40 in the real game's Learn_10 (0x4A6B18, read live with
+		// tools/r2live.py --generated). Where the game takes it from isn't read yet.
+		static constexpr std::size_t capacity = 40;
 
 		// Copies `model` (an actor) into a free slot, placed at `at` with no rotation, made by
 		// `creator`. Returns the new super object (type 2, actor at +4), or 0 when the pool is full or
