@@ -115,7 +115,55 @@ def variable(m, mind, index):
 	return f"0x{m.u32(at):X} (type {kind})"
 
 
-def snapshot(m, variables):
+def collide_flags(m, material):
+	# A game material's collide flags: +0xC collide material, its u16 at +2 (0x42DB30, 0x42DDD0).
+	collide = m.u32(material + 0xC) if material and material != 0xCDCDCDCD else 0
+	b = m.read(collide + 2, 2) if collide else None
+	return struct.unpack("<H", b)[0] if b and len(b) == 2 else 0
+
+
+def contact_report(m, base):
+	# The dynamics contact report (base +0x150): +4 the word scripts read; six 0x28-byte slots from
+	# +8: +4 normal, +0x10 point, +0x1C the actor's own zone material, +0x20 the touched surface's
+	# (condition 34 reads slot 1's +0x1C, 35 slot 2's; 0x48A4F0).
+	s = {}
+	report = m.u32(base + 0x150)
+	if not report:
+		return s
+	word = m.u32(report + 4)
+	s["contact"] = f"0x{word:X}"
+	for slot in range(6):
+		entry = report + 8 + slot * 0x28
+		own, touched = m.u32(entry + 0x1C), m.u32(entry + 0x20)
+		if own or touched:
+			s[f"slot{slot}"] = (f"n {fmt(m.f32s(entry + 4, 3))} p {fmt(m.f32s(entry + 0x10, 3))} "
+				f"mine 0x{collide_flags(m, own):X} surface 0x{collide_flags(m, touched):X}")
+	return s
+
+
+def active_zones(m, actor):
+	# Kind 1's zones (collide set +8, what the physics' sphere cast gathers: 0x494290) and which are
+	# on: the set's group list for kind 1 (+0x28: nodes of next, u16 zone index; +8 count) and its
+	# states (+0x3C, a byte per zone: 1 on, 0 only if the group names it; 0x40C700).
+	s = {}
+	collide = m.u32(actor + 0x14)
+	if not collide:
+		return s
+	group = m.u32(collide + 0x28)
+	names = []
+	count = m.u32(group + 8) if group else 0
+	node = m.u32(group) if group else 0
+	while node and len(names) < min(count, 32):
+		b = m.read(node + 4, 2)
+		names.append(str(struct.unpack("<H", b)[0]) if b else "?")
+		node = m.u32(node)
+	states = m.u32(collide + 0x3C)
+	raw = m.read(states, 12) if states else None
+	s["zones"] = "group " + (",".join(names) or "-") + " | states " + (" ".join(str(x) for x in raw) if raw else "-")
+	return s
+
+
+def snapshot(m, variables, contacts=False, zones=False):
 	s = {}
 	super_object = m.u32(MAIN_ACTOR)
 	actor = m.u32(super_object + 4) if super_object else 0
@@ -138,6 +186,10 @@ def snapshot(m, variables):
 		s["speed"] = fmt(m.f32s(base + 0x3C, 3))
 		s["inertia"] = fmt(m.f32s(base + 0x154, 3))
 		s["limit"] = fmt(m.f32s(base + 0x178, 3))
+		if contacts:
+			s.update(contact_report(m, base))
+	if zones:
+		s.update(active_zones(m, actor))
 	brain = m.u32(actor + 0xC)
 	mind = m.u32(brain) if brain else 0
 	if mind:
@@ -156,7 +208,9 @@ def main():
 	parser.add_argument("--vars", default="", help="script variable indexes, comma separated")
 	parser.add_argument("--log", help="also write the output to this file")
 	parser.add_argument("--process", default="Rayman2.exe")
-	parser.add_argument("--quiet", default="at,axes,speed", help="fields printed only with another change")
+	parser.add_argument("--quiet", default="at,axes,speed,slot0,slot1,slot2,slot3,slot4,slot5", help="fields printed only with another change")
+	parser.add_argument("--contacts", action="store_true", help="also the contact report: word and slots with both materials' flags")
+	parser.add_argument("--zones", action="store_true", help="also which of Rayman's kind-1 collision zones are switched on")
 	args = parser.parse_args()
 	variables = [int(v) for v in args.vars.split(",") if v.strip()]
 	quiet = set(f for f in args.quiet.split(",") if f)
@@ -183,7 +237,7 @@ def main():
 				time.sleep(0.0005)
 				continue
 			last_clock = clock
-			now = snapshot(m, variables)
+			now = snapshot(m, variables, args.contacts, args.zones)
 			changed = {k: v for k, v in now.items() if last.get(k) != v}
 			if any(k not in quiet for k in changed):
 				say(f"t {clock:>9}: " + " | ".join(f"{k} {now[k]}" for k in now if k in changed or k in quiet))
