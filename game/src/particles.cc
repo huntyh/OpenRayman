@@ -105,6 +105,56 @@ namespace openrayman::game
 			}
 			return;
 		}
+		if(kind == 175)
+		{
+			// 0x4648B0 case 0xAF: twelve sparks drawn from around the vector's point (Rayman's chest,
+			// for the portal) into the point (the portal). Each starts number × 0.5 away, in a
+			// direction mixed from two axes square to the line between the points (0x4656E0) with
+			// a random -8..8 of each per axis, 0.05 to 0.30 big, and travels a ninth of its gap
+			// each frame for eight frames (type 0x12, 0x4600C0 / 0x461120).
+			vec3 d{};
+			float length = 0;
+			for(int i = 0; i < 3; i++)
+			{
+				d[i] = vector[i] - point[i];
+				length += d[i] * d[i];
+			}
+			if(number == 0 || length == 0)
+				return;
+			length = std::sqrt(length);
+			for(float& x : d)
+				x /= length;
+			// Two axes square to d: the largest of d's three plain perpendiculars, and d × that.
+			vec3 u = { -d[1], d[0], 0 };
+			float best = u[0] * u[0] + u[1] * u[1];
+			if(float l = d[2] * d[2] + d[1] * d[1]; l > best)
+				u = { 0, -d[2], d[1] }, best = l;
+			if(float l = d[2] * d[2] + d[0] * d[0]; l > best)
+				u = { -d[2], 0, d[0] }, best = l;
+			for(float& x : u)
+				x /= std::sqrt(best);
+			vec3 w = { d[1] * u[2] - d[2] * u[1], d[2] * u[0] - d[0] * u[2], d[0] * u[1] - d[1] * u[0] };
+			for(int n = 0; n < 12; n++)
+			{
+				vec3 at{};
+				float l = 0;
+				for(int i = 0; i < 3; i++)
+				{
+					at[i] = random(-8, 8) * u[i] + random(-8, 8) * w[i];
+					l += at[i] * at[i];
+				}
+				vec3 motion{};
+				for(int i = 0; i < 3; i++)
+				{
+					if(l != 0)
+						at[i] = at[i] / std::sqrt(l) * number * 0.5f;
+					at[i] += vector[i];
+					motion[i] = (point[i] - at[i]) * (1.0f / 9.0f);
+				}
+				add(0x12, at, motion, 0, random(0.05f, 0.30f), material, now);
+			}
+			return;
+		}
 		if(kind == 167)
 		{
 			// 0x4648B0 case 0xA7: fewer water effects while the number is over 0.01.
@@ -163,6 +213,15 @@ namespace openrayman::game
 		if(p.type == 1 || p.type == 3)
 			for(int i = 0; i < 3; i++)
 				p.position[i] += p.motion[i] * dt;
+		// Type 0x12 moves its step every frame and is gone after eight (counted in `life`); frames
+		// of the game's 60 a second here.
+		if(p.type == 0x12)
+		{
+			for(int i = 0; i < 3; i++)
+				p.position[i] += p.motion[i] * dt * 60;
+			if((p.life += dt * 60) >= 8)
+				p.alpha = 0;
+		}
 		// A drop that falls to its floor becomes a small ripple there (only once a ripple material
 		// was given), which grows and fades like the others.
 		if((p.flags & 0x20000) && m_ripple_material && !(p.flags & 0x80000) && p.position[2] <= p.life)

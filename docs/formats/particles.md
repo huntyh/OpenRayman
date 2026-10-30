@@ -67,12 +67,23 @@ turns into a ripple when it falls to the height at +0x3C, 0x10000000 is drawn fl
   scales frame times by a runtime value (0x5036A8) we take as 1, which matches the user's timing.
 - **Kind 167** (0x4648B0 case 0xA7) sets a switch (0x4B9AF8) while its number is over 0.01: then
   kind 60 starts nothing, kind 7 uses 0x10003100 and kind 62 lives 0.2 to 1 s.
+- **Kind 175, sparks drawn into a point** (0x4648B0 case 0xAF): nothing if the number is 0 or the
+  two points coincide. Twelve particles of type 0x12, 0.05 to 0.30 big (rand × 0.25 / 32767 + 0.05),
+  each starting number × 0.5 from the vector's point. The direction mixes two axes square to the
+  line between the points (0x4656E0 picks a perpendicular and crosses it with the line) with a
+  random -8..8 of each per axis, then is normalised. At birth (0x4600C0) the type stores
+  (point - start) × 1/9 (0x49CA10) as its step and zeroes +0x3C; every frame (0x461120) it moves one
+  step and counts +0x3C up by 1, and at 8 (0x49CA40) it is marked done: eight frames covering 8/9 of
+  the gap. The Learn_10 portal (node 77, behaviour 1, while Rayman is within its var2) calls
+  `procedure_503(175, field_0, main actor.field_0 + (0, 0, 1), material, 3)` every frame: the sparks
+  streaming from Rayman into it. We take which perpendicular 0x4656E0 picks as the largest of the
+  three plain ones (only the random disc's orientation depends on it).
 
 ## Where this came from
 
 - Own analysis of `Rayman2.exe` with capstone: the spawner, the kind table, the pool, the per-frame
-  update and draw, kinds 23 and 28, and the water kinds 7, 39, 60, 62 and 167, the portal's 9 and 55 (0x463390,
-  0x4600C0, 0x461120, 0x460A10, 0x4607E0, 0x462460, 0x462580, read from the Ghidra decompile). Parts were first traced by helper models (DeepSeek and Qwen,
-  through Reasonix) and then checked against the exe in this project: every address and constant
+  update and draw, kinds 23 and 28, and the water kinds 7, 39, 60, 62 and 167, the portal's 9, 55 and 175 (0x463390, 0x4648B0, 0x4656E0,
+  0x4600C0, 0x461120, 0x460A10, 0x4607E0, 0x462460, 0x462580, read from the Ghidra decompile). Parts were first traced by helper models (DeepSeek and Qwen through Reasonix, kind 175
+  by GPT 6.1 Terra through Codex) and then checked against the exe in this project: every address and constant
   above was re-read.
 - Which scripts call it, and with what, from `ortool brain` (Learn_10 nodes 3 and 4).
