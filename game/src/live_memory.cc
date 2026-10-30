@@ -2,6 +2,7 @@
 #include <openrayman/error.h>
 
 #include <format>
+#include <utility>
 
 namespace openrayman::game
 {

@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <format>
 #include <map>
 
 using namespace openrayman;
