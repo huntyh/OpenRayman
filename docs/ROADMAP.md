@@ -168,6 +168,11 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
     arrival pan, the field of view, Murfy's freeze, long-idle animations. Slippery slopes slide
     Rayman uphill instead of down (likely a sign in the slope direction: contact normal, function
     190, or the slide procedure; user: `--level Ly_10 --camera -4776.4,-8543.0,-8238.9,-122.6,-43.9`).
+    Story bit 1133 (actor 6's bit array, variable 42) means Learn_10 is being revisited from the hub:
+    the scripts then remove the Teensies, the chain and Murfy's tutorial (node 62 and others), as
+    the real game does (user confirmed). Our default start sets it (portal arrival); a first visit
+    (`--start new`) needs the intro cutscene. Still to check: an invisible wall at the cave exit,
+    `--level Learn_10 --camera -31.0,291.2,-24.4,-178.0,-20.1`.
     In the game the player may turn the camera left/right (Q/W) only where the level allows it;
     level camera presets often overrule it, and a camera icon with a red X shows when turning is
     refused (user).
