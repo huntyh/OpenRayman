@@ -933,10 +933,10 @@ static int cmd_anim(const fs::path& folder, const std::string& name, const std::
 	{
 		const auto& m = c.local.m;
 		// The turn about each axis, roughly (from the rotation's columns), to see swings.
-		std::cout << std::format("  channel {:>3} parent {:>3} object {:>3}  turn x {:6.1f} y {:6.1f} z {:6.1f}  pos ({:.2f}, {:.2f}, {:.2f})\n", c.id,
+		std::cout << std::format("  channel {:>3} parent {:>3} object {:>3}  turn x {:6.1f} y {:6.1f} z {:6.1f}  pos ({:.2f}, {:.2f}, {:.2f})  scale {:.2f}\n", c.id,
 			c.parent ? std::to_string(*c.parent) : "-", c.object ? std::to_string(*c.object) : "-",
 			std::atan2(m[2][1], m[2][2]) * 57.29578f, std::atan2(-m[2][0], std::sqrt(m[2][1] * m[2][1] + m[2][2] * m[2][2])) * 57.29578f,
-			std::atan2(m[1][0], m[0][0]) * 57.29578f, m[0][3], m[1][3], m[2][3]);
+			std::atan2(m[1][0], m[0][0]) * 57.29578f, m[0][3], m[1][3], m[2][3], c.local.uniform_scale());
 	}
 	return EXIT_SUCCESS;
 }

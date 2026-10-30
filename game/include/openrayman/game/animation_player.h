@@ -56,8 +56,10 @@ namespace openrayman::game
 	// Advances an actor's animation by one tick of `ms`; at the end of an animation it plays again
 	// (while loops remain) or moves on to the state's "after" state.
 	// Also plays the animation's events as frames pass: markers (scripts' conditions 42/43) are
-	// armed at `point` and last one tick.
-	void play_animation(live_memory& memory, std::uint32_t data, std::uint32_t ms, const std::array<float, 3>& point = {});
+	// armed at the world position of the event's part, which `part_point` gives (the animation
+	// reference, the event's frame, the part); without it at the origin. They last one tick.
+	using part_point = std::function<std::array<float, 3>(std::uint32_t reference, std::uint16_t frame, std::uint16_t part)>;
+	void play_animation(live_memory& memory, std::uint32_t data, std::uint32_t ms, const part_point& point = {});
 
 	// Sets how fast an actor's animation plays, in frames per second (3D data +0xE0), as 0x418790
 	// does: the time into the animation is re-based so the current frame does not jump. The rate of

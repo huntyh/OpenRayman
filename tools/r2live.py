@@ -167,7 +167,9 @@ def active_zones(m, actor):
 
 
 # The pool of generated actors (function 66, 0x40BCC0): slot count, super objects (0x48 each), and
-# per slot the super object of whoever made it (0 = free). See docs/formats/generated.md.
+# per slot the super object of whoever made it (0 = free). See docs/formats/generated.md. "draw" is the
+# super object's draw mask (+0x2C): ANDed with the material flags (0x42A410), its bit 0x40000000 says
+# whether the shot is depth-tested.
 POOL_COUNT = 0x4A6B18
 POOL_SUPER_OBJECTS = 0x4A6B28
 POOL_CREATORS = 0x4A6B30
@@ -191,7 +193,7 @@ def generated_actors(m):
 		live += 1
 		t = m.u32(so + 0x24)
 		mind = m.u32(m.u32(actor + 0xC)) if m.u32(actor + 0xC) else 0
-		line = f"by 0x{creator:X} at " + (fmt(m.f32s(t + 4, 3)) if t else "-") + f" state 0x{m.u32(m.u32(actor) + 4):X}"
+		line = f"by 0x{creator:X} at " + (fmt(m.f32s(t + 4, 3)) if t else "-") + f" state 0x{m.u32(m.u32(actor) + 4):X} draw 0x{m.u32(so + 0x2C):X}"
 		if mind:
 			# The shot's timers: var1 its rank among Rayman's shots, var3 bounces left, var16 when it fades.
 			line += " var1 " + variable(m, mind, 1) + " var3 " + variable(m, mind, 3) + " var16 " + variable(m, mind, 16)

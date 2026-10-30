@@ -162,12 +162,14 @@ when the state changes to one without the same event. Only two types do somethin
 - type 0: play a sound (the id points to the sound),
 - type 3 with id 6..13: arm marker bit id - 6 of 3D data +0xFD with the part's world position (3D
   data +0xF0). The markers are cleared at the start of every animation update, so they last one
-  frame; script conditions 42 and 43 test them. Rayman's shot is one: his shoot animation arms
-  marker 0 from his hand (part 11) at frame 2, and his script creates the fist there.
+  frame; script conditions 42 and 43 test them. Rayman's shot is one: his shoot animation (171,
+  state 04/00 +0x8500) arms marker 0 at frame 4 from part 11, and his script creates the fist there.
+  The part is the channel with that id (here a channel showing nothing, 1.49 ahead and 0.84 up);
+  with the shot's own 0.8 lift that is the 1.64 above his feet the real game shows (tools/r2live.py).
 
 Learn_10: 197 animations with events, 448 events, only types 0 (401) and 3 (47), markers 0 to 2.
-OpenRayman fires markers on every pass (the gates aren't counted yet) and arms them at the actor's
-position rather than the part's; sounds wait for milestone 3d.
+OpenRayman fires markers on every pass (the gates aren't counted yet) and arms them at the part's
+world position, posing the animation at the event's frame; sounds wait for milestone 3d.
 
 ## Checks
 

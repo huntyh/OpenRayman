@@ -24,7 +24,7 @@ namespace openrayman::game
 		// `frame`, all of them with `to_end` (0x41ACB0, 0x41AE80). Only markers do something yet;
 		// sounds (type 0) wait for milestone 3d. The exe also counts passes per event (the
 		// descriptor's gates) before firing; here every pass fires.
-		void play_events(live_memory& m, std::uint32_t data, std::uint32_t frame, bool to_end, const std::array<float, 3>& point)
+		void play_events(live_memory& m, std::uint32_t data, std::uint32_t frame, bool to_end, const part_point& point)
 		{
 			std::uint32_t s = m.u32(data + data_3d::current_state);
 			std::uint32_t reference = s ? m.u32(s + state::animation) : 0;
@@ -44,11 +44,13 @@ namespace openrayman::game
 				std::uint32_t id = m.u32(descriptor);
 				if(id < 6 || id > 13)
 					continue;
-				// 0x4189C0: the bit, and the point it came with (the part's world position in the
-				// game; the actor's here, until parts are placed in game memory).
+				// 0x4189C0: the bit, and the point it came with: the world position of the event's
+				// part (+8, an index into the parts, one per channel), posed at the event's frame.
+				// Rayman's shoot animation arms marker 0 from his hand (part 11).
 				m.write<std::uint8_t>(data + data_3d::markers, std::uint8_t(m.u8(data + data_3d::markers) | 1u << (id - 6)));
+				std::array<float, 3> at = point ? point(reference, m.read<std::uint16_t>(e + event_frame), m.read<std::uint16_t>(e + event_part)) : std::array<float, 3>{};
 				for(int k = 0; k < 3; k++)
-					m.write<float>(data + data_3d::marker_point + std::uint32_t(k) * 4, point[std::size_t(k)]);
+					m.write<float>(data + data_3d::marker_point + std::uint32_t(k) * 4, at[std::size_t(k)]);
 			}
 			m.write<std::uint8_t>(data + data_3d::event_cursor, to_end ? 0 : i);
 		}
@@ -167,7 +169,7 @@ namespace openrayman::game
 		return true;
 	}
 
-	void play_animation(live_memory& m, std::uint32_t data, std::uint32_t ms, const std::array<float, 3>& point)
+	void play_animation(live_memory& m, std::uint32_t data, std::uint32_t ms, const part_point& point)
 	{
 		std::uint32_t s = m.u32(data + data_3d::current_state);
 		std::uint32_t reference = s ? m.u32(s + state::animation) : 0;
@@ -317,12 +319,42 @@ namespace openrayman::game
 			std::uint32_t data = actor ? m.u32(actor) : 0;
 			if(data && !vm.removed(self))
 			{
-				std::array<float, 3> at{};
-				if(auto placed = global_placement(m, self))
-					at = { placed->m[0][3], placed->m[1][3], placed->m[2][3] };
+				// Where a part of the actor is at a frame of an animation: the channel's pose, through
+				// its parents, placed where the actor is (the parts' super objects the game keeps).
+				auto part_at = [&](std::uint32_t reference, std::uint16_t frame, std::uint16_t part) {
+					std::array<float, 3> out{};
+					auto placed = global_placement(m, self);
+					if(!placed)
+						return out;
+					affine world = *placed;
+					const animation_bank* bank = vm.animations();
+					std::uint16_t index = reference ? m.read<std::uint16_t>(reference + 0x18) : 0xFFFF;
+					if(bank && index < bank->animations.size())
+					{
+						try
+						{
+							// The part is the channel with that id (Rayman's shoot animation 171: id 11, a
+							// channel showing nothing, 1.49 ahead and 0.84 up at frame 4).
+							std::vector<channel_pose> channels = pose(*bank, index, frame);
+							auto found = std::ranges::find(channels, std::int16_t(part), &channel_pose::id);
+							std::optional<std::size_t> c;
+							if(found != channels.end())
+								c = std::size_t(found - channels.begin());
+							affine local;
+							for(std::size_t steps = 0; c && *c < channels.size() && steps <= channels.size(); steps++, c = channels[*c].parent)
+								local = channels[*c].local * local;
+							if(found != channels.end())
+								world = world * local;
+						}
+						catch(const std::exception&)
+						{
+						}
+					}
+					return std::array<float, 3>{ world.m[0][3], world.m[1][3], world.m[2][3] };
+				};
 				std::uint32_t state_before = m.u32(data + data_3d::current_state);
 				int before = m.read<std::uint16_t>(data + data_3d::frame);
-				play_animation(m, data, vm.frame_ms(), at);
+				play_animation(m, data, vm.frame_ms(), part_at);
 				if(actor && vm.animations())
 					animation_motion(m, *vm.animations(), actor, data, state_before, before);
 			}

@@ -264,7 +264,8 @@ Implementation is deferred; the research above is complete enough to start from.
 Everything the PC game has, working before we port it anywhere:
 
 - Save games
-- Menus
+- Menus. The pause menu already half-runs from its own scripts: Esc while playing Learn_10 brings
+  up the menu's swirl in front of Rayman, and it stays there (user, 2026-10-30)
 - Cutscenes
 - All the levels, from start to end
 - Widescreen and high resolutions, plus modern quality-of-life options
