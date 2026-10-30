@@ -39,6 +39,11 @@ namespace openrayman::game
 		std::array<float, 3> previous_move{}; // the last tick's movement, step and orbit together
 		                                      // ([base+0x150]+0xF8, written by the movement pass 0x434660)
 		float carry_angle = 0;          // the last tick's turn (X+0x0C)
+		// Which way the camera swings round when its yaw is far from where the block wants it
+		// (camera object +0x76: 0 not chosen, 1 the positive way, -1 the negative way), and the gap it
+		// chose on (+0x5C). See solve_camera and 0x4855D0.
+		int swing = 0;
+		float swing_gap = 0;
 		std::array<float, 3> aim{};     // the smoothed aim point (X+0x10)
 		std::array<float, 3> previous_aim{}; // the last aim point step ([base+0x150]+0x130)
 		// The direction smoothing divisors 0x474420 copies to the mechanics (+0x26C, +0x27C) from the

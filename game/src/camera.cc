@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <cstring>
 
 // The game camera: the three stages of the solve its scripts run every frame (procedure 444 ->
@@ -148,9 +149,9 @@ namespace openrayman::game
 
 		// 0x4841F0: the angle to use, given the measured one and a window (centre, half width, in
 		// radians). Half >= pi leaves it free, half <= 0 holds it at the centre; in between it stays
-		// where it is inside the window and goes to the nearer edge outside. (The exe also keeps a
-		// pi/8-a-frame walker in the context, but the angle it applies is this one; the camera's
-		// turn speed limits the swing.)
+		// where it is inside the window and goes to the nearer edge outside. The exe also keeps the
+		// measured angle moved at most pi/8 towards it (context +0x78), which solve_camera uses to
+		// swing the camera round in steps instead of cutting across (0x4855D0).
 		float window_angle(float a, float centre, float half)
 		{
 			if(half >= pi)
@@ -168,7 +169,14 @@ namespace openrayman::game
 		// direction `d` against a reference axis as a turn about the up axis and an elevation
 		// (0x484390, 0x433390, 0x4335C0, folded by 0x473A40), pick the angles the block allows
 		// (yaw window +0x28/+0x2C, pitch window +0x30/+0x34; 0x4841F0) and rebuild (0x484470).
-		vec3 camera_direction(const live_memory& m, std::uint32_t cam, std::uint32_t block, std::uint32_t target_transform, vec3 d, std::uint16_t flags_72)
+		struct direction
+		{
+			vec3 back{};   // the way back from the aim point, unit
+			float yaw = 0; // the measured yaw, 0..2pi
+			float gap = 0; // from the measured yaw to the one the window asks for, -pi..pi (+0x7C)
+		};
+		direction camera_direction(const live_memory& m, std::uint32_t cam, std::uint32_t block, std::uint32_t target_transform, vec3 d,
+			std::uint16_t flags_72, std::optional<float> yaw_centre = {})
 		{
 			vec3 up{ 0, 0, 1 }, ref{};
 			if(flags_72 & 0x4000)
@@ -209,12 +217,16 @@ namespace openrayman::game
 			pitch = wrap_two_pi(pitch);
 			// Bit 0x40 of +0x72 holds both at their centres.
 			bool hold = flags_72 & 0x40;
-			yaw = window_angle(yaw, m.f32(block + 0x28), hold ? 0 : m.f32(block + 0x2C));
+			direction out;
+			out.yaw = yaw;
+			yaw = window_angle(yaw, yaw_centre ? *yaw_centre : m.f32(block + 0x28), hold ? 0 : m.f32(block + 0x2C));
+			out.gap = wrap_pi(yaw - out.yaw);
 			pitch = window_angle(pitch, m.f32(block + 0x30), hold ? 0 : m.f32(block + 0x34));
 			// 0x484470: turn ref about up, then raise it about the axis across.
 			vec3 v1 = rotate_about(ref, up, yaw);
 			vec3 across = normalised(cross(v1, up));
-			return length(across) > 0.5f ? normalised(rotate_about(v1, across, pitch)) : normalised(v1);
+			out.back = length(across) > 0.5f ? normalised(rotate_about(v1, across, pitch)) : normalised(v1);
+			return out;
 		}
 	}
 
@@ -273,7 +285,6 @@ namespace openrayman::game
 			// block's angles ask for, measured from a reference axis (0x4847D0).
 			vec3 d = sub(position, aim);
 			float len = length(d);
-			back = camera_direction(m, cam, block, target_transform, d, flags_72);
 			float near = m.f32(block + camera_field::min_distance), far = m.f32(block + camera_field::max_distance);
 			float r = len;
 			if(len < near)
@@ -281,12 +292,44 @@ namespace openrayman::game
 			else if(len > far)
 				r = far;
 			r = std::max(r, 0.01f);
-			want = add(aim, mul(back, r));
 			float low = m.f32(block + camera_field::min_height), high = m.f32(block + camera_field::max_height);
-			if(want[2] < low)
-				want[2] = low;
-			else if(want[2] > high)
-				want[2] = high;
+			auto wanted_along = [&](const vec3& way) {
+				vec3 w = add(aim, mul(way, r));
+				w[2] = std::clamp(w[2], low, std::max(low, high));
+				return w;
+			};
+			direction dir = camera_direction(m, cam, block, target_transform, d, flags_72);
+			back = dir.back;
+			want = wanted_along(back);
+
+			// Swinging round (0x485760 -> 0x4855D0 -> 0x4853C0): when the yaw the block asks for is
+			// pi/8 or more away (context +0x74 set by 0x484390), the exe solves again with the window
+			// centred on the measured yaw moved pi/8 that way (+0x78) and, if the camera could stand
+			// there (0x486400, its collision test, left out), takes that wanted position instead. So
+			// the camera chases a point a little round the circle and keeps its distance, rather than
+			// cutting across towards the far point (holding Q/W puts that 90 degrees round, every frame).
+			// It keeps the way it chose (+0x76) until the yaw is within pi/8 again, and only turns the
+			// other way if the gap changes sign away from the back of the circle. Not while the
+			// block's +0x72 bit 4 is set.
+			camera_state& swing = vm.camera_motion();
+			constexpr float eighth = pi / 8;
+			if(std::fabs(dir.gap) >= eighth && !(flags_72 & 0x4))
+			{
+				if(swing.swing_gap * dir.gap < 0 && std::fabs(dir.gap) < pi - eighth)
+					swing.swing = 0;
+				if(swing.swing == 0)
+					swing.swing_gap = dir.gap;
+				float stepped = wrap_two_pi(dir.yaw + (dir.gap > 0 ? eighth : -eighth));
+				// 0x485580: the other way round, two eighths back.
+				if((swing.swing < 0 && dir.gap > 0) || (swing.swing > 0 && dir.gap < 0))
+					stepped = wrap_two_pi(stepped + (dir.gap > 0 ? -2 * eighth : 2 * eighth));
+				if(swing.swing == 0)
+					swing.swing = dir.gap > 0 ? 1 : -1;
+				back = camera_direction(m, cam, block, target_transform, d, flags_72, stepped).back;
+				want = wanted_along(back);
+			}
+			else
+				swing.swing = 0;
 		}
 		if(!target_transform)
 		{

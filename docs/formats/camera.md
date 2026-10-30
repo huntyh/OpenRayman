@@ -100,8 +100,22 @@ target (+0x68):
    - No target: stay where the camera is.
    - Otherwise: on the sphere about the aim point whose radius is the distance the camera has now,
      clamped to +0x18..+0x1C, along the direction the camera lies in from the aim point. The
-     direction is first turned by at most pi/8 a frame towards the angle limits in +0x28..+0x34
-     (0x484390, 0x484470). Then the height is clamped into +0x60..+0x64.
+     direction is the one the angle limits in +0x28..+0x34 ask for (0x484390, 0x4841F0, 0x484470).
+     Then the height is clamped into +0x60..+0x64.
+   - **Swinging round** (0x485760 -> 0x4855D0 -> 0x4853C0, camera modes 0 and 1). When the yaw
+     the limits ask for is pi/8 or more from the measured one (0x4841F0 sets context +0x74 and
+     keeps the measured yaw moved pi/8 that way at +0x78), the exe builds the wanted position again
+     with the yaw window centred on that stepped angle and, if the camera could stand there
+     (0x486400, its collision test), takes it, with its movement. So a far target makes the camera
+     chase a point pi/8 round the circle at its own distance: it orbits instead of cutting across.
+     Holding Q or W gives the block a reference axis 90 degrees round every frame (procedure 497 with
+     the cross product of camera − Rayman and up), so this is what turns the camera round him.
+     The way round is kept in the camera object (+0x76: 1 positive, 0xFF negative, 0 not chosen,
+     0xFE blocked; +0x5C the gap it chose on) until the gap is under pi/8 again; a gap that changes
+     sign away from the back of the circle (under pi − pi/8) lets it choose again, and when the
+     stepped angle is the wrong way for the kept choice, 0x485580 steps the other way. Not while
+     the block's +0x72 bit 4 is set. We leave out the collision test (every candidate passes), the
+     "try the other way" when it fails, and the cam+0x168 / option-bit-1 block.
 4. **What the mechanics gets**: the movement (wanted − current position), the look-at, the offset
    point, the back direction, the +0x70 option word and the nine speeds and eases from +0x38..+0x58
    (the ramps are clamped to at least 0.001).
