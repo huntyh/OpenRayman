@@ -107,7 +107,8 @@ namespace openrayman
 						animation_object o;
 						o.flags = r.u16();
 						o.object = r.u16();
-						r.skip(2);
+						o.opacity = r.u8();
+						r.skip(1);
 						bank.objects.push_back(o);
 						break;
 					}

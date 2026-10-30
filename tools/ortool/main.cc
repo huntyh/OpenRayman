@@ -921,9 +921,28 @@ static int cmd_anim(const fs::path& folder, const std::string& name, const std::
 			{
 				const animation_keyframe& key = bank.keyframes.at(k);
 				const auto& q = bank.quaternions.at(key.quaternion);
-				std::cout << std::format(" f{}/{:X} {:.1f}", key.frame, key.flags, 2 * std::acos(std::clamp(std::abs(q[3]), 0.0f, 1.0f)) * 57.29578f);
+				const auto& sc = bank.vectors.at(key.scale_vector);
+				std::cout << std::format(" f{}/{:X} {:.1f} s{:.2f}", key.frame, key.flags, 2 * std::acos(std::clamp(std::abs(q[3]), 0.0f, 1.0f)) * 57.29578f, (sc[0] + sc[1] + sc[2]) / 3);
 				if(key.last() || k - ch.keyframe > 200)
 					break;
+			}
+			std::cout << "\n";
+		}
+		return EXIT_SUCCESS;
+	}
+	if(frame == "opacity")
+	{
+		// Each channel's object choice per frame: object index and opacity (255 = the actor's).
+		const animation& an = bank.animations[a];
+		for(std::size_t c = 0; c < an.channels; c++)
+		{
+			const animation_channel& ch = bank.channels.at(std::size_t(an.start_channels) + c);
+			std::cout << std::format("  channel {:>3}:", ch.id);
+			for(std::size_t f = 0; f < an.frames; f++)
+			{
+				const animation_frame& fr = bank.frames.at(std::size_t(an.start_frames) + f);
+				const animation_object& o = bank.objects.at(bank.ntto_choices.at(std::size_t(ch.ntto) + fr.ntto));
+				std::cout << std::format(" {}:{}", o.invisible() ? std::string("-") : std::to_string(o.object), int(o.opacity));
 			}
 			std::cout << "\n";
 		}

@@ -194,6 +194,15 @@ def generated_actors(m):
 		t = m.u32(so + 0x24)
 		mind = m.u32(m.u32(actor + 0xC)) if m.u32(actor + 0xC) else 0
 		line = f"by 0x{creator:X} at " + (fmt(m.f32s(t + 4, 3)) if t else "-") + f" state 0x{m.u32(m.u32(actor) + 4):X} draw 0x{m.u32(so + 0x2C):X}"
+		# Its part as drawn: 3D data +0x90 lists the parts by channel id (0x14 each, +0 the part's
+		# super object; the shot's one channel is id 22). The part's local transform (+0x20) carries
+		# the animation's scale in its matrix (+0x34), its +0x38 the opacity (255 opaque).
+		parts = m.u32(m.u32(actor) + 0x90)
+		part = m.u32(parts + 22 * 0x14) if parts else 0
+		pt = m.u32(part + 0x20) if part else 0
+		if pt:
+			column = m.f32s(pt + 0x34, 3)
+			line += f" part scale {math.sqrt(sum(v * v for v in column)):.3f} opacity {m.f32s(part + 0x38, 1)[0]:.0f} frame {m.u32(m.u32(actor) + 0x74) & 0xFFFF}"
 		if mind:
 			# The shot's timers: var1 its rank among Rayman's shots, var3 bounces left, var16 when it fades.
 			line += " var1 " + variable(m, mind, 1) + " var3 " + variable(m, mind, 3) + " var16 " + variable(m, mind, 16)

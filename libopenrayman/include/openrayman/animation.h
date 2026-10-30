@@ -66,6 +66,9 @@ namespace openrayman
 	{
 		std::uint16_t flags = 0;
 		std::uint16_t object = 0;
+		// How opaque the part is shown (0..254; 255 = as the actor), when the actor's draw flags
+		// carry 0x8 (Rayman2.exe 0x41A400, 0x40E0D0). Rayman's shot fades out this way.
+		std::uint8_t opacity = 0xFF;
 		bool invisible() const { return flags & 0x2; }
 	};
 

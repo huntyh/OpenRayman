@@ -55,7 +55,7 @@ each array's new elements follow inline, every array starting 4-byte aligned, in
 | 1 | vectors: 3 floats | 12 |
 | 2 | quaternions: 4 × i16 / 32767 (x, y, z, w) | 8 |
 | 3 | hierarchy links: i16 child channel id, i16 parent channel id | 4 |
-| 4 | object choices ("NTTO"): u16 flags (0x2 = hidden), u16 object list index, 2 bytes | 6 |
+| 4 | object choices ("NTTO"): u16 flags (0x2 = hidden), u16 object list index, u8 opacity (255 = the actor's; used when the actor's draw flags have 0x8, 0x41A400 -> 0x40E0D0 into the part's +0x38), 1 byte | 6 |
 | 5 | frames: u16 rotation, u16 vector, u16 hierarchy link count, u16 first hierarchy link, u16 object choice | 10 |
 | 6 | channels: u16, i16 id, u16 vector, u16 first object choice, u32 first frame key, u32 first keyframe | 16 |
 | 7 | object choice indices (u16) | 2 |
