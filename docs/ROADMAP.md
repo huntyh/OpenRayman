@@ -177,6 +177,11 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
     doesn't grab ledges yet (edges onto the green, grabbable collision; function 193 reads the grab
     point). Since function 51 exists he jumps sideways out of the arrival portal; the game drops him
     under it (being traced).
+    Our default start is a half-revisit: only story bit 1133 is set, so the trapdoor opens and the
+    Teensies leave, but the hanging cage (node 67) is still there, asleep (brain-off bit in the data; its
+    wake-up chain: trigger node 82 -> counter node 83 -> clear bit 17). A real revisit has the cage broken.
+    Next: a first-visit start (no 1133; skip or stand in for the intro cutscene) so the tutorial chain
+    (cage, Murfy's Lum tutorial, Lum, trapdoor) can be tested; reading real saves' story bits is Phase 4.
     In the game the player may turn the camera left/right (Q/W) only where the level allows it;
     level camera presets often overrule it, and a camera icon with a red X shows when turning is
     refused (user).
