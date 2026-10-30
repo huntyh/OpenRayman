@@ -172,7 +172,11 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
     the scripts then remove the Teensies, the chain and Murfy's tutorial (node 62 and others), as
     the real game does (user confirmed). Our default start sets it (portal arrival); a first visit
     (`--start new`) needs the intro cutscene. Still to check: an invisible wall at the cave exit,
-    `--level Learn_10 --camera -31.0,291.2,-24.4,-178.0,-20.1`.
+    `--level Learn_10 --camera -31.0,291.2,-24.4,-178.0,-20.1`: fixed, walls push only by their slice
+    at body height (user confirmed). Lums can be collected but vanish without their effect. Rayman
+    doesn't grab ledges yet (edges onto the green, grabbable collision; function 193 reads the grab
+    point). Since function 51 exists he jumps sideways out of the arrival portal; the game drops him
+    under it (being traced).
     In the game the player may turn the camera left/right (Q/W) only where the level allows it;
     level camera presets often overrule it, and a camera icon with a red X shows when turning is
     refused (user).
