@@ -26,9 +26,11 @@ namespace openrayman::game
 		// The contact block (base +0x150, 0x16C bytes): +0 this tick's word, +4 the word scripts read.
 		constexpr std::uint32_t contacts_size = 0x16C;
 		constexpr std::uint32_t on_ground = 0x1;
-		// After the two words come six 0x28-byte contact slots (0 any, 1 ground, 2 wall, ...); each
-		// names the touched surface's game material at +0x20.
-		constexpr std::uint32_t ground_slot_material = 8 + 1 * 0x28 + 0x20;
+		// After the two words come six 0x28-byte contact slots (0 the tick's first contact, 1 ground,
+		// 2 wall, 3 water, 4, 5). An entry holds its surface's outward unit normal at +4, the point
+		// it was touched at +0x10 and the surface's game material at +0x20 (0x43F940, 0x479260).
+		constexpr std::uint32_t slots_at = 0x08, slot_size = 0x28;
+		constexpr std::uint32_t slot_normal = 0x04, slot_point = 0x10, slot_material = 0x20;
 		// How far a grounded actor follows the floor down (slopes, steps) instead of falling, and how
 		// far up it climbs onto one. Ours: the exe works with the actor's collision spheres.
 		constexpr float follow_down = 0.3f, climb_up = 0.5f, foot_radius = 0.5f;
@@ -173,7 +175,7 @@ namespace openrayman::game
 				continue;
 			float z = u * a[2] + v * b[2] + w * c[2];
 			if(z <= top && z >= bottom && (!best || z > best->height))
-				best = floor_hit{ z, t.material };
+				best = floor_hit{ z, t.material, t.normal };
 		}
 		return best;
 	}
@@ -329,7 +331,7 @@ namespace openrayman::game
 		std::uint32_t block = m.u32(b + base::contacts);
 		bool has_block = block && m.contains(block, contacts_size);
 		bool landed = false;
-		std::uint32_t ground_material = 0;
+		world_collision::floor_hit ground{};
 		if((flags & collides) && !world.empty())
 		{
 			bool was_grounded = has_block && (m.u32(block + 4) & on_ground);
@@ -349,7 +351,7 @@ namespace openrayman::game
 			if(floor)
 			{
 				target[2] = floor->height;
-				ground_material = floor->material;
+				ground = *floor;
 				landed = true;
 			}
 		}
@@ -366,8 +368,18 @@ namespace openrayman::game
 		{
 			m.write<std::uint32_t>(block, landed ? on_ground : 0);
 			m.write<std::uint32_t>(block + 4, landed ? on_ground : 0); // published at the end of the tick
-			// Slot 1 (the ground) names the floor's game material, for the surface tests (0x479220).
-			m.write<std::uint32_t>(block + ground_slot_material, landed ? ground_material : 0);
+			// Slot 1 (the ground) and slot 0 (the tick's first contact, the ground being the only
+			// one we find) hold the floor's normal, the point under the actor and its game material
+			// (0x43F940); nothing touched leaves them clear. Scripts read them through functions
+			// 190..197 and conditions 61..64.
+			const vec point = { target[0], target[1], target[2] };
+			for(std::uint32_t slot : { 0u, 1u })
+			{
+				std::uint32_t entry = block + slots_at + slot * slot_size;
+				write_vec(m, entry + slot_normal, landed ? ground.normal : vec{});
+				write_vec(m, entry + slot_point, landed ? point : vec{});
+				m.write<std::uint32_t>(entry + slot_material, landed ? ground.material : 0);
+			}
 		}
 		// The script speeds last one tick (0x4327D9).
 		m.write<std::uint32_t>(b + base::flags, flags & kept_after_tick);

@@ -25,7 +25,8 @@ namespace openrayman::game
 		struct floor_hit
 		{
 			float height = 0;
-			std::uint32_t material = 0; // the triangle's game material, 0 when it has none
+			std::uint32_t material = 0;    // the triangle's game material, 0 when it has none
+			std::array<float, 3> normal{}; // its unit normal in world space, pointing up and out
 		};
 
 		// The highest floor (a triangle facing up, at most 60° from flat, not water) under (x, y) with a height
