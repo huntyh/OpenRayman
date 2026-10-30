@@ -78,6 +78,33 @@ namespace openrayman::game
 			}
 			return;
 		}
+		if(kind == 9)
+		{
+			// 0x463569: a burst at the point: a flash that shrinks (0x500) and fades fast (0x4000),
+			// 0.5 to 0.8 big, and eight sparks that fall (type 1) and fade, flying up to 2 a second
+			// sideways and -0.2 to 6 up, 0.19 to 0.35 big. The portal makes three when it starts.
+			float flash = random(0.5f, 0.8f);
+			add(0x4500, point, vec3{}, number, flash, material, now);
+			for(int i = 0; i < 8; i++)
+			{
+				vec3 v = { random(-2, 2), random(-2, 2), random(-0.2f, 6.0f) };
+				add(0x3001, point, v, number, random(0.19f, 0.35f), material, now);
+			}
+			return;
+		}
+		if(kind == 55)
+		{
+			// 0x46469A: vector.y + 1 motes drifting (type 3) from the point, each axis up to `number`
+			// a second either way, vector.x big, fading at 260 a second. The spinning portal asks
+			// for two every frame: the swirl of sparkles around it.
+			int count = int(vector[1]) + 1;
+			for(int i = 0; i < count; i++)
+			{
+				vec3 v = { random(-number, number), random(-number, number), random(-number, number) };
+				add(0x3003, point, v, 1.0f, vector[0], material, now);
+			}
+			return;
+		}
 		if(kind == 167)
 		{
 			// 0x4648B0 case 0xA7: fewer water effects while the number is over 0.01.
@@ -149,19 +176,24 @@ namespace openrayman::game
 			p.material = m_ripple_material;
 			p.animation = m_animation_length ? m_animation_length(p.material) : 0.0f;
 		}
-		// Growing: 0x100 at 1.3 a second, 0x200 3.7, 0x300 6.5.
+		// Growing: 0x100 at 1.3 a second, 0x200 3.7, 0x300 6.5; 0x500 shrinks at 0.5.
 		switch(p.flags & 0xF00)
 		{
 		case 0x100: p.size += 1.3f * dt; p.height += 1.3f * dt; break;
 		case 0x200: p.size += 3.7f * dt; p.height += 3.7f * dt; break;
 		case 0x300: p.size += 6.5f * dt; p.height += 6.5f * dt; break;
+		case 0x500: p.size -= 0.5f * dt; p.height -= 0.5f * dt; break;
 		}
-		// Fading: 0x1000 at 100 a second, 0x2000 160, 0x3000 260.
+		// Shrunk to nothing: kept at 0.01 (and flagged 0x1000000 by the exe).
+		p.size = std::max(p.size, 0.01f);
+		p.height = std::max(p.height, 0.01f);
+		// Fading: 0x1000 at 100 a second, 0x2000 160, 0x3000 260, 0x4000 350.
 		switch(p.flags & 0xF000)
 		{
 		case 0x1000: p.alpha -= 100 * dt; break;
 		case 0x2000: p.alpha -= 160 * dt; break;
 		case 0x3000: p.alpha -= 260 * dt; break;
+		case 0x4000: p.alpha -= 350 * dt; break;
 		}
 	}
 

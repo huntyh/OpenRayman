@@ -51,6 +51,15 @@ turns into a ripple when it falls to the height at +0x3C, 0x10000000 is drawn fl
   of size 0.1 and alpha 250 there.
 - **Kind 62, foam** (0x462580): ten specks drifting flat out at ±1 a second for 1 to 3 seconds,
   0.01 to 0.10 big, flags 0x10003.
+- **Kind 9, a burst** (0x463569): a flash (0x4500: stays, shrinks 0.5 a second, fades 350 a second)
+  0.5 to 0.8 big, and eight sparks (0x3001: fall, fade 260) flying ±2 a second sideways and -0.2
+  to 6 up, 0.19 to 0.35 big. The Learn_10 portals start three when they open.
+- **Kind 55, motes** (0x46469A): vector.y + 1 of them (0x3003: drift, fade 260), each axis's speed
+  random within ±number, vector.x big, +0x3C = 1. The spinning portal asks for (0.2, 1, 0) with
+  number 2 every frame: two motes a frame, its swirl of sparkles.
+- Growth 0x500 shrinks by 0.5 a second; a size reaching 0 is kept at 0.01 and the particle gets
+  0x1000000 (0x461120). Falling (type 1, and 4) is 3.5 twice a tick: 7 units/s² (0x461164,
+  0x461176; a helper read it as 14, which the constant 0x49C9EC = 3.5 rules out).
 - **Animated materials play once.** When a particle's material has an animated texture, the
   draw (0x424C00, with 0x4A7274 and 0x4A7278 set by the particle draws) starts it at the
   particle's birth (pool +4) and kills the particle when the last frame ends. The splash (kind 39,
@@ -62,7 +71,7 @@ turns into a ripple when it falls to the height at +0x3C, 0x10000000 is drawn fl
 ## Where this came from
 
 - Own analysis of `Rayman2.exe` with capstone: the spawner, the kind table, the pool, the per-frame
-  update and draw, kinds 23 and 28, and the water kinds 7, 39, 60, 62 and 167 (0x463390,
+  update and draw, kinds 23 and 28, and the water kinds 7, 39, 60, 62 and 167, the portal's 9 and 55 (0x463390,
   0x4600C0, 0x461120, 0x460A10, 0x4607E0, 0x462460, 0x462580, read from the Ghidra decompile). Parts were first traced by helper models (DeepSeek and Qwen,
   through Reasonix) and then checked against the exe in this project: every address and constant
   above was re-read.
