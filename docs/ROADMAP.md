@@ -182,6 +182,13 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
     wake-up chain: trigger node 82 -> counter node 83 -> clear bit 17). A real revisit has the cage broken.
     Next: a first-visit start (no 1133; skip or stand in for the intro cutscene) so the tutorial chain
     (cage, Murfy's Lum tutorial, Lum, trapdoor) can be tested; reading real saves' story bits is Phase 4.
+    Portal exit: the portal actors (nodes 72, 77) give Rayman a launch of (0, -10, 6) in his own axes;
+    in the game he hops straight up and drops onto the grass under the portal (user), ours hops off to
+    the side (world +X, his facing) and the speed lingers ~10 ticks. Next: why the exe's hop has no
+    horizontal part (facing at release, or how the mechanics applies proposed speeds; procedure 198
+    0x46CE00 local/world bits). Water: contact slot 4 / bit 0x40 done; the splash needs procedures
+    232-234, 237, 245, 258, 302 and particle kinds 7, 39, 60, 62. Slope slide: the rerun of
+    task_slope_projection.md starts from Rayman's resolver 0x437E60.
     In the game the player may turn the camera left/right (Q/W) only where the level allows it;
     level camera presets often overrule it, and a camera icon with a red X shows when turning is
     refused (user).
