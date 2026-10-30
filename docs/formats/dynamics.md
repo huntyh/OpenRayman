@@ -38,7 +38,7 @@ per-actor entry (0x412150) installs the current state's every tick.
 1. target = position; then the second script speed sets the axes it names (× dt) of the move.
 2. Gravity, if on (0x43DF40): target.z = z + dt·(last speed z − g·dt).
 3. The first and third script speeds replace the axes they name (0x43E350, 0x43E42A; a jump is procedure 179 on z, overriding gravity while it is sent) (0x43E4E0), then the per-axis
-   limit is applied (0x43EAC0).
+   limit is applied (0x43EAC0) in the actor's own axes: the move is turned into them (0x444AC0 with the inverse matrix, 0x444D60), each component clipped to limit × dt, and turned back.
 4. speed = (target − position) / dt (0x436A30). Landing drops it.
 5. Flags are masked with 0x5C003FFF, and the script speeds +0x24..+0x38 are cleared (0x4327D9).
 6. The contact word +0 is copied to +4 (0x412201 and others).

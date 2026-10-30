@@ -546,13 +546,34 @@ namespace openrayman::game
 			add_speed(base::imposed, 0x20000, 0x4000);
 		if(flags & uses_third)
 			add_speed(base::third, 0x800000, 0x10000);
-		// The per-axis speed limit (0x43EAC0).
+		// The per-axis speed limit (0x43EAC0), in the actor's own axes: the move is turned into them,
+		// each component clipped, and turned back.
 		if(flags & has_limit)
-			for(int i = 0; i < 3; i++)
+		{
+			std::array<vec, 3> axes{};
+			for(int k = 0; k < 3; k++)
 			{
-				float most = std::abs(m.f32(b + base::limit + std::uint32_t(i) * 4)) * dt;
-				target[std::size_t(i)] = std::clamp(target[std::size_t(i)], current[std::size_t(i)] - most, current[std::size_t(i)] + most);
+				axes[std::size_t(k)] = read_vec(m, t + 0x10 + std::uint32_t(k) * 12);
+				vec& a = axes[std::size_t(k)];
+				float l = std::sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+				if(l > 0)
+					a = { a[0] / l, a[1] / l, a[2] / l };
 			}
+			vec d{ target[0] - current[0], target[1] - current[1], target[2] - current[2] };
+			vec out{};
+			for(int k = 0; k < 3; k++)
+			{
+				float along = 0;
+				for(int i = 0; i < 3; i++)
+					along += d[std::size_t(i)] * axes[std::size_t(k)][std::size_t(i)];
+				float most = std::abs(m.f32(b + base::limit + std::uint32_t(k) * 4)) * dt;
+				along = std::clamp(along, -most, most);
+				for(int i = 0; i < 3; i++)
+					out[std::size_t(i)] += along * axes[std::size_t(k)][std::size_t(i)];
+			}
+			for(int i = 0; i < 3; i++)
+				target[std::size_t(i)] = current[std::size_t(i)] + out[std::size_t(i)];
+		}
 
 		// Walls push the target out of them: the actor is a cylinder from the step height up to
 		// body_height (docs/formats/dynamics.md). Run before the floor search, so the floor under
