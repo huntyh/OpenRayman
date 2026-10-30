@@ -10,6 +10,7 @@ add_library(openrayman_game STATIC
 	src/live_memory.cc
 	src/mechanics.cc
 	src/particles.cc
+	src/screen_text.cc
 )
 add_library(openrayman::game ALIAS openrayman_game)
 target_include_directories(openrayman_game PUBLIC include)

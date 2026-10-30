@@ -178,6 +178,22 @@ The strings sit in the level's data, not in the exe. In `Menu.sna` block `0d/01`
 So the menu's text is written in these codes inside the level the same way a level's own text is.
 The `cheat active` line confirms it: the menu shows status lines, not only buttons.
 
+**But most of the menu's labels are not strings at all.** The calls that set them up pass an *id*
+(type 0x24) rather than a text value, and the exe resolves both through the same helper (0x4829D0):
+a text value's pointer, or 0x494C70 for an id. That function indexes the game's string table, and
+the table it picks is chosen by the low byte of 0x500FA8 — the **language**. At start-up 0x403730
+reads `RAYMAN2 / Language` from the ini (the GOG install ships `Language=English` in `ubi.ini`),
+matches it against a table of 0x28-byte entries, and stores the matching index there. The strings
+live in Fix with the rest of the engine's data, one array per language, and the id is the index
+into it.
+
+That is why this level's own strings read like leftovers: the direct strings are the CD-insert
+warnings (`"/c:cd missing!"`, `"/c:insert the cd"`, `"/c:and"`, in node 3's `if var63` branch), which
+never show on a hard-disk install. The real labels (`New game`, `Options`, `Quit`) are ids.
+
+Reading the id table is the next step, and it needs the language arrays in Fix. Until then the
+engine's `screen_text` has the slot state but no words for those slots.
+
 Named actors give the rest of the shape. The scene's own name table (first 0x2000 bytes of the SNA)
 has `Levelmenu`, `YAM_GenMenu`, `YAM_CurseurMenu`, `ARG_CurseurMenu`, `YAM_PtizetreMenu`,
 `YAM_GenCibleCamera`, `YAM_PosCam_Smooth`, `GenCamera`, besides the characters the level shows

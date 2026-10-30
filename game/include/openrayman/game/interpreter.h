@@ -4,6 +4,7 @@
 #include <openrayman/game/live_memory.h>
 #include <openrayman/game/mechanics.h>
 #include <openrayman/game/particles.h>
+#include <openrayman/game/screen_text.h>
 
 #include <array>
 #include <cstdint>
@@ -137,6 +138,9 @@ namespace openrayman::game
 		// The particles the scripts started (procedure 503).
 		game::particles& particles() { return m_particles; }
 		const game::particles& particles() const { return m_particles; }
+		// The on-screen text the scripts fill (procedures 505..507), still to be drawn.
+		game::screen_text& screen_text() { return m_screen_text; }
+		const game::screen_text& screen_text() const { return m_screen_text; }
 		// What actors stand on and bump into.
 		void set_world(world_collision world) { m_world = std::move(world); }
 		const world_collision& world() const { return m_world; }
@@ -300,6 +304,7 @@ namespace openrayman::game
 		std::uint64_t m_ticks = 0;
 		std::uint32_t m_frame_ms = 16;
 		game::particles m_particles;
+		game::screen_text m_screen_text;
 		world_collision m_world;
 		camera_globals m_camera;
 		camera_state m_camera_motion;

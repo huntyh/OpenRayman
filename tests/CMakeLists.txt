@@ -8,6 +8,7 @@ add_executable(openrayman_tests
 	animation_tests.cc
 	particle_tests.cc
 	level_tests.cc
+	screen_text_tests.cc
 )
 target_link_libraries(openrayman_tests PRIVATE openrayman::lib openrayman::game doctest::doctest)
 openrayman_warnings(openrayman_tests)

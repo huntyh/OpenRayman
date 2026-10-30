@@ -461,8 +461,8 @@ namespace openrayman::game
 		// --- Procedures --------------------------------------------------------------------------
 
 		// Calls whose systems don't exist yet: their arguments are evaluated (they may have side
-		// effects) and nothing else happens. 115..119 (0x4691E0): messages to the engine's mailboxes
-		// (not identified yet); 505: an on-screen text slot.
+		// effects) and nothing else happens. 115..119 (0x4691E0): messages to the engine's mailboxes,
+		// not identified yet.
 		std::uint32_t not_yet(call& c)
 		{
 			std::uint32_t at = c.args;
@@ -2130,6 +2130,81 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// The slot's index, as the exe reads it: a float or an integer argument, truncated.
+		std::size_t text_slot(const value& v)
+		{
+			return v.as_int() < 0 ? screen_text::slot_count : std::size_t(v.as_int());
+		}
+
+		// The bytes a text argument names. A text value's word is a game address (the string is
+		// NUL-terminated); an id value is looked up in the game's string table, table 0x494C70
+		// indexed by the language byte of 0x500FA8, which is how the menu's own labels are stored.
+		// The id table itself isn't read yet, so ids come back empty; see docs/formats/menu.md.
+		std::string text_of(interpreter& vm, const value& v)
+		{
+			if(v.type != value_type::text)
+				return {};
+			std::uint32_t address = v.word();
+			if(!address)
+				return {};
+			std::string result;
+			try
+			{
+				// Stop rather than run away if the string has no terminator.
+				for(int i = 0; i < 1024; i++)
+				{
+					std::uint8_t c = vm.memory().u8(address + std::uint32_t(i));
+					if(c == 0)
+						break;
+					result.push_back(char(c));
+				}
+			}
+			catch(const std::exception&)
+			{
+				// A dangling or half-loaded pointer: keep what was read rather than fail the tick.
+			}
+			return result;
+		}
+
+		// 505 (0x465A50): set a slot up: slot, position, text, alpha. The position is a vector used
+		// for its X and Y. The exe also zeroes the slot's size, wobble and flags here.
+		std::uint32_t text_slot_set(call& c)
+		{
+			value slot, position, text, alpha;
+			next_arg(c, slot);
+			next_arg(c, position);
+			next_arg(c, text);
+			next_arg(c, alpha);
+			vec3 p = vec_of(position);
+			c.vm.screen_text().set(text_slot(slot), p[0], p[1], text_of(c.vm, text), std::uint8_t(alpha.as_int()));
+			return c.args;
+		}
+
+		// 506 (0x465AA0): set one field of a slot: slot, what, value. `what` picks the field, as
+		// game/src/screen_text.cc records.
+		std::uint32_t text_slot_field(call& c)
+		{
+			value slot, what, v;
+			next_arg(c, slot);
+			next_arg(c, what);
+			next_arg(c, v);
+			c.vm.screen_text().set_field(text_slot(slot), what.as_int(), v.as_float());
+			return c.args;
+		}
+
+		// 507 (0x465BE0): write one character into a slot: slot, index, character. The menu types
+		// its text with this, one letter per tick, beside the alphabet sound.
+		std::uint32_t text_slot_put(call& c)
+		{
+			value slot, at, character;
+			next_arg(c, slot);
+			next_arg(c, at);
+			next_arg(c, character);
+			std::int32_t index = at.as_int();
+			c.vm.screen_text().put_char(text_slot(slot), index < 0 ? 0 : std::size_t(index), char(character.as_int()));
+			return c.args;
+		}
+
 		// 433 (0x46A890): turn to face a horizontal direction (up stays (0,0,1); forward is -Y).
 		std::uint32_t face_horizontal(call& c)
 		{
@@ -2953,8 +3028,13 @@ namespace openrayman::game
 
 		vm.on_procedure(69, change_behaviour);
 		// 42..47: the scripts' fog override (0x468B90), until the renderer takes it.
-		for(std::uint32_t i : { 42, 43, 44, 45, 46, 47, 115, 116, 117, 118, 119, 505, 506, 507 })
+		for(std::uint32_t i : { 42, 43, 44, 45, 46, 47, 115, 116, 117, 118, 119 })
 			vm.on_procedure(i, not_yet);
+		// 505..507 (0x4731B0): the on-screen text slots the menu fills. Shared handler, so each
+		// entry gets its own function; the state lives in game/src/screen_text.cc.
+		vm.on_procedure(505, text_slot_set);
+		vm.on_procedure(506, text_slot_field);
+		vm.on_procedure(507, text_slot_put);
 		for(std::uint32_t i : { 176, 182, 188, 194, 201, 207, 280 })
 			vm.on_procedure(i, set_dynamics_vector);
 		vm.on_procedure(70, change_behaviours);
