@@ -20,6 +20,7 @@ namespace openrayman::game
 	{
 		// What the solve found.
 		std::uint32_t super_object = 0; // the camera actor's super object, once a solve has run
+		std::uint32_t tracked_target = 0; // reset the sampled target history when the target changes
 		std::array<float, 3> move{};    // wanted position - camera position (object +0x218)
 		std::array<float, 3> look_at{}; // the aim point the camera looks at (object +0x260)
 		std::array<float, 3> off{};     // the aim point plus the block's first vector (object +0x20C)
@@ -51,7 +52,16 @@ namespace openrayman::game
 		// camera settings (+0xA8, +0xAC); 1 means no smoothing and is what the defaults give.
 		float position_smoothing = 1;
 		float aim_smoothing = 1;
+		std::optional<std::array<float, 3>> obstacle_waypoint;
+		std::array<float, 3> obstacle_target{};
+		unsigned obstacle_retry = 0;
 	};
+
+	// Find a reachable position with a clear view of the target when a wall blocks the camera.
+	// This is an approximation of the original's candidate search, pending a full trace.
+	std::optional<std::array<float, 3>> camera_obstacle_waypoint(const world_collision& world,
+		const std::array<float, 3>& target, const std::array<float, 3>& position,
+		const std::array<float, 3>& desired, float radius);
 
 	// Procedure 444's solve (0x47DA40 -> 0x485810): the camera's scripts have filled the parameter
 	// block that is in force, so work out the look-at point, the offset point and the wanted position,

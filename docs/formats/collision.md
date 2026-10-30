@@ -62,7 +62,9 @@ probe touches the **top** of a grabbable (0x4) floor: word 0x1, slots 0 and 1 wi
 macro 3 then finds the edge with segment casts (functions 198, 199) in a script loop (procedures
 76..78) and puts him at the hanging point (procedure 157); behaviour 37 checks he got there and
 hands over to 32 (hanging). OpenRayman tests the probes in use against grabbable triangles only, in
-the air. Not done yet: the hands on the edge (procedure 218) and the climb, which the animation
+the air while descending. This falling check is an approximation based on the desired gameplay;
+the original game's mechanism for preventing grabs on the way up has not yet been established.
+Not done yet: the hands on the edge (procedure 218) and the climb, which the animation
 drives (procedure 297 sets flags 0x182 and a target height at +0x1EC; flag 0x1 adds base +0x54
 each tick, 0x437A40).
 

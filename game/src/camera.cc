@@ -256,6 +256,60 @@ namespace openrayman::game
 		return 0;
 	}
 
+	std::optional<std::array<float, 3>> camera_obstacle_waypoint(const world_collision& world,
+		const std::array<float, 3>& target, const std::array<float, 3>& position, const std::array<float, 3>& desired, float radius)
+	{
+		if(radius <= 0)
+			return std::nullopt;
+		const bool blocked = world.first_hit(target, position).has_value();
+		// Start looking before the camera's collision sphere actually touches a wall. The larger
+		// test is only a search trigger/clearance preference; physical collision keeps its radius.
+		const float clearance = radius * 1.25f;
+		auto has_clearance = [&](const vec3& p) {
+			return length(sub(world.slide_sphere(p, p, clearance), p)) < 0.01f;
+		};
+		bool path_blocked = length(sub(world.slide_sphere(position, desired, clearance), desired)) > 0.01f;
+		if(!blocked && !path_blocked && has_clearance(position))
+			return std::nullopt;
+		vec3 offset = sub(position, target);
+		float distance = length(offset);
+		if(distance < radius * 2)
+			return std::nullopt;
+		// Prefer keeping the current distance from the target. A nearby shortcut can put the
+		// camera just beyond one corner, where the normal follow path cuts into the next one.
+		// If a full-distance position cannot be reached, try progressively closer positions.
+		// The original builds directional candidates at 0x486880; its scoring is not decoded yet.
+		for(bool wider : { true, false })
+		{
+			// If only the safety margin is blocked, don't force the camera into another tight spot.
+			if(!wider && !blocked && !path_blocked)
+				break;
+			for(float scale : { 1.0f, 0.75f, 0.5f })
+			{
+				std::vector<vec3> candidates;
+				for(int step = 0; step < 16; step++)
+				{
+					float angle = float(step) * pi / 8.0f;
+					float cs = std::cos(angle), sn = std::sin(angle);
+					candidates.push_back(add(target, mul(vec3{ offset[0] * cs - offset[1] * sn,
+						offset[0] * sn + offset[1] * cs, offset[2] }, scale)));
+				}
+				std::ranges::sort(candidates, [&](const vec3& a, const vec3& b) {
+					return length(sub(a, desired)) < length(sub(b, desired));
+				});
+				for(const vec3& candidate : candidates)
+				{
+					if(length(sub(candidate, position)) < 0.5f || world.first_hit(target, candidate) || (wider && !has_clearance(candidate)))
+						continue;
+					vec3 reached = world.slide_sphere(position, candidate, wider ? clearance : radius);
+					if(length(sub(reached, candidate)) < 0.01f)
+						return candidate;
+				}
+			}
+		}
+		return std::nullopt;
+	}
+
 	void solve_camera(interpreter& vm, std::uint32_t super_object)
 	{
 		live_memory& m = vm.memory();
@@ -273,14 +327,87 @@ namespace openrayman::game
 			return;
 		std::uint16_t flags_72 = m.read<std::uint16_t>(block + camera_field::flags_72);
 		vec3 position = read3(m, camera_transform + 4);
+		auto setting = [&](std::size_t at) {
+			float f;
+			std::memcpy(&f, &vm.camera().values[at], 4);
+			return f;
+		};
 
 		// The target and its orientation (0x483E40). The exe averages up to eight tracked points on
 		// the target; all of them start at its position, so the position is what we aim at.
 		std::uint32_t target = target_super_object(vm, block);
 		std::uint32_t target_transform = global_transform(m, target);
+		camera_state& state = vm.camera_motion();
+		if(target != state.tracked_target && m.contains(cam, 0x158))
+		{
+			for(std::uint32_t i = 0; i < 8; i++)
+				m.write<float>(cam + 0x138 + i * 4, 0);
+			state.tracked_target = target;
+		}
+		vec3 tracked_speed{};
+		vec3 tracked_position{};
+		bool have_tracked_position = false;
+		// Procedure 444 (0x47DA40): shift the target's movement and position into the eight
+		// samples, weighted by the frame duration. 0x414300 seeds empty samples at the target.
+		if(target_transform && m.contains(cam, 0x158))
+		{
+			vec3 target_pos = read3(m, target_transform + 4);
+			bool empty = true;
+			for(std::uint32_t i = 0; i < 8; i++)
+				empty = empty && m.f32(cam + 0x138 + i * 4) == 0;
+			if(empty)
+				for(std::uint32_t i = 0; i < 8; i++)
+				{
+					for(std::uint32_t k = 0; k < 3; k++)
+					{
+						m.write<float>(cam + 0x78 + i * 12 + k * 4, 0);
+						m.write<float>(cam + 0xD8 + i * 12 + k * 4, target_pos[k]);
+					}
+					m.write<float>(cam + 0x138 + i * 4, 0.03f);
+				}
+			std::uint32_t target_actor = vm.actor_of(target);
+			std::uint32_t dyn = target_actor && m.contains(target_actor + 8, 4) ? m.u32(target_actor + 8) : 0;
+			std::uint32_t base = dyn && m.contains(dyn, 4) ? m.u32(dyn) : 0;
+			std::uint32_t report = base && m.contains(base + 0x150, 4) ? m.u32(base + 0x150) : 0;
+			if(report && m.contains(report, 0x158) && length(read3(m, report + 0x14C)) > 0)
+			{
+				for(std::uint32_t i = 0; i < 7; i++)
+				{
+					for(std::uint32_t k = 0; k < 3; k++)
+						for(std::uint32_t start : { 0x78u, 0xD8u })
+							m.write<float>(cam + start + i * 12 + k * 4, m.f32(cam + start + (i + 1) * 12 + k * 4));
+					m.write<float>(cam + 0x138 + i * 4, m.f32(cam + 0x138 + (i + 1) * 4));
+				}
+				for(std::uint32_t k = 0; k < 3; k++)
+				{
+					m.write<float>(cam + 0xCC + k * 4, m.f32(report + 0x114 + k * 4));
+					m.write<float>(cam + 0x12C + k * 4, m.f32(report + 0x14C + k * 4));
+				}
+				m.write<float>(cam + 0x154, 1.0f / 60.0f);
+			}
+			auto average = [&](std::uint32_t start, float threshold) {
+				vec3 result{};
+				float weight = 0;
+				for(std::uint32_t i = 0; i < 8; i++)
+				{
+					float w = m.f32(cam + 0x138 + i * 4);
+					vec3 v = read3(m, cam + start + i * 12);
+					if(w != 0 && length(v) > 0)
+					{
+						result = add(result, mul(v, w));
+						weight += w;
+						if(weight >= threshold) break;
+					}
+				}
+				return weight > 0 ? mul(result, 1.0f / weight) : vec3{};
+			};
+			tracked_speed = average(0x78, setting(0x50));
+			tracked_position = average(0xD8, setting(0x4C));
+			have_tracked_position = length(tracked_position) > 0;
+		}
 		vec3 aim{};
 		if(target_transform)
-			aim = add(read3(m, target_transform + 4), rotate(m, target_transform, read3(m, block + camera_field::vector_b)));
+			aim = add(have_tracked_position && !(flags_72 & 0x2) && !(m.u8(cam + 0x74) & 0x2) ? tracked_position : read3(m, target_transform + 4), rotate(m, target_transform, read3(m, block + camera_field::vector_b)));
 
 		// The offset point (0x4840A0): vector A from the aim point, in the target's orientation, or
 		// the vector a script fixed in the camera object (495).
@@ -363,24 +490,45 @@ namespace openrayman::game
 			off = aim;
 		}
 
-		camera_state& state = vm.camera_motion();
 		// Ours: a look-at point that jumped far in one frame (the target was teleported, as Rayman
 		// is to the portal when the level starts) cuts to the new view instead of travelling there.
 		// The exe resets its camera when the target changes (0x413E30); how it handles a teleported
 		// target isn't read yet.
 		constexpr float teleported = 10;
 		bool cut = state.valid && target_transform && length(sub(aim, state.look_at)) > teleported;
+		// Until the original's candidate scoring and transition modes are fully understood, use a
+		// conservative search: when the target is hidden, pick a reachable candidate with a clear
+		// view. Keep the waypoint across ticks so the camera can actually go around a corner.
+		std::uint16_t options = m.read<std::uint16_t>(block + camera_field::flags_70);
+		if(!target_transform || (flags_72 & 0x3000) || (options & (snap_position | 0x40)) || !state.valid || cut)
+		{
+			state.obstacle_waypoint.reset();
+			state.obstacle_retry = 0;
+		}
+		else
+		{
+			if(state.obstacle_waypoint && (length(sub(aim, state.obstacle_target)) > 2.0f || length(sub(position, *state.obstacle_waypoint)) < 0.5f))
+				state.obstacle_waypoint.reset();
+			if(!state.obstacle_waypoint)
+			{
+				if(state.obstacle_retry > 0)
+					state.obstacle_retry--;
+				else
+				{
+					state.obstacle_retry = 3;
+					state.obstacle_waypoint = camera_obstacle_waypoint(vm.world(), aim, position, want, camera_radius(m, super_object));
+					state.obstacle_target = aim;
+				}
+			}
+			if(state.obstacle_waypoint)
+				want = *state.obstacle_waypoint;
+		}
 		state.super_object = super_object;
 		state.move = sub(want, position);
 		state.look_at = aim;
 		state.off = off;
 		state.back = back;
 		state.flags = m.read<std::uint16_t>(block + camera_field::flags_70);
-		auto setting = [&](std::size_t at) {
-			float f;
-			std::memcpy(&f, &vm.camera().values[at], 4);
-			return f;
-		};
 		// The two direction smoothing divisors (0x474420): the camera settings' +0xA8/+0xAC
 		// (0x4FF6D4/0x4FF6D8, 1 at start-up, 0x4138B0) become mechanics +0x26C/+0x27C, but stay 1
 		// while the block snaps the position or keeps the orientation (+0x70 bits 0x01 and 0x04), while
@@ -400,8 +548,8 @@ namespace openrayman::game
 		}
 		// The three speeds (0x484B50): the block's own when a script fixed them (+0x72 bit 0x80) or
 		// there is no target; otherwise worked out each frame from what is left to do, with the
-		// camera settings' gains and caps (offsets from 0x4FF62C, set up at 0x4138C0). The exe adds
-		// floors from the tracked points' average, which is zero unless scripts plant points.
+		// camera settings' gains and caps (offsets from 0x4FF62C, set up at 0x4138C0). Tracked
+		// target movement also supplies minimum position and aim speeds (0x484B50).
 		const std::uint16_t flags_70 = m.read<std::uint16_t>(block + camera_field::flags_70);
 		const bool fixed_speeds = (flags_72 & 0x80) || !target_transform;
 		float position_speed = 0, turn_speed = 0;
@@ -415,7 +563,7 @@ namespace openrayman::game
 			// Position (0x484BCD): 3 x the distance still to go, at most 10 units/s; nothing while
 			// the snap flag puts the camera there at once.
 			if(!(flags_70 & 0x01))
-				position_speed = std::min(setting(0x80) * length(sub(want, position)), setting(0x84));
+				position_speed = std::max(std::min(setting(0x80) * length(sub(want, position)), setting(0x84)), setting(0x88) * length(tracked_speed));
 			// Turn (0x484C67): 3 x the angle the camera must still swing round the look-at point,
 			// at most 3 rad/s, slower while it is nearer than its boom length (+0x18) and faster
 			// while it is more than a unit farther; the position speed when turning is held off.
@@ -451,7 +599,7 @@ namespace openrayman::game
 		else if(flags_70 & 0x10)
 			state.aim_speed = 0;
 		else
-			state.aim_speed = std::min(setting(0x98) * length(sub(state.valid ? state.aim : off, off)), setting(0x9C));
+			state.aim_speed = std::max(std::min(setting(0x98) * length(sub(state.valid ? state.aim : off, off)), setting(0x9C)), setting(0xA0) * length(tracked_speed));
 		state.aim_ramp = std::max(m.f32(block + camera_field::aim_ramp), 0.001f);
 		state.aim_arrive = m.f32(block + camera_field::aim_arrive);
 		if(cut)

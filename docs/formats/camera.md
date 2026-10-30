@@ -34,7 +34,7 @@ unless they write it every frame.
 | +0x20 | settle distance | 3 | "close enough" for the mode-0 smoothing (0 = never settles) |
 | +0x24 | | 9 | not read by the solve stages we model |
 | +0x28, +0x2C | direction limits | 0, 0 | the angle bounds the pi/8 turn walks towards |
-| +0x30 | | 0.35 | copied to the camera object's +0x208 (the field of view) |
+| +0x30 | pitch centre | 0.35 | pitch-window centre in radians; also copied to dynamics +0x208 |
 | +0x34 | | 0 | |
 | +0x38 | speed | 4 | largest position step a second |
 | +0x3C | speed ramp | 5 | how fast the step may grow (maxstep/ramp + last step) |
@@ -162,19 +162,94 @@ orientation (+0x70 bits 0x01 and 0x04), snaps the aim (bit 0x10), or the tracked
 are the tick's whole movement at +0xF8 (written by 0x434660; its length is what the step law 0x433B00
 grows from) and the smoothed aim step at +0x130 (written at the end of 0x433D70).
 
-The block's `+0x20` settle distance belongs to the other follow path (mode 0, 0x4870C0): the camera
-is "close enough" when the distance between the current and the desired position is under it, and
-0x486710's orbit search uses 1.25 as the epsilon at which a direction counts as settled.
+The block's `+0x20` settle distance belongs to the other follow path (mode 0, 0x4870C0): it tests
+the distance between the current camera position (context +0x20) and the target anchor (+0x44),
+not the desired camera position (+0x2C). `0x486710` also tests candidate distance against the
+block's settle distance plus a global tolerance at 0x4FF698.
+
+### Obstacle search: investigation in progress
+
+The original's mode-0 follow path (0x4870C0) periodically tests the route between the target anchor
+and the camera (0x4863D0 -> 0x485FD0). When that test reports an obstruction and the other gates
+pass, it checks the desired position (0x486400) and asks 0x486D50 for a different one. That function
+builds candidates (0x486880), sorts them by a score, and tests them with 0x486710 and 0x4864D0.
+An accepted candidate enters a separate transition mode through 0x487520, which resets the swing
+direction and records both the current position and the candidate. The obstruction check can sample
+several offset paths around the line (0x485FD0); it is not simply the camera sphere's wall slide.
+OpenRayman now has an interim search: when the target-to-camera segment meets level geometry or
+the camera is within 1.25 times its collision radius of a surface, or its proposed follow path would
+come within that clearance of a surface,
+it tries candidate positions in 16 directions at three distances, preferring its current distance
+from the target before falling back to shorter distances, and choosing the candidate closest to the
+desired follow position at each distance with a clear line to the target and a collision-free sphere movement
+from the camera. It first prefers candidates with the same wider clearance, falling back to the
+physical collision radius if the view is blocked and no wider candidate fits. This clearance is an
+OpenRayman tuning choice prompted by the user's corner feedback, not a measured executable value.
+It keeps that waypoint across ticks and retries every four ticks when it finds no
+candidate; it discards the waypoint when the target moves two units, or the camera comes within
+0.5 units. This is our own approximation, not a reconstruction of the original's candidate scoring
+or transition. It is skipped for fixed-position/vector modes, cuts and disabled camera collision.
+The user tested the interim search through the Learn_10 corridor near `-19.8,195.1,0.1` and is
+happy with it for now (2026-10-30); exact candidate generation, scoring, timing and transition
+remain to be validated.
+In the user's original-game corner recording on 2026-10-30 (`build/camera-wall-original.txt`),
+the camera entered mode 1 around Rayman (-36.38, 191.67, -1.42), returned to mode 0 near
+(-20.76, 196.12, -2.94), and was then 4.34 units from him. A later mode-1 transition was brief.
+This confirms that the original can move substantially closer through this route; the trace alone
+does not prove which obstruction caused each mode change.
+
+The user also reports that the view shows more scenery from the same place than the original. The
+distance clamp above uses the live block's min and max distances, but that alone does not establish
+where the original camera actually settles. OpenRayman originally used a fixed 60-degree vertical
+field of view in both game and fly views. Block +0x30 is a pitch-window centre, not a projection
+field; the earlier field-of-view identification was wrong. Both camera position and projection need
+measuring before attributing the difference to either one. The user's matched corridor screenshots
+(2026-10-30) visibly show Rayman smaller in OpenRayman, though the views are not perfectly aligned.
+An earlier helper report identified globals 0x5004F4..0x500500 as four projection floats. A live
+read by the user instead yielded the bit patterns for integers 0, 1199, 0, 1599, consistent with
+viewport bounds; do not use them as focal length or clipping planes. The call at 0x419A47 passes
+them through 0x421FB0 to `GLI_DRV_vClearZBufferRegion` (the function pointer is resolved by name
+at 0x421880). The actual projection code at 0x422AB0 computes the angles and focal factor in the
+renderer record, and 0x42C8A0 uses that factor to project vertices. `tools/r2live.py --camera` reads
+the current record and the camera's position for comparison. A live read in Learn_10 at the
+corridor reported perspective kind 103, horizontal angle 1.479 radians and vertical angle 0.900
+radians. The two angles at record +0x64/+0x68 are used by the perspective setup at 0x422AB0;
+OpenRayman's game view uses the measured 0.900-radian vertical angle pending checks in other scenes
+and display configurations. The free-fly camera retains its own field of view. A second live read
+with the camera actor's standard-object link corrected gave Rayman at (-37.449, 184.421, 0.015),
+the camera at (-32.520, 190.093, 4.158), and their distance as 8.581 units while standing still.
+An equivalent OpenRayman measurement at the same position is still needed.
+The user reports the new framing looks good (2026-10-30). The reader also estimates camera speed
+from the change in world position divided by elapsed game-clock time; missed frames give net
+displacement rather than the full path length. This measures motion, not the camera's speed setting.
+In the user's 2026-10-30 run (`build/camera-corner.txt`), Rayman moved from roughly
+(-64.45, 210.64, -8.38); in the early straight section the camera reached roughly 9–10 units/s,
+with its distance rising from 8.58 to about 9.56. After Rayman stopped it returned to about 8.59.
+The run also contains direction changes and short speed spikes; the reader samples a live process
+without synchronizing its reads with the game, so individual spikes are not reliable acceleration
+measurements. Compare a matched OpenRayman run before drawing conclusions about its speed.
+The subsequent OpenRayman recording (`build/openrayman-camera.csv`) follows a similar but not
+identical path: at nearby positions in the shared stretch its camera was often 10.9–11.7 units
+from Rayman versus 8.9–9.4 in the original. At the end, both settled near 8.6. This supports the
+user's report of extra lag while moving, but the routes and timing differ, so it does not identify
+whether the speed law, obstacle search, or another camera behavior causes it.
+
+## Target tracking
+
+The exe keeps eight samples of the target's movement and position
+  (camera object +0x78 vectors, +0xD8 points, +0x138 weights). Procedure 444 (0x47DA40) shifts in
+  the target mechanics report's movement (+0x114), position (+0x14C), and elapsed time in seconds.
+  The mechanics writes these when end flags 0x4 and 0x4000 are both set (0x431AD0). The weighted
+  average of movement (0x414420, 0x473570) contributes minimum position and aim speeds at 0x484B50;
+  the average of positions (0x414550, 0x483E40) also affects the aim point. OpenRayman now records
+  and uses these at its fixed 60 Hz step. Its report movement is approximated by the speed it writes
+  for scripts; the executable derives its sample from the mechanics matrices. Confirm the resulting
+  movement against the original, including cuts and other levels. Own analysis of these executable
+  routines and the user's 2026-10-30 live and OpenRayman traces.
 
 ## What our engine leaves out
-
-- **The eight tracked points.** The exe's solve averages up to eight points on the target, each
-  with its own weight (camera object +0x78 vectors, +0xD8 points, +0x138 weights; procedure 159
-  starts them). We use the target's position only; for every game camera the points start at that
-  position and only some cutscenes move them.
-- **The orbit search around obstacles** (0x486880, with 0x486710 deciding whether a step may run):
-  the exe tries directions around the target when the straight one is blocked. Our camera takes the
-  straight one.
+- **The original's orbit search around obstacles** (0x486880, with 0x486710 deciding whether a step
+  may run): our interim candidate search does not yet reproduce its scoring or transitions.
 - **The collision test of a swing-round step** (0x486400) and the "try the other way" that follows
   a blocked one: every step passes.
 - **The cutscene modes** (cam+0x60: mode 1 scripted keyframes, mode 4 snap, mode 5 target switch)

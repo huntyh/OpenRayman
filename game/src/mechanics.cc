@@ -373,6 +373,9 @@ namespace openrayman::game
 			return deepest;
 		};
 		constexpr float margin = 0.02f; // 0x49C71C / 0x49C724
+		// The clearance is not a minimum movement: rejecting small steps can keep the camera's
+		// acceleration at zero after it stops at a wall.
+		constexpr float epsilon = 1e-6f;
 		vec pos = start;
 		vec normal{};
 		if(float depth = overlap(pos, normal); depth > 0)
@@ -385,7 +388,7 @@ namespace openrayman::game
 		{
 			vec move = vsub(target, pos);
 			float length = vlen(move);
-			if(length < margin)
+			if(length < epsilon)
 				break;
 			// The first point along the move where the sphere touches something: steps no longer
 			// than a quarter of the radius, then halving.
@@ -433,7 +436,7 @@ namespace openrayman::game
 			previous_normal = normal;
 			// A slide turned more than 150 degrees from the movement goes nowhere (0x49C720).
 			float slide_length = vlen(slide);
-			if(slide_length < margin || (first_length > 1e-6f && vdot(slide, first) / (slide_length * first_length) < std::cos(2.6179938f)))
+			if(slide_length < epsilon || (first_length > epsilon && vdot(slide, first) / (slide_length * first_length) < std::cos(2.6179938f)))
 				break;
 			target = vadd(pos, slide);
 		}
@@ -775,6 +778,13 @@ namespace openrayman::game
 		write_vec(m, b + base::speed, speed);
 		write_vec(m, t + 4, target);
 		write_vec(m, b + base::previous_position, target);
+		// 0x431AD0: dynamics also records target position and movement for the camera's tracked
+		// points when both reporting flags are enabled. Procedure 444 consumes the last tick's data.
+		if(has_block && (m.u32(b + base::end_flags) & 0x4004) == 0x4004)
+		{
+			write_vec(m, block + 0x114, speed);
+			write_vec(m, block + 0x14C, target);
+		}
 		if(has_block && (flags & collides))
 		{
 			// The word at +4 is what the scripts read; +0 is this tick's, published at its end
@@ -788,9 +798,10 @@ namespace openrayman::game
 			// contact instead, with the probe's material as the actor's own (+0x1C). Rayman's macro 3
 			// grabs the ledge on it (condition 34 with 0x8, function 193). Seen in the real game with
 			// tools/r2live.py: the touch point lies on the ledge's top, 1.0 from the probe's centre.
+			// Only report it while descending: a probe can reach the top while Rayman is still rising.
 			std::optional<world_collision::segment_hit> probe;
 			std::uint32_t probe_material = 0;
-			if(!landed && !world.empty())
+			if(!landed && speed[2] < 0.0f && !world.empty())
 				for(const zone_sphere& z : zones)
 				{
 					if(!z.in_use || !(material_flags(m, z.material) & ledge_probe))

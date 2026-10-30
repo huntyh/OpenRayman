@@ -140,8 +140,9 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
     taken as floor).
   - The game camera (docs/formats/camera.md) runs: its scripts fill the parameter blocks, the solve
     and the camera mechanics move it, and the view follows it while playing (Tab). Left out so far:
-    the 8 tracked points, the pi/8 turn towards the angle limits, stepping round obstacles and the
-    occlusion pass. ⬅ we are here: the user compares it with the game.
+    the original's obstacle-search scoring and the occlusion pass. Target tracking and an interim
+    obstacle search are in; the user is happy with the camera for now (2026-10-30). The search is
+    still an approximation, not the original's algorithm. ⬅ we are here.
     First look (user): too slow, Rayman outruns it (the game's keeps up at his back and lags only
     without room, e.g. dropping into the hole by the river cage, then flies after him; it seems to
     collide with walls and ground). Ctrl doesn't lock it to his back yet; Ctrl+left/right strafes
@@ -175,7 +176,7 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
     `--level Learn_10 --camera -31.0,291.2,-24.4,-178.0,-20.1`: fixed, walls push only by their slice
     at body height (user confirmed). Lums can be collected but vanish without their effect. Rayman
     grabs ledges and hangs (2026-10-30: his front probe sphere touching a grabbable top, seen live
-    with tools/r2live.py); climbing up still needs animation-driven motion (procedure 297, dynamics
+    with tools/r2live.py); grabbing only while falling is working (user confirmed). Climbing up still needs animation-driven motion (procedure 297, dynamics
     flag 0x1 and base +0x54) and the hands on the edge procedure 218. The arrival portal drops him
     under it as in the game (procedures 67/68, inertia, wall contacts; landing within 5 cm).
     Our default start is a half-revisit: only story bit 1133 is set, so the trapdoor opens and the

@@ -146,6 +146,8 @@ namespace
 		// The game's camera actor (the placed Fix actor with a camera part). Until the game's camera
 		// runs (milestone 3c) it stands where ours is, for the scripts that work around it.
 		std::uint32_t camera_super_object = 0;
+		std::ofstream camera_log; // --camera-log: one row per gameplay tick
+		std::optional<glm::vec3> camera_log_previous;
 		std::vector<std::uint32_t> actor_at;     // per actors.actors entry: its actor in live memory
 		std::vector<std::uint32_t> super_object_at; // per entry: its super object
 		// Per entry: where each of its family's states is in live memory. (The entries' own
@@ -411,6 +413,22 @@ namespace
 			openrayman::game::step(*a.vm, a.thinkers, [](std::uint32_t self, const std::exception& e) {
 				SDL_Log("Script error, actor 0x%08X: %s", self, e.what());
 			});
+			if(a.camera_log && a.playing && a.camera_super_object)
+			{
+				auto camera = openrayman::game::global_placement(*a.live, a.camera_super_object);
+				auto player = openrayman::game::global_placement(*a.live, a.vm->main_actor());
+				if(camera && player)
+				{
+					glm::vec3 c(camera->m[0][3], camera->m[1][3], camera->m[2][3]);
+					glm::vec3 p(player->m[0][3], player->m[1][3], player->m[2][3]);
+					float speed = a.camera_log_previous ? glm::length(c - *a.camera_log_previous) * 60.0f : 0.0f;
+					a.camera_log << std::format("{},{:.6f},{:.6f},{:.6f},{:.6f},{:.6f},{:.6f},{:.6f},{:.6f}\n",
+						a.tick, p.x, p.y, p.z, c.x, c.y, c.z, glm::length(c - p), speed);
+					a.camera_log_previous = c;
+				}
+			}
+			else
+				a.camera_log_previous.reset();
 		}
 		// Where each actor is now: scripts move and turn them.
 		for(std::size_t i = 0; i < a.actors.actors.size() && i < a.super_object_at.size(); i++)
@@ -964,7 +982,14 @@ namespace
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		if(level_view && w > 0 && h > 0)
-			a.level->draw(glm::lookAt(eye, eye + forward, up), a.camera.projection(float(w) / float(h)));
+		{
+			// The real game's renderer reported a 0.9 radian vertical angle in Learn_10 (r2live,
+			// 2026-10-30). Keep the fly camera's own field of view for level exploration.
+			float aspect = float(w) / float(h);
+			glm::mat4 projection = a.playing && a.live && a.camera_super_object
+				? glm::perspective(0.9f, aspect, 0.1f, 2000.0f) : a.camera.projection(aspect);
+			a.level->draw(glm::lookAt(eye, eye + forward, up), projection);
+		}
 		else if(a.texture && w > 0 && h > 0)
 		{
 			// Fit inside the window with a margin. Scale up by whole steps so pixels stay crisp.
@@ -1067,6 +1092,14 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 		std::string arg = argv[n];
 		if(arg == "--game")
 			folder = fs::path(reinterpret_cast<const char8_t*>(argv[n + 1]));
+		else if(arg == "--camera-log")
+		{
+			a->camera_log.open(fs::path(reinterpret_cast<const char8_t*>(argv[n + 1])));
+			if(!a->camera_log)
+				SDL_Log("Could not open camera log: %s", argv[n + 1]);
+			else
+				a->camera_log << "tick,player_x,player_y,player_z,camera_x,camera_y,camera_z,distance,speed\n";
+		}
 		else if(arg == "--screenshot")
 			a->screenshot = fs::path(reinterpret_cast<const char8_t*>(argv[n + 1]));
 		else if(arg == "--texture")
