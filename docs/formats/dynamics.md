@@ -36,8 +36,8 @@ per-actor entry (0x412150) installs the current state's every tick.
 ## One tick (0x431AD0)
 
 1. target = position; then the second script speed sets the axes it names (× dt) of the move.
-   Inertia, if flag 0x400 (0x43DF70 -> 0x43DDA0): per axis in the actor's own axes, move = last + (wanted − last) × f,
-   last = speed (+0x3C) × dt (minus +0x1B4 unless end flag 0x10), f = 1 − (1 − k)³ from k at +0x154.. (the state
+   Inertia, if flag 0x400 (0x43DF70 -> 0x43DDA0): per axis in the actor's own axes (formula below),
+   last = speed (+0x3C) × dt (minus +0x1B4 unless end flag 0x10), f = 1 − (1 − k)⁴ from k at +0x154.., the share of last tick's move kept: move = wanted + (last − wanted) × f (the state
    mechanics' +0x18.., 0x4370A0; a pow correction applies when dt ≠ 1/60). Flag 0x20 with end flag 0x20000 does
    the same with +0x168.. × +0x174 (procedure 292 writes +0x168..+0x170). Rayman: k = 0.4, 0.4, 1.
 2. Gravity, if on (0x43DF40): target.z = z + dt·(last speed z − g·dt).
@@ -60,7 +60,10 @@ the line from the triangle's nearest ground-plane point to the cylinder's axis (
 normal when the axis is inside it). The cylinder looks up every 4-unit cell it covers, and three
 passes let two walls meet in a corner. The push happens before the floor search, so the floor under
 where the actor ends up is the one it lands on, and the drop in the target makes the speed the scripts
-read back fall to zero. Ceilings and moving supports are still not handled. Rayman's mechanics has
+read back fall to zero. A push sets contact bit 0x4 (condition 28) and contact slot 2 (function 190(2))
+to the push's direction and the point; Rayman's reflex macro 40 bounces his push (var87) off that normal,
+scaled by max(0, n · push direction), which is what ends the Learn_10 portal hop (seen in the running
+game with tools/r2live.py: one frame after the release var87 is zero). Ceilings and moving supports are still not handled. Rayman's mechanics has
 none of the resolver bits, only 0x2, so 0x2 also counts as colliding until his resolver is read.
 
 ## Where this came from

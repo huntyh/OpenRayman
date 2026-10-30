@@ -3143,6 +3143,30 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 67 (0x469580), 68 (0x469640): switch another actor's normal (67) or reflex (68) behaviour,
+		// as 69 and 70 do for the actor itself. The portal hands Rayman over this way, so his scripts
+		// go on straight from the frame he is let go.
+		std::uint32_t change_other_behaviour(call& c)
+		{
+			value who, behaviour;
+			next_arg(c, who);
+			next_arg(c, behaviour);
+			std::uint32_t so = c.vm.super_object_of(actor_value(c.vm, who));
+			std::uint32_t mind = so ? mind_of(c.vm, so) : 0;
+			if(!mind)
+				return c.args;
+			live_memory& m = c.vm.memory();
+			bool normal = c.index == 67;
+			std::uint32_t intelligence = m.u32(mind + (normal ? mind_field::normal : mind_field::reflex));
+			if(!intelligence)
+				return c.args;
+			// Only a switch of the part that is running now, by the actor itself, restarts its rules.
+			bool running_normal = m.u8(mind + mind_field::running_normal) != 0;
+			bool other = so != c.self || running_normal != normal;
+			c.vm.change_behaviour(intelligence, behaviour.word(), other);
+			return c.args;
+		}
+
 		// 69 (0x4696C0): switch the actor's normal behaviour. From the normal behaviour itself, its
 		// rules start over under the new one this same frame.
 		std::uint32_t change_behaviour(call& c)
@@ -3255,6 +3279,8 @@ namespace openrayman::game
 		for(std::uint32_t i = 102; i <= 107; i++)
 			vm.on_function(i, gauge_function);
 
+		vm.on_procedure(67, change_other_behaviour);
+		vm.on_procedure(68, change_other_behaviour);
 		vm.on_procedure(69, change_behaviour);
 		// 42..47: the scripts' fog override (0x468B90), until the renderer takes it.
 		for(std::uint32_t i : { 42, 43, 44, 45, 46, 47, 115, 116, 117, 118, 119 })

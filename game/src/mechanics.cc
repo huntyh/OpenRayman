@@ -28,7 +28,8 @@ namespace openrayman::game
 		constexpr std::uint32_t contacts_size = 0x16C;
 		constexpr std::uint32_t on_ground = 0x1;
 		constexpr std::uint32_t in_water = 0x40;   // slot 4 (0x43F940)
-		constexpr std::uint32_t water_slot = 4;
+		constexpr std::uint32_t against_wall = 0x4; // slot 2 (condition 28)
+		constexpr std::uint32_t water_slot = 4, wall_slot = 2;
 		// After the two words come six 0x28-byte contact slots (0 the tick's first contact, 1 ground,
 		// 2 wall, 3 the primary contact, 4 water, 5). An entry holds its surface's outward unit
 		// normal at +4, the point it was touched at +0x10 and the surface's game material at +0x20
@@ -545,10 +546,11 @@ namespace openrayman::game
 		};
 		if(flags & uses_proposed)
 			add_speed(base::proposed, 0x100000, 0x8000);
-		// Inertia (0x43DF70 -> 0x43DDA0): the move only goes part of the way from last tick's
-		// (speed x dt) towards the one the script asked for, per axis in the actor's own axes. The
-		// state's factors (+0x154..) are eased as 1 - (1 - k)^3 (0x4370A0; its frame-time correction
-		// is for ticks other than 1/60 s). Last tick's move leaves out the carrying platform's
+		// Inertia (0x43DF70 -> 0x43DDA0): per axis in the actor's own axes, the move keeps the share
+		// f of last tick's (speed x dt) and takes the rest from the one asked for. The state's
+		// factors (+0x154..) become f = 1 - (1 - k)^4 (0x4370A0; its frame-time correction is for
+		// ticks other than 1/60 s). Rayman's k = 0.4 keeps 87%: the real game's portal hop starts at
+		// 1.3 of the 10 units/s asked for and loses 13% a frame (tools/r2live.py). Last tick's move leaves out the carrying platform's
 		// (+0x1B4) unless end flag 0x10 says otherwise; the exe rounds the result to 0.0001 units.
 		if(flags & has_inertia)
 		{
@@ -567,8 +569,9 @@ namespace openrayman::game
 			for(int k = 0; k < 3; k++)
 			{
 				float f = m.f32(b + 0x154 + std::uint32_t(k) * 4);
-				f = f <= 0 ? 0.0f : f >= 1 ? f : 1 - (1 - f) * (1 - f) * (1 - f);
-				d[std::size_t(k)] = last[std::size_t(k)] + (wanted[std::size_t(k)] - last[std::size_t(k)]) * f;
+				float keep = 1 - f;
+				f = f <= 0 ? 0.0f : f >= 1 ? f : 1 - keep * keep * keep * keep;
+				d[std::size_t(k)] = wanted[std::size_t(k)] + (last[std::size_t(k)] - wanted[std::size_t(k)]) * f;
 			}
 			set_move(to_world(d));
 		}
@@ -595,12 +598,16 @@ namespace openrayman::game
 		// Walls push the target out of them: the actor is a cylinder from the step height up to
 		// body_height (docs/formats/dynamics.md). Run before the floor search, so the floor under
 		// where the actor ends up is the one it lands on.
+		vec wall_normal{};
 		if((flags & collides) && !world.empty())
 		{
 			std::array<float, 2> push = world.wall_push(target[0], target[1], target[2] + climb_up, target[2] + body_height, foot_radius);
 			target[0] += push[0];
 			target[1] += push[1];
+			if(float l = std::sqrt(push[0] * push[0] + push[1] * push[1]); l > 1e-6f)
+				wall_normal = { push[0] / l, push[1] / l, 0.0f };
 		}
+		const bool on_wall = wall_normal[0] != 0 || wall_normal[1] != 0;
 
 		// The floor. The exe gathers contacts with the actor's collision spheres and picks the
 		// nearest (0x43EEC0, 0x43F510); here the actor is a small disc at its origin, tested straight down.
@@ -667,8 +674,14 @@ namespace openrayman::game
 			// Slot 4 is the water (0x43F940: report bit 0x40 into slots_at + 4 * slot_size), with
 			// the surface's normal, the point on it above the actor and its game material; the
 			// word's 0x40 bit alongside the ground's. Out of the water both are cleared.
-			m.write<std::uint32_t>(block, (landed ? on_ground : 0) | (water ? in_water : 0));
-			m.write<std::uint32_t>(block + 4, (landed ? on_ground : 0) | (water ? in_water : 0));
+			// Slot 2 is a wall (bit 0x4): the way it pushed the actor out, and where. Rayman's macro 40
+			// bounces his push (var87) off it, which ends the portal hop against the tablet's wall.
+			std::uint32_t word = (landed ? on_ground : 0) | (water ? in_water : 0) | (on_wall ? against_wall : 0);
+			m.write<std::uint32_t>(block, word);
+			m.write<std::uint32_t>(block + 4, word);
+			std::uint32_t wall = block + slots_at + wall_slot * slot_size;
+			write_vec(m, wall + slot_normal, wall_normal);
+			write_vec(m, wall + slot_point, on_wall ? point : vec{});
 			std::uint32_t entry = block + slots_at + water_slot * slot_size;
 			const vec water_point = { target[0], target[1], water ? water->height : 0.0f };
 			write_vec(m, entry + slot_normal, water ? water->normal : vec{});
