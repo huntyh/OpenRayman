@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace openrayman::game
 {
@@ -40,26 +41,57 @@ namespace openrayman::game
 
 		using vec = std::array<float, 3>;
 
-		// The point of a triangle's ground-plane footprint nearest (x, y): (x, y) itself when that is
-		// inside it, otherwise the nearest point of its three edges.
-		void closest_in_footprint(const collision_triangle& t, float x, float y, float& px, float& py)
+		// The part of a triangle between two heights (a convex polygon of up to five corners, empty when
+		// the triangle lies wholly above or below): a wall leaning over the floor only stands where
+		// it crosses the body, not over its whole footprint (the overhang at the Learn_10 cave mouth).
+		std::vector<vec> height_slice(const collision_triangle& t, float bottom, float top)
 		{
-			auto side = [](const vec& a, const vec& b, float x, float y) {
-				return (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]);
+			std::vector<vec> poly(t.corners.begin(), t.corners.end());
+			auto clip = [&](float level, bool keep_above) {
+				std::vector<vec> out;
+				for(std::size_t i = 0; i < poly.size(); i++)
+				{
+					const vec &a = poly[i], &b = poly[(i + 1) % poly.size()];
+					bool a_in = keep_above ? a[2] >= level : a[2] <= level;
+					bool b_in = keep_above ? b[2] >= level : b[2] <= level;
+					if(a_in)
+						out.push_back(a);
+					if(a_in != b_in)
+					{
+						float f = (level - a[2]) / (b[2] - a[2]);
+						out.push_back({ a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, level });
+					}
+				}
+				poly = std::move(out);
 			};
-			float s0 = side(t.corners[0], t.corners[1], x, y);
-			float s1 = side(t.corners[1], t.corners[2], x, y);
-			float s2 = side(t.corners[2], t.corners[0], x, y);
-			if((s0 >= 0 && s1 >= 0 && s2 >= 0) || (s0 <= 0 && s1 <= 0 && s2 <= 0))
+			clip(bottom, true);
+			if(!poly.empty())
+				clip(top, false);
+			return poly;
+		}
+
+		// The point of a convex polygon's ground-plane footprint nearest (x, y): (x, y) itself when
+		// that is inside it, otherwise the nearest point of its edges.
+		void closest_in_footprint(const std::vector<vec>& poly, float x, float y, float& px, float& py)
+		{
+			bool positive = false, negative = false;
+			for(std::size_t i = 0; i < poly.size(); i++)
+			{
+				const vec &a = poly[i], &b = poly[(i + 1) % poly.size()];
+				float side = (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]);
+				positive |= side > 0;
+				negative |= side < 0;
+			}
+			if(poly.size() >= 3 && !(positive && negative))
 			{
 				px = x;
 				py = y;
 				return;
 			}
 			float d_min = 0;
-			for(int i = 0; i < 3; i++)
+			for(std::size_t i = 0; i < poly.size(); i++)
 			{
-				const vec &a = t.corners[i], &b = t.corners[(i + 1) % 3];
+				const vec &a = poly[i], &b = poly[(i + 1) % poly.size()];
 				float ex = b[0] - a[0], ey = b[1] - a[1];
 				float len = ex * ex + ey * ey;
 				float f = len > 0 ? std::clamp(((x - a[0]) * ex + (y - a[1]) * ey) / len, 0.0f, 1.0f) : 0.0f;
@@ -205,12 +237,11 @@ namespace openrayman::game
 				const collision_triangle& t = m_triangles[i];
 				if(std::abs(t.normal[2]) >= floor_normal || (t.flags & surface::no_contact))
 					continue; // floors, ceilings, and water (actors swim through it) or surfaces without contact
-				float low = std::min({ t.corners[0][2], t.corners[1][2], t.corners[2][2] });
-				float high = std::max({ t.corners[0][2], t.corners[1][2], t.corners[2][2] });
-				if(high <= bottom || low >= top)
+				std::vector<vec> slice = height_slice(t, bottom, top);
+				if(slice.size() < 2)
 					continue; // it doesn't meet the cylinder's height
 				float px, py;
-				closest_in_footprint(t, x, y, px, py);
+				closest_in_footprint(slice, x, y, px, py);
 				// Out of the wall: from its nearest point towards the axis.
 				float dx = x - px, dy = y - py;
 				float d = std::sqrt(dx * dx + dy * dy);
