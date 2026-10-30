@@ -317,6 +317,10 @@ namespace openrayman::game
 					if((t.flags & flags) != flags || (t.flags & surface::no_contact))
 						continue;
 					vec q = closest_on_triangle(centre, t.corners[0], t.corners[1], t.corners[2]);
+					// Surfaces are one-sided: only a sphere on the front of one touches it, so a probe
+					// coming at a ledge's top from below (Rayman jumping past it) doesn't grab.
+					if(vdot(vsub(centre, q), t.normal) <= 0)
+						continue;
 					float l = vlen(vsub(centre, q));
 					if(l <= nearest)
 					{
