@@ -6,8 +6,8 @@ actors and AI scripts, and the engine adds a screen-space text layer on top. Thi
 that level is made of, what it loads and runs, and how the text on it is drawn.
 
 What it does *not* yet answer is the exact screen layout: where each button sits and what it says.
-The text layer goes through a third-party font module that we have located but not read (see
-[The 2D text layer](#the-2d-text-layer-open)).
+The text itself is drawn from a table of 50 screen slots that the scripts fill a character at a
+time; how it is arranged is described under [the screen-text layer](#the-screen-text-layer).
 
 ## The Menu level
 
@@ -77,36 +77,132 @@ also carries `Menu1.wav`, `Menu3b.wav` and `Menu4.wav`. Together with the 238 pe
 textures this is the familiar Rayman 2 flourish: the menu text appears letter by letter, each
 letter with the alphabet sound. The scripts drive the letters; the engine only draws them.
 
-Proven: the glyph set, the sound, that the level asks for both. Not proven: the per-frame order of
-letters, which is inside the FON module below.
+Proven: the glyph set, the sound, that the level asks for both. The letter-by-letter order is not a
+special effect at all — it falls out of the design below.
 
-## The 2D text layer: open
+## The screen-text layer
 
-The screen-space text and buttons are drawn by a **licensed third-party module**, not by OpenSpace
-itself. Its identity strings sit together in `.data` at 0x49f6c0..0x49f6f4:
+Screen text never touches the level's geometry. The engine keeps a table of **50 text slots**, and
+the scripts fill them one character at a time through procedures 505..507. A slot holds the text,
+its screen position, its colour and a few flags; a per-frame pass draws every visible slot.
 
-```
-Module FON      FON V1.0.0      2D-FONT module      Oct 15 1999
-```
+### The slot table: 0x4E1080, 50 slots of 0x1C bytes
 
-Immediately before them, 0x49f5c0..0x49f614, is a table of 22 code pointers (its API), starting
-at `FUN_00414690`. What the functions read so far show:
+Cleared at load by 0x465A20 (which walks to 0x4E1608), so `(0x4E1608 - 0x4E1080) / 0x1C` = 50.
+Fields, from the setter code (0x465A50, 0x465AA0, 0x465BE0):
 
-- `FUN_00414690` / `FUN_00414720` create and destroy a font object at `+0x28` of the engine's
-  UI object.
-- `FUN_004156e0` / `FUN_00415770` do the same for a second font object at `+0x2c`.
-- `FUN_00415800` and `FUN_00415890` re-initialise and validate those two objects.
-- They use the engine's own allocator (0x414710) and error reporter (0x402810, message 0x30).
+| Offset | What it is |
+| --- | --- |
+| +0x00 | `char*` to the text, or 0 for an unused slot |
+| +0x04 | screen X (`param_2[1]`) |
+| +0x08 | screen Y (`param_2[2]`) |
+| +0x0C | size / scale, a float (`param_2[3]`) |
+| +0x10 | alpha, 0..255; the drawing pass halves it while a word is flashing |
+| +0x12 | wobble phase: non-zero makes the text sway on a sine |
+| +0x13 | flag byte: 0x01 alpha ramping in, 0x02 ramping out, 0x04 flash the current word, 0x08 shake, 0x10 colour mode set; the setters clear single bits with 0xEF / 0xF7 / 0xFB |
+| +0x14 | the word index being flashed, compared with the running word counter |
+| +0x18 | colour mode: 0 default, 1..2 red, 3 yellow |
 
-So the engine keeps two text objects (probably attacking/normal text, or two sizes) and the module
-draws glyph quads with them. Not yet read: how a string becomes quads, how the button frames and
-the cursor are positioned, and what `menu ???` at 0x49f800 and `music ???` at 0x49f7f4 (the
-engine's own debug strings, next to `Perso:`, `Ghost Object`, `no intelligence`) print.
+The bytes at +0x11 and past +0x19 are not read by anything found yet.
 
-**Where to continue from.** The FON API table is 0x49f5c0 (22 pointers, 4 bytes apart); the module's
-identity block is 0x49f6c0; the engine's UI object fields are `+0x28` and `+0x2c`. Copy these
-addresses into a Ghidra run (`analyzeHeadless … -postScript DumpDecomp.java`) on the Windows box and
-read `00414690.c` onwards — the call sites of the `+0x28` object are what place the menu's text.
+### Procedures 505..507 (handler 0x4731B0)
+
+The same handler serves all three, switching on its own node's parameter (`[node-8]`):
+
+- **507** = `(slot, string, position)`: writes the text pointer (`FUN_00465A50`), sets X and Y,
+  zeroes the alpha, colour mode, wobble and flag bytes, and takes the layout from the string's
+  leading control codes.
+- **505** = `(slot, what, value)`: the field setter (`FUN_00465AA0`). It switches on an integer
+  `what`: 0 sets the alpha, 1 the flash flag, 2/3 the colour mode, 4 the size, 5 the flash word
+  index (and flag bit 0x04), 6 the shake flag, 7 a three-way mode that sets flag bit 0x10.
+- **506** = `(slot, index, character)`: `FUN_00465BE0` writes **one character** into the slot's
+  buffer at that index.
+
+That last one is the whole typing effect. `Menu.snd` plays `alphabe1.wav` and a script writes the
+next letter with 506 on the following tick — the letters and the sound come from the same loop.
+
+### Drawing: 0x465C10, once per frame
+
+Called from the frame update at 0x460670 (after the world, 0x4658B0 and the screen rectangles).
+For each slot with a non-zero text pointer it:
+
+- runs the alpha ramps: flag 0x01 lifts the alpha towards 255 and clears itself at the top, flag
+  0x02 lowers it towards 0 the same way;
+- if flag 0x08 is set, it asks 0x465E30 for the string's bounding box and lays the text out with
+  the shake phase folded in;
+- then draws the string with 0x4660B0.
+
+### A string becomes quads: 0x4660B0
+
+The text is a plain byte string plus **inline control codes**, all introduced by `/`:
+
+| Sequence | Effect |
+| --- | --- |
+| `/L:<x>:` | left-align and centre the block on x (the centring maths is `(1000 - width) / 2`) |
+| `/C:<x>:` | centre on x, and it toggles a flag each time it is seen |
+| `/O:<colour>:` | colour code: 0 and 600 are the default blue (0x6E, 0xBE, 0xFF), 200 is red (0xFA, 0x46, 0x46), 400 is yellow (0xFF, 0xFF, 0x78) |
+| `/c:` | toggles a colour/state flag |
+
+Between codes, each character advances the pen by its glyph width; `.`, `,` and `'` get extra
+kerning. A space moves the pen back and starts a new word (the word counter is what `/L` and the
+flash effect use).
+
+The glyph comes from `0x424E90(character)`: a font object's pointer at 0x4A727C holds an array of
+0x14-byte entries, one per character, each pointing at a texture. The object itself is part of the
+level's loaded data — 0x403730 sets `DAT_004a727c` through 0x44CFC0, which is the engine's
+relocation reader (it adds a block's load delta to a stored address), not a constructor. So the
+font object is saved in Fix with the rest of the engine's data, and its glyphs are the
+`textures_alphabet` set above — 238 of them, which is why every letter, digit and accented
+character works in every level. The character is mapped by 0x465D40: bytes 0x61..0x7A (`a`..`z`)
+are shifted down by 0x20 onto the upper-case slots, so the font is case-insensitive.
+
+Whether the alphabet lives only in this level's Fix data or is shared by all 70 is the one link not
+yet read; the glyph entry shape (0x14 bytes, texture pointer per character) matches the 238.
+
+### The menu's own strings
+
+The strings sit in the level's data, not in the exe. In `Menu.sna` block `0d/01` (base
+0x7920020), as `u8 length + bytes + padding + u32 kind` records:
+
+| Virtual address | Record |
+| --- | --- |
+| 0x7948CA0 | `/c:/o200:cheat active` |
+| 0x7949380 | `http://www.rayman2.com/` |
+| 0x79291F8 | `/o200:` — a colour code on its own |
+
+So the menu's text is written in these codes inside the level the same way a level's own text is.
+The `cheat active` line confirms it: the menu shows status lines, not only buttons.
+
+Named actors give the rest of the shape. The scene's own name table (first 0x2000 bytes of the SNA)
+has `Levelmenu`, `YAM_GenMenu`, `YAM_CurseurMenu`, `ARG_CurseurMenu`, `YAM_PtizetreMenu`,
+`YAM_GenCibleCamera`, `YAM_PosCam_Smooth`, `GenCamera`, besides the characters the level shows
+(`francesco`, `baleine`, `bebe_globox`, `Krabos`). The cursor actor is `CurseurMenu`; `Levelmenu` is
+the menu's own controller.
+
+### The FON module
+
+The font itself is a **licensed third-party module**, statically linked: its identity strings sit in
+`.data` at 0x49F6C0, `Module FON`, `FON V1.0.0`, `2D-FONT module`, `Oct 15 1999`, right after the
+per-module descriptor of the engine's own module table.
+
+Its API is a 6-pointer record at 0x49F5B8 (start 0x414910, then 0x414680, 0x414690, 0x414720,
+0x4147B0, 0x4148A0), reached through the engine's attribute table at 0x49F4C8 — 14 records of
+0x18 bytes, walked by 0x40BCC0 with the callback at +0x10. Each record is an engine attribute
+(rather than a super-object type): the init callbacks create the `+0x28`, `+0x2C`, `+0x30` and
+`+0x34` objects the module owns in the engine's UI object, and the FON entry points sit at records
+10, 11 and 12.
+
+Read from the entry points: 0x414690/0x414720 create and destroy a font object at `+0x28`;
+0x4156E0/0x415770 the same for `+0x2C`; 0x415440/0x415550 and 0x414F40/0x4150C0 for `+0x30` and
+`+0x34`; 0x4147B0 resets an object (and asks 0x4123D0 whether it can); 0x415430 and 0x414E80 are
+size queries (0x24 and 0x78); 0x4155E0 and 0x4150C0 validate. They use the engine's allocator
+(0x414710) and error reporter (0x402810, message 0x30).
+
+Still not read: which of the four objects draws what, and the exact screen positions of the menu's
+buttons. The level's data refers to them by path in the form `menu\menu.wp^Isolate^WayPoint:`
+(found twice in `Menu.sna`, around offset 0x9B6E8), and no `.wp` file exists anywhere in the
+install — so those are references into the level's own waypoint list rather than to a separate
+file.
 
 ## Where this came from
 
@@ -117,6 +213,12 @@ read `00414690.c` onwards — the call sites of the `+0x28` object are what plac
 - The glyph set and the logos: `Textures.cnt` and `Vignette.cnt` names, read through `ortool cnt`
   (the names are XORed with the archive's key byte, `mask`).
 - The sound side: `ortool dsb Menu.dsb`, `ortool sound`, `ortool bank 0`.
-- The disc table, the `Module FON` identity strings, the FON API table and the font-object fields:
-  own analysis of `Rayman2.exe` (Ghidra decompilation in the project's notes, plus raw PE reads).
+- The disc table, the FON module's identity strings and API record, the attribute table at 0x49F4C8
+  and the four font-object fields: own analysis of `Rayman2.exe` (the project's Ghidra
+  decompilation, plus raw PE reads to find the pointers and the call sites).
+- The 50-slot table, procedures 503..507, the drawing pass and the `/L` `/C` `/O` `/c` control
+  codes: own analysis of `Rayman2.exe`, reading the decompiled setter and drawing functions
+  (0x465A20, 0x465A50, 0x465AA0, 0x465BE0, 0x465C10, 0x4660B0, 0x465E30, 0x424E90).
+- The menu's own strings and the actor names: the decoded `Menu.sna` (block `0d/01`, base
+  0x7920020) read with the project's own mask decoder.
 - Nothing here was taken from Raymap, Rayman2Lib or any other project; no game data is included.
