@@ -230,7 +230,7 @@ namespace openrayman::game
 		});
 	}
 
-	std::optional<world_collision::segment_hit> world_collision::first_hit(const std::array<float, 3>& start, const std::array<float, 3>& end) const
+	std::optional<world_collision::segment_hit> world_collision::first_hit(const std::array<float, 3>& start, const std::array<float, 3>& end, std::uint16_t any_of) const
 	{
 		// Every solid triangle the segment crosses (Moller-Trumbore, both faces), keeping the
 		// nearest. The segments the scripts cast are short, so all triangles are tried.
@@ -239,7 +239,7 @@ namespace openrayman::game
 		float nearest = 1.0f;
 		for(const collision_triangle& t : m_triangles)
 		{
-			if(t.flags & surface::no_contact)
+			if((t.flags & surface::no_contact) || (any_of && !(t.flags & any_of)))
 				continue;
 			const vec e1 = { t.corners[1][0] - t.corners[0][0], t.corners[1][1] - t.corners[0][1], t.corners[1][2] - t.corners[0][2] };
 			const vec e2 = { t.corners[2][0] - t.corners[0][0], t.corners[2][1] - t.corners[0][1], t.corners[2][2] - t.corners[0][2] };
@@ -302,7 +302,7 @@ namespace openrayman::game
 		}
 	}
 
-	std::optional<world_collision::segment_hit> world_collision::sphere_touch(const std::array<float, 3>& centre, float radius, std::uint16_t flags) const
+	std::optional<world_collision::segment_hit> world_collision::sphere_touch(const std::array<float, 3>& centre, float radius, std::uint16_t flags, const std::function<bool(const segment_hit&)>& accept) const
 	{
 		std::optional<segment_hit> best;
 		float nearest = radius;
@@ -323,7 +323,7 @@ namespace openrayman::game
 					if(vdot(vsub(centre, q), t.normal) <= 0)
 						continue;
 					float l = vlen(vsub(centre, q));
-					if(l <= nearest)
+					if(l <= nearest && (!accept || accept(segment_hit{ q, t.normal, t.material })))
 					{
 						nearest = l;
 						best = segment_hit{ q, t.normal, t.material };
@@ -591,8 +591,16 @@ namespace openrayman::game
 		std::uint32_t mech = s && m.contains(s, state_mechanics + 4) ? m.u32(s + state_mechanics) : 0;
 		if(mech && mech != m.u32(b + current_mechanics) && m.contains(mech, 0x3C))
 			install_mechanics(m, b, mech);
+		// End flag 0x80: the transform was set from outside. The dynamics takes it as it is, drops its
+		// speed and clears the flag (0x431AD0). Left set, it also blocks turns (procedure 136,
+		// 0x432EE0); the level data starts Rayman with it.
+		if(std::uint32_t end = m.u32(b + base::end_flags); end & 0x80)
+		{
+			m.write<std::uint32_t>(b + base::end_flags, end & ~0x80u);
+			write_vec(m, b + base::speed, vec{});
+		}
 		std::uint32_t flags = m.u32(b + base::flags);
-		bool gravity = (flags & has_gravity) && !(m.u32(b + base::end_flags) & no_gravity);
+		bool gravity =(flags & has_gravity) && !(m.u32(b + base::end_flags) & no_gravity);
 		if(!gravity && !(flags & (has_animation_motion | uses_imposed | uses_proposed | uses_third)))
 			return;
 		float dt = float(ms / 1000);
@@ -710,6 +718,62 @@ namespace openrayman::game
 				d[std::size_t(k)] = std::clamp(d[std::size_t(k)], -most, most);
 			}
 			set_move(to_world(d));
+		}
+
+		// Holding on to walls (flag 0x40 without 0x10: 0x431AD0 picks the resolver 0x43A260; Rayman
+		// spread between two pillars, behaviour 27). The move loses its part along the wall normal
+		// held last tick (+0x1CC), then the nearest wall carrying collide flag 0x40 (not 0x8000) within
+		// H of the body is held: steep (|n.z| under base +0x18) and not behind him (n . Y at least
+		// -0.707, 0x49C760). He is turned to face it (0x4394A0: Y = n, X = n x up, Z = X x n, the
+		// position moved by 0.9 x (old Z - new Z) so he turns about his middle). With no such wall
+		// left he stays put and end flag 0x10000 says so (condition 80 lets him drop). Walls without
+		// 0x40, such as the one joining the pillars, only block. H is 0.75 with end flag 0x10, else
+		// the move's length x tan 60 degrees, at least 0.45 (0x49C7B8, 0x49C7B0, 0x49C7A0). Ours
+		// looks with a sphere at body height instead of sweeping his zones between two positions.
+		if((flags & 0x40) && !(flags & 0x10) && !world.empty() && !placed)
+		{
+			vec n = read_vec(m, b + 0x1CC);
+			vec d = move();
+			if(float along = vdot(d, n); vlen(n) > 0.5f)
+				for(int i = 0; i < 3; i++)
+					d[std::size_t(i)] -= n[std::size_t(i)] * along;
+			set_move(d);
+			const float h = (m.u32(b + base::end_flags) & 0x10) ? 0.75f : std::max(0.45f, vlen(d) * 1.7320508f);
+			const float steep = m.f32(b + 0x18);
+			const vec y_axis = axes[1];
+			auto holdable = [&](const world_collision::segment_hit& s) {
+				return std::abs(s.normal[2]) < steep && vdot(s.normal, y_axis) >= -0.707f;
+			};
+			const vec centre = { target[0], target[1], target[2] + 0.9f };
+			if(auto wall = world.sphere_touch(centre, body_radius(zone_spheres(m, actor)) + h, 0x40, holdable))
+			{
+				const vec& w = wall->normal;
+				write_vec(m, b + 0x1CC, w);
+				if(std::abs(w[0] - y_axis[0]) >= 0.001f || std::abs(w[1] - y_axis[1]) >= 0.001f || std::abs(w[2] - y_axis[2]) >= 0.001f)
+				{
+					const vec x = { w[1], -w[0], 0.0f };
+					const vec z = { x[1] * w[2] - x[2] * w[1], x[2] * w[0] - x[0] * w[2], x[0] * w[1] - x[1] * w[0] };
+					for(int i = 0; i < 3; i++)
+						target[std::size_t(i)] += 0.9f * (axes[2][std::size_t(i)] - z[std::size_t(i)]);
+					const vec turned[3] = { x, w, z };
+					for(std::uint32_t k = 0; k < 3; k++)
+					{
+						float scale = vlen(read_vec(m, t + 0x34 + k * 12));
+						if(scale < 1e-6f)
+							scale = 1;
+						write_vec(m, t + 0x10 + k * 12, turned[k]);
+						write_vec(m, t + 0x34 + k * 12, vmul(turned[k], scale));
+						axes[k] = turned[k];
+					}
+					if(m.u32(t) < 4)
+						m.write<std::uint32_t>(t, 4);
+				}
+			}
+			else
+			{
+				target = current;
+				m.write<std::uint32_t>(b + base::end_flags, m.u32(b + base::end_flags) | 0x10000);
+			}
 		}
 
 		// Walls push the target out of them: the actor is a cylinder from the step height up to

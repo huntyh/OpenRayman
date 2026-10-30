@@ -4,6 +4,7 @@
 #include <openrayman/collision.h>
 
 #include <array>
+#include <functional>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -52,7 +53,9 @@ namespace openrayman::game
 			std::array<float, 3> normal{}; // the surface's unit normal
 			std::uint32_t material = 0;
 		};
-		std::optional<segment_hit> first_hit(const std::array<float, 3>& start, const std::array<float, 3>& end) const;
+		// With `any_of`, only surfaces carrying one of those collide flags count (function 201's mask,
+		// 0x4B9C44 tested at 0x48E820).
+		std::optional<segment_hit> first_hit(const std::array<float, 3>& start, const std::array<float, 3>& end, std::uint16_t any_of = 0) const;
 
 		// Moves a sphere of `radius` from `start` towards `end` and slides it along what it meets, the
 		// way the exe moves its camera (0x434660): it stops 0.02 short of a surface and carries on
@@ -65,7 +68,9 @@ namespace openrayman::game
 		// The nearest surface carrying all of `flags` that a sphere at `centre` touches: the point on
 		// it closest to the centre, within `radius`, its normal and material. What a ledge probe of
 		// Rayman's finds (his collision zones with flag 0x8 against grabbable 0x4 surfaces).
-		std::optional<segment_hit> sphere_touch(const std::array<float, 3>& centre, float radius, std::uint16_t flags) const;
+		// `accept`, when given, can turn a surface down (it then doesn't count as the nearest).
+		std::optional<segment_hit> sphere_touch(const std::array<float, 3>& centre, float radius, std::uint16_t flags,
+			const std::function<bool(const segment_hit&)>& accept = {}) const;
 
 	private:
 		// The triangles of the cell (x, y) lies in, or an empty list.

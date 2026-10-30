@@ -1787,19 +1787,37 @@ namespace openrayman::game
 		// none means he swims.
 		std::uint32_t cast_segment(call& c, value& out)
 		{
-			value from, along, mode;
+			value from, along, mode, mask;
 			next_arg(c, from);
 			next_arg(c, along);
 			next_arg(c, mode);
+			// 201 (0x479910): the hit point, only on surfaces carrying one of the mask's collide flags.
+			if(c.index == 201)
+				next_arg(c, mask);
 			vec3 result{};
 			if(mode.as_int() != 1 && !c.vm.world().empty())
 			{
 				const vec3 start = { from.component(0), from.component(1), from.component(2) };
 				const vec3 end = { start[0] + along.component(0), start[1] + along.component(1), start[2] + along.component(2) };
-				if(auto hit = c.vm.world().first_hit(start, end))
-					result = c.index == 198 ? hit->point : hit->normal;
+				if(auto hit = c.vm.world().first_hit(start, end, c.index == 201 ? std::uint16_t(mask.as_int()) : 0))
+					result = c.index == 199 ? hit->normal : hit->point;
 			}
 			out = value_of(result);
+			return c.args;
+		}
+
+		// 80 (0x48B380): the dynamics lost what it was holding on to (end flag 0x10000, set by the wall
+		// resolver 0x43A260 when no wall it can hold is left), read and cleared.
+		std::uint32_t lost_support(call& c, bool& result)
+		{
+			result = false;
+			std::uint32_t base = dynamics_base(c, c.vm.target(c.self, true), 0x10);
+			if(!base)
+				return c.args;
+			live_memory& m = c.vm.memory();
+			std::uint32_t end = m.u32(base + 0xC);
+			m.write<std::uint32_t>(base + 0xC, end & ~0x10000u);
+			result = (end & 0x10000) != 0;
 			return c.args;
 		}
 
@@ -2363,6 +2381,36 @@ namespace openrayman::game
 
 		// --- Transform procedures ----------------------------------------------------------------
 
+		// 136 (0x4697D0): turn the actor about the vertical by an angle in degrees (0x49CBF0 = pi/180;
+		// 0x432EE0 turns the dynamics' next matrix, not with end flag 0x80). Positive turns X towards
+		// Y. Rayman's reflex 9 lines him up with the pillars this way (node 34 gives the direction).
+		std::uint32_t turn_by(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value v;
+			next_arg(c, v);
+			live_memory& m = c.vm.memory();
+			std::uint32_t base = dynamics_base(c, self, 0x10);
+			if(base && (m.u32(base + 0xC) & 0x80))
+				return c.args;
+			std::uint32_t t = m.u32(self + 0x24);
+			float a = v.as_float() * 0.0174532924f;
+			if(!t || !m.contains(t, 0x58) || a == 0)
+				return c.args;
+			float cs = std::cos(a), sn = std::sin(a);
+			auto turn = [&](const vec3& d) { return vec3{ d[0] * cs - d[1] * sn, d[0] * sn + d[1] * cs, d[2] }; };
+			set_axes(m, t, turn(read3(m, t + 0x10)), turn(read3(m, t + 0x1C)), turn(read3(m, t + 0x28)));
+			return c.args;
+		}
+
+		// 81 (0x467770 case 0x51): the running intelligence starts its script over, and the scripts
+		// stop for this frame (0x4808E0 with 0xB).
+		std::uint32_t start_over(call& c)
+		{
+			c.vm.signal(flow::stop | flow::wait | flow::restart);
+			return c.args;
+		}
+
 		// 157 (0x46AB20, case 0x9D -> 0x46B864): put the actor itself at a position: its transform,
 		// and the dynamics forgets its speed (0x432D30; the exe queues the move for the mechanics).
 		// Rayman's ledge grab (macro 3) puts him at the hanging point this way.
@@ -2373,9 +2421,16 @@ namespace openrayman::game
 			std::uint32_t so = c.vm.target(c.self, true);
 			if(std::uint32_t t = transform_of(c.vm, so))
 				write3(c.vm.memory(), t + 4, vec_of(where));
-			if(std::uint32_t base = dynamics_base(c, so, 0x48))
+			// A queued move, not a teleport (that is 0x432DA0): the dynamics still collides it, so
+			// it is recorded as where the mechanics left the actor (base +0x7C) and walls push it.
+			// Rayman's pillar hold (reflex 9) re-places him every frame and the wall joining the
+			// pillars must stop him.
+			if(std::uint32_t base = dynamics_base(c, so, 0x88))
+			{
 				for(std::uint32_t at : { 0x3Cu, 0x40u, 0x44u })
 					c.vm.memory().write<float>(base + at, 0.0f);
+				write3(c.vm.memory(), base + 0x7C, vec_of(where));
+			}
 			return c.args;
 		}
 
@@ -3354,6 +3409,8 @@ namespace openrayman::game
 			vm.on_condition(i, valid);
 		vm.on_condition(66, collision_event_flag);
 		vm.on_procedure(157, place_self);
+		vm.on_procedure(136, turn_by);
+		vm.on_procedure(81, start_over);
 		for(std::uint32_t i : { 76, 77, 78 })
 			vm.on_procedure(i, loop_procedure);
 		for(std::uint32_t i = 34; i <= 37; i++)
@@ -3438,6 +3495,8 @@ namespace openrayman::game
 		vm.on_function(163, minus_y_axis);
 		vm.on_function(198, cast_segment);
 		vm.on_function(199, cast_segment);
+		vm.on_function(201, cast_segment);
+		vm.on_condition(80, lost_support);
 		for(int i = 166; i <= 168; i++)
 			vm.on_function(i, zone_position);
 		for(int i = 175; i <= 177; i++)

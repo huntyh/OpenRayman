@@ -92,7 +92,41 @@ scaled by max(0, n · push direction), which is what ends the Learn_10 portal ho
 game with tools/r2live.py: one frame after the release var87 is zero). Ceilings and moving supports are still not handled. Rayman's mechanics has
 none of the resolver bits, only 0x2, so 0x2 also counts as colliding until his resolver is read.
 
+## Holding on between pillars, and walls that can be held
+
+- **The Learn_10 pillars** (seen live with tools/r2live.py): an invisible trigger, node 34, sets
+  Rayman's var61 = 1 while he is inside its zone (condition_10), var62 = its own forward made
+  horizontal and unit, var64 = its position; leaving the zone sets var61 = 0. Jumping there (macro
+  48 from macro 33) starts behaviour 11 with reflex 9: reflex 9 turns him onto the line's nearer
+  direction (function 186 folded into ±90°, procedure 136 when over 1°, then procedure 81) and puts
+  him on the line through var64 along var62 (procedure 157) every frame. He drops (state +0x1210,
+  macro 4) when var61 goes 0. The pillar walls carry no collide flags (0x0); the hold mechanics
+  has flags 0x3 (animation motion, collision; no gravity, no inertia).
+- **Procedure 136** (0x4697D0): turns the actor about the vertical by degrees (× 0x49CBF0 =
+  π/180, 0x432EE0 on the dynamics' next matrix), not while end flag 0x80 is set. **Procedure 81**
+  (0x467770 case 0x51): the running intelligence starts its script over; flow 0xB.
+- **End flag 0x80** means the transform was set from outside: 0x431AD0 takes the actor's transform
+  as it is, zeroes the speed and clears the flag. The level data starts Rayman with it, so a turn
+  before his first mechanics step would be refused.
+- **Procedure 157 is a move, not a teleport**: 0x432D30 queues it (flag 0x80000000, +0x6C) and the
+  dynamics still collides it, so walls stop the hold at the wall joining the pillars. (The
+  teleport 0x432DA0, procedure 200, resets both matrices and isn't collided.)
+- **Walls that can be held** (base flag 0x40 without 0x10: resolver 0x43A260; mechanics such as
+  @05/01 +0x601944 with flags 0x43, Rayman's behaviour 27, entered by macros 29/45 when a wall has
+  collide flag 0x40 and function 201 finds another 0x40 surface opposite): the move loses its part
+  along the held normal (+0x1CC); the nearest steep 0x40 surface within H (0.75 with end flag 0x10,
+  else |move| × tan 60°, at least 0.45; 0x49C7B8, 0x49C7B0, 0x49C7A0) whose normal · Y ≥ −0.707
+  (0x49C760) is held; 0x4394A0 turns him to it (Y = n, X = n × up, Z = X × n, position + 0.9 × (old
+  Z − new Z), 0x49C79C); none left sets end flag 0x10000, which condition 80 (0x48B380) reads and
+  clears. Ours looks with a sphere at body height instead of sweeping his zones; Learn_10 has no
+  0x40 surfaces, so this is untested in play.
+- **Function 201** (0x479910): function 198 with a material mask: only surfaces sharing a collide
+  flag with it count (0x4B9C44, tested at 0x48E820); returns the hit point or zero.
+
 ## Where this came from
+
+- The pillar hold: node 34's and Rayman's scripts (`ortool brain`), a live log of the real game,
+  procedures 136/81 and the wall resolver traced by GPT 6.1 Terra through Codex and checked here.
 
 - The animation motion (flag 0x1, +0x54, 0x412060, 0x40FF90, 0x41A830) and procedures 297/298
   were traced by GPT 6.1 Terra through Codex and checked against the exe and the Learn_10 climb.
