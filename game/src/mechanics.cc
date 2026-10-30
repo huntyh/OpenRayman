@@ -27,9 +27,12 @@ namespace openrayman::game
 		// The contact block (base +0x150, 0x16C bytes): +0 this tick's word, +4 the word scripts read.
 		constexpr std::uint32_t contacts_size = 0x16C;
 		constexpr std::uint32_t on_ground = 0x1;
+		constexpr std::uint32_t in_water = 0x40;   // slot 4 (0x43F940)
+		constexpr std::uint32_t water_slot = 4;
 		// After the two words come six 0x28-byte contact slots (0 the tick's first contact, 1 ground,
-		// 2 wall, 3 water, 4, 5). An entry holds its surface's outward unit normal at +4, the point
-		// it was touched at +0x10 and the surface's game material at +0x20 (0x43F940, 0x479260).
+		// 2 wall, 3 the primary contact, 4 water, 5). An entry holds its surface's outward unit
+		// normal at +4, the point it was touched at +0x10 and the surface's game material at +0x20
+		// (0x43F940, 0x479260).
 		constexpr std::uint32_t slots_at = 0x08, slot_size = 0x28;
 		constexpr std::uint32_t slot_normal = 0x04, slot_point = 0x10, slot_material = 0x20;
 		// How far a grounded actor follows the floor down (slopes, steps) instead of falling, and how
@@ -104,6 +107,35 @@ namespace openrayman::game
 					py = cy;
 				}
 			}
+		}
+
+		// The highest of `candidates` that `accepts` allows under (x, y), with its height in
+		// [bottom, top]: barycentric coordinates on the ground plane, then the height of the plane
+		// there (shared by floor_at and water_at).
+		template<typename Accept>
+		std::optional<world_collision::surface_hit> highest_surface(const std::vector<collision_triangle>& triangles,
+			const std::vector<std::uint32_t>& candidates, float x, float y, float top, float bottom, Accept accepts)
+		{
+			std::optional<world_collision::surface_hit> best;
+			for(std::uint32_t i : candidates)
+			{
+				const collision_triangle& t = triangles[i];
+				if(!accepts(t))
+					continue;
+				const vec3 &a = t.corners[0], &b = t.corners[1], &c = t.corners[2];
+				float d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]);
+				if(std::abs(d) < 1e-8f)
+					continue;
+				float u = ((b[1] - c[1]) * (x - c[0]) + (c[0] - b[0]) * (y - c[1])) / d;
+				float v = ((c[1] - a[1]) * (x - c[0]) + (a[0] - c[0]) * (y - c[1])) / d;
+				float w = 1 - u - v;
+				if(u < -1e-5f || v < -1e-5f || w < -1e-5f)
+					continue;
+				float z = u * a[2] + v * b[2] + w * c[2];
+				if(z <= top && z >= bottom && (!best || z > best->height))
+					best = world_collision::surface_hit{ z, t.material, t.normal };
+			}
+			return best;
 		}
 
 		// A mechanics (state +0x24): u32 kind at +0, flags at +4, gravity +8, slope +0x14 and, for
@@ -184,32 +216,27 @@ namespace openrayman::game
 		}
 	}
 
-	std::optional<world_collision::floor_hit> world_collision::floor_at(float x, float y, float top, float bottom) const
+	std::optional<world_collision::surface_hit> world_collision::floor_at(float x, float y, float top, float bottom) const
 	{
+		return highest_surface(m_triangles, under(x, y), x, y, top, bottom, [](const collision_triangle& t) {
+			return t.normal[2] >= floor_normal && !(t.flags & surface::no_contact); // walls, water, 0x8000
+		});
+	}
+
+	std::optional<world_collision::surface_hit> world_collision::water_at(float x, float y, float top, float bottom) const
+	{
+		// Water triangles are flat surfaces (0x4000); a steep one is a waterfall's wall, not a pond
+		// (0x437E60 compares the actor's Z with the water entry's own height, 0x4B72D4).
+		return highest_surface(m_triangles, under(x, y), x, y, top, bottom, [](const collision_triangle& t) {
+			return (t.flags & surface::water) && std::abs(t.normal[2]) >= floor_normal;
+		});
+	}
+
+	const std::vector<std::uint32_t>& world_collision::under(float x, float y) const
+	{
+		static const std::vector<std::uint32_t> none;
 		auto found = m_cells.find({ int(std::floor(x / cell)), int(std::floor(y / cell)) });
-		if(found == m_cells.end())
-			return std::nullopt;
-		std::optional<floor_hit> best;
-		for(std::uint32_t i : found->second)
-		{
-			const collision_triangle& t = m_triangles[i];
-			if(t.normal[2] < floor_normal || (t.flags & surface::no_contact))
-				continue; // walls, and water (actors sink into it) or surfaces without contact
-			// Barycentric coordinates on the ground plane, then the height of the plane there.
-			const vec3 &a = t.corners[0], &b = t.corners[1], &c = t.corners[2];
-			float d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]);
-			if(std::abs(d) < 1e-8f)
-				continue;
-			float u = ((b[1] - c[1]) * (x - c[0]) + (c[0] - b[0]) * (y - c[1])) / d;
-			float v = ((c[1] - a[1]) * (x - c[0]) + (a[0] - c[0]) * (y - c[1])) / d;
-			float w = 1 - u - v;
-			if(u < -1e-5f || v < -1e-5f || w < -1e-5f)
-				continue;
-			float z = u * a[2] + v * b[2] + w * c[2];
-			if(z <= top && z >= bottom && (!best || z > best->height))
-				best = floor_hit{ z, t.material, t.normal };
-		}
-		return best;
+		return found == m_cells.end() ? none : found->second;
 	}
 
 	std::array<float, 2> world_collision::wall_push(float x, float y, float bottom, float top, float radius) const
@@ -362,7 +389,7 @@ namespace openrayman::game
 		std::uint32_t block = m.u32(b + base::contacts);
 		bool has_block = block && m.contains(block, contacts_size);
 		bool landed = false;
-		world_collision::floor_hit ground{};
+		world_collision::surface_hit ground{};
 		if((flags & collides) && !world.empty())
 		{
 			bool was_grounded = has_block && (m.u32(block + 4) & on_ground);
@@ -371,7 +398,7 @@ namespace openrayman::game
 			// refuses moves into a surface).
 			float bottom = target[2] - (was_grounded && target[2] <= current[2] ? follow_down : 0.0f);
 			// The actor's feet cover a small circle: the highest floor under any of nine points of it.
-			std::optional<world_collision::floor_hit> floor;
+			std::optional<world_collision::surface_hit> floor;
 			for(int k = 0; k < 9; k++)
 			{
 				float angle = float(k) * 0.785398f;
@@ -387,6 +414,15 @@ namespace openrayman::game
 			}
 		}
 
+		// The water the actor's body is in: the surface of the pond over it between its feet and the
+		// top of its body. The exe keeps water out of the floor and wall resolve and makes it a
+		// contact of its own (0x43F510, 0x43EEC0); the scripts then test report bit 0x40 and read
+		// slot 4 - condition_32, condition_65(function_197(4), 0x4000) - for the water height
+		// (function_192(4).z) and its normal (function_190(4)), which macro 36/37 push particles along.
+		std::optional<world_collision::surface_hit> water;
+		if((flags & collides) && !world.empty())
+			water = world.water_at(target[0], target[1], target[2] + body_height, target[2]);
+
 		// The speed the scripts read back (0x436A30); landing drops the vertical part (0x43B337).
 		vec speed;
 		for(int i = 0; i < 3; i++)
@@ -397,12 +433,11 @@ namespace openrayman::game
 		write_vec(m, t + 4, target);
 		if(has_block && (flags & collides))
 		{
-			m.write<std::uint32_t>(block, landed ? on_ground : 0);
-			m.write<std::uint32_t>(block + 4, landed ? on_ground : 0); // published at the end of the tick
-			// Slot 1 (the ground) and slot 0 (the tick's first contact, the ground being the only
-			// one we find) hold the floor's normal, the point under the actor and its game material
-			// (0x43F940); nothing touched leaves them clear. Scripts read them through functions
-			// 190..197 and conditions 61..64.
+			// The word at +4 is what the scripts read; +0 is this tick's, published at its end
+			// (0x43F940). Slot 1 (the ground) and slot 0 (the tick's first contact, the ground
+			// being the only one we find) hold the floor's normal, the point under the actor and
+			// its game material; nothing touched leaves them clear. Scripts read them through
+			// functions 190..197 and conditions 61..64.
 			const vec point = { target[0], target[1], target[2] };
 			for(std::uint32_t slot : { 0u, 1u })
 			{
@@ -411,6 +446,16 @@ namespace openrayman::game
 				write_vec(m, entry + slot_point, landed ? point : vec{});
 				m.write<std::uint32_t>(entry + slot_material, landed ? ground.material : 0);
 			}
+			// Slot 4 is the water (0x43F940: report bit 0x40 into slots_at + 4 * slot_size), with
+			// the surface's normal, the point on it above the actor and its game material; the
+			// word's 0x40 bit alongside the ground's. Out of the water both are cleared.
+			m.write<std::uint32_t>(block, (landed ? on_ground : 0) | (water ? in_water : 0));
+			m.write<std::uint32_t>(block + 4, (landed ? on_ground : 0) | (water ? in_water : 0));
+			std::uint32_t entry = block + slots_at + water_slot * slot_size;
+			const vec water_point = { target[0], target[1], water ? water->height : 0.0f };
+			write_vec(m, entry + slot_normal, water ? water->normal : vec{});
+			write_vec(m, entry + slot_point, water ? water_point : vec{});
+			m.write<std::uint32_t>(entry + slot_material, water ? water->material : 0);
 		}
 		// The script speeds last one tick (0x4327D9).
 		m.write<std::uint32_t>(b + base::flags, flags & kept_after_tick);

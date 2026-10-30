@@ -47,7 +47,20 @@ Confirmed in the game (Learn_10, by comparing the collision overlay with what Ra
 | 0x0004 | grabbable: Rayman hangs from the edge of such a surface (the ledge by the Globox children, the tops of the columns near the end); he doesn't grab plain edges. Whole floors carry it, and also some ceilings, where it does nothing |
 | 0x4000 | water |
 
-The other bits are still unknown.
+## Water
+
+Water triangles (0x4000) take no part in the floor and wall resolve: the movement solvers skip them
+(0x43EEC0, 0x43F510), so actors sink through. Instead a water entry whose **both** elements carry
+0x4000 becomes a contact of its own: bit **0x40** of the dynamics contact report (`base +0x150`,
++4; +0 is the tick's own), with the entry in **slot 4** (`report + 0x08 + 4*0x28`, its normal at +4,
+the surface point at +0x10, the game material at +0x20; 0x43F940). Rayman's scripts test it with
+condition 32 (bit 0x40) and condition 65(`function_197(4)`, 0x4000), and read the surface with
+`function_192(4).z` (the water height) and `function_190(4)` (its normal, which they push splash
+particles along). OpenRayman does the body side of this (`game/src/mechanics.cc`:
+`world_collision::water_at`, slot 4 in `move_actor`). Segment casts skip both 0x4000 and 0x8000
+(0x43441C); whether the body resolves against 0x8000 is unconfirmed (we treat it as no contact).
+
+The table above is the confirmed set; the other bits are still unknown.
 
 ## Where this came from
 

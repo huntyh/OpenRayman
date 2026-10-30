@@ -17,10 +17,16 @@ namespace openrayman
 	namespace surface
 	{
 		constexpr surface_flags grabbable = 0x0004; // Rayman can hang from its edge (ledges, column tops)
+		// Water: the movement solvers never resolve it as floor or wall (0x43EEC0, 0x43F510); it
+		// becomes a contact of its own instead (contact slot 4, report bit 0x40). Actors sink
+		// into it (docs/formats/collision.md).
 		constexpr surface_flags water = 0x4000;
-		// Surfaces nothing stands on or bumps into: water and 0x8000 (0x43441C drops contacts with
-		// either; Learn_10's 0x8000 surface is an invisible quad by the waterfall).
-		constexpr surface_flags no_contact = 0xC000;
+		// 0x8000: segment casts skip it like water (0x43441C drops entries carrying 0xC000); whether
+		// the body resolves against it is unconfirmed (a helper read says it does), so we keep
+		// treating it as no contact. Learn_10's 0x8000 surface is an invisible quad by the waterfall.
+		constexpr surface_flags skip = 0x8000;
+		// Surfaces nothing stands on or bumps into: the ones the body never resolves.
+		constexpr surface_flags no_contact = water | skip;
 	}
 
 	// One triangle the level collides with, in world space.
