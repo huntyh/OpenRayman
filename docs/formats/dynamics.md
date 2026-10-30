@@ -55,6 +55,18 @@ per-actor entry (0x412150) installs the current state's every tick.
 6. The contact word +0 is copied to +4 (0x412201 and others).
 
 The time step is the frame length rounded to the mechanics step 0x50043C (n steps per tick).
+**The fast mechanics.** With end flag 0x200 (base +0xC; the mechanics' bit 0x100, 0x435B80) the
+tick takes 0x431AD0's first branch instead: move = speed (+0x3C, world axes) × dt, added by
+0x437A40; the imposed speed, if sent, replaces the axes it names (0x43E350), a queued move (base +8
+bit 0x20000000) is applied (0x43E870), and collision runs only with flag 0x2. No gravity, inertia
+or floor. A nonzero speed also keeps the idle test (0x437BB0) from skipping the tick. Rayman's shot
+(mechanics 05/01 +0x62A454: kind 1, flags 0x300) flies this way: procedure 182 sends (25, 0, 0)
+once and the stored speed carries it on (see [generated.md](generated.md)). Base flag 0x80 (the
+mechanics' bit 0x200) only makes contacts use the actor's own coefficients at +0x1C/+0x20 instead
+of the touched material's (0x4360B0, 0x436130). Ours moves such an actor by its speed alone.
+
+Procedure 160 (0x46AB20 case 0xA0) moves the actor by a vector (world axes when its second argument
+is set, else its own) as a queued move (0x432D30), which clears the speed unless base +0xC has 0x80.
 
 ## What we do differently (for now)
 

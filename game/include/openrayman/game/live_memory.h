@@ -50,6 +50,10 @@ namespace openrayman::game
 		std::span<std::byte> span(std::uint32_t address, std::size_t size);
 		std::span<const std::byte> span(std::uint32_t address, std::size_t size) const;
 
+		// Zero-filled memory the game would allocate while running (generated actors), at an address
+		// above every loaded block. Never freed: like the game's pool, callers reuse what they got.
+		std::uint32_t allocate(std::size_t size);
+
 		// How many pointers were relocated when loading, and how many of those changed value.
 		std::size_t relocated() const { return m_relocated; }
 		std::size_t moved() const { return m_moved; }
@@ -65,5 +69,6 @@ namespace openrayman::game
 		std::map<std::uint32_t, region> m_regions; // by base address
 		mutable const region* m_last = nullptr;    // most reads hit the block read last
 		std::size_t m_relocated = 0, m_moved = 0;
+		std::uint32_t m_heap = 0, m_heap_used = 0; // the allocate() region: base and bytes handed out
 	};
 }

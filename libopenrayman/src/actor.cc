@@ -44,39 +44,47 @@ namespace openrayman
 		}
 	}
 
+	std::vector<actor_object> read_object_list(const memory_image& memory, const memory_location& list)
+	{
+		std::vector<actor_object> objects;
+		std::uint16_t count = reader_at(list + object_list_count, 2).u16();
+		if(!count)
+			return objects;
+		memory_location entries = *memory.follow(list + object_list_entries);
+		reader_at(entries, std::size_t(count) * object_entry_size); // bounds check
+		for(std::uint16_t i = 0; i < count; i++)
+		{
+			memory_location entry = entries + i * object_entry_size;
+			actor_object object;
+			object.physical_object = memory.follow(entry + 4);
+			if(auto scale = memory.follow(entry))
+			{
+				binary_reader r = reader_at(*scale, 12);
+				float x = r.f32(), y = r.f32();
+				object.scale = vec3{ x, y, r.f32() };
+			}
+			objects.push_back(object);
+		}
+		return objects;
+	}
+
 	actor read_actor(const memory_image& memory, const scene& tree, const animation_bank& bank, std::size_t node)
 	{
-		actor result;
-		result.node = node;
 		const scene_node& n = tree.node(node);
-		if(!n.data)
-			return result;
-		auto data = memory.follow(*n.data + actor_3d_data);
+		actor result = n.data ? read_actor_at(memory, bank, *n.data, n.draw_flags) : actor{};
+		result.node = node;
+		return result;
+	}
+
+	actor read_actor_at(const memory_image& memory, const animation_bank& bank, const memory_location& at, std::uint32_t draw_flags)
+	{
+		actor result;
+		auto data = memory.follow(at + actor_3d_data);
 		if(!data)
 			return result;
 
 		if(auto list = memory.follow(*data + data_object_list))
-		{
-			std::uint16_t count = reader_at(*list + object_list_count, 2).u16();
-			if(count)
-			{
-				memory_location entries = *memory.follow(*list + object_list_entries);
-				reader_at(entries, std::size_t(count) * object_entry_size); // bounds check
-				for(std::uint16_t i = 0; i < count; i++)
-				{
-					memory_location entry = entries + i * object_entry_size;
-					actor_object object;
-					object.physical_object = memory.follow(entry + 4);
-					if(auto scale = memory.follow(entry))
-					{
-						binary_reader r = reader_at(*scale, 12);
-						float x = r.f32(), y = r.f32();
-						object.scale = vec3{ x, y, r.f32() };
-					}
-					result.objects.push_back(object);
-				}
-			}
-		}
+			result.objects = read_object_list(memory, *list);
 
 		// The animation a state plays, if it has one.
 		auto animation_of = [&](const memory_location& state) -> std::optional<std::uint16_t> {
@@ -91,12 +99,12 @@ namespace openrayman
 			r.skip(0x14);
 			std::uint16_t index = r.u16();
 			if(index >= bank.animations.size())
-				throw format_error(std::format("actor at {} plays animation {}, beyond the bank's {}", describe(n.at), index, bank.animations.size()));
+				throw format_error(std::format("actor at {} plays animation {}, beyond the bank's {}", describe(at), index, bank.animations.size()));
 			// The reference repeats the animation's own counts: a good check that both are right.
 			const animation& a = bank.animations[index];
 			if(a.frames != frames || a.channels != channels)
 				throw format_error(std::format("actor at {}: animation {} has {} frames and {} channels, its reference says {} and {}",
-					describe(n.at), index, a.frames, a.channels, frames, channels));
+					describe(at), index, a.frames, a.channels, frames, channels));
 			return index;
 		};
 
@@ -117,9 +125,9 @@ namespace openrayman
 				// Whether the game draws it now (0x44C570 in Rayman2.exe): scripts can switch it on.
 				std::uint16_t quality = reader_at(*data + data_shadow_quality, 2).u16();
 				bool switched_on = false;
-				if(auto standard_game = memory.follow(*n.data + actor_standard_game))
+				if(auto standard_game = memory.follow(at + actor_standard_game))
 					switched_on = (reader_at(*standard_game + standard_game_shadow_byte, 1).u8() & 0x04) != 0;
-				shadow.shown = quality != 0 && switched_on && !(n.draw_flags & draw_flag_no_shadow);
+				shadow.shown = quality != 0 && switched_on && !(draw_flags & draw_flag_no_shadow);
 				result.shadow = shadow;
 			}
 		}
@@ -160,7 +168,6 @@ namespace openrayman
 	actor_set read_actors(const memory_image& memory, const scene& tree, const animation_bank& bank)
 	{
 		actor_set result;
-		std::vector<std::pair<memory_location, std::size_t>> read; // geometric object -> mesh index
 		for(std::size_t node : tree.node(tree.dynamic_world()).children)
 		{
 			if(tree.node(node).type != super_object_type::actor)
@@ -175,27 +182,33 @@ namespace openrayman
 			e.state_at = a.state_at;
 			e.state = a.state;
 			e.shadow = a.shadow;
-			for(const actor_object& object : a.objects)
-			{
-				std::optional<std::size_t> mesh;
-				auto at = object.physical_object ? physical_object_geometry(memory, *object.physical_object) : std::nullopt;
-				if(at)
-				{
-					auto found = std::ranges::find(read, *at, &std::pair<memory_location, std::size_t>::first);
-					if(found == read.end())
-					{
-						read.push_back({ *at, result.meshes.size() });
-						result.meshes.push_back(read_geometric_object(memory, *at));
-						found = read.end() - 1;
-					}
-					mesh = found->second;
-				}
-				e.meshes.push_back(mesh);
-				e.scales.push_back(object.scale);
-			}
+			add_meshes(result, memory, a.objects, e.meshes, e.scales);
 			result.actors.push_back(std::move(e));
 		}
 		return result;
+	}
+
+	void add_meshes(actor_set& set, const memory_image& memory, const std::vector<actor_object>& objects,
+		std::vector<std::optional<std::size_t>>& meshes, std::vector<std::optional<vec3>>& scales)
+	{
+		for(const actor_object& object : objects)
+		{
+			std::optional<std::size_t> mesh;
+			auto at = object.physical_object ? physical_object_geometry(memory, *object.physical_object) : std::nullopt;
+			if(at)
+			{
+				auto found = std::ranges::find(set.mesh_at, *at);
+				if(found == set.mesh_at.end())
+				{
+					set.mesh_at.push_back(*at);
+					set.meshes.push_back(read_geometric_object(memory, *at));
+					found = set.mesh_at.end() - 1;
+				}
+				mesh = std::size_t(found - set.mesh_at.begin());
+			}
+			meshes.push_back(mesh);
+			scales.push_back(object.scale);
+		}
 	}
 
 	// How many frames a looping animation takes to glide into its start (see pose()).

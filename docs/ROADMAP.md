@@ -205,6 +205,24 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
   handling: half-built cutscene sets (e.g. above the waterfall in The Woods of Light,
   `--camera 36.2,328.9,-3.7,-50.1,24.2`) and painted "paper" trees that simply end
 
+**Order for the rest of Phase 3 (agreed with the user, 2026-10-30)**
+
+1. Finish 3c: shooting first (the normal shot and the arm snapping back while strafing or
+   hovering; there is no charged shot as far as the user knows, so only add one if Rayman's scripts
+   show it) ⬅ now. Rayman's scripts do have a charged shot (holding the key, var19 up to 2000 ms,
+   particles 69/71), but only once story bit 1143 is set, later in the game. The shot itself is a
+   generated actor ([formats/generated.md](formats/generated.md)): function 66 copies its template,
+   it flies on the fast mechanics, fades after 1.5 s and frees its slot; to be checked by the user.
+   Still missing: hitting actors (procedure 22's touch query finds nobody yet), homing (function
+   113), the hand snapping back while strafing or hovering. Then the leftovers: the hands on the ledge (procedure 218), the clip out of the
+   tunnel after the Globox kids, Q/W turning, long-idle animations, the arrival pan, Murfy's
+   freeze, slippery slopes, the Lum collect effect.
+2. A first-visit start: story bit 1133 left off, Rayman placed where the intro cutscene would end,
+   so the tutorial chain (cage, Murfy, Lum, trapdoor) runs.
+3. 3d: sound, together with the dialogs (Murfy, the Teensies), which need the voices. Goal: the
+   first-visit start playable with its conversations.
+4. Phase 4: the real intro cutscene in front of the first-visit start.
+
 **Milestone 3d: sound**
 
 - BNM sound banks: sound effects and voices, played when the scripts ask for them

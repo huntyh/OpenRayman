@@ -342,12 +342,44 @@ namespace openrayman::game
 				think(self);
 				advance(self);
 			}
+		// Actors the scripts created, after the level's own (the game links them into the dynamic
+		// world as they come). One made this tick by an actor before them already thinks now.
+		for(std::size_t i = 0; i < vm.generated().slots().size(); i++)
+		{
+			const generated_actors::slot& s = vm.generated().slots()[i];
+			if(s.creator && !vm.removed(s.super_object))
+			{
+				std::uint32_t self = s.super_object;
+				think(self);
+				advance(self);
+			}
+		}
 		for(std::uint32_t self : super_objects)
 			if(is_camera(self))
 			{
 				think(self);
 				advance(self);
 			}
+		// The pool's sweep (0x40C2F0, from 0x40ADEF): a generated actor whose custom bits carry
+		// 0x20000 goes once its animation has played out with nothing after it (0x410310: 3D data
+		// +0x8E, and no other state waiting). Rayman's shot ends this way after its fading state.
+		for(std::uint32_t self : vm.generated().alive())
+		{
+			std::uint32_t actor = vm.actor_of(self);
+			std::uint32_t standard = actor ? m.u32(actor + 0x04) : 0;
+			std::uint32_t data = actor ? m.u32(actor) : 0;
+			if(!standard || !data || !(m.u32(standard + 0x24) & 0x20000))
+				continue;
+			// Played out for good: the marker 0x40E800 sets only when no pass is left and nothing
+			// comes after (our +0x8E also marks each pass of a loop, for conditions 77 and 106).
+			std::uint32_t state = m.u32(data + data_3d::current_state);
+			if(state && m.u8(data + data_3d::finished) && !m.u32(state + state::after) && !m.u8(data + data_3d::loops)
+				&& state == m.u32(data + data_3d::next_state))
+			{
+				vm.remove(self);
+				vm.generated().release(self);
+			}
+		}
 		vm.particles().update(vm.clock() / 1000.0, vm.frame_ms() / 1000.0);
 	}
 }

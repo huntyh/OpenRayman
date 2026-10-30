@@ -40,6 +40,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -154,6 +155,16 @@ namespace
 		// locations point into the level files, which are gone once the level has loaded.)
 		std::vector<std::vector<std::uint32_t>> state_addresses;
 		std::vector<double> state_since;         // per entry: animation time its state began
+		// Actors the scripts create (function 66, Rayman's shots): what each template looks like, read
+		// at load since the renderer takes every mesh then, and per pool slot the entry that shows it.
+		struct generated_look
+		{
+			std::uint32_t model = 0; // the template actor
+			actor_set::entry entry;  // its family, states and shadow; meshes filled per object list
+			std::map<std::uint32_t, std::pair<std::vector<std::optional<std::size_t>>, std::vector<std::optional<vec3>>>> lists;
+		};
+		std::vector<generated_look> generated_looks;
+		std::vector<std::optional<std::size_t>> generated_entry; // per pool slot
 		bool scripts = true;
 		double script_clock = 0;                 // seconds not yet run as ticks
 		std::string actor_note;           // the state last picked with F4/F5, shown in the title
@@ -344,6 +355,7 @@ namespace
 	}
 
 	void run_ticks(app& a, double seconds);
+	void sync_generated(app& a);
 
 	// Runs the game's scripts for `seconds`, in ticks of 1/60 s, then shows the states they picked.
 	// An error outside one actor's scripts (input, placing the actors) is logged and the scripts
@@ -430,6 +442,7 @@ namespace
 			else
 				a.camera_log_previous.reset();
 		}
+		sync_generated(a);
 		// Where each actor is now: scripts move and turn them.
 		for(std::size_t i = 0; i < a.actors.actors.size() && i < a.super_object_at.size(); i++)
 			if(auto placed = openrayman::game::global_placement(*a.live, a.super_object_at[i]))
@@ -463,6 +476,53 @@ namespace
 	}
 
 	// Poses every actor at the current animation time and hands the parts to the renderer.
+	// Gives every live generated actor an entry to draw it with: one per pool slot, made the first
+	// time the slot is used, showing its current object list.
+	void sync_generated(app& a)
+	{
+		const auto& slots = a.vm->generated().slots();
+		a.generated_entry.resize(slots.size());
+		for(std::size_t k = 0; k < slots.size(); k++)
+		{
+			const auto& slot = slots[k];
+			if(!slot.creator)
+				continue;
+			auto look = std::ranges::find(a.generated_looks, slot.model, &app::generated_look::model);
+			if(look == a.generated_looks.end())
+				continue;
+			if(!a.generated_entry[k])
+			{
+				a.generated_entry[k] = a.actors.actors.size();
+				a.actors.actors.push_back(look->entry);
+				a.actor_at.push_back(0);
+				a.super_object_at.push_back(0);
+				a.state_addresses.emplace_back();
+				a.state_since.push_back(a.animation_time);
+			}
+			std::size_t i = *a.generated_entry[k];
+			actor_set::entry& entry = a.actors.actors[i];
+			if(a.actor_at[i] != a.vm->actor_of(slot.super_object) || a.super_object_at[i] != slot.super_object)
+			{
+				entry = look->entry;
+				a.actor_at[i] = a.vm->actor_of(slot.super_object);
+				a.super_object_at[i] = slot.super_object;
+				a.state_addresses[i].clear();
+				for(const memory_location& at : entry.state_at)
+					a.state_addresses[i].push_back(at.address());
+			}
+			// What its parts look like: the object list procedure 94 picked (3D data +0x10), else its own.
+			std::uint32_t data = a.live->u32(a.actor_at[i]);
+			std::uint32_t list = data ? a.live->u32(data + 0x10) : 0;
+			if(!look->lists.contains(list))
+				list = data ? a.live->u32(data + 0x0C) : 0;
+			if(auto found = look->lists.find(list); found != look->lists.end())
+			{
+				entry.meshes = found->second.first;
+				entry.scales = found->second.second;
+			}
+		}
+	}
+
 	void update_actors(app& a)
 	{
 		std::vector<posed_part> parts;
@@ -649,11 +709,81 @@ namespace
 				if(actor.shadow && !shadow_material)
 					shadow_material = &actor.shadow->material;
 			}
+			// The templates scripts copy while the game runs (the actor named right after function 66),
+			// with every object list their scripts may switch to (procedure 94): their meshes have to be
+			// in the set before the renderer takes it.
+			level_brains brains = read_brains(files.memory, tree);
+			a.generated_looks.clear();
+			a.generated_entry.clear();
+			{
+				std::vector<memory_location> models;
+				auto find_models = [&](const script& sc) {
+					for(std::size_t k = 0; k + 1 < sc.nodes.size(); k++)
+					{
+						const script_node& n = sc.nodes[k];
+						if(n.type == std::uint8_t(node_type::function) && n.param == 66 && sc.nodes[k + 1].target
+							&& std::ranges::find(models, *sc.nodes[k + 1].target) == models.end())
+							models.push_back(*sc.nodes[k + 1].target);
+					}
+				};
+				auto each_script = [](const ai_model& model, const auto& f) {
+					for(const auto& list : { &model.behaviours, &model.reflexes })
+						for(const behaviour& b : *list)
+						{
+							for(const script& sc : b.rules)
+								f(sc);
+							if(b.schedule)
+								f(*b.schedule);
+						}
+					for(const macro& m : model.macros)
+						f(m.body);
+				};
+				for(const auto& [key, model] : brains.models)
+					each_script(model, find_models);
+				for(const memory_location& at : models)
+				{
+					try
+					{
+						actor t = read_actor_at(files.memory, a.bank, at);
+						app::generated_look look;
+						look.model = at.address();
+						look.entry.animation = t.animation;
+						look.entry.family = t.family;
+						look.entry.states = t.states;
+						look.entry.state_at = t.state_at;
+						look.entry.state = t.state;
+						look.entry.shadow = t.shadow;
+						std::vector<memory_location> lists;
+						if(auto data = files.memory.follow(at))
+							for(std::uint32_t off : { 0x0Cu, 0x10u })
+								if(auto list = files.memory.follow(*data + off))
+									lists.push_back(*list);
+						level_brains own = read_brain_at(files.memory, at);
+						for(const auto& [k, model] : own.models)
+							each_script(model, [&](const script& sc) {
+								for(const script_node& n : sc.nodes)
+									if(n.type == std::uint8_t(node_type::reference_31) && n.target)
+										lists.push_back(*n.target);
+							});
+						for(const memory_location& list : lists)
+						{
+							if(look.lists.contains(list.address()))
+								continue;
+							auto& [meshes, scales] = look.lists[list.address()];
+							add_meshes(a.actors, files.memory, read_object_list(files.memory, list), meshes, scales);
+						}
+						a.generated_looks.push_back(std::move(look));
+					}
+					catch(const std::exception& e)
+					{
+						SDL_Log("Template actor at 0x%08X left out: %s", at.address(), e.what());
+					}
+				}
+			}
 			a.level_stats = a.level->load(geometry, a.actors.meshes, a.archives, std::move(lights), sectors, shadow_material);
 
 			// The materials scripts draw particles with (procedure 503's game materials).
 			std::map<std::uint32_t, visual_material> effect_materials;
-			level_brains brains = read_brains(files.memory, tree);
 			for(const auto& [key, model] : brains.models)
 			{
 				auto take = [&](const script& sc) {

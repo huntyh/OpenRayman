@@ -48,6 +48,13 @@ namespace openrayman
 	// Reads the actor behind a super object of type actor. Throws format_error.
 	actor read_actor(const memory_image& memory, const scene& tree, const animation_bank& bank, std::size_t node);
 
+	// Reads an actor at its address, also one that isn't in the scene (a template the scripts copy
+	// while the game runs). `draw_flags` are its super object's, if it has one. Throws format_error.
+	actor read_actor_at(const memory_image& memory, const animation_bank& bank, const memory_location& at, std::uint32_t draw_flags = 0);
+
+	// The entries of an object list (3D data +0xC): what each part looks like. Throws format_error.
+	std::vector<actor_object> read_object_list(const memory_image& memory, const memory_location& list);
+
 	// The world transform of a super object: its own and all its parents' transforms. Fix's actors
 	// take theirs from the level header.
 	affine world_transform(const memory_image& memory, const scene& tree, std::size_t node);
@@ -71,8 +78,14 @@ namespace openrayman
 			std::optional<actor_shadow> shadow;
 		};
 		std::vector<geometric_object> meshes;
+		std::vector<memory_location> mesh_at; // per mesh: its geometric object
 		std::vector<entry> actors;
 	};
+
+	// Adds what an object list's entries show to the set's meshes (each geometric object once), and
+	// appends each entry's mesh and scale.
+	void add_meshes(actor_set& set, const memory_image& memory, const std::vector<actor_object>& objects,
+		std::vector<std::optional<std::size_t>>& meshes, std::vector<std::optional<vec3>>& scales);
 
 	// Reads every actor in the dynamic world. Throws format_error.
 	actor_set read_actors(const memory_image& memory, const scene& tree, const animation_bank& bank);

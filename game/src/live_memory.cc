@@ -1,6 +1,7 @@
 #include <openrayman/game/live_memory.h>
 #include <openrayman/error.h>
 
+#include <algorithm>
 #include <format>
 #include <utility>
 
@@ -10,6 +11,8 @@ namespace openrayman::game
 	{
 		// Runtime-only blocks are allocated up to this size; larger reservations are cut short.
 		constexpr std::uint32_t max_runtime_block = 64 << 20;
+		// What allocate() can hand out in all.
+		constexpr std::uint32_t heap_size = 4 << 20;
 	}
 
 	live_memory::live_memory(const memory_image& image)
@@ -72,5 +75,30 @@ namespace openrayman::game
 	{
 		auto bytes = std::as_const(*this).span(address, size);
 		return { const_cast<std::byte*>(bytes.data()), bytes.size() };
+	}
+
+	std::uint32_t live_memory::allocate(std::size_t size)
+	{
+		if(!m_heap)
+		{
+			std::uint64_t end = 0;
+			for(const auto& [base, r] : m_regions)
+				end = std::max(end, std::uint64_t(base) + r.data.size());
+			end = (end + 0xFFFFF) & ~std::uint64_t(0xFFFFF);
+			if(end + heap_size > 0xFFFFFFFFull)
+				throw format_error("no address space left for run-time allocations");
+			region r;
+			r.base = std::uint32_t(end);
+			r.data.resize(heap_size);
+			m_heap = r.base;
+			m_regions.emplace(r.base, std::move(r));
+			m_last = nullptr;
+		}
+		std::uint32_t at = m_heap + m_heap_used;
+		std::size_t rounded = (size + 15) & ~std::size_t(15);
+		if(m_heap_used + rounded > heap_size)
+			throw format_error(std::format("run-time allocation of {} bytes doesn't fit", size));
+		m_heap_used += std::uint32_t(rounded);
+		return at;
 	}
 }

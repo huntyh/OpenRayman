@@ -170,6 +170,13 @@ state installs, gravity and one tick of movement.
 
 - Sources: own analysis of `Rayman2.exe`; a helper model's notes checked where marked.
 
+## Generated actors
+
+See [formats/generated.md](formats/generated.md): the pool function 66 copies template actors into
+(Rayman's shot), what each part of the copy gets, and how they go away again.
+
+- Sources: own analysis of `Rayman2.exe`, a helper model's traces checked against the Learn_10 template's memory.
+
 ## Collision
 
 See [formats/collision.md](formats/collision.md). Physical object +4 points to a collide set whose

@@ -2,6 +2,7 @@
 
 #include <openrayman/animation.h>
 #include <openrayman/game/camera.h>
+#include <openrayman/game/generated.h>
 #include <openrayman/game/live_memory.h>
 #include <openrayman/game/mechanics.h>
 #include <openrayman/game/particles.h>
@@ -173,6 +174,11 @@ namespace openrayman::game
 		// Actors taken out of the world (procedure 139): they stop thinking and aren't drawn.
 		void remove(std::uint32_t super_object) { m_removed.insert(super_object); }
 		bool removed(std::uint32_t super_object) const { return m_removed.contains(super_object); }
+		// Actors the scripts created (function 66): a generated actor reuses a freed slot's super
+		// object, which then is back in the world.
+		generated_actors& generated() { return m_generated; }
+		const generated_actors& generated() const { return m_generated; }
+		void restore(std::uint32_t super_object) { m_removed.erase(super_object); }
 		// The actor ("perso") of a super object, and back.
 		std::uint32_t actor_of(std::uint32_t super_object) const;
 		std::uint32_t super_object_of(std::uint32_t actor) const;
@@ -305,6 +311,7 @@ namespace openrayman::game
 		std::uint32_t m_last_node = 0;
 		std::uint32_t m_clock = 0;
 		std::set<std::uint32_t> m_removed;
+		generated_actors m_generated;
 		std::uint64_t m_ticks = 0;
 		std::uint32_t m_frame_ms = 16;
 		game::particles m_particles;

@@ -600,6 +600,53 @@ namespace openrayman::game
 			write_vec(m, b + base::speed, vec{});
 		}
 		std::uint32_t flags = m.u32(b + base::flags);
+		// The fast mechanics (end flag 0x200, from mechanics bit 0x100; 0x431AD0's first branch): the
+		// stored speed (+0x3C, world axes) carries the actor on, x dt, and an imposed speed replaces
+		// the axes it names. No gravity, inertia or floor: Rayman's shot flies this way and watches
+		// for walls with its own casts. The speed stays what it was unless something imposed one.
+		if(m.u32(b + base::end_flags) & 0x200)
+		{
+			const float dt = float(ms / 1000);
+			vec speed = read_vec(m, b + base::speed);
+			if(flags & uses_imposed)
+			{
+				vec imposed = read_vec(m, b + base::imposed);
+				const bool world_axes = flags & 0x4000;
+				std::array<vec, 3> axes{};
+				for(std::uint32_t k = 0; k < 3; k++)
+				{
+					axes[k] = read_vec(m, t + 0x10 + k * 12);
+					if(float l = vlen(axes[k]); l > 0)
+						axes[k] = vmul(axes[k], 1 / l);
+				}
+				vec local = speed;
+				if(!world_axes)
+					for(std::size_t k = 0; k < 3; k++)
+						local[k] = vdot(speed, axes[k]);
+				for(std::size_t k = 0; k < 3; k++)
+					if(flags & (0x20000u << k))
+						local[k] = imposed[k];
+				if(world_axes)
+					speed = local;
+				else
+				{
+					speed = {};
+					for(std::size_t k = 0; k < 3; k++)
+						for(std::size_t i = 0; i < 3; i++)
+							speed[i] += local[k] * axes[k][i];
+				}
+			}
+			vec target = read_vec(m, t + 4);
+			for(std::size_t i = 0; i < 3; i++)
+				target[i] += speed[i] * dt;
+			write_vec(m, b + base::speed, speed);
+			write_vec(m, t + 4, target);
+			write_vec(m, b + base::previous_position, target);
+			m.write<std::uint32_t>(b + base::flags, flags & kept_after_tick);
+			for(std::uint32_t at = base::imposed; at < base::speed; at += 4)
+				m.write<float>(b + at, 0.0f);
+			return;
+		}
 		bool gravity =(flags & has_gravity) && !(m.u32(b + base::end_flags) & no_gravity);
 		if(!gravity && !(flags & (has_animation_motion | uses_imposed | uses_proposed | uses_third)))
 			return;

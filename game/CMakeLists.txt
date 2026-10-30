@@ -7,6 +7,7 @@ add_library(openrayman_game STATIC
 	src/handlers.cc
 	src/input.cc
 	src/interpreter.cc
+	src/generated.cc
 	src/live_memory.cc
 	src/mechanics.cc
 	src/particles.cc

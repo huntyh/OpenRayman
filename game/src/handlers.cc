@@ -585,6 +585,8 @@ namespace openrayman::game
 			if(!target)
 				return c.args;
 			c.vm.remove(target);
+			// A generated actor's slot is free again (0x4062A0 -> 0x40C0C0).
+			c.vm.generated().release(target);
 			if(target == c.self)
 				c.vm.signal(3);
 			return c.args;
@@ -2249,6 +2251,172 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 66 (0x47CC30 case 0x42): create an actor from a template (Rayman's shot), placed at the
+		// point with no rotation, made by the running actor. Returns the new actor, or none when the
+		// pool is full (generated.h).
+		std::uint32_t generate_actor(call& c, value& out)
+		{
+			value model, at;
+			next_arg(c, model);
+			next_arg(c, at);
+			out = value::of(value_type::actor, 0);
+			std::uint32_t actor = actor_value(c.vm, model);
+			std::uint32_t so = c.vm.generated().create(c.vm.memory(), actor, c.self,
+				{ at.component(0), at.component(1), at.component(2) }, c.vm.clock());
+			if(!so)
+				return c.args;
+			c.vm.restore(so);
+			out = value::of(value_type::actor, c.vm.actor_of(so));
+			return c.args;
+		}
+
+		// 67 (0x47CC30 case 0x43 -> 0x40C2A0): how many generated actors that actor made are alive.
+		std::uint32_t generated_count(call& c, value& out)
+		{
+			value who;
+			next_arg(c, who);
+			std::uint32_t creator = c.vm.super_object_of(actor_value(c.vm, who));
+			out = value::integer(creator ? std::int32_t(c.vm.generated().count(creator)) : 0);
+			return c.args;
+		}
+
+		// Lists of actors in a variable buffer (0x483120 and its neighbours): u8 count, u8 capacity,
+		// then the super objects, 4 bytes each.
+		namespace actor_list
+		{
+			constexpr std::uint32_t count = 0, capacity = 1, entries = 4;
+		}
+
+		// 41 (0x48A6F0 case 0x29): the list is empty.
+		std::uint32_t list_empty(call& c, bool& result)
+		{
+			value list;
+			next_arg(c, list);
+			live_memory& m = c.vm.memory();
+			result = !list.word() || !m.contains(list.word(), 4) || m.u8(list.word() + actor_list::count) == 0;
+			return c.args;
+		}
+
+		// 49 (0x47CB40 case 0x31): how many the list holds. 50 (case 0x32, 0x4838F0): the actor at
+		// an index (255: the last), or none.
+		std::uint32_t list_function(call& c, value& out)
+		{
+			value list;
+			next_arg(c, list);
+			live_memory& m = c.vm.memory();
+			std::uint32_t at = list.word();
+			std::uint8_t count = at && m.contains(at, 4) ? m.u8(at + actor_list::count) : 0;
+			if(c.index == 49)
+			{
+				out = value::integer(count);
+				return c.args;
+			}
+			value which;
+			next_arg(c, which);
+			std::uint8_t i = std::uint8_t(which.as_int());
+			out = value::of(value_type::actor, 0);
+			if(!count || (i >= count && i != 0xFF))
+				return c.args;
+			std::uint32_t so = m.u32(at + actor_list::entries + 4u * (i == 0xFF ? count - 1u : i));
+			out = value::of(value_type::actor, c.vm.actor_of(so));
+			return c.args;
+		}
+
+		// 22 (0x468180 case 0x16 -> 0x4837A0): fill the list with the actors whose collision the
+		// running actor's touches (0x40CCA0, by zone kind and mask). For now the query finds nobody:
+		// the list is only emptied, so shots fly through actors.
+		std::uint32_t touching_actors(call& c)
+		{
+			value list, kind, mask;
+			next_arg(c, list);
+			next_arg(c, kind);
+			next_arg(c, mask);
+			live_memory& m = c.vm.memory();
+			if(list.word() && m.contains(list.word(), 4))
+				m.write<std::uint8_t>(list.word() + actor_list::count, 0);
+			return c.args;
+		}
+
+		// 36 (0x4682B0 case 0x24): drop the list's actors of a family (3D data +0x14). 37 (case
+		// 0x25): those of an AI model (brain -> mind -> model).
+		std::uint32_t list_drop(call& c)
+		{
+			value list, what;
+			next_arg(c, list);
+			next_arg(c, what);
+			live_memory& m = c.vm.memory();
+			std::uint32_t at = list.word();
+			if(!at || !m.contains(at, 4))
+				return c.args;
+			auto matches = [&](std::uint32_t so) {
+				std::uint32_t actor = c.vm.actor_of(so);
+				if(!actor)
+					return false;
+				if(c.index == 36)
+				{
+					std::uint32_t data = m.u32(actor);
+					return data && m.u32(data + 0x14) == what.word();
+				}
+				std::uint32_t brain = m.u32(actor + 0x0C);
+				std::uint32_t mind = brain ? m.u32(brain) : 0;
+				return mind && m.u32(mind) == what.word();
+			};
+			std::uint8_t count = m.u8(at + actor_list::count);
+			std::uint8_t kept = 0;
+			for(std::uint8_t i = 0; i < count; i++)
+			{
+				std::uint32_t so = m.u32(at + actor_list::entries + 4u * i);
+				if(!matches(so))
+					m.write<std::uint32_t>(at + actor_list::entries + 4u * kept++, so);
+			}
+			m.write<std::uint8_t>(at + actor_list::count, kept);
+			return c.args;
+		}
+
+		// 13 (0x472D60): bit n (0..31) of an actor's draw flags: 0 clears, 1 sets, 2 flips. Kept in
+		// the super object (+0x2C) and the 3D data (+0xE8).
+		std::uint32_t draw_flag(call& c)
+		{
+			value who, bit, mode;
+			next_arg(c, who);
+			next_arg(c, bit);
+			next_arg(c, mode);
+			live_memory& m = c.vm.memory();
+			std::uint32_t so = c.vm.super_object_of(actor_value(c.vm, who));
+			std::int32_t b = bit.as_int();
+			if(!so || b < 0 || b >= 32)
+				return c.args;
+			std::uint32_t data = m.u32(c.vm.actor_of(so));
+			std::uint32_t flags = data ? m.u32(data + 0xE8) : 0;
+			std::uint32_t mask = 1u << b;
+			std::int32_t how = mode.as_int();
+			if(how == 2)
+				how = (flags & mask) == 0;
+			if(how == 0)
+				flags &= ~mask;
+			else if(how == 1)
+				flags |= mask;
+			else
+				return c.args;
+			m.write<std::uint32_t>(so + 0x2C, flags);
+			if(data)
+				m.write<std::uint32_t>(data + 0xE8, flags);
+			return c.args;
+		}
+
+		// 94 (0x468730 case 0x5E): the object list (what its parts look like) at 3D data +0x10.
+		std::uint32_t set_object_list(call& c)
+		{
+			value list;
+			next_arg(c, list);
+			live_memory& m = c.vm.memory();
+			std::uint32_t actor = c.vm.actor_of(c.vm.target(c.self, true));
+			std::uint32_t data = actor ? m.u32(actor) : 0;
+			if(data)
+				m.write<std::uint32_t>(data + 0x10, list.word());
+			return c.args;
+		}
+
 		// --- More conditions ---------------------------------------------------------------------
 
 		// 27..32 (0x48A330): the contact flags of the actor's dynamics report (dynamics base +0x150,
@@ -2430,6 +2598,41 @@ namespace openrayman::game
 				for(std::uint32_t at : { 0x3Cu, 0x40u, 0x44u })
 					c.vm.memory().write<float>(base + at, 0.0f);
 				write3(c.vm.memory(), base + 0x7C, vec_of(where));
+			}
+			return c.args;
+		}
+
+		// 160 (0x46AB20 case 0xA0): move the actor by a vector, in world axes when the second argument
+		// is set, else in its own; queued like 157 (0x432D30), so the dynamics forgets its speed.
+		// Rayman's shot starts 0.8 above his hand this way.
+		std::uint32_t shift_self(call& c)
+		{
+			value by, world;
+			next_arg(c, by);
+			next_arg(c, world);
+			std::uint32_t so = c.vm.target(c.self, true);
+			std::uint32_t t = transform_of(c.vm, so);
+			if(!t)
+				return c.args;
+			live_memory& m = c.vm.memory();
+			std::array<float, 3> d = vec_of(by);
+			if(!world.as_int())
+			{
+				std::array<float, 3> local = d;
+				d = {};
+				for(std::uint32_t k = 0; k < 3; k++)
+					for(std::uint32_t i = 0; i < 3; i++)
+						d[i] += local[k] * m.f32(t + 0x10 + k * 12 + i * 4);
+			}
+			std::array<float, 3> at{};
+			for(std::uint32_t i = 0; i < 3; i++)
+				at[i] = m.f32(t + 4 + i * 4) + d[i];
+			write3(m, t + 4, at);
+			if(std::uint32_t base = dynamics_base(c, so, 0x88))
+			{
+				for(std::uint32_t off : { 0x3Cu, 0x40u, 0x44u })
+					m.write<float>(base + off, 0.0f);
+				write3(m, base + 0x7C, at);
 			}
 			return c.args;
 		}
@@ -3483,6 +3686,17 @@ namespace openrayman::game
 		for(std::uint32_t i = 180; i <= 185; i++)
 			vm.on_function(i, vector_ops);
 		vm.on_function(240, parent_actor);
+		vm.on_function(66, generate_actor);
+		vm.on_condition(41, list_empty);
+		vm.on_function(49, list_function);
+		vm.on_function(50, list_function);
+		vm.on_procedure(22, touching_actors);
+		vm.on_procedure(36, list_drop);
+		vm.on_procedure(37, list_drop);
+		vm.on_procedure(13, draw_flag);
+		vm.on_procedure(94, set_object_list);
+		vm.on_procedure(160, shift_self);
+		vm.on_function(67, generated_count);
 		vm.on_function(186, direction_angle);
 		vm.on_function(187, direction_angle);
 		vm.on_function(190, contact_normal);
