@@ -17,7 +17,7 @@ namespace openrayman::game
 			constexpr std::uint32_t size = 0x1A8;
 		}
 		// Flags at base +8.
-		constexpr std::uint32_t has_gravity = 0x4, has_limit = 0x200;
+		constexpr std::uint32_t has_gravity = 0x4, has_limit = 0x200, has_inertia = 0x400;
 		constexpr std::uint32_t uses_imposed = 0xE0000, uses_proposed = 0x700000, uses_third = 0x3800000;
 		// The resolvers 0x439730, 0x431A10, 0x43A260 (0x10, 0x20, 0x40) and Rayman's mechanics, which has
 		// none of them but 0x2 (what resolves his is still to read).
@@ -502,43 +502,76 @@ namespace openrayman::game
 		// bit each, `x_bit` and the next two), replacing what gravity or an earlier speed made of
 		// them, in the actor's own axes unless its world bit is set (procedures 182, 194, 207 set it:
 		// 0x46CCE1, 0x46CCB7, 0x46CD0B) (0x43E350, 0x43E42A..0x43E451, 0x43E680, 0x43E4E0).
-		auto add_speed = [&](std::uint32_t at, std::uint32_t x_bit, std::uint32_t world_axes) {
-			vec v = read_vec(m, b + at);
-			vec d{ target[0] - current[0], target[1] - current[1], target[2] - current[2] };
-			bool local = !(flags & world_axes);
-			std::array<vec, 3> axes{};
-			if(local)
-			{
-				for(int k = 0; k < 3; k++)
-				{
-					axes[std::size_t(k)] = read_vec(m, t + 0x10 + std::uint32_t(k) * 12);
-					vec& a = axes[std::size_t(k)];
-					float l = std::sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
-					if(l > 0)
-						a = { a[0] / l, a[1] / l, a[2] / l };
-				}
-				vec in{};
-				for(int k = 0; k < 3; k++)
-					for(int i = 0; i < 3; i++)
-						in[std::size_t(k)] += d[std::size_t(i)] * axes[std::size_t(k)][std::size_t(i)];
-				d = in;
-			}
+		// The actor's own axes (unit length), and moves turned into them and back.
+		std::array<vec, 3> axes{};
+		for(int k = 0; k < 3; k++)
+		{
+			axes[std::size_t(k)] = read_vec(m, t + 0x10 + std::uint32_t(k) * 12);
+			vec& a = axes[std::size_t(k)];
+			float l = std::sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+			if(l > 0)
+				a = { a[0] / l, a[1] / l, a[2] / l };
+		}
+		auto to_local = [&](const vec& d) {
+			vec in{};
 			for(int k = 0; k < 3; k++)
-				if(flags & (x_bit << k))
-					d[std::size_t(k)] = v[std::size_t(k)] * dt;
-			if(local)
-			{
-				vec out{};
-				for(int k = 0; k < 3; k++)
-					for(int i = 0; i < 3; i++)
-						out[std::size_t(i)] += d[std::size_t(k)] * axes[std::size_t(k)][std::size_t(i)];
-				d = out;
-			}
+				for(int i = 0; i < 3; i++)
+					in[std::size_t(k)] += d[std::size_t(i)] * axes[std::size_t(k)][std::size_t(i)];
+			return in;
+		};
+		auto to_world = [&](const vec& d) {
+			vec out{};
+			for(int k = 0; k < 3; k++)
+				for(int i = 0; i < 3; i++)
+					out[std::size_t(i)] += d[std::size_t(k)] * axes[std::size_t(k)][std::size_t(i)];
+			return out;
+		};
+		auto set_move = [&](const vec& d) {
 			for(int i = 0; i < 3; i++)
 				target[std::size_t(i)] = current[std::size_t(i)] + d[std::size_t(i)];
 		};
+		auto move = [&] {
+			return vec{ target[0] - current[0], target[1] - current[1], target[2] - current[2] };
+		};
+
+		auto add_speed = [&](std::uint32_t at, std::uint32_t x_bit, std::uint32_t world_axes) {
+			vec v = read_vec(m, b + at);
+			bool local = !(flags & world_axes);
+			vec d = local ? to_local(move()) : move();
+			for(int k = 0; k < 3; k++)
+				if(flags & (x_bit << k))
+					d[std::size_t(k)] = v[std::size_t(k)] * dt;
+			set_move(local ? to_world(d) : d);
+		};
 		if(flags & uses_proposed)
 			add_speed(base::proposed, 0x100000, 0x8000);
+		// Inertia (0x43DF70 -> 0x43DDA0): the move only goes part of the way from last tick's
+		// (speed x dt) towards the one the script asked for, per axis in the actor's own axes. The
+		// state's factors (+0x154..) are eased as 1 - (1 - k)^3 (0x4370A0; its frame-time correction
+		// is for ticks other than 1/60 s). Last tick's move leaves out the carrying platform's
+		// (+0x1B4) unless end flag 0x10 says otherwise; the exe rounds the result to 0.0001 units.
+		if(flags & has_inertia)
+		{
+			vec last = read_vec(m, b + base::speed);
+			for(float& c : last)
+				c *= dt;
+			if(!(m.u32(b + base::end_flags) & 0x10))
+			{
+				vec carried = read_vec(m, b + 0x1B4);
+				for(int i = 0; i < 3; i++)
+					last[std::size_t(i)] -= carried[std::size_t(i)];
+			}
+			vec wanted = to_local(move());
+			last = to_local(last);
+			vec d{};
+			for(int k = 0; k < 3; k++)
+			{
+				float f = m.f32(b + 0x154 + std::uint32_t(k) * 4);
+				f = f <= 0 ? 0.0f : f >= 1 ? f : 1 - (1 - f) * (1 - f) * (1 - f);
+				d[std::size_t(k)] = last[std::size_t(k)] + (wanted[std::size_t(k)] - last[std::size_t(k)]) * f;
+			}
+			set_move(to_world(d));
+		}
 		// Gravity (0x43DF40): from last tick's vertical speed, g in units per second squared, down.
 		if(gravity)
 			target[2] = current[2] + dt * (m.f32(b + base::speed + 8) - m.f32(b + base::gravity) * dt);
@@ -550,29 +583,13 @@ namespace openrayman::game
 		// each component clipped, and turned back.
 		if(flags & has_limit)
 		{
-			std::array<vec, 3> axes{};
+			vec d = to_local(move());
 			for(int k = 0; k < 3; k++)
 			{
-				axes[std::size_t(k)] = read_vec(m, t + 0x10 + std::uint32_t(k) * 12);
-				vec& a = axes[std::size_t(k)];
-				float l = std::sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
-				if(l > 0)
-					a = { a[0] / l, a[1] / l, a[2] / l };
-			}
-			vec d{ target[0] - current[0], target[1] - current[1], target[2] - current[2] };
-			vec out{};
-			for(int k = 0; k < 3; k++)
-			{
-				float along = 0;
-				for(int i = 0; i < 3; i++)
-					along += d[std::size_t(i)] * axes[std::size_t(k)][std::size_t(i)];
 				float most = std::abs(m.f32(b + base::limit + std::uint32_t(k) * 4)) * dt;
-				along = std::clamp(along, -most, most);
-				for(int i = 0; i < 3; i++)
-					out[std::size_t(i)] += along * axes[std::size_t(k)][std::size_t(i)];
+				d[std::size_t(k)] = std::clamp(d[std::size_t(k)], -most, most);
 			}
-			for(int i = 0; i < 3; i++)
-				target[std::size_t(i)] = current[std::size_t(i)] + out[std::size_t(i)];
+			set_move(to_world(d));
 		}
 
 		// Walls push the target out of them: the actor is a cylinder from the step height up to

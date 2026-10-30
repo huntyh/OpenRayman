@@ -36,6 +36,10 @@ per-actor entry (0x412150) installs the current state's every tick.
 ## One tick (0x431AD0)
 
 1. target = position; then the second script speed sets the axes it names (× dt) of the move.
+   Inertia, if flag 0x400 (0x43DF70 -> 0x43DDA0): per axis in the actor's own axes, move = last + (wanted − last) × f,
+   last = speed (+0x3C) × dt (minus +0x1B4 unless end flag 0x10), f = 1 − (1 − k)³ from k at +0x154.. (the state
+   mechanics' +0x18.., 0x4370A0; a pow correction applies when dt ≠ 1/60). Flag 0x20 with end flag 0x20000 does
+   the same with +0x168.. × +0x174 (procedure 292 writes +0x168..+0x170). Rayman: k = 0.4, 0.4, 1.
 2. Gravity, if on (0x43DF40): target.z = z + dt·(last speed z − g·dt).
 3. The first and third script speeds replace the axes they name (0x43E350, 0x43E42A; a jump is procedure 179 on z, overriding gravity while it is sent) (0x43E4E0), then the per-axis
    limit is applied (0x43EAC0) in the actor's own axes: the move is turned into them (0x444AC0 with the inverse matrix, 0x444D60), each component clipped to limit × dt, and turned back.
