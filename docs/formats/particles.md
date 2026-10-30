@@ -48,10 +48,14 @@ turns into a ripple when it falls to the height at +0x3C, 0x10000000 is drawn fl
 - **Kind 39, a splash** (0x464188): flags 0x8001100, the vector's Y × 0.5 big.
 - **Kind 60, drops** (0x462460): ten, thrown ±3 across and 2 to 6 up, 0.03 to 0.05 big, flags
   0x21001, with the point's height as the floor. A drop reaching it becomes a 0x10003100 ripple
-  of size 0.1 and alpha 250, but keeps that height as its time to live, so below height 0 it dies
-  at once (the exe does the same).
+  of size 0.1 and alpha 250 there.
 - **Kind 62, foam** (0x462580): ten specks drifting flat out at ±1 a second for 1 to 3 seconds,
   0.01 to 0.10 big, flags 0x10003.
+- **Animated materials play once.** When a particle's material has an animated texture, the
+  draw (0x424C00, with 0x4A7274 and 0x4A7278 set by the particle draws) starts it at the
+  particle's birth (pool +4) and kills the particle when the last frame ends. The splash (kind 39,
+  the "bigplouf" frames) lasts that long, about 0.7 s, long before its fade would end it. The exe
+  scales frame times by a runtime value (0x5036A8) we take as 1, which matches the user's timing.
 - **Kind 167** (0x4648B0 case 0xA7) sets a switch (0x4B9AF8) while its number is over 0.01: then
   kind 60 starts nothing, kind 7 uses 0x10003100 and kind 62 lives 0.2 to 1 s.
 

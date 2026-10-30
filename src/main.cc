@@ -537,7 +537,7 @@ namespace
 				const bool flat = (p.flags & 0xF0000000) == 0x10000000;
 				const float lift = !flat && (p.flags & 0x8000000) ? p.height : 0.0f;
 				particles.push_back({ glm::vec3(at[0], at[1], at[2] + lift), p.size, p.alpha / 255.0f, p.material,
-					p.flags ? p.height : -1.0f, flat });
+					p.flags ? p.height : -1.0f, flat, float(now - p.born) });
 			}
 		}
 		a.level->set_particles(std::move(particles));

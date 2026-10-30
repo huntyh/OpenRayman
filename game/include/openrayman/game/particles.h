@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <random>
 #include <vector>
 
@@ -38,10 +39,15 @@ namespace openrayman::game
 			float height = 0;      // half its height (size is half its width)
 			double born = 0;
 			float life = 0;        // +0x3C: seconds to live with 0x10000, the floor with 0x20000
+			// How long its material's animated texture runs, 0 for a still one. A particle plays it
+			// once from its birth and is gone when it ends (0x424C00 with 0x4A7278 set).
+			float animation = 0;
 		};
 
 		// Procedure 503's arguments: effect kind, a point, a vector, a game material, a number.
+		// `animation` gives how long a game material's animated texture runs (0 for a still one).
 		void start(int kind, const vec3& point, const vec3& vector, std::uint32_t material, float number, double now);
+		void set_animation_lengths(std::function<float(std::uint32_t)> lengths) { m_animation_length = std::move(lengths); }
 		// One tick: moves and fades every particle, and drops those that are done.
 		void update(double now, double seconds);
 
@@ -67,5 +73,6 @@ namespace openrayman::game
 		// One tick of a flag-word particle (0x461120); false when it is done.
 		void step(particle& p, double now, float dt);
 		std::mt19937 m_random{ 1999 };
+		std::function<float(std::uint32_t)> m_animation_length;
 	};
 }

@@ -579,6 +579,15 @@ namespace openrayman
 		return it == a.ends.end() ? a.textures.back() : a.textures[std::size_t(it - a.ends.begin())];
 	}
 
+	GLuint level_renderer::texture_once(int animation, GLuint still, float age) const
+	{
+		if(animation < 0 || std::size_t(animation) >= m_animations.size())
+			return still;
+		const texture_animation& a = m_animations[std::size_t(animation)];
+		auto it = std::ranges::upper_bound(a.ends, age);
+		return it == a.ends.end() ? a.textures.back() : a.textures[std::size_t(it - a.ends.begin())];
+	}
+
 	level_renderer::statistics level_renderer::load(std::span<const placed_geometry> geometry, std::span<const geometric_object> meshes,
 		std::span<const std::unique_ptr<cnt_archive>> archives, level_lights lights, std::span<const std::optional<std::size_t>> sectors,
 		const visual_material* shadow_material)
@@ -1230,7 +1239,8 @@ namespace openrayman
 				float a = std::clamp(farthest_first[i]->alpha, 0.0f, 1.0f);
 				glm::vec4 tint = m.mode == blend::additive ? glm::vec4(a, a, a, a) : glm::vec4(1, 1, 1, a);
 				glUniform4fv(m_u_material_diffuse, 1, glm::value_ptr(tint));
-				glBindTexture(GL_TEXTURE_2D, texture_at(m.animation, m.texture));
+				const float age = farthest_first[i]->age;
+				glBindTexture(GL_TEXTURE_2D, age >= 0 ? texture_once(m.animation, m.texture, age) : texture_at(m.animation, m.texture));
 				glDrawArrays(GL_TRIANGLES, GLint(i * 6), 6);
 			}
 		}

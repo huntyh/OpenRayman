@@ -96,6 +96,26 @@ namespace openrayman::game
 	interpreter::interpreter(live_memory& memory, std::uint32_t main_actor)
 		: m_memory(memory), m_main_actor(main_actor)
 	{
+		// How long a game material's animated texture runs: its visual material (+0) lists frames
+		// from +0x64 (+0x6C of them; a frame is texture, f32 seconds, next).
+		m_particles.set_animation_lengths([&memory](std::uint32_t material) {
+			try
+			{
+				std::uint32_t visual = material ? memory.u32(material) : 0;
+				std::uint32_t count = visual ? memory.u32(visual + 0x6C) : 0;
+				if(count < 2)
+					return 0.0f;
+				float length = 0;
+				std::uint32_t frame = memory.u32(visual + 0x64);
+				for(std::uint32_t i = 0; frame && i < count; i++, frame = memory.u32(frame + 8))
+					length += memory.f32(frame + 4);
+				return length;
+			}
+			catch(const std::exception&)
+			{
+				return 0.0f;
+			}
+		});
 		// The camera settings the exe sets up at 0x4138C0..0x413A06 (offsets from 0x4FF62C).
 		auto real = [&](std::size_t at, float f) { std::memcpy(&m_camera.values[at], &f, 4); };
 		auto word = [&](std::size_t at, std::uint16_t w) { std::memcpy(&m_camera.values[at], &w, 2); };

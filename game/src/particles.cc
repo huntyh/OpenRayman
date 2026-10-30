@@ -24,6 +24,7 @@ namespace openrayman::game
 		p.height = size;
 		p.material = material;
 		p.born = p.since = now;
+		p.animation = m_animation_length ? m_animation_length(material) : 0.0f;
 		// Fully visible, except the ripple, which starts at the strength it was given.
 		p.alpha = flags == 0x10003300 ? motion[0] : 255;
 		m_particles.push_back(p);
@@ -116,7 +117,8 @@ namespace openrayman::game
 		}
 		else
 			return;
-		p.since = now;
+		p.since = p.born = now;
+		p.animation = m_animation_length ? m_animation_length(material) : 0.0f;
 		m_particles.push_back(p);
 	}
 
@@ -134,9 +136,8 @@ namespace openrayman::game
 		if(p.type == 1 || p.type == 3)
 			for(int i = 0; i < 3; i++)
 				p.position[i] += p.motion[i] * dt;
-		// A drop that falls to its floor becomes a ripple there (only once a ripple material was
-		// given). The ripple keeps the drop's floor as its time to live, so below height 0 it is
-		// gone at once, as in the exe.
+		// A drop that falls to its floor becomes a small ripple there (only once a ripple material
+		// was given), which grows and fades like the others.
 		if((p.flags & 0x20000) && m_ripple_material && !(p.flags & 0x80000) && p.position[2] <= p.life)
 		{
 			p.flags = 0x10003100;
@@ -146,6 +147,7 @@ namespace openrayman::game
 			p.alpha = 250;
 			p.born = now;
 			p.material = m_ripple_material;
+			p.animation = m_animation_length ? m_animation_length(p.material) : 0.0f;
 		}
 		// Growing: 0x100 at 1.3 a second, 0x200 3.7, 0x300 6.5.
 		switch(p.flags & 0xF00)
@@ -168,7 +170,9 @@ namespace openrayman::game
 		const float dt = float(seconds);
 		for(particle& p : m_particles)
 		{
-			if(p.flags)
+			if(p.animation > 0 && now - p.born >= p.animation)
+				p.alpha = 0;
+			else if(p.flags)
 				step(p, now, dt);
 			else if(p.type == 14)
 			{

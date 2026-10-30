@@ -81,6 +81,8 @@ namespace openrayman
 			std::uint32_t material = 0; // a game material given to load_effect_materials
 			float half_height = -1;     // its own half height; below 0 the same as half_size
 			bool flat = false;          // in the world's X/Y plane instead of facing the camera
+			float age = -1;             // seconds since it began: an animated texture plays once from
+			                            // there; below 0 it follows the level's clock
 		};
 		void set_particles(std::vector<particle> particles) { m_particles = std::move(particles); }
 
@@ -189,6 +191,8 @@ namespace openrayman
 		int animation_for(const visual_material& material, std::span<const std::unique_ptr<cnt_archive>> archives, statistics& stats);
 		// What a batch or sprite shows now.
 		GLuint texture_at(int animation, GLuint still) const;
+		// The frame shown `age` seconds into one run of the animation (the last one after it ends).
+		GLuint texture_once(int animation, GLuint still, float age) const;
 
 		GLuint m_program = 0;
 		GLint m_u_view_projection = -1;
