@@ -718,15 +718,25 @@ namespace openrayman::game
 		vec wall_normal{};
 		const vec asked = move();
 		const std::vector<zone_sphere> zones = zone_spheres(m, actor);
+		// Climbing over a ledge (end flag 0x400000, procedure 297): the exe leaves out floor contacts
+		// and those below the height at +0x1EC (0x43EEC0 -> 0x4377F0), so the ledge's own face
+		// doesn't hold the actor back while the climb animation carries it over the edge.
+		const bool climbing = (m.u32(b + base::end_flags) & 0x400000) != 0;
+		const float climb_height = climbing ? m.f32(b + 0x1EC) : 0.0f;
 		if((flags & collides) && !world.empty() && !placed)
 		{
 			const float radius = body_radius(zones);
-			std::array<float, 2> push = world.wall_push(target[0], target[1], target[2] + climb_up, target[2] + body_height, radius);
+			const float wall_bottom = climbing ? std::max(target[2] + climb_up, climb_height) : target[2] + climb_up;
+			std::array<float, 2> push{};
+			if(wall_bottom < target[2] + body_height)
+				push = world.wall_push(target[0], target[1], wall_bottom, target[2] + body_height, radius);
 			target[0] += push[0];
 			target[1] += push[1];
 			// Touching counts from a little further out, so an actor resting against a wall (pushed out
 			// to exactly its radius last tick) still reports it.
-			std::array<float, 2> touch = world.wall_push(target[0], target[1], target[2] + climb_up, target[2] + body_height, radius + wall_touch);
+			std::array<float, 2> touch{};
+			if(wall_bottom < target[2] + body_height)
+				touch = world.wall_push(target[0], target[1], wall_bottom, target[2] + body_height, radius + wall_touch);
 			if(float l = std::sqrt(touch[0] * touch[0] + touch[1] * touch[1]); l > 1e-6f)
 				wall_normal = { touch[0] / l, touch[1] / l, 0.0f };
 		}
@@ -738,7 +748,7 @@ namespace openrayman::game
 		bool has_block = block && m.contains(block, contacts_size);
 		bool landed = false;
 		world_collision::surface_hit ground{};
-		if((flags & collides) && !world.empty())
+		if((flags & collides) && !world.empty() && !climbing)
 		{
 			bool was_grounded = has_block && (m.u32(block + 4) & on_ground);
 			float top = std::max(current[2], target[2]) + climb_up;

@@ -62,8 +62,9 @@ The time step is the frame length rounded to the mechanics step 0x50043C (n step
   +0x1C = 1, +0x20 = 0 and the height +0x1EC; 298 (0x46CE00 case 0x12A) clears 0x400000 only. With
   0x400000 the exe's collision (0x43EEC0 → 0x4377F0) leaves out floor contacts and contacts below
   the height; flag 0x80 uses +0x1C/+0x20 as the contact response, 0x100 keeps a move's vertical part
-  against suitable walls (0x437E60). We store these but don't act on them yet: the climb in
-  Learn_10 works without them. When an actor's state changes, its mechanics are installed in our
+  against suitable walls (0x437E60). Ours: while 0x400000 is set, the floor isn't searched and
+  walls only push from the height up, so the ledge's face doesn't hold Rayman back (without it he
+  ended on the very edge, user report); 0x80 and 0x100 aren't used yet. When an actor's state changes, its mechanics are installed in our
   dynamics step, after the scripts, so a 297 in the same tick loses 0x182 (the exe installs them at
   once, 0x472345).
 
