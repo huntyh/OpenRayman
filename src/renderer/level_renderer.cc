@@ -466,6 +466,10 @@ namespace openrayman
 			gpu_texture texture = texture_for(*material.texture, archives, stats);
 			if(!texture.id)
 				continue;
+			// A texture that says it uses its alpha ("_aaa") blends, even when the frame the material
+			// starts from is nearly empty and looks like a cut-out (the splash ends on such a frame).
+			if(texture.mode == blend::none && (material.texture->flags & texture_flag::alpha))
+				texture.mode = blend::alpha;
 			m_effect_materials[address] = { glm::vec3(0), glm::vec2(1), texture.id, texture.mode,
 				glm::vec2(texture.mirror_u ? 2.0f : 1.0f, texture.mirror_v ? 2.0f : 1.0f), animation_for(material, archives, stats) };
 		}
