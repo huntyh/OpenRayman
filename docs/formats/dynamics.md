@@ -60,7 +60,16 @@ the line from the triangle's nearest ground-plane point to the cylinder's axis (
 normal when the axis is inside it). The cylinder looks up every 4-unit cell it covers, and three
 passes let two walls meet in a corner. The push happens before the floor search, so the floor under
 where the actor ends up is the one it lands on, and the drop in the target makes the speed the scripts
-read back fall to zero. A push sets contact bit 0x4 (condition 28) and contact slot 2 (function 190(2))
+read back fall to zero. The cylinder's radius is the actor's first kind-1 zone sphere (collide set +8,
+the list the exe's sphere cast gathers: 0x494290 -> 0x417870), 0.5 when it has none; Rayman's is 0.8
+(centred 0.8 above his feet). The exe uses the zones the scripts switched on (0x40DBD0); the first one
+stands in until those are read. An actor a script placed this tick (its position isn't where the
+mechanics left it, kept at base +0x7C like the exe's previous matrix; the exe's teleport resets both
+matrices, 0x432DA0) isn't pushed by walls that tick: the exe sweeps along the move, and a held actor
+doesn't move. The horizontal speed the scripts read is the move asked for, less what went into a
+wall, not where the push left it (0x436A30 runs before the collision step): the real game pushed
+Rayman 0.3 off the portal's wall in one frame with a sideways speed of -0.07.
+A wall within the radius + 0.05 sets contact bit 0x4 (condition 28) and contact slot 2 (function 190(2))
 to the push's direction and the point; Rayman's reflex macro 40 bounces his push (var87) off that normal,
 scaled by max(0, n · push direction), which is what ends the Learn_10 portal hop (seen in the running
 game with tools/r2live.py: one frame after the release var87 is zero). Ceilings and moving supports are still not handled. Rayman's mechanics has

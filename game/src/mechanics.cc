@@ -12,7 +12,7 @@ namespace openrayman::game
 		namespace base
 		{
 			constexpr std::uint32_t flags = 0x08, end_flags = 0x0C, gravity = 0x10;
-			constexpr std::uint32_t imposed = 0x24, proposed = 0x30, speed = 0x3C;
+			constexpr std::uint32_t imposed = 0x24, proposed = 0x30, speed = 0x3C, previous_position = 0x7C;
 			constexpr std::uint32_t contacts = 0x150, limit = 0x178, third = 0x190;
 			constexpr std::uint32_t size = 0x1A8;
 		}
@@ -41,6 +41,7 @@ namespace openrayman::game
 		constexpr float follow_down = 0.3f, climb_up = 0.5f, foot_radius = 0.5f;
 		// How tall the cylinder walls push out of is, above the step height.
 		constexpr float body_height = 1.8f;
+		constexpr float wall_touch = 0.05f; // how near a wall counts as touching it
 		constexpr float floor_normal = 0.5f; // cos 60°, the support limit of 0x43A260
 
 		using vec = std::array<float, 3>;
@@ -476,6 +477,29 @@ namespace openrayman::game
 		return { x - start_x, y - start_y };
 	}
 
+	namespace
+	{
+		// How far walls keep the actor away: the radius of the first sphere in its kind-1 zone list
+		// (collide set +8, the list the exe's sphere cast gathers, 0x494290 -> 0x417870). Rayman's is
+		// 0.8, centred 0.8 above his feet, and the real game leaves him that far from the wall by the
+		// Learn_10 portal. The exe takes the zones the scripts switched on (0x40DBD0); the first one
+		// stands in for them until those are read. Others keep foot_radius.
+		float body_radius(const live_memory& m, std::uint32_t actor)
+		{
+			auto word = [&](std::uint32_t at) { return m.contains(at, 4) ? m.u32(at) : 0u; };
+			std::uint32_t set = word(actor + 0x14);
+			std::uint32_t head = set ? word(set + 8) : 0;
+			std::uint32_t node = head ? word(head) : 0;
+			std::uint32_t zone = node ? word(node + 4) : 0;
+			std::uint32_t kinds = zone ? word(zone + 0x10) : 0, data = zone ? word(zone + 0x14) : 0;
+			if(!kinds || !data || !m.contains(kinds, 2) || m.read<std::int16_t>(kinds) != 7)
+				return foot_radius;
+			std::uint32_t entries = word(word(data));
+			float r = entries && m.contains(entries, 4) ? m.f32(entries) : 0.0f;
+			return r > 0.05f && r < 3.0f ? r : foot_radius;
+		}
+	}
+
 	void move_actor(live_memory& m, std::uint32_t super_object, std::uint32_t actor, double ms, const world_collision& world)
 	{
 		std::uint32_t dynamics = m.u32(actor + 8);
@@ -498,6 +522,14 @@ namespace openrayman::game
 			return;
 		float dt = float(ms / 1000);
 		vec current = read_vec(m, t + 4), target = current;
+		// Where this mechanics left the actor last tick (the exe keeps it in the dynamics' previous
+		// matrix, +0x78, position at +0x7C). Somewhere else means a script put it there (a teleport,
+		// procedure 200): that isn't a move into a wall, so walls don't push it this tick. The exe's
+		// collision sweeps along the move (0x43EEC0) and its teleport resets both matrices (0x432DA0);
+		// the Learn_10 portal holds Rayman against the tablet's wall this way, and the real game only
+		// pushes him off it once he is let go.
+		vec left = read_vec(m, b + base::previous_position);
+		const bool placed = std::abs(left[0] - current[0]) > 1e-4f || std::abs(left[1] - current[1]) > 1e-4f || std::abs(left[2] - current[2]) > 1e-4f;
 
 		// A script speed (units per second) sets the axes of this tick's move the script chose (one
 		// bit each, `x_bit` and the next two), replacing what gravity or an earlier speed made of
@@ -599,13 +631,18 @@ namespace openrayman::game
 		// body_height (docs/formats/dynamics.md). Run before the floor search, so the floor under
 		// where the actor ends up is the one it lands on.
 		vec wall_normal{};
-		if((flags & collides) && !world.empty())
+		const vec asked = move();
+		if((flags & collides) && !world.empty() && !placed)
 		{
-			std::array<float, 2> push = world.wall_push(target[0], target[1], target[2] + climb_up, target[2] + body_height, foot_radius);
+			const float radius = body_radius(m, actor);
+			std::array<float, 2> push = world.wall_push(target[0], target[1], target[2] + climb_up, target[2] + body_height, radius);
 			target[0] += push[0];
 			target[1] += push[1];
-			if(float l = std::sqrt(push[0] * push[0] + push[1] * push[1]); l > 1e-6f)
-				wall_normal = { push[0] / l, push[1] / l, 0.0f };
+			// Touching counts from a little further out, so an actor resting against a wall (pushed out
+			// to exactly its radius last tick) still reports it.
+			std::array<float, 2> touch = world.wall_push(target[0], target[1], target[2] + climb_up, target[2] + body_height, radius + wall_touch);
+			if(float l = std::sqrt(touch[0] * touch[0] + touch[1] * touch[1]); l > 1e-6f)
+				wall_normal = { touch[0] / l, touch[1] / l, 0.0f };
 		}
 		const bool on_wall = wall_normal[0] != 0 || wall_normal[1] != 0;
 
@@ -649,13 +686,23 @@ namespace openrayman::game
 			water = world.water_at(target[0], target[1], target[2] + body_height, target[2]);
 
 		// The speed the scripts read back (0x436A30); landing drops the vertical part (0x43B337).
+		// The exe works it out before the collision step, so being pushed out of a wall isn't speed
+		// (the real game's portal release: 0.3 off the wall in one frame, sideways speed -0.07);
+		// what went into the wall is taken off instead. Vertically the floor's answer counts.
 		vec speed;
-		for(int i = 0; i < 3; i++)
-			speed[std::size_t(i)] = (target[std::size_t(i)] - current[std::size_t(i)]) / dt;
+		vec along = asked;
+		if(on_wall)
+			if(float into = along[0] * wall_normal[0] + along[1] * wall_normal[1]; into < 0)
+				for(int i = 0; i < 2; i++)
+					along[std::size_t(i)] -= wall_normal[std::size_t(i)] * into;
+		for(int i = 0; i < 2; i++)
+			speed[std::size_t(i)] = along[std::size_t(i)] / dt;
+		speed[2] = (target[2] - current[2]) / dt;
 		if(landed)
 			speed[2] = 0;
 		write_vec(m, b + base::speed, speed);
 		write_vec(m, t + 4, target);
+		write_vec(m, b + base::previous_position, target);
 		if(has_block && (flags & collides))
 		{
 			// The word at +4 is what the scripts read; +0 is this tick's, published at its end
