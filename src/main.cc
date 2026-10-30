@@ -447,9 +447,10 @@ namespace
 			{
 				if(states[k] == current)
 				{
-					// It loops if it doesn't move on to another state when its animation ends.
+					// It loops if it names itself as what comes after; with nothing after it, it holds
+					// its last frame (0x40E800 sets +0x8E and the animation stops updating).
 					std::uint32_t after = a.live->u32(current + 0x20);
-					actor.loops = after == 0 || after == current;
+					actor.loops = after == current;
 				}
 				if(states[k] == current && actor.state != k)
 				{

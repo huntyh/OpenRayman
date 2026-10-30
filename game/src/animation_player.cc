@@ -177,6 +177,12 @@ namespace openrayman::game
 		std::uint8_t rate = rate_of(m, data, s);
 		if(!rate)
 			return;
+		// A state that played out with no passes left and nothing after it holds its last frame:
+		// the exe sets +0x8E then (0x40E800) and stops updating the animation until a state starts
+		// (0x40A5C0, 0x40FD30). Looping it showed the first frame of Rayman's ledge climb, the
+		// hanging pose, for the ticks before his script moved on.
+		if(m.u8(data + data_3d::finished) && !m.u32(s + state::after) && !m.u8(data + data_3d::loops))
+			return;
 		// Markers last one tick (0x40E841). "Ran out" (+0x8F) is recomputed every tick (0x40EF1B):
 		// set while the last frame holds, for one tick, before the next pass or state starts.
 		m.write<std::uint8_t>(data + data_3d::markers, 0);
