@@ -266,3 +266,6 @@ Everything the PC game has, working before we port it anywhere:
 - Antialiasing (MSAA, with alpha to coverage for cut-out textures)
 - Smoother cut-out textures: colour-keyed and alpha-tested textures have jagged, "cut out with
   scissors" edges (Globox's eyes); smoothing their edges, as we did for the leaves in 2c
+- Richer water while running (optional, off by default): the game only leaves ripples when Rayman
+  runs through shallow water, while jumping in throws droplets apart (particle kind 60) and
+  bubbles; a few of those droplets and bubbles on each step would look livelier (user's idea)
