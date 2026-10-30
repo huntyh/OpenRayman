@@ -281,7 +281,7 @@ namespace openrayman::game
 				// The game camera is moved by its own mechanics (0x4359D0), not the actors' physics.
 				camera_state& camera = vm.camera_motion();
 				if(camera.valid && self == camera.super_object)
-					move_camera(m, self, camera, vm.frame_ms());
+					move_camera(m, self, camera, vm.frame_ms(), vm.world());
 				else
 					move_actor(m, self, actor, vm.frame_ms(), vm.world());
 			}

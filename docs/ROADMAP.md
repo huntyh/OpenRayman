@@ -164,7 +164,7 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
     camera works like the game's, tilting down to show where he lands (function 310 returns the
     offset point). The decompile now covers every script handler. Q/W turning fixed (2026-10-30): the
     exe swings the camera round in pi/8 steps (0x485760 -> 0x4855D0) instead of cutting across to
-    the point 90 degrees round. Left: wall collision, the shot while strafing, the
+    the point 90 degrees round. Camera collision (0x434660, a sliding 0.35 sphere) added. Left: the shot while strafing, the
     arrival pan, the field of view, Murfy's freeze, long-idle animations. Slippery slopes slide
     Rayman uphill instead of down (likely a sign in the slope direction: contact normal, function
     190, or the slide procedure; user: `--level Ly_10 --camera -4776.4,-8543.0,-8238.9,-122.6,-43.9`).

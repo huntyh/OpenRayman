@@ -172,15 +172,28 @@ is "close enough" when the distance between the current and the desired position
   with its own weight (camera object +0x78 vectors, +0xD8 points, +0x138 weights; procedure 159
   starts them). We use the target's position only; for every game camera the points start at that
   position and only some cutscenes move them.
-- **The pi/8 direction turn** (0x484390, 0x484470) that walks the back direction towards the angle
-  limits in the block. The wanted direction is the one the camera already lies in from the aim point.
 - **The orbit search around obstacles** (0x486880, with 0x486710 deciding whether a step may run):
   the exe tries directions around the target when the straight one is blocked. Our camera takes the
   straight one.
-- **The occlusion pass** (0x434660): the exe casts from the aim point to the camera and pulls it in
-  when scenery is in the way; it also overwrites the per-tick turn carry with 0 or another angle.
+- **The collision test of a swing-round step** (0x486400) and the "try the other way" that follows
+  a blocked one: every step passes.
 - **The cutscene modes** (cam+0x60: mode 1 scripted keyframes, mode 4 snap, mode 5 target switch)
   and the global tuning block 0x4FF62C.. beyond what procedures 491..493 store.
+
+## Camera collision (0x434660)
+
+After each tick's movement the exe moves the camera's collision sphere from where it was to where
+the tick put it (0x434390 casts it, skipping collide flags 0xC000: water and 0x8000) and slides it
+along what it meets: it stops 0.02 short of the surface and carries the rest of the movement along
+it, along the crease when it meets a second surface, at most five times, and stops when the slide
+turns more than 150 degrees (0x49C720) from the movement. A camera that starts inside a surface is
+pushed out first. Block +0x70 bit 0x40 turns this off. Afterwards the per-tick turn carry is the
+angle the camera really swung round the look-at point. The Fix camera's sphere is the first zone
+of its kind-1 list (actor +0x14 → +8): radius 0.35 round its origin.
+
+Ours (`world_collision::slide_sphere`) finds the first touch by stepping a quarter of the radius at
+a time and halving, rather than casting, and skips the collision for a snap (the level-start cut),
+which the exe places by resetting the camera instead of moving it.
 
 ## What we do differently (for now)
 

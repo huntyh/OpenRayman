@@ -230,6 +230,32 @@ namespace openrayman::game
 		}
 	}
 
+	// The radius of the camera's collision sphere: the first sphere among its actor's kind-1 zones
+	// (actor +0x14 -> the list at +8, the one the movement collides with; a zone is vertices +0,
+	// element kinds +0x10, elements +0x14, and a sphere element's first entry starts with its
+	// radius). The Fix camera's is 0.35 round its origin. 0 when it has none.
+	static float camera_radius(const live_memory& m, std::uint32_t super_object)
+	{
+		auto word = [&](std::uint32_t at) { return m.contains(at, 4) ? m.u32(at) : 0u; };
+		std::uint32_t actor = word(super_object + 4);
+		std::uint32_t set = actor ? word(actor + 0x14) : 0;
+		if(set)
+		{
+			std::uint32_t head = word(set + 8);
+			for(std::uint32_t node = head ? word(head) : 0, i = 0; node && i < 16; node = word(node), i++)
+			{
+				std::uint32_t zone = word(node + 4);
+				std::uint32_t kinds = zone ? word(zone + 0x10) : 0, data = zone ? word(zone + 0x14) : 0;
+				if(!kinds || !data || !m.contains(kinds, 2) || m.read<std::int16_t>(kinds) != 7)
+					continue;
+				std::uint32_t entries = word(word(data));
+				if(entries && m.contains(entries, 4))
+					return m.f32(entries);
+			}
+		}
+		return 0;
+	}
+
 	void solve_camera(interpreter& vm, std::uint32_t super_object)
 	{
 		live_memory& m = vm.memory();
@@ -447,7 +473,7 @@ namespace openrayman::game
 		}
 	}
 
-	void move_camera(live_memory& m, std::uint32_t super_object, camera_state& state, double ms)
+	void move_camera(live_memory& m, std::uint32_t super_object, camera_state& state, double ms, const world_collision& world)
 	{
 		std::uint32_t transform = global_transform(m, super_object);
 		if(!state.valid || !transform)
@@ -522,6 +548,24 @@ namespace openrayman::game
 		//    (0x434127). With the default divisor 1 it leaves the movement alone.
 		if(!((state.flags & snap_position) && (state.flags & keep_orientation)))
 			pos = add(position, smoothed_movement(sub(pos, position), state.previous_move, state.position_smoothing));
+
+		// 5. Collision (0x434660): the camera's sphere moves from where it was to where the tick put
+		//    it and slides along the level's surfaces, unless the block's +0x70 bit 0x40 turns it off.
+		//    The turn carry becomes the angle the camera really swung round the look-at point. A
+		//    snap (a fresh camera or a cut) is put in place, not moved there (the exe resets it, 0x413E30).
+		if(!(state.flags & 0x40) && !(state.flags & snap_position) && !world.empty())
+		{
+			if(float radius = camera_radius(m, super_object); radius > 0)
+			{
+				vec3 moved = world.slide_sphere(position, pos, radius);
+				if(moved != pos)
+				{
+					pos = moved;
+					vec3 from = normalised(sub(state.look_at, position)), to = normalised(sub(state.look_at, pos));
+					state.carry_angle = std::acos(std::clamp(dot(from, to), -1.0f, 1.0f));
+				}
+			}
+		}
 
 		// 4. The aim point the camera looks at: the same kind of step towards the offset point
 		//    (0x434230..0x434380, 0x433B00 at 0x434314), unless the scripts take it from the camera's

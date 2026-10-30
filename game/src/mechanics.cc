@@ -257,6 +257,152 @@ namespace openrayman::game
 		return best;
 	}
 
+	namespace
+	{
+		vec vsub(const vec& a, const vec& b) { return { a[0] - b[0], a[1] - b[1], a[2] - b[2] }; }
+		vec vadd(const vec& a, const vec& b) { return { a[0] + b[0], a[1] + b[1], a[2] + b[2] }; }
+		vec vmul(const vec& a, float f) { return { a[0] * f, a[1] * f, a[2] * f }; }
+		float vdot(const vec& a, const vec& b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+		vec vcross(const vec& a, const vec& b) { return { a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0] }; }
+		float vlen(const vec& a) { return std::sqrt(vdot(a, a)); }
+
+		// The point of a triangle nearest to p (by its regions: corners, edges, face).
+		vec closest_on_triangle(const vec& p, const vec& a, const vec& b, const vec& c)
+		{
+			vec ab = vsub(b, a), ac = vsub(c, a), ap = vsub(p, a);
+			float d1 = vdot(ab, ap), d2 = vdot(ac, ap);
+			if(d1 <= 0 && d2 <= 0)
+				return a;
+			vec bp = vsub(p, b);
+			float d3 = vdot(ab, bp), d4 = vdot(ac, bp);
+			if(d3 >= 0 && d4 <= d3)
+				return b;
+			float vc = d1 * d4 - d3 * d2;
+			if(vc <= 0 && d1 >= 0 && d3 <= 0)
+				return vadd(a, vmul(ab, d1 / (d1 - d3)));
+			vec cp = vsub(p, c);
+			float d5 = vdot(ab, cp), d6 = vdot(ac, cp);
+			if(d6 >= 0 && d5 <= d6)
+				return c;
+			float vb = d5 * d2 - d1 * d6;
+			if(vb <= 0 && d2 >= 0 && d6 <= 0)
+				return vadd(a, vmul(ac, d2 / (d2 - d6)));
+			float va = d3 * d6 - d5 * d4;
+			if(va <= 0 && (d4 - d3) >= 0 && (d5 - d6) >= 0)
+				return vadd(b, vmul(vsub(c, b), (d4 - d3) / ((d4 - d3) + (d5 - d6))));
+			float denom = 1.0f / (va + vb + vc);
+			return vadd(a, vadd(vmul(ab, vb * denom), vmul(ac, vc * denom)));
+		}
+	}
+
+	std::array<float, 3> world_collision::slide_sphere(const std::array<float, 3>& start, const std::array<float, 3>& end, float radius) const
+	{
+		if(m_triangles.empty() || radius <= 0)
+			return end;
+		// The solid triangles near the whole movement.
+		std::vector<std::uint32_t> near;
+		{
+			float lo[2], hi[2];
+			for(int a = 0; a < 2; a++)
+			{
+				lo[a] = std::min(start[a], end[a]) - radius;
+				hi[a] = std::max(start[a], end[a]) + radius;
+			}
+			for(int x = int(std::floor(lo[0] / cell)); x <= int(std::floor(hi[0] / cell)); x++)
+				for(int y = int(std::floor(lo[1] / cell)); y <= int(std::floor(hi[1] / cell)); y++)
+					if(auto it = m_cells.find({ x, y }); it != m_cells.end())
+						near.insert(near.end(), it->second.begin(), it->second.end());
+			std::ranges::sort(near);
+			near.erase(std::unique(near.begin(), near.end()), near.end());
+			std::erase_if(near, [&](std::uint32_t i) { return (m_triangles[i].flags & surface::no_contact) != 0; });
+		}
+		if(near.empty())
+			return end;
+		// The deepest overlap of the sphere at p: how far it is inside, and the way out.
+		auto overlap = [&](const vec& p, vec& out) {
+			float deepest = 0;
+			for(std::uint32_t i : near)
+			{
+				const collision_triangle& t = m_triangles[i];
+				vec q = closest_on_triangle(p, t.corners[0], t.corners[1], t.corners[2]);
+				vec d = vsub(p, q);
+				float l = vlen(d);
+				if(l < radius && radius - l > deepest)
+				{
+					deepest = radius - l;
+					out = l > 1e-5f ? vmul(d, 1.0f / l) : t.normal;
+				}
+			}
+			return deepest;
+		};
+		constexpr float margin = 0.02f; // 0x49C71C / 0x49C724
+		vec pos = start;
+		vec normal{};
+		if(float depth = overlap(pos, normal); depth > 0)
+			pos = vadd(pos, vmul(normal, depth + margin));
+		vec target = end;
+		const vec first = vsub(end, start);
+		const float first_length = vlen(first);
+		vec previous_normal{};
+		for(int hit = 0; hit < 5; hit++)
+		{
+			vec move = vsub(target, pos);
+			float length = vlen(move);
+			if(length < margin)
+				break;
+			// The first point along the move where the sphere touches something: steps no longer
+			// than a quarter of the radius, then halving.
+			float step = std::max(radius * 0.25f, 0.01f);
+			int steps = int(std::ceil(length / step));
+			float free = 1, blocked = -1;
+			for(int i = 1; i <= steps; i++)
+			{
+				float f = float(i) / float(steps);
+				if(overlap(vadd(pos, vmul(move, f)), normal) > 0)
+				{
+					blocked = f;
+					free = float(i - 1) / float(steps);
+					break;
+				}
+			}
+			if(blocked < 0)
+			{
+				pos = target;
+				break;
+			}
+			for(int i = 0; i < 8; i++)
+			{
+				float mid = (free + blocked) * 0.5f;
+				if(overlap(vadd(pos, vmul(move, mid)), normal) > 0)
+					blocked = mid;
+				else
+					free = mid;
+			}
+			overlap(vadd(pos, vmul(move, blocked)), normal);
+			// Stop 0.02 short of the surface.
+			float advance = std::max(0.0f, free * length - margin);
+			pos = vadd(pos, vmul(move, advance / length));
+			// The rest of the movement along the surface, or along the crease with the last one.
+			vec rest = vsub(target, pos);
+			vec slide;
+			vec crease = vcross(previous_normal, normal);
+			if(hit > 0 && vlen(crease) > 1e-3f)
+			{
+				crease = vmul(crease, 1.0f / vlen(crease));
+				slide = vmul(crease, vdot(rest, crease));
+			}
+			else
+				slide = vsub(rest, vmul(normal, vdot(rest, normal)));
+			previous_normal = normal;
+			// A slide turned more than 150 degrees from the movement goes nowhere (0x49C720).
+			float slide_length = vlen(slide);
+			if(slide_length < margin || (first_length > 1e-6f && vdot(slide, first) / (slide_length * first_length) < std::cos(2.6179938f)))
+				break;
+			target = vadd(pos, slide);
+		}
+		return pos;
+	}
+
 	std::optional<world_collision::surface_hit> world_collision::water_at(float x, float y, float top, float bottom) const
 	{
 		// Water triangles are flat surfaces (0x4000); a steep one is a waterfall's wall, not a pond

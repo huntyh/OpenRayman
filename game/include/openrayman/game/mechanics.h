@@ -54,6 +54,14 @@ namespace openrayman::game
 		};
 		std::optional<segment_hit> first_hit(const std::array<float, 3>& start, const std::array<float, 3>& end) const;
 
+		// Moves a sphere of `radius` from `start` towards `end` and slides it along what it meets, the
+		// way the exe moves its camera (0x434660): it stops 0.02 short of a surface and carries on
+		// with what is left of the movement along it (along the crease of two), at most five times,
+		// and gives up when the slide turns more than 150 degrees from the movement. A sphere that
+		// starts inside a surface is pushed out first. Water and 0x8000 surfaces let it through
+		// (0x434390 skips collide flags 0xC000). Returns where it ends.
+		std::array<float, 3> slide_sphere(const std::array<float, 3>& start, const std::array<float, 3>& end, float radius) const;
+
 	private:
 		// The triangles of the cell (x, y) lies in, or an empty list.
 		const std::vector<std::uint32_t>& under(float x, float y) const;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <openrayman/game/live_memory.h>
+#include <openrayman/game/mechanics.h>
 #include <openrayman/geometry.h>
 
 #include <array>
@@ -58,7 +59,8 @@ namespace openrayman::game
 	void solve_camera(interpreter& vm, std::uint32_t super_object);
 
 	// One tick of the camera's mechanics (0x4359D0, its steps 1, 2, 4 and 6): step the camera's
-	// position towards the wanted one, orbit it about the look-at point, ease the aim point, and
-	// publish the result as the super object's global transform.
-	void move_camera(live_memory& memory, std::uint32_t super_object, camera_state& state, double ms);
+	// position towards the wanted one, orbit it about the look-at point, keep it out of the level's
+	// surfaces (`world`, may be empty), ease the aim point, and publish the result as the super
+	// object's global transform.
+	void move_camera(live_memory& memory, std::uint32_t super_object, camera_state& state, double ms, const world_collision& world);
 }
