@@ -114,7 +114,10 @@ frame by the strongest 8 lights of the sector they stand in.
 the view direction (not its straight-line distance): the near blend up to `near`, rising linearly to
 the far blend at `far`, staying there up to the "infinite" distance, and full beyond it. Its colour
 is mixed towards the fog colour by that much. Glows (additive surfaces) fade instead. Objects past
-the infinite distance aren't drawn at all.
+the infinite distance aren't drawn at all. Additive sprites (element type 3, texture flag 0x20 without
+0x08: Rayman's shot, glows) take no fog at all: the Direct3D driver clears their fog factor
+(`GliDX6vf.dll` 0x10008F4C, used by its sprite routine at 0x1000181D; traced by GPT-6.1 Terra,
+2026-10-31). Fogged, the shot was too dim at a distance to see it shrink when it runs out.
 
 The game hands the fog light's values (blends clamped to 0..255, near/far ordered) to its 3dfx
 driver, `GliVd1vf.dll`, which builds a Glide fog table: 64 entries indexed by W, Glide's depth, filled

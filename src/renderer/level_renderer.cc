@@ -1189,6 +1189,11 @@ namespace openrayman
 			glBindVertexArray(m_sprite_vao);
 			glBindBuffer(GL_ARRAY_BUFFER, m_sprite_vbo);
 			glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(quads.size() * sizeof(vertex)), quads.data(), GL_STREAM_DRAW);
+			// Additive sprites take no fog: the game's driver clears their fog factor (GliDX6vf.dll
+			// 0x10008F4C for texture flag 0x20 without 0x08, used by the sprite routine 0x1000181D).
+			// Faded by distance, Rayman's shot was too dim to see shrink when it ran out.
+			glm::vec4 fog_was(0.0f);
+			glGetUniformfv(m_program, m_u_fog, glm::value_ptr(fog_was));
 			for(std::size_t first = 0; first < sprites.size();)
 			{
 				std::size_t last = first;
@@ -1196,10 +1201,15 @@ namespace openrayman
 					last++;
 				if(sprites[first].mode != current)
 					set_blend(current = sprites[first].mode);
+				if(sprites[first].mode == blend::additive)
+					glUniform4f(m_u_fog, 0, 0, 0, 0);
+				else
+					glUniform4fv(m_u_fog, 1, glm::value_ptr(fog_was));
 				glBindTexture(GL_TEXTURE_2D, sprites[first].texture);
 				glDrawArrays(GL_TRIANGLES, GLint(first * 6), GLsizei((last - first) * 6));
 				first = last;
 			}
+			glUniform4fv(m_u_fog, 1, glm::value_ptr(fog_was));
 		}
 
 		// Particles, farthest first: each fades on its own, so each is its own draw.
