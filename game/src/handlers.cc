@@ -832,6 +832,13 @@ namespace openrayman::game
 		{
 			return { dot(v, axis_of(vm, super_object, 0)), dot(v, axis_of(vm, super_object, 1)), dot(v, axis_of(vm, super_object, 2)) };
 		}
+		// The other way round: a vector given in an actor's own axes, put back in the world
+		// (x times its X axis, plus y times Y, plus z times Z). The axes go in as they are.
+		vec3 from_local(interpreter& vm, std::uint32_t super_object, const vec3& v)
+		{
+			vec3 x = axis_of(vm, super_object, 0), y = axis_of(vm, super_object, 1), z = axis_of(vm, super_object, 2);
+			return { v[0] * x[0] + v[1] * y[0] + v[2] * z[0], v[0] * x[1] + v[1] * y[1] + v[2] * z[1], v[0] * x[2] + v[1] * y[2] + v[2] * z[2] };
+		}
 
 		// Writes new axes into a transform, keeping each axis' scale in the second copy (0x445D00).
 		void set_axes(live_memory& m, std::uint32_t t, const vec3& x, const vec3& y, const vec3& z)
@@ -1662,26 +1669,6 @@ namespace openrayman::game
 			return c.args;
 		}
 
-		// 190 (0x4785B0, shared with 189 and 191): one of the six normals of the actor's contact
-		// report (dynamics base +0x150 points at it; 0x482E20): argument 0..5 picks the 0x28-byte
-		// entry, and its vector at +4 comes back (entry 1 is the ground, 2 a wall). Any other
-		// argument gives a zero vector. (189 adds up the entries its flags name; not registered.)
-		std::uint32_t contact_normal(call& c, value& out)
-		{
-			std::uint32_t self = c.vm.target(c.self, true);
-			value which;
-			next_arg(c, which);
-			live_memory& m = c.vm.memory();
-			std::uint32_t base = dynamics_base(c, self, 0x10);
-			std::uint32_t report = base ? safe_u32(m, base + 0x150) : 0;
-			std::int32_t n = which.as_int();
-			vec3 normal{};
-			if(report && n >= 0 && n <= 5 && m.contains(report + 0xC + std::uint32_t(n) * 0x28, 12))
-				normal = read3(m, report + 0xC + std::uint32_t(n) * 0x28);
-			out = value_of(normal);
-			return c.args;
-		}
-
 		// The surface flags of the game material a contact slot names at +0x20 (0x479220: the game
 		// material's collide material, its u16 at +2), 0 without one.
 		std::uint32_t slot_surface(const live_memory& m, std::uint32_t report, std::uint32_t slot)
@@ -1699,6 +1686,108 @@ namespace openrayman::game
 		{
 			std::uint32_t base = dynamics_base(c, c.vm.target(c.self, true), 0x10);
 			return base ? safe_u32(c.vm.memory(), base + 0x150) : 0;
+		}
+
+		// 190 (0x4785B0, shared with 189): one of the six normals of the actor's contact report
+		// (dynamics base +0x150 points at it; 0x482E20): argument 0..5 picks the 0x28-byte entry,
+		// and its vector at +4 comes back (entry 1 is the ground, 2 a wall). Any other argument
+		// gives a zero vector.
+		std::uint32_t contact_normal(call& c, value& out)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value which;
+			next_arg(c, which);
+			live_memory& m = c.vm.memory();
+			std::uint32_t base = dynamics_base(c, self, 0x10);
+			std::uint32_t report = base ? safe_u32(m, base + 0x150) : 0;
+			std::int32_t n = which.as_int();
+			vec3 normal{};
+			if(report && n >= 0 && n <= 5 && m.contains(report + 0xC + std::uint32_t(n) * 0x28, 12))
+				normal = read3(m, report + 0xC + std::uint32_t(n) * 0x28);
+			out = value_of(normal);
+			return c.args;
+		}
+
+		// The contact word's bits and the slot each one stands for (0x4785B0, 0x479260): 0x1 slot
+		// 1, 0x4 slot 2, 0x40 slot 4, 0x10 slot 5 and 0x10000 slot 3; a word of 0 means slot 0.
+		// Bit 0x2 has no slot of its own.
+		const std::pair<std::uint32_t, std::uint32_t> contact_slots[] = { { 0x10000, 3 }, { 0x1, 1 }, { 0x4, 2 }, { 0x40, 4 }, { 0x10, 5 } };
+
+		// The slots the contact word at +4 names, as a 6-bit set (bit 0 = slot 0).
+		std::uint32_t contact_slot_mask(call& c, std::uint32_t report)
+		{
+			if(!report)
+				return 0;
+			std::uint32_t word = safe_u32(c.vm.memory(), report + 4);
+			if(word == 0)
+				return 1;
+			std::uint32_t mask = 0;
+			for(auto [bit, slot] : contact_slots)
+				if(word & bit)
+					mask |= 1u << slot;
+			return mask;
+		}
+
+		// 191 (0x479260, case 0xBF): the point the actor's contact was made at: slot 0's +0x10
+		// (a zero vector when it has none).
+		std::uint32_t contact_point(call& c, value& out)
+		{
+			std::uint32_t report = contact_report(c);
+			live_memory& m = c.vm.memory();
+			vec3 point{};
+			if(report && m.contains(report + 8 + 0x10, 12))
+				point = read3(m, report + 8 + 0x10);
+			out = value_of(point);
+			return c.args;
+		}
+
+		// 189 (0x4785B0): the sum of the normals of the slots the contact word names, made unit (a
+		// zero vector when there are no contacts). Here the word's 0x10000 bits test slot 3, at
+		// report +0x80.
+		std::uint32_t contact_sum_normal(call& c, value& out)
+		{
+			live_memory& m = c.vm.memory();
+			std::uint32_t report = contact_report(c);
+			vec3 sum{};
+			std::uint32_t mask = contact_slot_mask(c, report);
+			for(std::uint32_t slot = 0; slot < 6; slot++)
+				if((mask >> slot) & 1 && m.contains(report + 0xC + slot * 0x28, 12))
+				{
+					vec3 n = read3(m, report + 0xC + slot * 0x28);
+					sum = { sum[0] + n[0], sum[1] + n[1], sum[2] + n[2] };
+				}
+			out = value_of(normalised(sum));
+			return c.args;
+		}
+
+		// 192 (0x479260, case 0xC0): the point of contact slot 0..5 (its +0x10); any other number
+		// gives a zero vector.
+		std::uint32_t contact_slot_point(call& c, value& out)
+		{
+			value which;
+			next_arg(c, which);
+			live_memory& m = c.vm.memory();
+			std::uint32_t report = contact_report(c);
+			std::int32_t n = which.as_int();
+			vec3 point{};
+			if(report && n >= 0 && n <= 5 && m.contains(report + 8 + std::uint32_t(n) * 0x28 + 0x10, 12))
+				point = read3(m, report + 8 + std::uint32_t(n) * 0x28 + 0x10);
+			out = value_of(point);
+			return c.args;
+		}
+
+		// 193 (0x479260, case 0xC1): the contact point of slot 1 (the ground: its point at
+		// report+0x40, material +0x50), but only when that surface takes bit 2 of its collide flags
+		// (0x479220 and 0x42DB40; the grabbable ones); otherwise a zero vector.
+		std::uint32_t contact_grab_point(call& c, value& out)
+		{
+			live_memory& m = c.vm.memory();
+			std::uint32_t report = contact_report(c);
+			vec3 point{};
+			if(report && (slot_surface(m, report, 1) & 0x4) && m.contains(report + 0x40, 12))
+				point = read3(m, report + 0x40);
+			out = value_of(point);
+			return c.args;
 		}
 
 		// 196, 197 (0x479260): the surface flags of the actor's contacts. 197: of slot 0..5 (any
@@ -1871,6 +1960,18 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 51, 53 (0x47C1A0): the reverse of 52/54: a vector given in the actor's own axes, put back
+		// in the world (v.x times its X axis, plus v.y times Y, plus v.z times Z; the axes as they
+		// are, not made unit). Its three words are read as a vector, and the answer is one.
+		std::uint32_t along_axes(call& c, value& out)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value v;
+			next_arg(c, v);
+			out = value_of(from_local(c.vm, self, vec_of(v)));
+			return c.args;
+		}
+
 		// 52, 54 (0x47C250): a vector against the actor's axes (x = X axis . v, ...).
 		std::uint32_t against_axes(call& c, value& out)
 		{
@@ -1904,6 +2005,21 @@ namespace openrayman::game
 			next_arg(c, a);
 			next_arg(c, b);
 			out = value::real(dot(vec_of(a), vec_of(b)));
+			return c.args;
+		}
+
+		// 209 (0x479AC0): a vector bounced off a surface: v - 2(v . n)n, and that scaled by the
+		// third argument (1 for a plain reflection). n is used as given, not made unit; the scale
+		// counts as an integer when it isn't a real.
+		std::uint32_t reflect(call& c, value& out)
+		{
+			value v, n, scale;
+			next_arg(c, v);
+			next_arg(c, n);
+			next_arg(c, scale);
+			vec3 a = vec_of(v), b = vec_of(n);
+			float twice = dot(a, b) * -2.0f, s = scale.as_float();
+			out = value::vector((twice * b[0] + a[0]) * s, (twice * b[1] + a[1]) * s, (twice * b[2] + a[2]) * s);
 			return c.args;
 		}
 
@@ -2974,6 +3090,10 @@ namespace openrayman::game
 			vm.on_condition(i, contact_has_surface);
 		vm.on_function(196, contact_surface);
 		vm.on_function(197, contact_surface);
+		vm.on_function(189, contact_sum_normal);
+		vm.on_function(191, contact_point);
+		vm.on_function(192, contact_slot_point);
+		vm.on_function(193, contact_grab_point);
 		vm.on_condition(72, bits_overlap);
 		vm.on_condition(74, inside_waypoint);
 		vm.on_condition(78, state_flag);
@@ -3003,6 +3123,9 @@ namespace openrayman::game
 			vm.on_function(i, float_math);
 		vm.on_function(52, against_axes);
 		vm.on_function(54, against_axes);
+		vm.on_function(51, along_axes);
+		vm.on_function(53, along_axes);
+		vm.on_function(209, reflect);
 		vm.on_function(60, clock_function);
 		vm.on_function(61, clock_function);
 		vm.on_function(149, dot_product);
