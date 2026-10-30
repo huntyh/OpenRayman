@@ -900,11 +900,13 @@ namespace openrayman::game
 		}
 
 		// 0x40CC70: the zone at `index` of a kind's list: the list's first node, then `index` next
-		// pointers, and the zone object is that node's +4.
+		// pointers, and the zone object is that node's +4. The lists sit at +0 kind 0, +8 kind 1,
+		// +4 kind 2 and +0xC kind 3 (0x417870), the same swap as the states.
 		std::uint32_t zone_at(interpreter& vm, std::uint32_t set, std::uint32_t kind, std::uint32_t index)
 		{
+			static constexpr std::uint32_t offsets[] = { 0x0, 0x8, 0x4, 0xC };
 			live_memory& m = vm.memory();
-			std::uint32_t head = set && kind < 4 ? safe_u32(m, set + kind * 4) : 0;
+			std::uint32_t head = set && kind < 4 ? safe_u32(m, set + offsets[kind]) : 0;
 			std::uint32_t node = head ? safe_u32(m, head) : 0;
 			for(std::uint32_t i = 0; i < index && node; i++)
 				node = safe_u32(m, node);
@@ -1773,6 +1775,104 @@ namespace openrayman::game
 			if(report && n >= 0 && n <= 5 && m.contains(report + 8 + std::uint32_t(n) * 0x28 + 0x10, 12))
 				point = read3(m, report + 8 + std::uint32_t(n) * 0x28 + 0x10);
 			out = value_of(point);
+			return c.args;
+		}
+
+		// 198, 199 (0x479720): cast the segment from a point along a vector (its length included);
+		// 198 gives the point it first meets, 199 that surface's normal, both zero when it meets
+		// nothing. The third argument picks what it is cast against (0x474780): 0 the level, 1 the
+		// actors, 2 both. Actors take part only with standard game +0x29 bit 4, which our engine
+		// never sets (see condition 10), so only the level is cast against. Rayman's water macro
+		// casts down through his body's height under the surface: ground there means shallow water,
+		// none means he swims.
+		std::uint32_t cast_segment(call& c, value& out)
+		{
+			value from, along, mode;
+			next_arg(c, from);
+			next_arg(c, along);
+			next_arg(c, mode);
+			vec3 result{};
+			if(mode.as_int() != 1 && !c.vm.world().empty())
+			{
+				const vec3 start = { from.component(0), from.component(1), from.component(2) };
+				const vec3 end = { start[0] + along.component(0), start[1] + along.component(1), start[2] + along.component(2) };
+				if(auto hit = c.vm.world().first_hit(start, end))
+					result = c.index == 198 ? hit->point : hit->normal;
+			}
+			out = value_of(result);
+			return c.args;
+		}
+
+		// The first element of zone n (from 1) of an actor's kind list, as 166..168 and 175..177
+		// read it: the zone's vertices, the element's kind and its first entry.
+		struct zone_element
+		{
+			std::uint32_t vertices = 0;
+			std::int16_t kind = 0;
+			std::uint32_t entries = 0;
+		};
+		zone_element first_zone_element(call& c, std::uint32_t kind)
+		{
+			value n;
+			next_arg(c, n);
+			live_memory& m = c.vm.memory();
+			std::uint32_t set = collision_set(c.vm, c.vm.target(c.self, true));
+			std::uint32_t zone = n.as_int() >= 1 ? zone_at(c.vm, set, kind, std::uint32_t(n.as_int() - 1)) : 0;
+			if(!zone || !m.contains(zone, 0x30))
+				return {};
+			std::uint32_t kinds = safe_u32(m, zone + 0x10);
+			std::uint32_t data = safe_u32(m, zone + 0x14);
+			std::uint32_t element = data ? safe_u32(m, data) : 0;
+			return { safe_u32(m, zone), kinds ? safe_i16(m, kinds) : std::int16_t(0), element ? safe_u32(m, element) : 0 };
+		}
+
+		// 166..168 (0x4754D0): where zone n of the kind-1, kind-2 or kind-0 list sits in the actor's
+		// own axes: its vertex 0 when the first element is spheres (kinds 5, 7), the first box's
+		// first corner when it is boxes (8, 9); otherwise the result is left alone (zero here).
+		std::uint32_t zone_position(call& c, value& out)
+		{
+			static constexpr std::uint32_t kinds[] = { 1, 2, 0 };
+			zone_element e = first_zone_element(c, kinds[c.index - 166]);
+			live_memory& m = c.vm.memory();
+			vec3 p{};
+			if((e.kind == 5 || e.kind == 7) && e.vertices && m.contains(e.vertices, 12))
+				p = read3(m, e.vertices);
+			else if((e.kind == 8 || e.kind == 9) && e.entries && e.vertices)
+			{
+				std::uint32_t corner = e.vertices + std::uint32_t(safe_i16(m, e.entries)) * 12;
+				if(m.contains(corner, 12))
+					p = read3(m, corner);
+			}
+			out = value_of(p);
+			return c.args;
+		}
+
+		// 175..177 (0x474D40): the size of that zone: the first sphere's radius on all three axes
+		// (kind 7), or the first box's corner-to-corner extent (kind 8); anything else is zero.
+		// Rayman's jump reflex swims once the water is above position + 166(1) + 175(1), the top of
+		// his body zone (his reflex 3).
+		std::uint32_t zone_size(call& c, value& out)
+		{
+			static constexpr std::uint32_t kinds[] = { 1, 2, 0 };
+			zone_element e = first_zone_element(c, kinds[c.index - 175]);
+			live_memory& m = c.vm.memory();
+			vec3 size{};
+			if(e.kind == 7 && e.entries)
+			{
+				float r = safe_f32(m, e.entries);
+				size = { r, r, r };
+			}
+			else if(e.kind == 8 && e.entries && e.vertices)
+			{
+				std::uint32_t a = e.vertices + std::uint32_t(safe_i16(m, e.entries)) * 12;
+				std::uint32_t b = e.vertices + std::uint32_t(safe_i16(m, e.entries + 2)) * 12;
+				if(m.contains(a, 12) && m.contains(b, 12))
+				{
+					vec3 va = read3(m, a), vb = read3(m, b);
+					size = { std::abs(va[0] - vb[0]), std::abs(va[1] - vb[1]), std::abs(va[2] - vb[2]) };
+				}
+			}
+			out = value_of(size);
 			return c.args;
 		}
 
@@ -3144,6 +3244,12 @@ namespace openrayman::game
 		vm.on_function(150, vector_math);
 		vm.on_function(151, vector_math);
 		vm.on_function(163, minus_y_axis);
+		vm.on_function(198, cast_segment);
+		vm.on_function(199, cast_segment);
+		for(int i = 166; i <= 168; i++)
+			vm.on_function(i, zone_position);
+		for(int i = 175; i <= 177; i++)
+			vm.on_function(i, zone_size);
 		vm.on_function(248, bit_array);
 		vm.on_function(249, bit_array);
 		for(std::uint32_t i = 102; i <= 107; i++)

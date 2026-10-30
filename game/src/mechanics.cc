@@ -223,6 +223,40 @@ namespace openrayman::game
 		});
 	}
 
+	std::optional<world_collision::segment_hit> world_collision::first_hit(const std::array<float, 3>& start, const std::array<float, 3>& end) const
+	{
+		// Every solid triangle the segment crosses (Moller-Trumbore, both faces), keeping the
+		// nearest. The segments the scripts cast are short, so all triangles are tried.
+		const vec d = { end[0] - start[0], end[1] - start[1], end[2] - start[2] };
+		std::optional<segment_hit> best;
+		float nearest = 1.0f;
+		for(const collision_triangle& t : m_triangles)
+		{
+			if(t.flags & surface::no_contact)
+				continue;
+			const vec e1 = { t.corners[1][0] - t.corners[0][0], t.corners[1][1] - t.corners[0][1], t.corners[1][2] - t.corners[0][2] };
+			const vec e2 = { t.corners[2][0] - t.corners[0][0], t.corners[2][1] - t.corners[0][1], t.corners[2][2] - t.corners[0][2] };
+			const vec p = { d[1] * e2[2] - d[2] * e2[1], d[2] * e2[0] - d[0] * e2[2], d[0] * e2[1] - d[1] * e2[0] };
+			const float det = e1[0] * p[0] + e1[1] * p[1] + e1[2] * p[2];
+			if(std::abs(det) < 1e-9f)
+				continue;
+			const vec s = { start[0] - t.corners[0][0], start[1] - t.corners[0][1], start[2] - t.corners[0][2] };
+			const float u = (s[0] * p[0] + s[1] * p[1] + s[2] * p[2]) / det;
+			if(u < 0.0f || u > 1.0f)
+				continue;
+			const vec q = { s[1] * e1[2] - s[2] * e1[1], s[2] * e1[0] - s[0] * e1[2], s[0] * e1[1] - s[1] * e1[0] };
+			const float v = (d[0] * q[0] + d[1] * q[1] + d[2] * q[2]) / det;
+			if(v < 0.0f || u + v > 1.0f)
+				continue;
+			const float along = (e2[0] * q[0] + e2[1] * q[1] + e2[2] * q[2]) / det;
+			if(along < 0.0f || along > nearest)
+				continue;
+			nearest = along;
+			best = segment_hit{ { start[0] + d[0] * along, start[1] + d[1] * along, start[2] + d[2] * along }, t.normal, t.material };
+		}
+		return best;
+	}
+
 	std::optional<world_collision::surface_hit> world_collision::water_at(float x, float y, float top, float bottom) const
 	{
 		// Water triangles are flat surfaces (0x4000); a steep one is a waterfall's wall, not a pond

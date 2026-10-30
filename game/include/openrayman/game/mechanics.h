@@ -44,6 +44,16 @@ namespace openrayman::game
 		// free. Corners of two walls resolve over a few passes.
 		std::array<float, 2> wall_push(float x, float y, float bottom, float top, float radius) const;
 
+		// The first surface the segment from `start` to `end` meets (water and 0x8000 surfaces let
+		// it through), with the point it meets it at, or nothing (0x474780 over the level geometry).
+		struct segment_hit
+		{
+			std::array<float, 3> point{};
+			std::array<float, 3> normal{}; // the surface's unit normal
+			std::uint32_t material = 0;
+		};
+		std::optional<segment_hit> first_hit(const std::array<float, 3>& start, const std::array<float, 3>& end) const;
+
 	private:
 		// The triangles of the cell (x, y) lies in, or an empty list.
 		const std::vector<std::uint32_t>& under(float x, float y) const;

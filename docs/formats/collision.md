@@ -60,6 +60,15 @@ particles along). OpenRayman does the body side of this (`game/src/mechanics.cc`
 `world_collision::water_at`, slot 4 in `move_actor`). Segment casts skip both 0x4000 and 0x8000
 (0x43441C); whether the body resolves against 0x8000 is unconfirmed (we treat it as no contact).
 
+Deep or shallow is the scripts' own call. When Rayman comes down into water, his macro 36 casts
+from just under the surface straight down for 1.1 times his body's height (zones 5 and 6 of his
+kind-1 zone list: `function_166(n)` is a zone's first vertex or box corner, `function_175(n)` its
+radius or box extent; 0x4754D0, 0x474D40) with `function_198` (0x479720, the segment cast 0x474780:
+first point met, 199 its normal). Ground within that reach means he stands in the water; none means
+he swims (macro 64, behaviour 9 with var8 = 8, then behaviour 5). Our cast only meets the level's
+solid triangles (water and 0x8000 let it through): the cast also tries actors, but only those with
+standard game +0x29 bit 4, which our engine never sets.
+
 The table above is the confirmed set; the other bits are still unknown.
 
 ## Where this came from
