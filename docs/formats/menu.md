@@ -107,19 +107,24 @@ The bytes at +0x11 and past +0x19 are not read by anything found yet.
 
 ### Procedures 505..507 (handler 0x4731B0)
 
-The same handler serves all three, switching on its own node's parameter (`[node-8]`):
+The same handler serves all three, switching on its own node's parameter (`[node-8]`), which holds
+the procedure index, so the branches carry the constants 0x1F9, 0x1FA and 0x1FB:
 
-- **507** = `(slot, string, position)`: writes the text pointer (`FUN_00465A50`), sets X and Y,
-  zeroes the alpha, colour mode, wobble and flag bytes, and takes the layout from the string's
-  leading control codes.
-- **505** = `(slot, what, value)`: the field setter (`FUN_00465AA0`). It switches on an integer
-  `what`: 0 sets the alpha, 1 the flash flag, 2/3 the colour mode, 4 the size, 5 the flash word
-  index (and flag bit 0x04), 6 the shake flag, 7 a three-way mode that sets flag bit 0x10.
-- **506** = `(slot, index, character)`: `FUN_00465BE0` writes **one character** into the slot's
-  buffer at that index.
+- **505** (`0x1F9`, `FUN_00465A50`) = `(slot, position, string, value)`: sets the slot up. The
+  second argument is a vector used as its screen position, the third is the text (0x4829D0 turns
+  the value into a pointer; a text value's pointer is its first word), and the fourth is stored
+  beside it — the slot's +0x10 byte, the alpha field. It also zeroes the wobble and flag bytes.
+- **506** (`0x1FA`, `FUN_00465AA0`) = `(slot, what, value)`: the field setter. It switches on an
+  integer `what`: 0 sets the alpha, 1 the flash flag, 2/3 the colour mode, 4 the size, 5 the flash
+  word index (and flag bit 0x04), 6 the shake flag, 7 a three-way mode that sets flag bit 0x10.
+- **507** (`0x1FB`, `FUN_00465BE0`) = `(slot, index, character)`: writes **one character** into the
+  slot's buffer at that index.
 
-That last one is the whole typing effect. `Menu.snd` plays `alphabe1.wav` and a script writes the
-next letter with 506 on the following tick — the letters and the sound come from the same loop.
+That last one is the whole typing effect. A Menu-level actor runs a loop like
+`procedure_507(var17, var59 + 3, var58)` followed by a sound event and a wait, so the next letter
+appears a tick later: the letters and the `alphabe1.wav` come from the same loop. The three Menu
+actors that use these are nodes 3, 5 and 6 (3 and 5 set slots up with 505, 6 also walks the
+characters). No Learn_10 actor calls any of them.
 
 ### Drawing: 0x465C10, once per frame
 
@@ -197,6 +202,10 @@ Read from the entry points: 0x414690/0x414720 create and destroy a font object a
 `+0x34`; 0x4147B0 resets an object (and asks 0x4123D0 whether it can); 0x415430 and 0x414E80 are
 size queries (0x24 and 0x78); 0x4155E0 and 0x4150C0 validate. They use the engine's allocator
 (0x414710) and error reporter (0x402810, message 0x30).
+
+Raised by the Menu level's own actors, not by the engine: node 3 sets six slots up with
+`procedure_505(0, vector(0, 700, 16), ...)` and its siblings, node 5 fills in more, and node 6 runs
+the character loop.
 
 Still not read: which of the four objects draws what, and the exact screen positions of the menu's
 buttons. The level's data refers to them by path in the form `menu\menu.wp^Isolate^WayPoint:`
