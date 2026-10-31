@@ -64,9 +64,11 @@ macro 3 then finds the edge with segment casts (functions 198, 199) in a script 
 hands over to 32 (hanging). OpenRayman tests the probes in use against grabbable triangles only, in
 the air while descending. This falling check is an approximation based on the desired gameplay;
 the original game's mechanism for preventing grabs on the way up has not yet been established.
-Not done yet: the hands on the edge (procedure 218) and the climb, which the animation
-drives (procedure 297 sets flags 0x182 and a target height at +0x1EC; flag 0x1 adds base +0x54
-each tick, 0x437A40).
+Done: the grab and the climb. The climb is animation-driven (procedure 297 sets flags 0x182
+and a target height at +0x1EC; flag 0x1 adds base +0x54 each tick, 0x437A40); procedure 298
+clears only 0x400000. Procedure 218 (0x46AB20) is the hang state machine, called every frame
+while hanging (`procedure_218(var42, type18 0x2, 0)`) — it steps Rayman's script and decides
+bail-back-to-idle, keep hanging, or go up for the climb.
 
 ## Water
 
