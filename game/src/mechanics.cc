@@ -724,8 +724,7 @@ namespace openrayman::game
 		// ticks other than 1/60 s). Rayman's k = 0.4 keeps 87%: the real game's portal hop starts at
 		// 1.3 of the 10 units/s asked for and loses 13% a frame (tools/r2live.py). Last tick's move leaves out the carrying platform's
 		// (+0x1B4) unless end flag 0x10 says otherwise; the exe rounds the result to 0.0001 units.
-		if(flags & has_inertia)
-		{
+		auto inertia = [&](const vec& factors) {
 			vec last = read_vec(m, b + base::speed);
 			for(float& c : last)
 				c *= dt;
@@ -740,12 +739,29 @@ namespace openrayman::game
 			vec d{};
 			for(int k = 0; k < 3; k++)
 			{
-				float f = m.f32(b + 0x154 + std::uint32_t(k) * 4);
-				float keep = 1 - f;
-				f = f <= 0 ? 0.0f : f >= 1 ? f : 1 - keep * keep * keep * keep;
+				float f = factors[std::size_t(k)];
 				d[std::size_t(k)] = wanted[std::size_t(k)] + (last[std::size_t(k)] - wanted[std::size_t(k)]) * f;
 			}
 			set_move(to_world(d));
+		};
+		auto corrected_factor = [](float f) {
+			float keep = 1 - f;
+			return f <= 0 ? 0.0f : f >= 1 ? f : 1 - keep * keep * keep * keep;
+		};
+		if(flags & has_inertia)
+		{
+			vec factors = read_vec(m, b + 0x154);
+			for(float& f : factors)
+				f = corrected_factor(f);
+			inertia(factors);
+		}
+		if((flags & 0x20) && (m.u32(b + base::end_flags) & 0x20000))
+		{
+			vec factors = read_vec(m, b + 0x168);
+			float contact = corrected_factor(m.f32(b + 0x174));
+			for(float& f : factors)
+				f *= contact;
+			inertia(factors);
 		}
 		// Gravity (0x43DF40): from last tick's vertical speed, g in units per second squared, down.
 		if(gravity)
@@ -858,6 +874,8 @@ namespace openrayman::game
 		std::uint32_t block = m.u32(b + base::contacts);
 		bool has_block = block && m.contains(block, contacts_size);
 		bool landed = false;
+		bool slope_move = false;
+		vec slope_displacement{};
 		world_collision::surface_hit ground{};
 		if((flags & collides) && !world.empty() && !climbing)
 		{
@@ -868,19 +886,47 @@ namespace openrayman::game
 			float bottom = target[2] - (was_grounded && target[2] <= current[2] ? follow_down : 0.0f);
 			// The actor's feet cover a small circle: the highest floor under any of nine points of it.
 			std::optional<world_collision::surface_hit> floor;
+			float floor_x = 0, floor_y = 0;
 			for(int k = 0; k < 9; k++)
 			{
 				float angle = float(k) * 0.785398f;
 				float r = k == 8 ? 0.0f : foot_radius;
-				if(auto f = world.floor_at(target[0] + r * std::cos(angle), target[1] + r * std::sin(angle), top, bottom); f && (!floor || f->height > floor->height))
+				float x = target[0] + r * std::cos(angle), y = target[1] + r * std::sin(angle);
+				if(auto f = world.floor_at(x, y, top, bottom); f && (!floor || f->height > floor->height))
+				{
 					floor = f;
+					floor_x = x;
+					floor_y = y;
+				}
 			}
 			if(floor)
 			{
-				target[2] = floor->height;
+				vec d = move();
+				float into = vdot(d, floor->normal);
+				if(gravity && (m.u32(b + base::end_flags) & 0x20000) && floor->normal[2] < 0.999f && into < 0)
+				{
+					// Inelastic approximation of 0x43B360: retain the move along the contact plane.
+					for(int i = 0; i < 3; i++)
+						d[std::size_t(i)] -= into * floor->normal[std::size_t(i)];
+					slope_displacement = d;
+					set_move(d);
+					target[2] = floor->height - ((target[0] - floor_x) * floor->normal[0] + (target[1] - floor_y) * floor->normal[1]) / floor->normal[2];
+					slope_move = true;
+				}
+				else
+					target[2] = floor->height;
 				ground = *floor;
 				landed = true;
 			}
+		}
+		// The contact coefficient enables the second inertia pass next tick (0x432828..0x432896).
+		if((flags & 0x20) && gravity && has_block)
+		{
+			float coefficient = landed && (material_flags(m, ground.material) & 1) ? 1.0f : 0.0f;
+			if(flags & 0x80)
+				coefficient = landed ? m.f32(b + 0x1C) : 0.0f;
+			m.write<float>(b + 0x174, coefficient);
+			set_bit(m, b + base::end_flags, 0x20000, coefficient != 0.0f);
 		}
 
 		// The water the actor's body is in: the surface of the pond over it between its feet and the
@@ -905,7 +951,10 @@ namespace openrayman::game
 		for(int i = 0; i < 2; i++)
 			speed[std::size_t(i)] = along[std::size_t(i)] / dt;
 		speed[2] = (target[2] - current[2]) / dt;
-		if(landed)
+		if(slope_move)
+			for(int i = 0; i < 3; i++)
+				speed[std::size_t(i)] = slope_displacement[std::size_t(i)] / dt;
+		else if(landed)
 			speed[2] = 0;
 		write_vec(m, b + base::speed, speed);
 		write_vec(m, t + 4, target);

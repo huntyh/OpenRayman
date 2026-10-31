@@ -65,6 +65,47 @@ namespace openrayman::game
 			return gates;
 		}
 
+		// Sounds a state change set off (leaving_events), played at the actor's next animation update,
+		// which has the sound queue at hand.
+		std::unordered_map<std::uint32_t, std::vector<std::uint32_t>>& leaving_sounds()
+		{
+			static std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> sounds;
+			return sounds;
+		}
+
+		// 0x41AA20: leaving a state fires its animation's events gated 0xFF (never from the frames)
+		// unless the new state's animation starts with the same event among its own 0xFF ones (the
+		// exe compares only that leading run). Looping sounds stop this way: Rayman's helicopter
+		// carries the stop for its whirr.
+		void leaving_events(live_memory& m, std::uint32_t data, std::uint32_t from, std::uint32_t to)
+		{
+			auto events_of = [&](std::uint32_t state, std::uint8_t& count) {
+				std::uint32_t reference = state ? m.u32(state + state::animation) : 0;
+				std::uint32_t events = reference ? m.u32(reference + reference_events) : 0;
+				count = events ? m.u8(reference + reference_event_count) : 0;
+				return events;
+			};
+			std::uint8_t old_count = 0, new_count = 0;
+			std::uint32_t old_events = events_of(from, old_count);
+			std::uint32_t new_events = events_of(to, new_count);
+			for(std::uint8_t i = 0; i < old_count; i++)
+			{
+				std::uint32_t descriptor = m.u32(old_events + i * event_size);
+				if(!descriptor || m.u8(descriptor + descriptor_start_gate) != 0xFF)
+					continue;
+				bool kept = false;
+				for(std::uint8_t k = 0; k < new_count && !kept; k++)
+				{
+					std::uint32_t other = m.u32(new_events + k * event_size);
+					if(!other || m.u8(other + descriptor_start_gate) != 0xFF)
+						break;
+					kept = m.u32(other) == m.u32(descriptor);
+				}
+				if(!kept && m.u8(descriptor + descriptor_type) == event_sound_type && m.u32(descriptor))
+					leaving_sounds()[data].push_back(m.u32(descriptor));
+			}
+		}
+
 		void load_event_gates(live_memory& m, std::uint32_t data, std::uint32_t s)
 		{
 			std::uint32_t reference = s ? m.u32(s + state::animation) : 0;
@@ -160,6 +201,8 @@ namespace openrayman::game
 
 		void start(live_memory& m, std::uint32_t data, std::uint32_t s, std::uint32_t actor)
 		{
+			if(std::uint32_t from = m.u32(data + data_3d::current_state); from && from != s)
+				leaving_events(m, data, from, s);
 			m.write<std::uint32_t>(data + data_3d::current_state, s);
 			select_zone_groups(m, actor);
 			m.write<std::uint32_t>(data + data_3d::next_state, s);
@@ -258,6 +301,13 @@ namespace openrayman::game
 
 	void play_animation(live_memory& m, std::uint32_t data, std::uint32_t ms, const part_point& point, std::uint32_t actor, const event_sound& sound)
 	{
+		if(auto left = leaving_sounds().find(data); left != leaving_sounds().end())
+		{
+			if(sound)
+				for(std::uint32_t event : left->second)
+					sound(event);
+			leaving_sounds().erase(left);
+		}
 		std::uint32_t s = m.u32(data + data_3d::current_state);
 		std::uint32_t reference = s ? m.u32(s + state::animation) : 0;
 		if(!reference)

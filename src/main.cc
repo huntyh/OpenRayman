@@ -400,6 +400,48 @@ namespace
 		return { gain, pan };
 	}
 
+	// Custom bit 12 (0x800 in standard game +0x24): the actor isn't in view. The renderer sets it for
+	// actors whose bounding sphere (super object +0x34: centre, radius at +0x0C) lies outside the
+	// camera's side planes or behind its near plane, and clears it for the others (0x45C450, after
+	// the brains, so scripts see the last frame's). Actors without a sphere count as in view.
+	// Learn_10's fireflies fly off in front of the camera after inspecting Rayman and leave once
+	// it is set; Rayman's shot skips its particles when it is.
+	void update_visibility(app& a, const glm::mat4& view_projection)
+	{
+		if(!a.vm || !a.live)
+			return;
+		openrayman::game::live_memory& m = *a.live;
+		// The frustum's planes from the matrix rows (left, right, bottom, top, near), pointing in.
+		glm::mat4 t = glm::transpose(view_projection);
+		const glm::vec4 planes[] = { t[3] + t[0], t[3] - t[0], t[3] + t[1], t[3] - t[1], t[3] + t[2] };
+		std::vector<std::uint32_t> actors = a.vm->actors();
+		for(std::uint32_t so : a.vm->generated().alive())
+			actors.push_back(so);
+		for(std::uint32_t so : actors)
+		{
+			std::uint32_t actor = a.vm->actor_of(so);
+			std::uint32_t standard = actor && m.contains(actor + 4, 4) ? m.u32(actor + 4) : 0;
+			if(!standard || !m.contains(standard + 0x24, 4))
+				continue;
+			std::uint32_t sphere = m.contains(so + 0x34, 4) ? m.u32(so + 0x34) : 0;
+			auto placed = openrayman::game::global_placement(m, so);
+			bool outside = false;
+			if(sphere && placed && m.contains(sphere, 0x10))
+			{
+				vec3 centre = placed->apply({ m.f32(sphere), m.f32(sphere + 4), m.f32(sphere + 8) });
+				float radius = m.f32(sphere + 0x0C) * placed->uniform_scale();
+				for(const glm::vec4& plane : planes)
+				{
+					float length = glm::length(glm::vec3(plane));
+					if(length > 0 && glm::dot(glm::vec3(plane), glm::vec3(centre[0], centre[1], centre[2])) + plane.w < -radius * length)
+						outside = true;
+				}
+			}
+			std::uint32_t bits = m.u32(standard + 0x24);
+			m.write<std::uint32_t>(standard + 0x24, outside ? bits | 0x800u : bits & ~0x800u);
+		}
+	}
+
 	void run_ticks(app& a, double seconds)
 	{
 		if(!a.vm || !a.scripts)
@@ -1183,7 +1225,10 @@ namespace
 			float aspect = float(w) / float(h);
 			glm::mat4 projection = a.playing && a.live && a.camera_super_object
 				? glm::perspective(0.9f, aspect, 0.1f, 2000.0f) : a.camera.projection(aspect);
-			a.level->draw(glm::lookAt(eye, eye + forward, up), projection);
+			glm::mat4 view = glm::lookAt(eye, eye + forward, up);
+			a.level->draw(view, projection);
+			if(a.scripts)
+				update_visibility(a, projection * view);
 		}
 		else if(a.texture && w > 0 && h > 0)
 		{

@@ -70,6 +70,20 @@ is set, else its own) as a queued move (0x432D30), which clears the speed unless
 
 ## What we do differently (for now)
 
+- The flag 0x20 resolver (0x431A10 -> 0x43B360) projects the proposed displacement onto a
+  previously reported contact plane while searching for contacts, then resolves the actual
+  contacts and recomputes speed (0x436A30). Ours approximates a sloped floor contact with gravity
+  and end flag 0x20000 by removing the into-plane component, `d - min(d·n, 0)n`, and keeping the
+  projected speed including its vertical component. Contact search, corrections and substeps are
+  not yet implemented here. Material response coefficients come from 0x4360B0/0x436130:
+  flags 0x1/0x2 select the respective default coefficient 1 instead of 0, explicit material
+  data can override them, and base flag 0x80 selects the actor's coefficients instead. In the
+  Ly_10 live trace, behaviour 38 copies the last speed to var87, and Rayman accelerates downhill;
+  the flag 0x20 resolver is also used in ordinary movement. Ours uses material flag 0x1 or the actor
+  override for the contact inertia coefficient, but not explicit material response data; procedure
+  292, which writes the per-axis factors, is not implemented. Source: own analysis of Rayman2.exe
+  and the live log.
+
 - Procedure 297 (climbing over a ledge, 0x46C710 case 0x129) sets end flag 0x400000, flags 0x182,
   +0x1C = 1, +0x20 = 0 and the height +0x1EC; 298 (0x46CE00 case 0x12A) clears 0x400000 only. With
   0x400000 the exe's collision (0x43EEC0 → 0x4377F0) leaves out floor contacts and contacts below

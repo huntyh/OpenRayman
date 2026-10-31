@@ -722,6 +722,30 @@ namespace openrayman::game
 			return base && m.contains(base, size) ? base : 0;
 		}
 
+		// 291, 292 (0x46DD50): three numbers into the dynamics base. 291 writes +0x48..+0x50 and sets
+		// end flag 0x1000; 292 the factors of the second inertia (+0x168..+0x170, used with end flag
+		// 0x20000): how much of the last move each axis keeps. Rayman sets 0.65, 1, 1, and his slide on
+		// slippery slopes keeps its speed with them.
+		std::uint32_t dynamics_triple(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value x, y, z;
+			next_arg(c, x);
+			next_arg(c, y);
+			next_arg(c, z);
+			live_memory& m = c.vm.memory();
+			std::uint32_t base = dynamics_base(c, self, 0x174);
+			if(!base)
+				return c.args;
+			std::uint32_t at = c.index == 291 ? 0x48 : 0x168;
+			m.write<float>(base + at, x.as_float());
+			m.write<float>(base + at + 4, y.as_float());
+			m.write<float>(base + at + 8, z.as_float());
+			if(c.index == 291)
+				m.write<std::uint32_t>(base + 0x0C, m.u32(base + 0x0C) | 0x1000);
+			return c.args;
+		}
+
 		// 244..261 (0x46C1D0): one dynamics flag bit each.
 		std::uint32_t dynamics_flag(call& c)
 		{
@@ -3868,6 +3892,8 @@ namespace openrayman::game
 		vm.on_procedure(435, set_movement_actions);
 		vm.on_procedure(346, read_movement);
 		vm.on_procedure(263, set_dynamics_value);
+		vm.on_procedure(291, dynamics_triple);
+		vm.on_procedure(292, dynamics_triple);
 		vm.on_procedure(297, climb_over);
 		vm.on_procedure(298, climb_over);
 		vm.on_procedure(274, set_dynamics_value);
