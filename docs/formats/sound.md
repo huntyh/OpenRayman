@@ -389,3 +389,20 @@ traced further). The sample modules are WAVMWBVR.dll (with MMX) or WAVPWBVR.dll,
 time (`_SND_fn_lPlaySxd@20`, 0x1000B690 in WAVMWBVR). Our falloff is a stand-in: full within 8
 units, silent at 30, named after `SXD_DIST_SATUR=8` and `SXD_DIST_FADE=30` in Snd_Cpa.ini; the loop
 flag at resource +0x30 is likewise unconfirmed. Traced with GPT-6.1 Terra, 2026-10-31.
+
+### Footsteps: variants by the ground
+
+A variant set (resource type 8, 0x45A510) is a list of (resource id, selector) entries. A set of kind
+1 (bank +0x24) is chosen by the sound type of what the actor touches (0x40A180: its contact report,
+slot 5 at +0xF0 with dynamics flag 0x10 and report flag 0x10, else the wall at +0x78 with 0x40 and
+0x04, else the ground at +0x50 with report flag 0x01; the game material's u32 +0x08); the first entry
+whose selector matches plays, else the one matching the set's default (+0x1C), else nothing. Rayman's
+footstep sets (bank 0 resources 125 and 109, 17 entries) go 0 PAS6/7, 1 PASBOU, 2 PASBOID, 3 PASPIER,
+4 PASBOIP, 5 PASTER, 6 PASHERB (grass, Learn_10), 7 PASFEU, 8 PASMOU, 9 PASFLO, 10 PASSABL, 11 PASPLAN,
+12 PASGRIL, 13 PASMET, 14 saut1 (the elastic launch), 15 AGRIPMUR, 16 bones. Procedures 117..119 have
+no actor and use the default.
+
+A weighted set (type 10, 0x45A0A0) first draws a number below 0x10000: under the set's +0x1C nothing
+plays; the rest walks the entries' weights (second word). Rayman's panting set has 51760 (it plays
+about one time in five), his jump voices 29788 (about half the jumps). The game also avoids repeating
+the last pick; we don't yet. Traced with GPT-6.1 Terra, 2026-10-31.

@@ -4,6 +4,8 @@
 
 #include <array>
 #include <format>
+#include <unordered_map>
+#include <vector>
 
 namespace openrayman::game
 {
@@ -50,14 +52,55 @@ namespace openrayman::game
 		// An event (12 bytes): descriptor, u16 frame at +6, u16 part at +8. Its descriptor: u32 id,
 		// u8 type at +4, u8 start gate at +6 (0xFF: never from the playhead).
 		constexpr std::uint32_t event_size = 12, event_frame = 6, event_part = 8;
-		constexpr std::uint32_t descriptor_type = 4, descriptor_start_gate = 6;
+		constexpr std::uint32_t descriptor_type = 4, descriptor_start_gate = 6, descriptor_rearm_gate = 7;
 		constexpr std::uint8_t event_marker = 3; // type 3, ids 6..13: arm marker id - 6 (0x41AFB0)
 		constexpr std::uint8_t event_sound_type = 0; // type 0: play the sound event at +0
 
+		// Each actor's countdown per event of its current state's animation (the exe keeps them in an
+		// array at 3D data +0x78, 0x41A930), keyed by the 3D data. They are loaded from each event's
+		// descriptor +6 (start gate) when a state starts and live on across the animation's loops.
+		std::unordered_map<std::uint32_t, std::vector<std::uint8_t>>& event_gates()
+		{
+			static std::unordered_map<std::uint32_t, std::vector<std::uint8_t>> gates;
+			return gates;
+		}
+
+		void load_event_gates(live_memory& m, std::uint32_t data, std::uint32_t s)
+		{
+			std::uint32_t reference = s ? m.u32(s + state::animation) : 0;
+			std::uint32_t events = reference ? m.u32(reference + reference_events) : 0;
+			std::uint8_t count = events ? m.u8(reference + reference_event_count) : 0;
+			std::vector<std::uint8_t>& gates = event_gates()[data];
+			gates.assign(count, 0);
+			for(std::uint8_t i = 0; i < count; i++)
+				if(std::uint32_t descriptor = m.u32(events + i * event_size))
+					gates[i] = m.u8(descriptor + descriptor_start_gate);
+		}
+
+		// 0x41ACB0 / 0x41AE80: whether an event fires this pass. A countdown of 0 fires and reloads
+		// from the descriptor's +7 (rearm gate); 1..254 skip and count down; 0xFF never fires from
+		// the frames. Rayman's panting in his run (gates 4, 5) first comes on the 5th pass, then
+		// every 6th.
+		bool event_fires(live_memory& m, std::uint32_t data, std::uint8_t i, std::uint32_t descriptor)
+		{
+			std::vector<std::uint8_t>& gates = event_gates()[data];
+			if(i >= gates.size())
+				gates.resize(i + 1u, 0);
+			std::uint8_t& gate = gates[i];
+			if(gate == 0xFF)
+				return false;
+			if(gate > 0)
+			{
+				gate--;
+				return false;
+			}
+			gate = m.u8(descriptor + descriptor_rearm_gate);
+			return true;
+		}
+
 		// Plays the events of the current state's animation from the cursor (3D data +0x77) up to
 		// `frame`, all of them with `to_end` (0x41ACB0, 0x41AE80): markers, and sounds (type 0, their
-		// descriptor's +0 is the event the .snd files wrote). The exe also counts passes per event
-		// (the descriptor's gates) before firing; here every pass fires.
+		// descriptor's +0 is the event the .snd files wrote), each when its gate lets it.
 		void play_events(live_memory& m, std::uint32_t data, std::uint32_t frame, bool to_end, const part_point& point, const event_sound& sound)
 		{
 			std::uint32_t s = m.u32(data + data_3d::current_state);
@@ -73,7 +116,7 @@ namespace openrayman::game
 				if(!to_end && m.read<std::uint16_t>(e + event_frame) > frame)
 					break;
 				std::uint32_t descriptor = m.u32(e);
-				if(!descriptor || m.u8(descriptor + descriptor_start_gate) == 0xFF)
+				if(!descriptor || !event_fires(m, data, i, descriptor))
 					continue;
 				if(m.u8(descriptor + descriptor_type) == event_sound_type)
 				{
@@ -129,6 +172,7 @@ namespace openrayman::game
 			m.write<std::uint8_t>(data + data_3d::finished, 0);
 			m.write<std::uint8_t>(data + data_3d::reached_end, 0);
 			m.write<std::uint8_t>(data + data_3d::event_cursor, 0);
+			load_event_gates(m, data, s);
 		}
 
 		// The motion the animation's frames carry, for the dynamics (base +0x54, 0x412060 via
@@ -397,7 +441,7 @@ namespace openrayman::game
 				};
 				std::uint32_t state_before = m.u32(data + data_3d::current_state);
 				int before = m.read<std::uint16_t>(data + data_3d::frame);
-				play_animation(m, data, vm.frame_ms(), part_at, actor, [&](std::uint32_t event) { vm.play_sound(event, self, 0); });
+				play_animation(m, data, vm.frame_ms(), part_at, actor, [&](std::uint32_t event) { vm.play_sound(event, self, 0, vm.ground_sound_type(self)); });
 				if(actor && vm.animations())
 					animation_motion(m, *vm.animations(), actor, data, state_before, before);
 			}

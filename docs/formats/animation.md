@@ -174,8 +174,15 @@ when the state changes to one without the same event. Only two types do somethin
   with the shot's own 0.8 lift that is the 1.64 above his feet the real game shows (tools/r2live.py).
 
 Learn_10: 197 animations with events, 448 events, only types 0 (401) and 3 (47), markers 0 to 2.
-OpenRayman fires markers on every pass (the gates aren't counted yet) and arms them at the part's
-world position, posing the animation at the event's frame; sounds wait for milestone 3d.
+The gates (0x41A930, 0x41ACB0, 0x41AE80): each event of the current state's animation has a
+countdown (the exe's array at 3D data +0x78), loaded from the descriptor's +6 when the state starts
+and kept across loops. When the cursor reaches the event, 0 fires it and reloads +7, 1..254 skip it
+and count down, 0xFF never fires it from the frames (only on a state change, 0x41AA20, not done
+here). So start gate S fires first on pass S + 1, then every R + 1 passes. Rayman's run (state
+04/00 +0x504, animation 2) has footsteps at frames 4 and 16 (gates 0, 0) and his panting at frame 12
+(gates 4, 5: from the 5th pass, every 6th). OpenRayman counts the gates, arms markers at the part's
+world position (posing the animation at the event's frame) and queues the sounds. The 0xFF
+transition path is left out. Traced with GPT-6.1 Terra, 2026-10-31.
 
 ## Checks
 

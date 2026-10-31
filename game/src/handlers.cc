@@ -2646,8 +2646,10 @@ namespace openrayman::game
 		{
 			value v;
 			next_arg(c, v);
+			// 115 sounds from an actor, whose ground picks footstep variants; 117..119 from nowhere.
+			std::uint32_t source = c.vm.target(c.self, true);
 			if(v.word())
-				c.vm.play_sound(v.word(), c.vm.target(c.self, true), c.index);
+				c.vm.play_sound(v.word(), source, c.index, c.index == 115 ? c.vm.ground_sound_type(source) : -1);
 			return c.args;
 		}
 

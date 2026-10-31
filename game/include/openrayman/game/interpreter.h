@@ -145,13 +145,21 @@ namespace openrayman::game
 		// with a sound event node, 0x4691E0) and by animations (events of type 0, 0x41AFB0). The event
 		// is (bank << 16) | index, as the .snd files wrote it into the slot; `procedure` says which of
 		// the four asked (each hands the engine a different sound channel; 0 for animations).
+		// `selector` picks among variants by what the source stands on (-1: none, the group's
+		// default): footsteps on grass, wood, stone... (0x40A180, see ground_sound_type).
 		struct sound_request
 		{
 			std::uint32_t event = 0;
 			std::uint32_t source = 0; // super object
 			std::uint32_t procedure = 0;
+			std::int32_t selector = -1;
 		};
-		void play_sound(std::uint32_t event, std::uint32_t source, std::uint32_t procedure) { m_sounds.push_back({ event, source, procedure }); }
+		void play_sound(std::uint32_t event, std::uint32_t source, std::uint32_t procedure, std::int32_t selector) { m_sounds.push_back({ event, source, procedure, selector }); }
+		// The sound type (game material +0x08) of what an actor touches, for footsteps (0x40A180):
+		// from its contact report, slot 5 (+0xF0) with dynamics flag 0x10 and report flag 0x10, else
+		// the wall (+0x78) with 0x40 and 0x04, else the ground (+0x50) with report flag 0x01; 0
+		// without any.
+		std::int32_t ground_sound_type(std::uint32_t super_object) const;
 		std::vector<sound_request> take_sounds() { return std::exchange(m_sounds, {}); }
 		// The on-screen text the scripts fill (procedures 505..507), still to be drawn.
 		game::screen_text& screen_text() { return m_screen_text; }

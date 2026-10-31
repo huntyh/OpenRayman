@@ -1023,6 +1023,25 @@ namespace openrayman::game
 		return false;
 	}
 
+	std::int32_t interpreter::ground_sound_type(std::uint32_t super_object) const
+	{
+		std::uint32_t actor = actor_of(super_object);
+		std::uint32_t dynamics = actor && m_memory.contains(actor + actor_field::dynamics, 4) ? m_memory.u32(actor + actor_field::dynamics) : 0;
+		std::uint32_t base = dynamics && m_memory.contains(dynamics, 4) ? m_memory.u32(dynamics) : 0;
+		std::uint32_t report = base && m_memory.contains(base + 0x150, 4) ? m_memory.u32(base + 0x150) : 0;
+		if(!report || !m_memory.contains(report, 0xF4))
+			return 0;
+		std::uint32_t flags = m_memory.u32(base + 8), touched = m_memory.u32(report + 4);
+		std::uint32_t material = 0;
+		if((flags & 0x10) && (touched & 0x10))
+			material = m_memory.u32(report + 0xF0);
+		else if((flags & 0x40) && (touched & 0x04))
+			material = m_memory.u32(report + 0x78);
+		else if(touched & 0x01)
+			material = m_memory.u32(report + 0x50);
+		return material && m_memory.contains(material + 8, 4) ? std::int32_t(m_memory.u32(material + 8)) : 0;
+	}
+
 	bool interpreter::brain_runs(std::uint32_t self) const
 	{
 		auto [bits, flags] = custom_bits(m_memory, actor_of(self));

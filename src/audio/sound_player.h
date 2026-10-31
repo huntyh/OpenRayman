@@ -21,7 +21,8 @@ namespace openrayman
 		sound_player& operator=(const sound_player&) = delete;
 
 		bool available() const { return m_stream != nullptr; }
-		void request(std::uint32_t id, std::uint32_t source, float gain, float pan);
+		// `selector` picks among a variant set by the source's ground (-1: the set's default).
+		void request(std::uint32_t id, std::uint32_t source, float gain, float pan, std::int32_t selector = -1);
 		void place(std::uint32_t source, float gain, float pan);
 		void stop_all();
 		void set_paused(bool paused);
@@ -43,7 +44,7 @@ namespace openrayman
 
 		const bnm_bank* bank(std::uint32_t id);
 		void resolve(std::uint32_t id, std::uint32_t event, std::uint32_t source,
-			float gain, float pan, float volume, double pitch, unsigned depth);
+			float gain, float pan, float volume, double pitch, std::int32_t selector, unsigned depth);
 		static void SDLCALL feed(void* self, SDL_AudioStream* stream, int additional, int total);
 
 		const game_data& m_game;

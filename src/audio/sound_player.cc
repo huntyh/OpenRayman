@@ -42,7 +42,7 @@ namespace openrayman
 		return nullptr;
 	}
 
-	void sound_player::request(std::uint32_t id, std::uint32_t source, float gain, float pan)
+	void sound_player::request(std::uint32_t id, std::uint32_t source, float gain, float pan, std::int32_t selector)
 	{
 		std::lock_guard lock(m_mutex);
 		auto key = bnm_id::of(id);
@@ -63,11 +63,11 @@ namespace openrayman
 		std::uniform_real_distribution<double> random(-variation, variation);
 		double pitch = std::max(0.001, 1.0 + random(m_random));
 		resolve(event->target, id, source, std::clamp(gain, 0.0f, 1.0f),
-			std::clamp(pan, -1.0f, 1.0f), 1.0f, pitch, 0);
+			std::clamp(pan, -1.0f, 1.0f), 1.0f, pitch, selector, 0);
 	}
 
 	void sound_player::resolve(std::uint32_t id, std::uint32_t event, std::uint32_t source,
-		float gain, float pan, float volume, double pitch, unsigned depth)
+		float gain, float pan, float volume, double pitch, std::int32_t selector, unsigned depth)
 	{
 		if(depth >= 16)
 			return;
@@ -116,17 +116,32 @@ namespace openrayman
 			return;
 		if(resource->type == bnm_resource_type::group8)
 		{
-			// 0x45A510 matches a selector; without one, choose a variant uniformly.
-			std::uniform_int_distribution<std::size_t> choice(0, entries.size() - 1);
-			resolve(entries[choice(m_random)][0], event, source, gain, pan, volume, pitch, depth + 1);
+			// 0x45A510: the entry whose second word is the selector. A set of kind 1 (bank +0x24) is
+			// chosen by the ground's sound type (footsteps); otherwise, or without one, by the set's
+			// default (+0x1C); nothing plays when neither matches. Entry 14 of Rayman's footstep sets
+			// is the elastic launch: picking at random played it on plain ground.
+			const std::int32_t fallback = std::int32_t(resource->gain);
+			const std::int32_t wanted = resource->theme_count == 1 && selector >= 0 ? selector : fallback;
+			auto match = [&](std::int32_t value) {
+				return std::ranges::find_if(entries, [&](const auto& entry) { return std::int32_t(entry[1]) == value; });
+			};
+			auto found = match(wanted);
+			if(found == entries.end() && wanted != fallback)
+				found = match(fallback);
+			if(found != entries.end())
+				resolve((*found)[0], event, source, gain, pan, volume, pitch, selector, depth + 1);
 		}
 		else if(resource->type == bnm_resource_type::group10)
 		{
 			// 0x45A0A0: one entry by weight. Entries are (resource id, weight out of 0x10000, flag);
 			// a number below 0x10000 walks down the weights, the first entry when none takes it.
 			// The game also avoids repeating the last pick, which isn't kept here yet.
+			// The set's +0x1C share of 0x10000 plays nothing: Rayman pants only now and then
+			// (51760) and grunts on about half his jumps (29788).
 			std::uniform_int_distribution<std::uint32_t> roll(0, 0xFFFF);
-			std::int64_t left = roll(m_random);
+			std::int64_t left = std::int64_t(roll(m_random)) - std::int64_t(resource->gain);
+			if(left < 0)
+				return;
 			std::uint32_t chosen = entries.front()[0];
 			for(const auto& entry : entries)
 			{
@@ -137,12 +152,12 @@ namespace openrayman
 				}
 				left -= entry[1];
 			}
-			resolve(chosen, event, source, gain, pan, volume, pitch, depth + 1);
+			resolve(chosen, event, source, gain, pan, volume, pitch, selector, depth + 1);
 		}
 		else if(resource->type == bnm_resource_type::group4)
 		{
 			// 0x45AD30 starts the first entry; subsequent sequence transitions are not implemented.
-			resolve(entries.front()[3], event, source, gain, pan, volume, pitch, depth + 1);
+			resolve(entries.front()[3], event, source, gain, pan, volume, pitch, selector, depth + 1);
 		}
 	}
 

@@ -1581,8 +1581,8 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 		// The sounds the scripts and animations asked for this tick (ORTOOL_SOUNDS=1 lists them).
 		for(const auto& sound : vm.take_sounds())
 			if(std::getenv("ORTOOL_SOUNDS"))
-				std::cout << std::format("tick {:>4}: sound 0x{:08X} from node {} (procedure {}): {}\n", f, sound.event,
-					node_of.contains(sound.source) ? std::to_string(node_of[sound.source]) : std::string("generated"), sound.procedure, describe_sound(game, sound.event));
+				std::cout << std::format("tick {:>4}: sound 0x{:08X} from node {} (procedure {}, selector {}): {}\n", f, sound.event,
+					node_of.contains(sound.source) ? std::to_string(node_of[sound.source]) : std::string("generated"), sound.procedure, sound.selector, describe_sound(game, sound.event));
 		// Collision events another actor sent (procedures 232..234: a shot's hit), as they arrive.
 		for(std::uint32_t so : actors)
 		{

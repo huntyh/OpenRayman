@@ -459,11 +459,11 @@ namespace
 					if(request.procedure == 115 || request.procedure == 0)
 					{
 						auto [gain, pan] = sound_placement(a, request.source);
-						a.sounds->request(request.event, request.source, gain, pan);
+						a.sounds->request(request.event, request.source, gain, pan, request.selector);
 						a.sound_sources.insert(request.source);
 					}
 					else
-						a.sounds->request(request.event, request.source, 1.0f, 0.0f);
+						a.sounds->request(request.event, request.source, 1.0f, 0.0f, request.selector);
 				}
 			if(a.camera_log && a.playing && a.camera_super_object)
 			{
