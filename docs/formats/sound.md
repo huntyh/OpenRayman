@@ -121,7 +121,7 @@ unnamed).
 | +0x24 | u32 | type 11: entry count; otherwise a flag |
 | +0x28 | u32 | type 4: entry count; type 11: offset of the tail entry, or `0xFFFFFFFF` |
 | +0x2C | u32 | 1 = external file with no data region, 0 = embedded |
-| +0x30 | u32 | 0 or 1, not decoded |
+| +0x30 | u32 | 0 or 1; tentative loop flag (see below) |
 | +0x34 | u32 | 0 |
 | +0x38 | u32 | the size again for an embedded type 1, 0 for an external one |
 | +0x3C | u32 | sample rate; 22050 in every shipped type-1 record |
@@ -172,10 +172,17 @@ the loaders use it as the base for +0x10. The loaders resolve the id word of eac
 | 10 | 51 | 154 | 0x0C | +0x18 | +0x00 | gain, flag |
 
 All but 16 entries point at a type-1 sample: five type-8 and nine type-4 entries point at a type 10,
-and two type-10 entries at a type 11. The type-8 selector is matched against a value the play routine
-derives from the resource, so a type 8 is a set of variants of one sound. The type-4 and type-10
-players (`0x45AD30`, `0x45A1E0`) scale the volume by the resource's +0x1C and hand the group
-to the mixer. The selection rule itself is not decoded.
+and two type-10 entries at a type 11. `0x45A510` matches the type-8 selector against a value
+derived from the playback context, with a default selector fallback. `0x45A0A0`, called by
+`0x45A1E0`, selects one type-10 entry using the second word as a weight and tracks previous
+selections; it does not start all entries together. `0x45AD30` starts the first type-4 entry
+and sets up state for later transitions. The remaining sequence and selection details need work.
+
+The experimental sound player uses uniform selection for type 8, starts all type-10 entries,
+and starts only the first type-4 entry. These are approximations, not the rules above. It treats
+sample resource +0x30 as a whole-sample loop flag: it is 1 on `FORET5.wav` and `RIVIERE3.wav`,
+and 0 on `DECOL.WAV`. This correlation is not proof; `0x454F40` dispatches through a WAV DLL,
+whose loop handling still needs tracing. No sample loop points have been established.
 
 ### Themes (type 11) — the adaptive music
 
@@ -338,9 +345,11 @@ Totals: 1012 events, 2055 resources — 1830 type-1 (740 PCM + 1090 APM), 78 gro
   `0x452D50` and `0x457E60` (the play dispatch and the type-2 stop), `0x4527D0` (pitch
   variation), `0x459840`/`0x459950` (theme load and play), `0x44D2F0` and
   `0x44D1E0` (the `.snd` fix-up).
+- Own analysis of `0x45A510`, `0x45A0A0`, `0x45A1E0` and `0x45AD30` for group selection;
+  the tentative +0x30 loop interpretation comes from comparing the installed bank records.
 - Own analysis of `DLL/Snd_Cpa.ini`: the module names behind the four regions and the
   `SXD_DIST_*`/`FORCE_LOAD_BANKS` options.
-- Not decoded yet: the group selection rules (types 4, 8, 10), the per-segment parameter words of a
+- Not decoded yet: the complete group selection and transition rules (types 4, 8, 10), the per-segment parameter words of a
   theme beyond the id, and the meaning of the resource flags +0x18/+0x1C/+0x20/+0x24 when they are
   not counts and of +0x30. Event types 3, 4, 5, 9, 11 and resource types 2, 3, 5, 6 are handled by
   the exe but absent from the shipped banks, so their layouts are known only from the handlers.

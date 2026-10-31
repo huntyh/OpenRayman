@@ -8,6 +8,7 @@
 #include <SDL3/SDL_main.h>
 
 #include <audio/music_player.h>
+#include <audio/sound_player.h>
 #include <camera.h>
 #include <info.h>
 #include <renderer/gl.h>
@@ -19,6 +20,7 @@
 #include <openrayman/game/interpreter.h>
 #include <openrayman/game/input.h>
 #include <openrayman/game/live_memory.h>
+#include <openrayman/game/sound_slots.h>
 #include <openrayman/animation.h>
 #include <openrayman/brain.h>
 #include <openrayman/cnt_archive.h>
@@ -44,6 +46,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -101,6 +104,10 @@ namespace
 		std::string texture_error;
 
 		std::unique_ptr<music_player> music;
+		// The sounds the scripts and animations ask for, and the actors that asked (their voices
+		// follow where they are).
+		std::unique_ptr<sound_player> sounds;
+		std::set<std::uint32_t> sound_sources;
 		std::vector<fs::path> music_files;
 		std::optional<std::size_t> music_index;
 
@@ -377,6 +384,22 @@ namespace
 		}
 	}
 
+	// How loud a sound from an actor is where the camera listens, and from which side. A stand-in
+	// until the game's own 3D sound settings are read: full within 5 units, silent at 50, panned by
+	// the camera's right.
+	std::pair<float, float> sound_placement(const app& a, std::uint32_t source)
+	{
+		auto placed = a.live ? openrayman::game::global_placement(*a.live, source) : std::nullopt;
+		if(!placed)
+			return { 1.0f, 0.0f };
+		glm::vec3 to = glm::vec3(placed->m[0][3], placed->m[1][3], placed->m[2][3]) - a.camera.position;
+		float distance = glm::length(to);
+		float gain = std::clamp((50.0f - distance) / 45.0f, 0.0f, 1.0f);
+		glm::vec3 right = glm::cross(a.camera.forward(), glm::vec3(0, 0, 1));
+		float pan = distance > 1e-3f && glm::length(right) > 1e-4f ? 0.8f * glm::dot(to / distance, glm::normalize(right)) : 0.0f;
+		return { gain, pan };
+	}
+
 	void run_ticks(app& a, double seconds)
 	{
 		if(!a.vm || !a.scripts)
@@ -427,6 +450,14 @@ namespace
 			openrayman::game::step(*a.vm, a.thinkers, [](std::uint32_t self, const std::exception& e) {
 				SDL_Log("Script error, actor 0x%08X: %s", self, e.what());
 			});
+			// Screenshots and the --time run at load stay silent.
+			for(const auto& request : a.vm->take_sounds())
+				if(a.sounds && !a.screenshot && a.last_frame != 0)
+				{
+					auto [gain, pan] = sound_placement(a, request.source);
+					a.sounds->request(request.event, request.source, gain, pan);
+					a.sound_sources.insert(request.source);
+				}
 			if(a.camera_log && a.playing && a.camera_super_object)
 			{
 				auto camera = openrayman::game::global_placement(*a.live, a.camera_super_object);
@@ -445,6 +476,12 @@ namespace
 				a.camera_log_previous.reset();
 		}
 		sync_generated(a);
+		if(a.sounds)
+			for(std::uint32_t source : a.sound_sources)
+			{
+				auto [gain, pan] = sound_placement(a, source);
+				a.sounds->place(source, gain, pan);
+			}
 		// Where each actor is now: scripts move and turn them.
 		for(std::size_t i = 0; i < a.actors.actors.size() && i < a.super_object_at.size(); i++)
 			if(auto placed = openrayman::game::global_placement(*a.live, a.super_object_at[i]))
@@ -845,6 +882,11 @@ namespace
 			openrayman::game::register_handlers(*a.vm);
 			a.vm->set_world(openrayman::game::world_collision(std::move(collision)));
 			a.vm->set_animations(&a.bank);
+			// The sound events the scripts and animations name (Fix.snd and the level's .snd).
+			openrayman::game::apply_sound_slots(*a.live, *a.game, levels[index]);
+			if(a.sounds)
+				a.sounds->stop_all();
+			a.sound_sources.clear();
 			// The story so far: arriving from the hub through the portal (story bit 1133), which
 			// Learn_10's start reads; a new game plays the pirate ship cutscene instead.
 			// Further bits stand in for a save game until saves are read (Phase 4): 1095 gives
@@ -1005,7 +1047,9 @@ namespace
 					textures.push_back({ archives.back().get(), &entry });
 			}
 
+			a.sounds.reset();
 			a.game = std::move(game);
+			a.sounds = std::make_unique<sound_player>(*a.game);
 			a.archives = std::move(archives);
 			a.textures = std::move(textures);
 			a.music_files = a.game->music_files();
