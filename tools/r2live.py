@@ -211,7 +211,7 @@ def generated_actors(m):
 	return s
 
 
-def snapshot(m, variables, contacts=False, zones=False, camera=False, generated=False):
+def snapshot(m, variables, contacts=False, zones=False, camera=False, generated=False, parts=False):
 	s = {}
 	super_object = m.u32(MAIN_ACTOR)
 	actor = m.u32(super_object + 4) if super_object else 0
@@ -242,6 +242,17 @@ def snapshot(m, variables, contacts=False, zones=False, camera=False, generated=
 	data = m.u32(actor)
 	if data:
 		s["state"] = f"0x{m.u32(data + 4):X}"
+		if parts:
+			s["anim_frame"] = str(m.u32(data + 0x74) & 0xFFFF)
+			part_list = m.u32(data + 0x90)
+			# The parts list is indexed by channel id (0x14 each); Rayman's go up to 11 (the shot's
+			# launch marker), so look a little past that.
+			for index in range(16):
+				part = m.u32(part_list + index * 0x14) if part_list else 0
+				local = m.u32(part + 0x20) if part else 0
+				world = m.u32(part + 0x24) if part else 0
+				if local and world:
+					s[f"part{index}"] = "local " + fmt(m.f32s(local + 4, 3)) + " world " + fmt(m.f32s(world + 4, 3))
 	dynamics = m.u32(actor + 8)
 	base = m.u32(dynamics) if dynamics else 0
 	if base:
@@ -280,6 +291,7 @@ def main():
 	parser.add_argument("--zones", action="store_true", help="also which of Rayman's kind-1 collision zones are switched on")
 	parser.add_argument("--camera", action="store_true", help="also camera position, distance, mode and renderer projection")
 	parser.add_argument("--generated", action="store_true", help="also the generated actors (Rayman's shots): slot, maker, position, state, timers")
+	parser.add_argument("--parts", action="store_true", help="log animation frame and Rayman's part positions")
 	args = parser.parse_args()
 	variables = [int(v) for v in args.vars.split(",") if v.strip()]
 	quiet = set(f for f in args.quiet.split(",") if f)
@@ -305,7 +317,7 @@ def main():
 			if clock == last_clock:
 				time.sleep(0.0005)
 				continue
-			now = snapshot(m, variables, args.contacts, args.zones, args.camera, args.generated)
+			now = snapshot(m, variables, args.contacts, args.zones, args.camera, args.generated, args.parts)
 			# Average world-space movement between observed game frames, in units per game second.
 			# If frames are missed this is their net displacement, not the exact path travelled.
 			if args.camera and last_clock is not None and clock > last_clock and "camera_at" in now and "camera_at" in last:

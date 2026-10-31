@@ -95,7 +95,8 @@ once it plays right (they have issues of their own, found on a first look).
 **Open** (agreed order with the user, 2026-10-30)
 
 1. **Finish 3c: the shot** ⬅ now. The shot is a generated actor (function 66 copies its
-   template, the fast mechanics, fade after 1.5 s, slot freeing); to be checked by the user.
+   template, the fast mechanics, the shrinking fade after 1.5 s, slot freeing; confirmed by the
+   user 2026-10-31 after 097275e).
    Still missing: hitting actors (procedure 22's touch query finds nobody yet), homing
    (function 113), the hand snap while hovering (the strafing one is in the original; optional
    smoothing is a later improvement). Then the leftovers: the clip out of the tunnel after
