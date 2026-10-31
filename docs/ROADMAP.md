@@ -96,9 +96,9 @@ once it plays right (they have issues of their own, found on a first look).
 
 1. **3c leftovers.** The shot flies, bounces, fades and hits actors (the hanging cage reacts and
    says "help!"); still missing: homing (function 113) and the hand snap while hovering. Then: the
-   clip out of the tunnel after the Globox kids, Murfy's freeze, slippery slopes (Rayman slides
-   now but about 5x too slowly and drifts along his facing; the real slide accelerates about
-   11 u/s² down the fall line, `H:\r2export\live\slope_ly10_2026-10-31.txt`), the Lum collect
+   clip out of the tunnel after the Globox kids, slippery slopes (Rayman slides down now, user
+   2026-10-31, but the acceleration is off: the real slide accelerates about 11 u/s² down the
+   fall line, `H:\r2export\live\slope_ly10_2026-10-31.txt`), the Lum collect
    effect, the faint crosshair-like lines around Rayman, and the mid-air stop while hovering near
    the spawn cliff (sloped face taken as floor).
    **Standing on actors**: our collision is the level's triangles plus actors pushing Rayman
@@ -115,7 +115,9 @@ once it plays right (they have issues of their own, found on a first look).
    in 25 levels) get the passing answer, as on GOG. Without `--camera` a game starts playing,
    seen through the game's camera.
 3. **3d: sound** plays (user confirmed 2026-10-31: shots, steps by ground type, voices, ambience,
-   the big-nosed flier's buzz). Left: the dialogs (Murfy stalls waiting for one), the game's own
+   the big-nosed flier's buzz). Left: the dialogs (Murfy's runs without its text: Space skips it,
+   then he waves and leaves; the Globox kids' scene at `--camera -72.3,211.9,3.8,-55.0,-18.7`
+   doesn't start its dialog and breaks the sequence), the game's own
    3D falloff and panning (ours is a stand-in, so the flier's buzz is louder than in the game and
    still heard when it flies off to sit by the camera, which the game's flier also does), a
    smoother loop seam for looping sounds (an improvement, to list in IMPROVEMENTS), external
@@ -123,7 +125,7 @@ once it plays right (they have issues of their own, found on a first look).
    tail, `silence.apm` as a fade-out; which segment to move to, and when, is the open question;
    see `SXD_DIST_*` in `Snd_Cpa.ini`). Goal: the first-visit start playable with its conversations.
 4. **The game's camera**, still to check against the game: the field of view (Rayman looked
-   smaller in OpenRayman), Murfy's freeze at the stone, the arrival pan. In the game the
+   smaller in OpenRayman), the arrival pan. In the game the
    player may turn the camera (Q/W) only where the level allows it, level presets often
    overrule it, and a camera icon with a red X shows when turning is refused.
 5. **The end-of-level cutscene**: breaking the last cage starts a Teensie and Rayman scene

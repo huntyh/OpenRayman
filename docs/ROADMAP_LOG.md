@@ -3,6 +3,19 @@
 The dated investigation notes from `ROADMAP.md`, kept here so the roadmap stays short. Newest
 first. The format docs under `formats/` are the permanent home of the findings themselves.
 
+## 2026-10-31: the first visit plays
+
+- Murfy's freeze at the stone is gone: since the first-visit start runs (node 38's intro ended at
+  the hand-over, the CD checks answered), Murfy appears, whispers, waits on his (still invisible)
+  dialog until Space, then waves and leaves (user).
+- The tutorial cage hangs from its chain and says "help!"; breaking it frees its Lum (user). The
+  trapdoor under it has no collision yet (standing on actors is missing).
+- Without `--camera` the game starts on Rayman through the game camera (user).
+- Ly_10's slippery slope: Rayman slides down instead of backwards; the acceleration is still off
+  (user).
+- The big-nosed flier leaving Rayman to sit by the camera is the original game's behaviour too;
+  ours keeps buzzing there and its loop seam is harsh (user).
+
 ## 2026-10-31: the shot ⬅ (in progress)
 
 Rayman's shot is a generated actor (`formats/generated.md`): function 66 copies its template,
