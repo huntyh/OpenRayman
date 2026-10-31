@@ -874,6 +874,7 @@ namespace
 				if(tree.node(n).type == super_object_type::actor)
 					a.thinkers.push_back(tree.node(n).at.address());
 			}
+			a.vm->set_actors(a.thinkers);
 			a.camera_super_object = 0;
 			for(const fix_actor_placement& placed : header.placements)
 			{

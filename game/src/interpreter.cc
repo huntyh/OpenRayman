@@ -1,4 +1,5 @@
 #include <openrayman/game/interpreter.h>
+#include <openrayman/game/animation_player.h>
 #include <openrayman/brain.h>
 #include <openrayman/error.h>
 
@@ -91,6 +92,13 @@ namespace openrayman::game
 	float value::component(int i) const
 	{
 		return std::bit_cast<float>(words[std::size_t(i)]);
+	}
+
+	void interpreter::set_actors(std::vector<std::uint32_t> actors)
+	{
+		m_actors = std::move(actors);
+		for(std::uint32_t self : m_actors)
+			select_zone_groups(m_memory, actor_of(self));
 	}
 
 	interpreter::interpreter(live_memory& memory, std::uint32_t main_actor)

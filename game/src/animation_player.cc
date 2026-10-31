@@ -7,6 +7,39 @@
 
 namespace openrayman::game
 {
+	void select_zone_groups(live_memory& m, std::uint32_t actor)
+	{
+		if(!actor || !m.contains(actor, 0x18))
+			return;
+		std::uint32_t data = m.u32(actor);
+		std::uint32_t set = m.u32(actor + 0x14);
+		if(!data || !set || !m.contains(data, 0x18) || !m.contains(set, 0x30))
+			return;
+		std::uint32_t family = m.u32(data + 0x14);
+		if(!family || !m.contains(family, 0x14))
+			return;
+		std::uint32_t current = m.u32(data + data_3d::current_state);
+		std::uint32_t state = m.u32(family + 0x10);
+		std::uint32_t ordinal = 0;
+		while(state && state != current && m.contains(state, 4) && ordinal < 65535)
+		{
+			state = m.u32(state);
+			ordinal++;
+		}
+		// 0x40C9F0 indexes each collection by the state's position in the family list.
+		constexpr std::uint32_t collections[] = { 0x10, 0x18, 0x14, 0x1C };
+		constexpr std::uint32_t selected[] = { 0x20, 0x2C, 0x24, 0x28 };
+		for(int kind = 0; kind < 4; kind++)
+		{
+			std::uint32_t collection = m.u32(set + collections[kind]);
+			std::uint32_t entry = collection && m.contains(collection, 4) ? m.u32(collection) : 0;
+			for(std::uint32_t i = 0; entry && i < ordinal && m.contains(entry, 4); i++)
+				entry = m.u32(entry);
+			std::uint32_t group = entry && m.contains(entry, 8) ? m.u32(entry + 4) : 0;
+			m.write<std::uint32_t>(set + selected[kind], group);
+		}
+	}
+
 	namespace
 	{
 		// A transition: next, target state, state to play on the way (0x4199B0, 0x42DE30, 0x4194B0).
@@ -73,9 +106,10 @@ namespace openrayman::game
 			return rate;
 		}
 
-		void start(live_memory& m, std::uint32_t data, std::uint32_t s)
+		void start(live_memory& m, std::uint32_t data, std::uint32_t s, std::uint32_t actor)
 		{
 			m.write<std::uint32_t>(data + data_3d::current_state, s);
+			select_zone_groups(m, actor);
 			m.write<std::uint32_t>(data + data_3d::next_state, s);
 			m.write<std::uint8_t>(data + data_3d::playback_rate, m.u8(s + state::rate));
 			// How many more times it plays before moving on (0x40ED75; counted down at 0x40EA4F).
@@ -128,7 +162,7 @@ namespace openrayman::game
 		}
 	}
 
-	bool change_state(live_memory& m, std::uint32_t data, std::uint32_t target, bool again, std::uint32_t clock, bool direct)
+	bool change_state(live_memory& m, std::uint32_t data, std::uint32_t target, bool again, std::uint32_t clock, bool direct, std::uint32_t actor)
 	{
 		std::uint32_t current = m.u32(data + data_3d::current_state);
 		if(!target || (target == m.u32(data + data_3d::requested_state) && !again))
@@ -165,11 +199,11 @@ namespace openrayman::game
 		m.write<std::uint32_t>(data + data_3d::previous_state, current);
 		m.write<std::uint32_t>(data + data_3d::requested_state, target);
 		m.write<std::uint32_t>(data + data_3d::changed_at, clock);
-		start(m, data, play);
+		start(m, data, play, actor);
 		return true;
 	}
 
-	void play_animation(live_memory& m, std::uint32_t data, std::uint32_t ms, const part_point& point)
+	void play_animation(live_memory& m, std::uint32_t data, std::uint32_t ms, const part_point& point, std::uint32_t actor)
 	{
 		std::uint32_t s = m.u32(data + data_3d::current_state);
 		std::uint32_t reference = s ? m.u32(s + state::animation) : 0;
@@ -217,7 +251,7 @@ namespace openrayman::game
 				m.write<std::uint8_t>(data + data_3d::loops, std::uint8_t(loops - 1));
 			else if(after && after != s)
 			{
-				start(m, data, after);
+				start(m, data, after, actor);
 				play_events(m, data, 0, false, point);
 				return;
 			}
@@ -354,7 +388,7 @@ namespace openrayman::game
 				};
 				std::uint32_t state_before = m.u32(data + data_3d::current_state);
 				int before = m.read<std::uint16_t>(data + data_3d::frame);
-				play_animation(m, data, vm.frame_ms(), part_at);
+				play_animation(m, data, vm.frame_ms(), part_at, actor);
 				if(actor && vm.animations())
 					animation_motion(m, *vm.animations(), actor, data, state_before, before);
 			}

@@ -1445,6 +1445,7 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 			actors.push_back(tree.node(n).at.address());
 			node_of[actors.back()] = n;
 		}
+	vm.set_actors(actors);
 	std::map<std::size_t, std::string> errors;
 	// With a camera trace: the camera actor (the one with a camera object at actor +0x10), so every
 	// tick can print what its scripts write into the parameter block and where it ends up looking.
@@ -1522,6 +1523,7 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 			watched_last[key] = text;
 		}
 	};
+	std::map<std::uint32_t, std::uint8_t> event_last; // per actor: the collision event priority seen last
 	for(int f = 0; f < frames; f++)
 	{
 		// A key held in several spans is down in any of them.
@@ -1540,6 +1542,16 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 		catch(const std::exception& e)
 		{
 			throw format_error(std::format("tick {}, outside the actors' scripts (last node 0x{:08X}): {}", f, vm.last_node(), e.what()));
+		}
+		// Collision events another actor sent (procedures 232..234: a shot's hit), as they arrive.
+		for(std::uint32_t so : actors)
+		{
+			std::uint32_t actor = vm.actor_of(so);
+			std::uint32_t set = actor && memory.contains(actor + 0x14, 4) ? memory.u32(actor + 0x14) : 0;
+			std::uint8_t priority = set && memory.contains(set, 0x68) ? memory.u8(set + 0x65) : 0;
+			if(priority && priority != event_last[so])
+				std::cout << std::format("tick {:>4}: node {} gets event priority {}, byte {}, number {:.2f}\n", f, node_of[so], priority, memory.u8(set + 0x64), memory.f32(set + 0x5C));
+			event_last[so] = priority;
 		}
 		// A script that writes through a wrong address can break an actor's own links.
 		for(std::uint32_t so : actors)

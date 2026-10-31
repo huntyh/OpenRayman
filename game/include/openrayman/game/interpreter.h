@@ -171,6 +171,9 @@ namespace openrayman::game
 		void signal(std::uint8_t flags) { m_procedure_flags = flags; }
 		// Procedure 88: the flags the next statement's result is merged with (0x4E9399, 0x4E9398).
 		void set_pending_signal(std::uint8_t flags) { m_signal = flags; m_pending = true; }
+		// The level's actors (super objects), for queries over the world such as procedure 22.
+		void set_actors(std::vector<std::uint32_t> actors);
+		const std::vector<std::uint32_t>& actors() const { return m_actors; }
 		// Actors taken out of the world (procedure 139): they stop thinking and aren't drawn.
 		void remove(std::uint32_t super_object) { m_removed.insert(super_object); }
 		bool removed(std::uint32_t super_object) const { return m_removed.contains(super_object); }
@@ -310,6 +313,7 @@ namespace openrayman::game
 		std::uint32_t m_acting = 0;          // 0x4B9C28: "actor: ..." override
 		std::uint32_t m_last_node = 0;
 		std::uint32_t m_clock = 0;
+		std::vector<std::uint32_t> m_actors;
 		std::set<std::uint32_t> m_removed;
 		generated_actors m_generated;
 		std::uint64_t m_ticks = 0;

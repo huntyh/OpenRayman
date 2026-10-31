@@ -198,6 +198,7 @@ namespace openrayman::game
 			std::memcpy(m.span(collide, collide_copied).data(), m.span(from, collide_copied).data(), collide_copied);
 			m.write<std::uint32_t>(actor + 0x14, collide);
 		}
+		select_zone_groups(m, actor);
 		// Which sector it is in (actor +0x20).
 		if(std::uint32_t from = m.u32(model + 0x20))
 			m.write<std::uint32_t>(actor + 0x20, copy(from, sector_info_size));

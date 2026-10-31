@@ -95,5 +95,23 @@ sweep; every size and offset above was checked against the Learn_10 template's m
 `ortool peek` (actor 04/00 +0x14708, its mind at 0d/00 +0x4E3EC, its intelligence at 0d/00 +0x52164,
 its variables at 0d/00 +0x4E8A0) and the dynamics allocator 0x412CA0. The rank countdown and the pool size
 were checked against the real game with `tools/r2live.py --generated`. Not done yet in OpenRayman:
-where the pool's capacity comes from (we use Learn_10's 40), the touched-actors query behind
-procedure 22 (ours finds nobody, so shots pass through actors), and function 113's target search.
+where the pool's capacity comes from (we use Learn_10's 40), function 113's target search.
+
+## Shot collision events
+
+The procedure 22 query (0x4837A0, 0x40CCA0 and 0x40CD30) compares a kind-2 zone
+(collision set +0x04, modes at +0x34) against other actors' kind-2 zones, with a
+material flag mask and the source/target exclusion flags. Sphere and box entries
+participate. OpenRayman tests all actors rather than sector lists, checks mode 0 against the selected group, and omits box-box and part geometry tests.
+
+The shot template's kind-2 collection selects a group containing zone 0 in both of its states.
+Selecting that group on creation and state changes enables the zone when its 2-bit state is 0
+(own analysis of Rayman2.exe with GPT-6.1 Terra; see [collision.md](collision.md)).
+
+The target collision set stores event vectors at +0x44 and +0x50, floats at +0x5C
+and +0x60, a byte at +0x64 and the priority at +0x65. Procedures 232..234
+(0x469B30) write at equal or higher priority; functions 205..207 (0x4788E0)
+read the running actor's values. Condition 66 reads and clears the priority byte.
+Procedure 333 (0x46E360) clears super object flag 1 for a nonzero argument and
+sets it for zero. These details come from the project's own executable analysis,
+provided in the implementation task, and have not yet been checked in live play.

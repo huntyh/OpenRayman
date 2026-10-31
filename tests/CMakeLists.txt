@@ -39,7 +39,7 @@ ortool_check(lights_learn_10
 	e3271af66002ab034b1b2309ae2d86a222518117985cd9ecc23d884c4a2e2eb2
 	lights <game> Learn_10)
 ortool_check(motion_learn_10
-	a6320d837212e5b1495b5bd30e4ed9f0f4830ec949d27fd68a03a102e43f2475
+	0f45f2c48a8621e62fbc215476c36c14820e15c5aa2967226a4bb78f6830a9c7
 	motion <game> Learn_10)
 ortool_check(states_learn_10_cage
 	23004b4c93ad4163b9b5be4ec49f6e0b5040dd564431d57eee8150ad473f20bc

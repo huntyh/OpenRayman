@@ -51,7 +51,7 @@ namespace openrayman::game
 	// leaving only by transitions. `again` changes even to the state already asked for (procedure
 	// 73), `direct` skips the transitions and those rules (procedure 75's number, 0x40FAC2). The
 	// new state plays at once.
-	bool change_state(live_memory& memory, std::uint32_t data, std::uint32_t target, bool again, std::uint32_t clock, bool direct = false);
+	bool change_state(live_memory& memory, std::uint32_t data, std::uint32_t target, bool again, std::uint32_t clock, bool direct = false, std::uint32_t actor = 0);
 
 	// Advances an actor's animation by one tick of `ms`; at the end of an animation it plays again
 	// (while loops remain) or moves on to the state's "after" state.
@@ -59,7 +59,10 @@ namespace openrayman::game
 	// armed at the world position of the event's part, which `part_point` gives (the animation
 	// reference, the event's frame, the part); without it at the origin. They last one tick.
 	using part_point = std::function<std::array<float, 3>(std::uint32_t reference, std::uint16_t frame, std::uint16_t part)>;
-	void play_animation(live_memory& memory, std::uint32_t data, std::uint32_t ms, const part_point& point = {});
+	void play_animation(live_memory& memory, std::uint32_t data, std::uint32_t ms, const part_point& point = {}, std::uint32_t actor = 0);
+
+	// Select the collision groups for the current family state (0x40C9F0).
+	void select_zone_groups(live_memory& memory, std::uint32_t actor);
 
 	// Sets how fast an actor's animation plays, in frames per second (3D data +0xE0), as 0x418790
 	// does: the time into the animation is re-based so the current frame does not jump. The rate of

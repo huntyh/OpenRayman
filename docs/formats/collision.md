@@ -13,7 +13,7 @@ What the level and the actors collide with. The same geometric objects as the vi
   walls, simpler floors). 1147 IPOs have no collide set and collide with nothing.
 - Actors' physical objects mostly have an empty collide set (in Learn_10 465 of 474 objects). The
   few filled slots hold spheres and similar shapes (element types 7 and 9) in slots 1 and 2, and
-  triangles in slot 3. How an actor's own collision zones are found is not read yet.
+  triangles in slot 3. Actor zone lists and their state-selected groups are described below.
 
 The IPO's super object also has a world box for quick rejection: super object +0x34 points to two
 corners (min, max: 6 floats) when flag 0x10 of +0x30 is set (Learn_10's IPOs have flags 0x14).
@@ -69,6 +69,20 @@ and a target height at +0x1EC; flag 0x1 adds base +0x54 each tick, 0x437A40); pr
 clears only 0x400000. Procedure 218 (0x46AB20) is the hang state machine, called every frame
 while hanging (`procedure_218(var42, type18 0x2, 0)`) — it steps Rayman's script and decides
 bail-back-to-idle, keep hanging, or go up for the climb.
+
+## State-selected zone groups
+
+An actor's collision set (actor +0x14) has four internal zone kinds. In kind order 0, 1, 2, 3,
+the zone-list pointers are at +0x00, +0x08, +0x04, +0x0C; the per-state collection pointers at
++0x10, +0x18, +0x14, +0x1C; the selected group pointers at +0x20, +0x2C, +0x24, +0x28; and the
+2-bit zone-state words at +0x30, +0x38, +0x34, +0x3C. A group contains a linked list of zone
+indices (u16 at each node's +4). State 1 enables a zone, state 0 enables it only if the selected
+group contains its index, and states 2 and 3 disable it (0x40C700).
+
+On installing a state, 0x40C9F0 counts its position in the family's linked state list and takes
+the entry at that position from each kind's collection. Each entry has a next pointer and a group
+pointer at +4. All four selected pointers are updated; an absent collection selects null
+(0x417B60). Own analysis of Rayman2.exe with GPT-6.1 Terra.
 
 ## Water
 

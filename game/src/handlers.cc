@@ -540,7 +540,7 @@ namespace openrayman::game
 			if(c.index == 75)
 				next_arg(c, direct);
 			std::uint32_t data = actor_part(c.vm, self, actor_field::data_3d);
-			if(data && !change_state(c.vm.memory(), data, target.word(), c.index == 73, c.vm.clock(), (direct.word() & 0xFF) != 0))
+			if(data && !change_state(c.vm.memory(), data, target.word(), c.index == 73, c.vm.clock(), (direct.word() & 0xFF) != 0, c.vm.actor_of(self)))
 				c.vm.signal(flow::wait);
 			return c.args;
 		}
@@ -883,12 +883,12 @@ namespace openrayman::game
 		// 0x417BC0: the header of one kind's group list (0 = none); 0x417C10: the kind's zone states.
 		std::uint32_t zone_group_of(interpreter& vm, std::uint32_t set, std::uint32_t kind)
 		{
-			static constexpr std::uint32_t offsets[] = { 0x20, 0x28, 0x24, 0x2C };
+			static constexpr std::uint32_t offsets[] = { 0x20, 0x2C, 0x24, 0x28 };
 			return kind < 4 ? safe_u32(vm.memory(), set + offsets[kind]) : 0;
 		}
 		std::uint32_t zone_states_of(interpreter& vm, std::uint32_t set, std::uint32_t kind)
 		{
-			static constexpr std::uint32_t offsets[] = { 0x30, 0x3C, 0x34, 0x38 };
+			static constexpr std::uint32_t offsets[] = { 0x30, 0x38, 0x34, 0x3C };
 			return kind < 4 ? safe_u32(vm.memory(), set + offsets[kind]) : 0;
 		}
 
@@ -2322,18 +2322,241 @@ namespace openrayman::game
 			return c.args;
 		}
 
-		// 22 (0x468180 case 0x16 -> 0x4837A0): fill the list with the actors whose collision the
-		// running actor's touches (0x40CCA0, by zone kind and mask). For now the query finds nobody:
-		// the list is only emptied, so shots fly through actors.
+		// One sphere or box of a zone (element kinds 7 and 8, 0x48EE70), in its owner's axes, with
+		// the game material that says what it is for.
+		struct touch_shape
+		{
+			int kind = 0;   // 7 sphere (centre a, radius), 8 box (corners a and b)
+			vec3 a{}, b{};
+			float radius = 0;
+			std::uint32_t material = 0;
+		};
+
+		std::vector<touch_shape> touch_shapes(live_memory& m, std::uint32_t zone)
+		{
+			std::vector<touch_shape> shapes;
+			if(!zone || !m.contains(zone, 0x30))
+				return shapes;
+			std::uint32_t vertices = safe_u32(m, zone);
+			std::uint32_t kinds = safe_u32(m, zone + 0x10);
+			std::uint32_t data = safe_u32(m, zone + 0x14);
+			for(std::uint32_t i = 0; i < safe_u16(m, zone + 0x2E); i++)
+			{
+				int kind = safe_i16(m, kinds + i * 2);
+				std::uint32_t element = kind == 7 || kind == 8 ? safe_u32(m, data + i * 4) : 0;
+				std::uint32_t entries = element ? safe_u32(m, element) : 0;
+				for(std::uint32_t j = 0; entries && j < safe_u16(m, element + 4); j++)
+				{
+					// Spheres: radius, material, u16 vertex. Boxes: u16 two vertices, material.
+					std::uint32_t e = entries + j * (kind == 7 ? 12 : 8);
+					int first = safe_i16(m, e + (kind == 7 ? 8 : 0));
+					int second = kind == 8 ? safe_i16(m, e + 2) : first;
+					if(!vertices || first < 0 || second < 0 || !m.contains(vertices + first * 12, 12) || !m.contains(vertices + second * 12, 12))
+						continue;
+					touch_shape s;
+					s.kind = kind;
+					s.a = read3(m, vertices + first * 12);
+					s.b = read3(m, vertices + second * 12);
+					s.radius = kind == 7 ? safe_f32(m, e) : 0.0f;
+					s.material = safe_u32(m, e + 4);
+					shapes.push_back(s);
+				}
+			}
+			return shapes;
+		}
+
+		// A point in a transform's own axes, put into the world (the matrix at +0x34 carries the scale).
+		vec3 touch_world(live_memory& m, std::uint32_t t, const vec3& p)
+		{
+			if(!t || !m.contains(t, 0x58))
+				return p;
+			vec3 out = read3(m, t + 4);
+			for(int i = 0; i < 3; i++)
+			{
+				vec3 axis = read3(m, t + 0x34 + std::uint32_t(i) * 12);
+				for(int j = 0; j < 3; j++)
+					out[std::size_t(j)] += p[std::size_t(i)] * axis[std::size_t(j)];
+			}
+			return out;
+		}
+
+		// 0x4465E0: how much a transform scales a sphere: 1 below type 4, else the longest row.
+		float touch_scale(live_memory& m, std::uint32_t t)
+		{
+			if(!t || !m.contains(t, 0x58) || m.u32(t) < 4)
+				return 1.0f;
+			float longest = 0;
+			for(int i = 0; i < 3; i++)
+			{
+				vec3 row = read3(m, t + 0x34 + std::uint32_t(i) * 12);
+				longest = std::max(longest, dot(row, row));
+			}
+			return std::sqrt(longest);
+		}
+
+		// 0x48F610: do two shapes overlap? Sphere-sphere (0x4902F0) touches at the sum of the radii;
+		// sphere-box (0x490230) needs the centre nearer the box than the radius, in the box owner's
+		// axes. Box-box isn't tested yet (the shot and the cage are spheres).
+		bool touch_overlap(live_memory& m, const touch_shape& a, std::uint32_t ta, const touch_shape& b, std::uint32_t tb)
+		{
+			if(a.kind == 8 && b.kind == 8)
+				return false;
+			if(a.kind == 8)
+				return touch_overlap(m, b, tb, a, ta);
+			vec3 centre = touch_world(m, ta, a.a);
+			float radius = a.radius * touch_scale(m, ta);
+			if(b.kind == 7)
+			{
+				vec3 d = sub(centre, touch_world(m, tb, b.a));
+				float r = radius + b.radius * touch_scale(m, tb);
+				return dot(d, d) <= r * r;
+			}
+			vec3 p = in_frame(m, tb, centre);
+			float squared = 0;
+			for(std::size_t i = 0; i < 3; i++)
+			{
+				float d = p[i] - std::clamp(p[i], std::min(b.a[i], b.b[i]), std::max(b.a[i], b.b[i]));
+				squared += d * d;
+			}
+			return squared < radius * radius;
+		}
+
+		// 22 (0x468180 case 0x16 -> 0x4837A0 -> 0x40CCA0): fill the list with the actors that zone n
+		// (from 1) of the running actor's kind-2 list (collision set +4) touches, up to the list's
+		// capacity. A target counts when one of its switched-on kind-2 zones overlaps and, with a mask,
+		// that zone's collide flags hold every bit of it: Rayman's shot asks for 0x1 (what can be hit).
+		// The exe walks the sectors' actor lists (0x40CD30); ours tests every actor, which the overlap
+		// narrows down the same way. It also tests some parts' own geometry (3D data +0x98): not yet.
 		std::uint32_t touching_actors(call& c)
 		{
-			value list, kind, mask;
+			value list, number, mask;
 			next_arg(c, list);
-			next_arg(c, kind);
+			next_arg(c, number);
 			next_arg(c, mask);
 			live_memory& m = c.vm.memory();
-			if(list.word() && m.contains(list.word(), 4))
-				m.write<std::uint8_t>(list.word() + actor_list::count, 0);
+			std::uint32_t at = list.word();
+			if(!at || !m.contains(at, 4))
+				return c.args;
+			m.write<std::uint8_t>(at + actor_list::count, 0);
+			std::uint8_t capacity = m.u8(at + actor_list::capacity);
+			std::uint32_t n = std::uint8_t(number.as_int());
+			std::uint32_t self = c.vm.target(c.self, true);
+			std::uint32_t set = collision_set(c.vm, self);
+			std::vector<touch_shape> source = n ? touch_shapes(m, find_zone(c.vm, self, 2, n - 1)) : std::vector<touch_shape>{};
+			if(!capacity || !set || source.empty())
+				return c.args;
+			const std::uint16_t bits = std::uint16_t(mask.as_int());
+			std::uint32_t standard = actor_part(c.vm, self, actor_field::standard_game);
+			std::uint32_t own = transform_of(c.vm, self);
+			std::vector<std::uint32_t> candidates = c.vm.actors();
+			for(std::uint32_t so : c.vm.generated().alive())
+				candidates.push_back(so);
+			std::uint8_t count = 0;
+			for(std::uint32_t other : candidates)
+			{
+				if(other == self || c.vm.removed(other))
+					continue;
+				std::uint32_t other_set = collision_set(c.vm, other);
+				std::uint32_t other_standard = actor_part(c.vm, other, actor_field::standard_game);
+				if(!other_set || !other_standard || (!world_flag_always_set && !(m.u8(other_standard + 0x29) & 4)))
+					continue;
+				// 0x40CD30, 0x4179B0: two filters that keep each other out (custom bit 0x8 on one side,
+				// collision set +0x42 bit 0x40 on the other).
+				if((standard && (m.u8(standard + 0x24) & 8) && (m.u8(other_set + 0x42) & 0x40))
+					|| ((m.u8(set + 0x42) & 0x40) && (m.u8(other_standard + 0x24) & 8)))
+					continue;
+				std::uint32_t head = safe_u32(m, other_set + 4);
+				std::uint32_t zones = head ? safe_u32(m, head + 8) : 0;
+				std::uint32_t frame = transform_of(c.vm, other);
+				bool hit = false;
+				for(std::uint32_t i = 0; i < zones && !hit; i++)
+					for(const touch_shape& b : touch_shapes(m, find_zone(c.vm, other, 2, i)))
+					{
+						std::uint32_t collide = b.material && b.material != 0xFFFFFFFF ? safe_u32(m, b.material + 0xC) : 0;
+						if(bits && (!collide || collide == 0xFFFFFFFF || (safe_u16(m, collide + 2) & bits) != bits))
+							continue;
+						for(const touch_shape& a : source)
+							if((hit = touch_overlap(m, a, own, b, frame)))
+								break;
+						if(hit)
+							break;
+					}
+				if(hit && m.contains(at + actor_list::entries + count * 4u, 4))
+				{
+					m.write<std::uint32_t>(at + actor_list::entries + count * 4u, other);
+					m.write<std::uint8_t>(at + actor_list::count, ++count);
+					if(count == capacity)
+						break;
+				}
+			}
+			return c.args;
+		}
+
+		// 232..234 (0x469B30): an event for another actor, in its collision set (+0x14), when its
+		// priority (the first argument) is at least the waiting one's (+0x65), which it replaces.
+		// 232 sets the byte at +0x64, 233 a vector at +0x44 + 0xC x slot, 234 a number at +0x5C + 4 x
+		// slot (slots 0 and 1). Rayman's shot sends priority 10, its direction and its strength.
+		std::uint32_t write_collision_event(call& c)
+		{
+			value priority, slot, v;
+			next_arg(c, priority);
+			if(c.index != 232)
+				next_arg(c, slot);
+			next_arg(c, v);
+			live_memory& m = c.vm.memory();
+			std::uint32_t set = collision_set(c.vm, c.vm.target(c.self, true));
+			std::uint8_t p = std::uint8_t(priority.as_int());
+			if(!set || !m.contains(set, 0x68) || p < m.u8(set + 0x65))
+				return c.args;
+			m.write<std::uint8_t>(set + 0x65, p);
+			std::int32_t i = slot.as_int();
+			if(c.index == 232)
+				m.write<std::uint8_t>(set + 0x64, std::uint8_t(v.as_int()));
+			else if(i == 0 || i == 1)
+			{
+				if(c.index == 233)
+					write3(m, set + 0x44 + std::uint32_t(i) * 12, vec_of(v));
+				else
+					m.write<float>(set + 0x5C + std::uint32_t(i) * 4, v.as_float());
+			}
+			return c.args;
+		}
+
+		// 205..207 (0x4788E0): the running actor's event: 205 the byte, 206 the vector in a slot, 207
+		// the number (0 for other slots or without a collision set, 0x49C3B4). Condition 66 says one
+		// came and clears it.
+		std::uint32_t read_collision_event(call& c, value& out)
+		{
+			value slot;
+			if(c.index != 205)
+				next_arg(c, slot);
+			live_memory& m = c.vm.memory();
+			std::uint32_t set = collision_set(c.vm, c.self);
+			std::int32_t i = slot.as_int();
+			bool valid = set && m.contains(set, 0x68);
+			bool in_slot = valid && (i == 0 || i == 1);
+			if(c.index == 205)
+				out = value::integer(valid ? m.u8(set + 0x64) : 0);
+			else if(c.index == 206)
+				out = value_of(in_slot ? read3(m, set + 0x44 + std::uint32_t(i) * 12) : vec3{});
+			else
+				out = value::real(in_slot ? m.f32(set + 0x5C + std::uint32_t(i) * 4) : 0.0f);
+			return c.args;
+		}
+
+		// 333 (0x46E360): super object flag 0x1 (+0x30): set by 0, cleared by anything else. The cage
+		// uses both.
+		std::uint32_t super_object_flag_1(call& c)
+		{
+			value v;
+			next_arg(c, v);
+			std::uint32_t so = c.vm.target(c.self, true);
+			live_memory& m = c.vm.memory();
+			if(so && m.contains(so + 0x30, 4))
+			{
+				std::uint32_t flags = m.u32(so + 0x30);
+				m.write<std::uint32_t>(so + 0x30, v.as_int() ? flags & ~1u : flags | 1u);
+			}
 			return c.args;
 		}
 
@@ -3511,7 +3734,7 @@ namespace openrayman::game
 						if(data)
 						{
 							m.write<std::uint32_t>(data + data_3d::requested_state, 0);
-							ok = change_state(m, data, s.word(), false, c.vm.clock());
+							ok = change_state(m, data, s.word(), false, c.vm.clock(), false, c.vm.actor_of(c.self));
 						}
 						m.write<std::uint32_t>(scratch, ok ? 1 : 0);
 						m.write<std::uint32_t>(scratch + 12, s.word());
@@ -3691,6 +3914,11 @@ namespace openrayman::game
 		vm.on_function(49, list_function);
 		vm.on_function(50, list_function);
 		vm.on_procedure(22, touching_actors);
+		for(std::uint32_t i = 232; i <= 234; i++)
+			vm.on_procedure(i, write_collision_event);
+		for(std::uint32_t i = 205; i <= 207; i++)
+			vm.on_function(i, read_collision_event);
+		vm.on_procedure(333, super_object_flag_1);
 		vm.on_procedure(36, list_drop);
 		vm.on_procedure(37, list_drop);
 		vm.on_procedure(13, draw_flag);
