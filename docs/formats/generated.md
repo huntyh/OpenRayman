@@ -57,6 +57,14 @@ end. Its animations carry no events.
 
 ## The shot
 
+Viewer lifetime bug found 2026-10-31 (own source analysis): generated templates must save their
+numeric state addresses during level loading. Their `memory_location` values refer to blocks in
+the local `level_files`, destroyed when `load_level` returns. Resolving those locations when a
+shot spawns in interactive play reads freed memory and can prevent the viewer from matching its
+current state, leaving its displayed animation unchanged until removal. `--time` screenshots
+masked this because their simulation and initial pose run inside `load_level`, before destruction.
+The viewer now captures these addresses at load, as it already did for placed actors.
+
 - Behaviour 0 picks the object list by charge and story (procedure 94 writes 3D data +0x10, which the
   pose code 0x40E0D0 draws; four lists at 04/00 +0x14A44.. +0x14AC8), its flying state, a launch
   vector of length 25 along Rayman's facing (`var13`), a lifetime of 1500 ms (`var2`), moves itself

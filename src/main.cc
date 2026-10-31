@@ -162,6 +162,7 @@ namespace
 		{
 			std::uint32_t model = 0; // the template actor
 			actor_set::entry entry;  // its family, states and shadow; meshes filled per object list
+			std::vector<std::uint32_t> state_addresses; // copied while the level files still exist
 			std::map<std::uint32_t, std::pair<std::vector<std::optional<std::size_t>>, std::vector<std::optional<vec3>>>> lists;
 		};
 		std::vector<generated_look> generated_looks;
@@ -507,9 +508,7 @@ namespace
 				entry = look->entry;
 				a.actor_at[i] = a.vm->actor_of(slot.super_object);
 				a.super_object_at[i] = slot.super_object;
-				a.state_addresses[i].clear();
-				for(const memory_location& at : entry.state_at)
-					a.state_addresses[i].push_back(at.address());
+				a.state_addresses[i] = look->state_addresses;
 			}
 			// What its parts look like: the object list procedure 94 picked (3D data +0x10), else its own.
 			std::uint32_t data = a.live->u32(a.actor_at[i]);
@@ -752,6 +751,10 @@ namespace
 						look.entry.family = t.family;
 						look.entry.states = t.states;
 						look.entry.state_at = t.state_at;
+						// Spawning happens after load_level returns and destroys files. Never resolve
+						// these locations at spawn time: their block pointers will be dangling.
+						for(const memory_location& state : t.state_at)
+							look.state_addresses.push_back(state.address());
 						look.entry.state = t.state;
 						look.entry.shadow = t.shadow;
 						std::vector<memory_location> lists;
