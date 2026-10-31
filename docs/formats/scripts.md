@@ -194,10 +194,18 @@ Learn_10's waypoint 0d/01 +0x46C7C is unattached and reads (30.2676, 295.213, -3
 
 A graph has a first node pointer at +0 and node count at +8. Nodes link through +0, name a
 waypoint at +0x0C, hold flags at +0x10 and point at an outgoing link list at +0x18 (0x480050,
-0x47FD20). Function 114 selects the nearest waypoint (0x477630); its nonzero second argument
-also requests an obstacle test, which OpenRayman does not yet implement. Function 122 constructs
-an ordered path from a starting waypoint; functions 126, 130, 132 and 133 access that path
-(0x4770F0, 0x477300). Those path functions are not yet implemented.
+0x47FD20). A link has next at +0, destination node at +0x0C, capability bits at +0x10 and an
+integer cost at +0x18 (0x480190, 0x4801F0, 0x487B10, 0x487B90). Function 114 selects the
+nearest waypoint (0x477630); its nonzero second argument also requests an obstacle test, which
+OpenRayman does not yet implement and these actors do not request.
+
+Functions 122 and 123 (0x4770F0, 0x47FD20) build an actor's path starting at a waypoint, repeatedly
+choosing the cheapest link to an unvisited node; 123 makes path indexing wrap. Function 126 reads
+the current index, 130 advances it, 132 reads a waypoint by index and 133 reads the capability bits
+of the link leaving that index (0x477300). Condition 109 (0x48B7A0) tests a numbered capability bit.
+The path state belongs to the actor and is replaced by the next path-building call.
+Function 181 (0x47C350) blends two vectors: the second argument weights the first vector and
+one minus that weight multiplies the third argument.
 
 These waypoint and graph findings are own analysis of Rayman2.exe with GPT-6.1 Terra.
 

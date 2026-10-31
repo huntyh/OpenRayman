@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <memory>
 
 // The conditions, functions and procedures scripts call, each written from what its handler in
 // Rayman2.exe does (the address is given with each). Names are ours. See docs/formats/scripts.md.
@@ -905,6 +906,160 @@ namespace openrayman::game
 				}
 			}
 			out = value::of(value_type::waypoint, best);
+			return c.args;
+		}
+
+		struct graph_path
+		{
+			struct entry { std::uint32_t node, waypoint, capability; };
+			std::vector<entry> entries;
+			std::int32_t current = 0;
+			bool loop = false;
+		};
+
+		// 0x480190 / 0x4801F0: a directed graph link names a node, capability and cost.
+		bool graph_link(live_memory& m, std::uint32_t from, std::uint32_t to, std::uint32_t& capability, std::int32_t& cost)
+		{
+			if(!from || !m.contains(from, 0x1C))
+				return false;
+			std::uint32_t list = m.u32(from + 0x18);
+			if(!list || !m.contains(list, 12))
+				return false;
+			std::uint32_t link = m.u32(list);
+			std::uint32_t count = m.u32(list + 8);
+			for(std::uint32_t i = 0; i < count && link && m.contains(link, 0x1C); i++)
+			{
+				if(m.u32(link + 0xC) == to)
+				{
+					capability = m.u32(link + 0x10);
+					cost = m.read<std::int32_t>(link + 0x18);
+					return true;
+				}
+				link = m.u32(link);
+			}
+			return false;
+		}
+
+		// 122/123 (0x4770F0, 0x47FD20): follow the cheapest unused outgoing link,
+		// starting at the requested waypoint. 123 wraps path indices.
+		std::uint32_t make_graph_path(call& c, value& out, std::map<std::uint32_t, graph_path>& paths)
+		{
+			value graph, start;
+			next_arg(c, graph);
+			next_arg(c, start);
+			live_memory& m = c.vm.memory();
+			graph_path& path = paths[c.vm.target(c.self, true)];
+			path = {};
+			path.loop = c.index == 123;
+			std::uint32_t g = graph.word();
+			std::vector<std::uint32_t> nodes;
+			if(g && m.contains(g, 12))
+			{
+				std::uint32_t node = m.u32(g);
+				std::uint32_t count = m.u32(g + 8);
+				for(std::uint32_t i = 0; i < count && node && m.contains(node, 0x1C); i++)
+				{
+					nodes.push_back(node);
+					node = m.u32(node);
+				}
+			}
+			auto first = std::find_if(nodes.begin(), nodes.end(), [&](std::uint32_t node) { return m.u32(node + 0xC) == start.word(); });
+			if(first != nodes.end())
+			{
+				std::rotate(nodes.begin(), first, nodes.end());
+				std::uint32_t current = nodes.front();
+				path.entries.push_back({ current, m.u32(current + 0xC), 0 });
+				for(std::size_t step = 1; step < nodes.size(); step++)
+				{
+					std::uint32_t chosen = 0, chosen_capability = 0;
+					std::int32_t best = 0x7FFFFFFF;
+					for(std::size_t i = 1; i < nodes.size(); i++)
+					{
+						std::uint32_t capability = 0;
+						std::int32_t cost = 0;
+						if(nodes[i] && nodes[i] != current && graph_link(m, current, nodes[i], capability, cost) && cost < best)
+						{
+							chosen = nodes[i];
+							chosen_capability = capability;
+							best = cost;
+						}
+					}
+					if(!chosen)
+						break;
+					path.entries.back().capability = chosen_capability;
+					if(current != nodes.front())
+						*std::find(nodes.begin() + 1, nodes.end(), current) = 0;
+					current = chosen;
+					path.entries.push_back({ current, m.u32(current + 0xC), 0 });
+				}
+				std::int32_t cost = 0;
+				graph_link(m, current, nodes.front(), path.entries.back().capability, cost);
+			}
+			out = value::integer(std::int32_t(path.entries.size()));
+			return c.args;
+		}
+
+		// 126/130/132/133 (0x477300): current index, advance, waypoint and link capability.
+		std::uint32_t graph_path_query(call& c, value& out, std::map<std::uint32_t, graph_path>& paths)
+		{
+			value arg;
+			if(c.index != 126)
+				next_arg(c, arg);
+			auto it = paths.find(c.vm.target(c.self, true));
+			if(it == paths.end() || it->second.entries.empty())
+			{
+				out = c.index == 132 ? value::of(value_type::waypoint, 0) : value::integer(-1);
+				return c.args;
+			}
+			graph_path& path = it->second;
+			std::int32_t count = std::int32_t(path.entries.size());
+			auto index = [&](std::int32_t n) {
+				if(path.loop)
+					return (n % count + count) % count;
+				return n >= 0 && n < count ? n : -1;
+			};
+			if(c.index == 126)
+				out = value::integer(path.current);
+			else if(c.index == 130)
+			{
+				std::int32_t next = index(path.current + arg.as_int());
+				if(next >= 0)
+					path.current = next;
+				out = value::integer(next);
+			}
+			else
+			{
+				std::int32_t n = index(arg.as_int());
+				if(c.index == 132)
+					out = value::of(value_type::waypoint, n < 0 ? 0 : path.entries[std::size_t(n)].waypoint);
+				else
+					out = value::of(0x2B, n < 0 || index(n + 1) < 0 ? 0 : path.entries[std::size_t(n)].capability);
+			}
+			return c.args;
+		}
+
+		// 109 (0x48B7A0): test a numbered capability bit in a path link.
+		std::uint32_t graph_capability(call& c, bool& result)
+		{
+			value mask, bit;
+			next_arg(c, mask);
+			next_arg(c, bit);
+			std::uint32_t n = bit.word();
+			result = n < 32 && (mask.word() & (std::uint32_t(1) << n)) != 0;
+			return c.args;
+		}
+
+		// 181 (0x47C350): interpolate from the last vector toward the first.
+		std::uint32_t blend_vectors(call& c, value& out)
+		{
+			value first, amount, last;
+			next_arg(c, first);
+			next_arg(c, amount);
+			next_arg(c, last);
+			float t = amount.as_float();
+			out = value::vector(last.component(0) + (first.component(0) - last.component(0)) * t,
+				last.component(1) + (first.component(1) - last.component(1)) * t,
+				last.component(2) + (first.component(2) - last.component(2)) * t);
 			return c.args;
 		}
 		vec3 axis_of(interpreter& vm, std::uint32_t super_object, int axis)
@@ -3972,6 +4127,7 @@ namespace openrayman::game
 		vm.on_function(193, contact_grab_point);
 		vm.on_condition(72, bits_overlap);
 		vm.on_condition(74, inside_waypoint);
+		vm.on_condition(109, graph_capability);
 		vm.on_condition(78, state_flag);
 		vm.on_condition(103, is_zero_vector);
 		vm.on_condition(67, in_behaviour);
@@ -3986,6 +4142,12 @@ namespace openrayman::game
 		vm.on_function(0, position);
 		vm.on_function(18, waypoint_location);
 		vm.on_function(114, nearest_waypoint);
+		auto paths = std::make_shared<std::map<std::uint32_t, graph_path>>();
+		for(std::uint32_t i : { 122, 123 })
+			vm.on_function(i, [paths](call& c, value& out) { return make_graph_path(c, out, *paths); });
+		for(std::uint32_t i : { 126, 130, 132, 133 })
+			vm.on_function(i, [paths](call& c, value& out) { return graph_path_query(c, out, *paths); });
+		vm.on_function(181, blend_vectors);
 		for(std::uint32_t i : { 43, 44, 45, 46, 47, 48 })
 			vm.on_function(i, hit_points);
 		vm.on_function(10, distance);
