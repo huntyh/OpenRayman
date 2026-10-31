@@ -60,7 +60,7 @@ each array's new elements follow inline, every array starting 4-byte aligned, in
 | 6 | channels: u16, i16 id, u16 vector, u16 first object choice, u32 first frame key, u32 first keyframe | 16 |
 | 7 | object choice indices (u16) | 2 |
 | 8 | frame keys: per channel and frame, a keyframe index (u32) | 4 |
-| 9 | keyframes: 4 floats (the last a position multiplier), u16 frame, flags (0x80 = last), rotation, a second rotation, scale vector, position vector, 4 × u16 | 36 |
+| 9 | keyframes: 3 floats pivot position, float position multiplier, u16 frame, flags (0x80 = last), rotation, a second rotation, scale vector, position vector, 4 × u16 | 36 |
 | 10 | events (contain pointers, so they're not part of the pointer-free stretch) | 12 |
 | 11 | morph data | 8 |
 
@@ -94,10 +94,16 @@ rate of the **state** it is in (see below). Between keyframes the pose is blende
 the keyframe at or before it, and unless that is the channel's last keyframe (flag 0x80), the next
 keyframe in the array is the next one in time. A survey of every channel and frame of all 70 levels
 confirmed both (the named keyframe is never after the frame, the next one always after it).
-Positions, scales and the position multiplier are blended linearly, rotations along the shorter way
-between the two quaternions. Every channel's first keyframe is at frame 0. After the last keyframe,
+Pivot positions and scales are blended linearly, rotations along the shorter way between the two
+quaternions. Every channel's first keyframe is at frame 0. After the last keyframe,
 a channel holds still until the animation loops. Which objects are shown and how channels link come
 from the whole frame, without blending.
+
+Between position keys, the game interpolates the keyframes' first three floats as the position of
+the channel's pivot, then subtracts the channel vector transformed by the part's rotation and scale
+to find the part origin. Flag 0x8 holds the previous position instead. At a keyframe itself it uses
+the stored position vector and multiplier. Easing is enabled by the current keyframe's +0x22 value;
+the next keyframe's +0x22 supplies the easing amount.
 
 ### The playback rate
 
@@ -205,6 +211,9 @@ the size being half its extent. So it follows creases and steps instead of sinki
 them a look later) get no shadow yet.
 
 ## Where this came from
+
+- Pivot positions and easing gate: own analysis of Rayman2.exe 0x41A610 and 0x419BD0. The original
+  game's live Learn_10 trace confirms that strafing shots use the same state sequence as OpenRayman.
 
 - Events: own analysis of Rayman2.exe (0x40E800, 0x40E9E0, 0x41A930..0x41B100), from a helper
   model's reading re-checked at the frame field, the part list and the marker clear.

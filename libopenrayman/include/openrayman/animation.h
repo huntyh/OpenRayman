@@ -74,10 +74,11 @@ namespace openrayman
 
 	struct animation_keyframe
 	{
+		vec3 pivot_position{}; // position of the channel's pivot when this keyframe is reached
 		float position_multiplier = 1;
 		std::uint16_t frame = 0, flags = 0;
 		std::uint16_t quaternion = 0, scale_vector = 0, position_vector = 0;
-		// Eases the blend towards this keyframe: t becomes t * (1 + e * (t - 1)), e = ease / 8192.
+		// The preceding key enables easing; this key supplies e in t * (1 + e * (t - 1)), e = ease / 8192.
 		std::int16_t ease = 0;
 		bool last() const { return flags & 0x80; }
 		// After the last keyframe, blend back to the first (else hold the last pose until the loop).

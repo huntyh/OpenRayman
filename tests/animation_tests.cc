@@ -8,10 +8,29 @@
 
 using namespace openrayman;
 
+static animation_bank two_keyframe_bank();
+
 static void check_identity(const std::array<float, 9>& m)
 {
 	for(int i = 0; i < 9; i++)
 		CHECK(m[i] == doctest::Approx(i % 4 == 0 ? 1.0f : 0.0f));
+}
+
+TEST_CASE("pose: interpolated position follows the rotating channel pivot")
+{
+	animation_bank bank = two_keyframe_bank();
+	bank.vectors.push_back({ 1, 0, 0 });
+	bank.channels[0].vector = 3;
+	bank.keyframes[0].pivot_position = { 1, 0, 0 };
+	bank.keyframes[1].pivot_position = { 1, 0, 0 };
+	const auto part = pose(bank, 0, 1)[0].local;
+	// The pivot stays at (1, 0), so the part's origin moves as it turns.
+	CHECK(part.m[0][3] + part.m[0][0] == doctest::Approx(1.0f));
+	CHECK(part.m[1][3] + part.m[1][0] == doctest::Approx(0.0f).epsilon(1e-6));
+	bank.keyframes[0].flags |= 0x8;
+	const auto held = pose(bank, 0, 1)[0].local;
+	CHECK(held.m[0][3] == doctest::Approx(0.0f));
+	CHECK(held.m[1][3] == doctest::Approx(0.0f));
 }
 
 TEST_CASE("quaternion_to_matrix: identity, also unnormalized and zero")
@@ -41,6 +60,7 @@ static animation_bank two_keyframe_bank()
 	bank.animations.push_back(a);
 	bank.frames.resize(4);
 	bank.channels.push_back({});
+	bank.channels[0].vector = 1; // zero pivot
 	bank.ntto_choices.push_back(0);
 	bank.objects.push_back({ 0, 5 });
 	bank.frame_keys = { 0, 0, 1, 1 };
@@ -54,6 +74,7 @@ static animation_bank two_keyframe_bank()
 	last.flags = 0x80;
 	last.quaternion = 1;
 	last.position_vector = 2;
+	last.pivot_position = { 4, 0, 0 };
 	bank.keyframes = { first, last };
 	return bank;
 }
@@ -81,10 +102,12 @@ TEST_CASE("pose: blends between keyframes, holds after the last, loops back when
 	CHECK(x_at(3.5) == doctest::Approx(1.0f));
 
 	// Easing towards the second keyframe: t = 0.5 becomes 0.5 * (1 + 1 * -0.5) = 0.25.
+	bank.keyframes[0].ease = 1; // the current key enables the next key's easing
 	bank.keyframes[1].ease = 8192;
 	CHECK(x_at(1) == doctest::Approx(1.0f));
 	bank.keyframes[1].flags = 0x80;
 	bank.keyframes[1].ease = 0;
+	bank.keyframes[0].ease = 0;
 
 	// Our loop seam glide: over the last quarter (frame 3..4) it slides from the held x = 4 into the
 	// first frame's x = 0; halfway (smoothstep 0.5) is x = 2.

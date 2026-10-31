@@ -144,7 +144,8 @@ namespace openrayman
 					case a_keyframes:
 					{
 						animation_keyframe k;
-						r.skip(12); // a position, unused so far
+						for(float& v : k.pivot_position)
+							v = r.f32();
 						k.position_multiplier = r.f32();
 						k.frame = r.u16();
 						k.flags = r.u16();
@@ -255,7 +256,7 @@ namespace openrayman
 					t = span > 0 ? std::clamp(float((frame - key.frame) / span), 0.0f, 1.0f) : 0.0f;
 				}
 			}
-			if(next && next->ease)
+			if(next && key.ease)
 			{
 				float e = next->ease / 8192.0f;
 				t = t * (1 + e * (t - 1));
@@ -278,12 +279,28 @@ namespace openrayman
 						v = -v;
 				for(int k = 0; k < 3; k++)
 				{
-					position[k] += (position2[k] - position[k]) * t;
+					if(!(key.flags & 0x8))
+						position[k] += (position2[k] - position[k]) * t;
 					scale[k] += (scale2[k] - scale[k]) * t;
 				}
 				for(int k = 0; k < 4; k++)
 					q[k] += (q2[k] - q[k]) * t; // normalized by quaternion_to_matrix
-				multiplier += (next->position_multiplier - multiplier) * t;
+				if(!(key.flags & 0x8))
+					multiplier += (next->position_multiplier - multiplier) * t;
+			}
+			// The stored positions follow the channel's pivot. Recover the part origin after
+			// rotating and scaling that pivot (0x419BD0); flag 8 keeps the original position.
+			if(next && !(key.flags & 0x8))
+			{
+				const vec3& pivot = at(bank.vectors, channel.vector, "channel pivot");
+				const auto rotation = quaternion_to_matrix(-q[0], -q[1], -q[2], q[3]);
+				for(int r = 0; r < 3; r++)
+				{
+					position[r] = key.pivot_position[r] + (next->pivot_position[r] - key.pivot_position[r]) * t;
+					for(int axis = 0; axis < 3; axis++)
+						position[r] -= rotation[r * 3 + axis] * ((key.flags & 0x44) == 0x44 ? 1.0f : scale[axis]) * pivot[axis];
+				}
+				multiplier = 1;
 			}
 			// Gliding into the loop's first frame over the last `seam` frames (at most a quarter of it).
 			const double window = std::min(seam, a.frames / 4.0);

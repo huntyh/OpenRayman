@@ -165,7 +165,10 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
     camera works like the game's, tilting down to show where he lands (function 310 returns the
     offset point). The decompile now covers every script handler. Q/W turning fixed (2026-10-30): the
     exe swings the camera round in pi/8 steps (0x485760 -> 0x4855D0) instead of cutting across to
-    the point 90 degrees round. Camera collision (0x434660, a sliding 0.35 sphere) added. Left: the shot while strafing, the
+    the point 90 degrees round. Camera collision (0x434660, a sliding 0.35 sphere) added. The hand
+    snapping back after shooting while strafing also happens in the original game (user confirmed;
+    live state and part-position capture, 2026-10-31). Optional smoothing can be considered later.
+    Left: the shot while hovering, the
     arrival pan, the field of view, Murfy's freeze, long-idle animations. Slippery slopes slide
     Rayman uphill instead of down (likely a sign in the slope direction: contact normal, function
     190, or the slide procedure; user: `--level Ly_10 --camera -4776.4,-8543.0,-8238.9,-122.6,-43.9`).
@@ -207,14 +210,15 @@ Most of the gameplay is in the scripts saved inside each level, so they come fir
 
 **Order for the rest of Phase 3 (agreed with the user, 2026-10-30)**
 
-1. Finish 3c: shooting first (the normal shot and the arm snapping back while strafing or
-   hovering; there is no charged shot as far as the user knows, so only add one if Rayman's scripts
+1. Finish 3c: shooting first (the normal shot and the arm snapping back while hovering;
+   there is no charged shot as far as the user knows, so only add one if Rayman's scripts
    show it) ⬅ now. Rayman's scripts do have a charged shot (holding the key, var19 up to 2000 ms,
    particles 69/71), but only once story bit 1143 is set, later in the game. The shot itself is a
    generated actor ([formats/generated.md](formats/generated.md)): function 66 copies its template,
    it flies on the fast mechanics, fades after 1.5 s and frees its slot; to be checked by the user.
    Still missing: hitting actors (procedure 22's touch query finds nobody yet), homing (function
-   113), the hand snapping back while strafing or hovering. Then the leftovers: the hands on the ledge (procedure 218), the clip out of the
+   113), and checking the hand snap while hovering against the original. The strafing hand snap is
+   present in the original; optional smoothing is a later improvement. Then the leftovers: the hands on the ledge (procedure 218), the clip out of the
    tunnel after the Globox kids, Q/W turning, long-idle animations, the arrival pan, Murfy's
    freeze, slippery slopes, the Lum collect effect.
 2. A first-visit start: story bit 1133 left off, Rayman placed where the intro cutscene would end,
