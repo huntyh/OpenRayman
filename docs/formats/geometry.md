@@ -46,7 +46,7 @@ stream).
 
 **IPO data**: +0x00 physical object.
 
-**Physical object**: +0x00 visual set, +0x04 collision set (not decoded yet).
+**Physical object**: +0x00 visual set, +0x04 collision set (see [collision.md](collision.md)).
 
 **Visual set**: +0x00 u32 type (0 = levels of detail), +0x04 u32 number of levels, +0x08 their
 switching distances (floats), +0x0C list of geometric object pointers. OpenRayman uses the first.

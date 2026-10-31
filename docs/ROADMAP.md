@@ -92,42 +92,37 @@ once it plays right (they have issues of their own, found on a first look).
   theme** — an ordered list of external `.apm` segments (147 in 85 banks, 1425 `.snd` pairs
   across 58 levels), so the adaptive sequencing is not a separate format.
 
-**Open** (agreed order with the user, 2026-10-30; overnight state 2026-10-31)
+**Open** (agreed order with the user, 2026-10-30; state 2026-10-31 evening)
 
-1. **Finish 3c: the shot** ⬅ now. The shot is a generated actor (function 66 copies its
-   template, the fast mechanics, the shrinking fade after 1.5 s, slot freeing; confirmed by the
-   user 2026-10-31 after 097275e). It now hits actors (9f56191: procedure 22's touch query,
-   collision events 232..234 / 205..207, zone groups chosen per state): a shot at the hanging
-   cage's height leaves it priority 10 and the shot's strength, to be checked by the user
-   (the cage only reacts while its brain is on, i.e. on a first visit).
-   Still missing: homing (function 113), the hand snap while hovering (the strafing one is in
-   the original; optional smoothing is a later improvement). Then the leftovers: the clip out
-   of the tunnel after the Globox kids, the arrival pan, Murfy's freeze, slippery slopes (slide
-   uphill; the exe's resolver and Rayman's slide script are traced in
-   `H:\r2export\re\handlers\slope_answer.md`; the push is `12 x var102` along his own Z when
-   `var92` is set, so the sign needs a live log on the real slope: `r2live --vars
-   8,31,87,92,100,102 --contacts` at `--level Ly_10 --camera -4776.4,-8543.0,-8238.9,-122.6,
-   -43.9`), the Lum collect effect, the faint crosshair-like lines around Rayman, and the
-   mid-air stop while hovering near the spawn cliff (sloped face taken as floor).
-2. **The first-visit start**, ready to test: `--start new` leaves story bit 1133 off; the
-   loader puts Rayman at the level header's placement (64.38, 248.71, 33.09) and he lands at
-   z 12.15 (`ORTOOL_START=new ortool run ...` shows the same). Murfy (node 62) and node 69 then
-   wait for story bits 841/840, which the tutorial's trigger zones should set. To check: is that
-   where the real game hands over after the intro (an `r2live` log of a new game's first
-   seconds would settle it), and does the tutorial chain (cage, Murfy, Lum, trapdoor) run.
-   Reading real saves' story bits is Phase 4.
-3. **3d: sound**, playing since 1e813a9, not listened to yet: the `.snd` slots hold event ids,
-   procedures 115/117/118/119 and animation events of type 0 queue requests, and
-   `src/audio/sound_player` mixes the banks' samples (stops, pitch variation, volume, variant
-   and weighted sets, loops by resource +0x30 as a guess). Left: the game's own 3D falloff and
-   panning (ours is a stand-in), external `.apm` samples, the dialogs (Murfy, the Teensies),
-   adaptive music (a theme's segments in order from `+0x1C`, then the `+0x28` tail,
-   `silence.apm` as a fade-out; which segment to move to, and when, is the open question; see
-   `SXD_DIST_*` in `Snd_Cpa.ini`). Goal: the first-visit start playable with its conversations.
+1. **3c leftovers.** The shot flies, bounces, fades and hits actors (the hanging cage reacts and
+   says "help!"); still missing: homing (function 113) and the hand snap while hovering. Then: the
+   clip out of the tunnel after the Globox kids, Murfy's freeze, slippery slopes (Rayman slides
+   now but about 5x too slowly and drifts along his facing; the real slide accelerates about
+   11 u/s² down the fall line, `H:\r2export\live\slope_ly10_2026-10-31.txt`), the Lum collect
+   effect, the faint crosshair-like lines around Rayman, and the mid-air stop while hovering near
+   the spawn cliff (sloped face taken as floor).
+2. **The first-visit start** (`--start new`) works: Rayman starts where the intro hands him over,
+   the tutorial cage hangs from its chain (it waits for the game's CD check, node 82, which we
+   answer as the GOG release does), Murfy appears and whispers. The intro's director (node 38)
+   is ended at the hand-over, since the intro itself is Phase 4 (`first_visit.h`). To check: the
+   tutorial chain (cage, Lum, trapdoor) and the condor leaving once Rayman exits the cave. Still
+   to identify: a Rayman-shaped actor near `--camera 62.7,250.1,15.5`. Node 71 (the tutorial's
+   stand-in) walks a bit and stops.
+3. **3d: sound** plays (user confirmed 2026-10-31: shots, steps by ground type, voices, ambience,
+   the big-nosed flier's buzz). Left: the dialogs (Murfy stalls waiting for one), the game's own
+   3D falloff and panning (ours is a stand-in, so the flier's buzz is louder than in the game and
+   still heard when it flies off to sit by the camera, which the game's flier also does), a
+   smoother loop seam for looping sounds (an improvement, to list in IMPROVEMENTS), external
+   `.apm` samples, and adaptive music (a theme's segments in order from `+0x1C`, then the `+0x28`
+   tail, `silence.apm` as a fade-out; which segment to move to, and when, is the open question;
+   see `SXD_DIST_*` in `Snd_Cpa.ini`). Goal: the first-visit start playable with its conversations.
 4. **The game's camera**, still to check against the game: the field of view (Rayman looked
    smaller in OpenRayman), Murfy's freeze at the stone, the arrival pan. In the game the
    player may turn the camera (Q/W) only where the level allows it, level presets often
    overrule it, and a camera icon with a red X shows when turning is refused.
+5. **The end-of-level cutscene**: breaking the last cage starts a Teensie and Rayman scene
+   (node 45 keeps its actors hidden until then); with the cutscenes in Phase 4.
+6. **Performance**: the user will try a Linux laptop with a Fermi-era Quadro 2000M.
 
 **Later in Phase 3 / Phase 4**
 
@@ -135,7 +130,8 @@ once it plays right (they have issues of their own, found on a first look).
   next to the game's own guided camera. It will see what the guided camera never shows, which
   needs handling: half-built cutscene sets (e.g. above the waterfall in The Woods of Light,
   `--camera 36.2,328.9,-3.7,-50.1,24.2`) and painted "paper" trees that simply end.
-- Phase 4 starts with the real intro cutscene in front of the first-visit start.
+- Phase 4 starts with the real intro cutscene in front of the first-visit start (r2live logs of
+  the pirate ship and the crash into the woods are in `H:\r2export\live\`).
 
 ## Phase 4: the whole game
 

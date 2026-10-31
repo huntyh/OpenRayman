@@ -27,13 +27,13 @@ came from. Update this whenever a format is added or corrected.
 | LEVELS0.DAT | `World/Levels/LEVELS0.DAT` | Complete | `relocation.cc` |
 | GPT | `Fix.gpt`, `<Level>.gpt` | Level header (Fix actors, world roots) and the animation bank; some header fields unknown | `pointer_stream.cc`, `level_header.cc` |
 | Super objects | inside SNA | Tree links complete | `scene.cc` |
-| Actors, animations | inside SNA, GPT | Object lists, animation bank, posing a frame; interpolation, events and morphs not yet | `actor.cc`, `animation.cc` |
-| Static geometry | inside SNA | Meshes, triangles, UVs, materials; sprites (type 3) not yet | `geometry.cc` |
-| Collision | inside SNA | The level's collision triangles and surface flags; actors' zones and flag meanings not yet | `collision.cc` |
+| Actors, animations | inside SNA, GPT | Object lists, animation bank, posing and blending frames, events; morphs not yet | `actor.cc`, `animation.cc` |
+| Static geometry | inside SNA | Meshes, triangles, UVs, materials, sprites (type 3) | `geometry.cc` |
+| Collision | inside SNA | The level's collision triangles and surface flags, actors' zones and their per-state groups; some flag meanings not yet | `collision.cc` |
 | Input | inside `Fix.gpt`, SNA | Input actions and their key expressions; joystick kinds partly, 17..32 not yet | `input.cc` |
 | PTX | `Fix.ptx`, `<Level>.ptx` | Texture slots and names; trailing values unknown | `texture_table.cc` |
 | Scripts (AI) | inside SNA | Brains, models, behaviours, reflexes, macros, variables, script nodes; keywords and operators named | `brain.cc`, `script_text.cc` |
-| BNM sound banks | `World/Sound/*.bnm` | Reader complete for effects and themes; playback not wired yet | `bnm_bank.cc` |
+| BNM sound banks | `World/Sound/*.bnm` | Reader complete for effects and themes; effects play (`src/audio/sound_player`), music themes not yet | `bnm_bank.cc` |
 | SND | `<Level>.snd`, `Fix.snd` | Pair list understood; see [formats/sound.md](formats/sound.md) | |
 
 ## CNT texture archives
@@ -193,6 +193,14 @@ expression over keys (DirectInput scan codes), joystick buttons and other action
 scripts test (frames held, or negative frames since release).
 
 - Sources: own analysis of `Rayman2.exe` and the Fix data, checked against the game's controls.
+
+## Menu
+
+See [formats/menu.md](formats/menu.md). The main menu is an ordinary OpenSpace level with scenery,
+actors and AI scripts, plus a screen-space text layer the engine draws on top.
+
+- Sources: own analysis of the retail GOG install (Rayman2.exe and the game files); nothing taken
+  from Raymap, Rayman2Lib or any other project.
 
 ## Actors and animations
 

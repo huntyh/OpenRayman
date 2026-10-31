@@ -137,8 +137,8 @@ gameplay (decided when the interpreter runs, milestone 3b).
 
 Every operator in the game's data has exactly the number of arguments its form needs.
 
-Conditions, functions, procedures and meta-actions are numbered for now; each gets a name when its
-handler is read from the exe and implemented (milestone 3b). `ortool brain <game> <level> <node>`
+Conditions, functions, procedures and meta-actions without a name yet are printed by number; each
+gets a name when its handler is read from the exe and implemented. `ortool brain <game> <level> <node>`
 prints an actor's scripts in this form.
 
 ## Running the scripts
@@ -233,6 +233,18 @@ special wake-up in Murfy or the tutorial controller, nor a change to actor order
 In a 600-tick `ortool run` with `ORTOOL_START=new`, node 67 changes from animation 433 to 427
 at tick 1 (live state address 0x07E5FB30). The default revisit start follows the same wake path;
 it sets story bit 1133 but does not imply that bit 840, the cage-broken flag, is set.
+
+**Scene directors.** Six Learn_10 actors (nodes 3, 38, 46, 56, 57, 58) share one model, 0d/01
++0x11BEC: a director that hands a scene from Rayman to a stand-in. Its var2 is the actor whose
+custom bit 28 arms the scene, var3 the subject (Rayman), var4 the stand-in, var1 a waypoint and
+var6 a distance. In behaviour 5, while var2 has bit 28 and Rayman is not in the portal arrival
+(the `actor 84: condition_78(...)` test), it hides Rayman (procedure 312), sets his custom bits 14
+and 17 (brain off), puts the stand-in where he stands and lets it walk the scene; at its end it
+clears var2's bit 28 and removes itself. Node 38 is the intro's (var2 itself, stand-in node 40): on
+a first visit it takes Rayman over at tick 1. The type-9 fix above is what lets var3 read back as
+Rayman, so before it the scene never took hold of him. Until cutscenes play (Phase 4) the
+first-visit start ends node 38 the way it ends itself (`game/include/openrayman/game/first_visit.h`).
+Own analysis with `ortool brain`/`run` (2026-10-31).
 
 **Waypoints and graphs.** A waypoint has three floats at +0 for position, a float radius at
 +0x0C, and an optional super object pointer at +0x10. When attached, its position is transformed

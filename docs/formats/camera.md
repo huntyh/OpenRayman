@@ -236,16 +236,16 @@ whether the speed law, obstacle search, or another camera behavior causes it.
 
 ## Target tracking
 
-The exe keeps eight samples of the target's movement and position
-  (camera object +0x78 vectors, +0xD8 points, +0x138 weights). Procedure 444 (0x47DA40) shifts in
-  the target mechanics report's movement (+0x114), position (+0x14C), and elapsed time in seconds.
-  The mechanics writes these when end flags 0x4 and 0x4000 are both set (0x431AD0). The weighted
-  average of movement (0x414420, 0x473570) contributes minimum position and aim speeds at 0x484B50;
-  the average of positions (0x414550, 0x483E40) also affects the aim point. OpenRayman now records
-  and uses these at its fixed 60 Hz step. Its report movement is approximated by the speed it writes
-  for scripts; the executable derives its sample from the mechanics matrices. Confirm the resulting
-  movement against the original, including cuts and other levels. Own analysis of these executable
-  routines and the user's 2026-10-30 live and OpenRayman traces.
+The exe keeps eight samples of the target's movement and position (camera object +0x78 vectors,
++0xD8 points, +0x138 weights). Procedure 444 (0x47DA40) shifts in the target mechanics report's
+movement (+0x114), position (+0x14C), and elapsed time in seconds. The mechanics writes these when
+end flags 0x4 and 0x4000 are both set (0x431AD0). The weighted average of movement (0x414420,
+0x473570) contributes minimum position and aim speeds at 0x484B50; the average of positions
+(0x414550, 0x483E40) also affects the aim point. OpenRayman now records and uses these at its fixed
+60 Hz step. Its report movement is approximated by the speed it writes for scripts; the executable
+derives its sample from the mechanics matrices. Confirm the resulting movement against the
+original, including cuts and other levels. Own analysis of these executable routines and the
+user's 2026-10-30 live and OpenRayman traces.
 
 ## What our engine leaves out
 - **The original's orbit search around obstacles** (0x486880, with 0x486710 deciding whether a step

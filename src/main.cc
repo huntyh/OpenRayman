@@ -16,6 +16,7 @@
 
 #include <openrayman/actor.h>
 #include <openrayman/game/animation_player.h>
+#include <openrayman/game/first_visit.h>
 #include <openrayman/game/handlers.h>
 #include <openrayman/game/interpreter.h>
 #include <openrayman/game/input.h>
@@ -1007,31 +1008,9 @@ namespace
 				a.super_object_at.push_back(tree.node(actor.node).at.address());
 			}
 			a.state_since.assign(a.actors.actors.size(), 0.0);
-			// A first visit starts where the level's intro cutscene hands Rayman over, until the
-			// cutscenes play (Phase 4). Learn_10: he crash-lands in the woods, looks for Globox and
-			// lands here in behaviour 1 (the real game, tools/r2live.py, 2026-10-31); on a revisit node
-			// 4 teleports him to the same spot (waypoint 0d/01 +0x46C7C).
+			// A first visit starts where the level's intro cutscene hands Rayman over (first_visit.h).
 			if(a.new_game && !header.placements.empty())
-			{
-				struct hand_over { const char* level; float x, y, z, front_x, front_y; };
-				static constexpr hand_over hand_overs[] = { { "Learn_10", 30.292f, 295.230f, -7.295f, -0.883f, 0.469f } };
-				for(const hand_over& h : hand_overs)
-					if(std::ranges::equal(levels[index], std::string_view(h.level), [](unsigned char x, unsigned char y) { return std::tolower(x) == std::tolower(y); }))
-					{
-						// The transform: position at +4, then his X, Y and Z axes (twice: rotation and the
-						// combined matrix); his -Y axis is his front.
-						std::uint32_t t = a.live->u32(header.placements[0].super_object.address() + 0x24);
-						const float axes[9] = { -h.front_y, h.front_x, 0, -h.front_x, -h.front_y, 0, 0, 0, 1 };
-						a.live->write<float>(t + 4, h.x);
-						a.live->write<float>(t + 8, h.y);
-						a.live->write<float>(t + 12, h.z);
-						for(std::uint32_t k = 0; k < 9; k++)
-						{
-							a.live->write<float>(t + 0x10 + k * 4, axes[k]);
-							a.live->write<float>(t + 0x34 + k * 4, axes[k]);
-						}
-					}
-			}
+				openrayman::game::apply_first_visit_hand_over(*a.live, *a.vm, tree, levels[index], header.placements[0].super_object.address());
 			a.script_clock = 0;
 			a.animation_time = a.start_time.value_or(0.0);
 			a.start_time.reset();

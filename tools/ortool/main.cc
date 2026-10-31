@@ -6,6 +6,7 @@
 #include <openrayman/bnm_bank.h>
 #include <openrayman/brain.h>
 #include <openrayman/game/animation_player.h>
+#include <openrayman/game/first_visit.h>
 #include <openrayman/game/handlers.h>
 #include <openrayman/game/input.h>
 #include <openrayman/game/interpreter.h>
@@ -1381,8 +1382,11 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	std::vector<std::uint32_t> fix_actors;
 	for(const auto& placed : header.placements)
 		fix_actors.push_back(placed.super_object.address());
+	bool first_visit = false;
 	if(const char* start = std::getenv("ORTOOL_START"); !start || std::string_view(start) != "new")
 		vm.set_story_bit(fix_actors, 1133);
+	else
+		first_visit = true;
 	std::cout << std::format("level animation events: {}\n", game::install_level_events(memory, bank));
 	std::cout << std::format("sound slots filled: {}\n", game::apply_sound_slots(memory, game, name));
 	// Keys to hold, as name:from-to ticks, comma separated (e.g. Up:60-200,A:100-110).
@@ -1457,6 +1461,9 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 			node_of[actors.back()] = n;
 		}
 	vm.set_actors(actors);
+	// After the placements above, which would undo it.
+	if(first_visit && !header.placements.empty() && game::apply_first_visit_hand_over(memory, vm, tree, name, header.placements[0].super_object.address()))
+		std::cout << "first visit: Rayman placed where the intro hands him over, its director ended\n";
 	std::map<std::size_t, std::string> errors;
 	// With a camera trace: the camera actor (the one with a camera object at actor +0x10), so every
 	// tick can print what its scripts write into the parameter block and where it ends up looking.
@@ -1620,8 +1627,19 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 			if(traced_super != main_actor)
 				watch(main_actor, "main", 115);
 			if(f % 30 == 0)
+			{
 				if(auto p = game::global_placement(memory, tree.node(*trace).at.address()))
 					std::cout << std::format("tick {:>4}: at {:.2f} {:.2f} {:.2f}\n", f, p->m[0][3], p->m[1][3], p->m[2][3]);
+				if(traced_super != main_actor)
+					if(auto p = game::global_placement(memory, main_actor))
+					{
+						std::uint32_t actor = memory.u32(main_actor + 4);
+						std::uint32_t mind = memory.u32(memory.u32(actor + 0x0C));
+						std::cout << std::format("tick {:>4}: main actor at {:.2f} {:.2f} {:.2f}, state 0x{:X}, behaviour 0x{:X}, custom bits 0x{:X}, super object flags 0x{:X}, brain runs {}, mechanics runs {}\n",
+							f, p->m[0][3], p->m[1][3], p->m[2][3], memory.u32(memory.u32(actor) + 4), memory.u32(memory.u32(mind + 4) + 8),
+							memory.u32(memory.u32(actor + 4) + 0x24), memory.u32(main_actor + 0x30), vm.brain_runs(main_actor), vm.mechanics_runs(main_actor));
+					}
+			}
 				// Actors the scripts created (shots): where each is, and its behaviour.
 				for(std::uint32_t so : vm.generated().alive())
 				{

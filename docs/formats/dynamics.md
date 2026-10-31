@@ -80,8 +80,8 @@ is set, else its own) as a queued move (0x432D30), which clears the speed unless
   data can override them, and base flag 0x80 selects the actor's coefficients instead. In the
   Ly_10 live trace, behaviour 38 copies the last speed to var87, and Rayman accelerates downhill;
   the flag 0x20 resolver is also used in ordinary movement. Ours uses material flag 0x1 or the actor
-  override for the contact inertia coefficient, but not explicit material response data; procedure
-  292, which writes the per-axis factors, is not implemented. Source: own analysis of Rayman2.exe
+  override for the contact inertia coefficient, but not explicit material response data. Procedures
+  291/292 write the per-axis factors (`dynamics_triple` in `handlers.cc`). Source: own analysis of Rayman2.exe
   and the live log.
 
 - Procedure 297 (climbing over a ledge, 0x46C710 case 0x129) sets end flag 0x400000, flags 0x182,
