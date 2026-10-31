@@ -1375,11 +1375,13 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	game::register_handlers(vm);
 	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
 	vm.set_animations(&bank);
-	// As the viewer does: arrived from the hub through the portal (story bit 1133).
+	// As the viewer does: arrived from the hub through the portal (story bit 1133), unless
+	// ORTOOL_START=new asks for a first visit (the viewer's --start new).
 	std::vector<std::uint32_t> fix_actors;
 	for(const auto& placed : header.placements)
 		fix_actors.push_back(placed.super_object.address());
-	vm.set_story_bit(fix_actors, 1133);
+	if(const char* start = std::getenv("ORTOOL_START"); !start || std::string_view(start) != "new")
+		vm.set_story_bit(fix_actors, 1133);
 	// Keys to hold, as name:from-to ticks, comma separated (e.g. Up:60-200,A:100-110).
 	game::input keys(memory, read_input_actions(files));
 	struct held { std::uint8_t key; int from, to; };
@@ -1403,6 +1405,7 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 		at = end + 1;
 	}
 	// Do the global transforms the game keeps agree with the placements computed from the tree?
+	// Those that don't (Fix's placed actors) are set from the tree, as the viewer does.
 	{
 		actor_set set = read_actors(files.memory, tree, bank);
 		std::size_t checked = 0, missing_transform = 0, differ = 0;
@@ -1420,8 +1423,13 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 			for(int r = 0; r < 3; r++)
 				for(int c = 0; c < 4; c++)
 					d = std::max(d, std::abs(g->m[r][c] - e.world.m[r][c]));
+			// As the viewer does (the loader's job, 0x403730): Fix's actors take their placement
+			// from the level header. Without it Rayman starts a first visit at the origin.
 			if(d > 1e-3f)
+			{
 				differ++;
+				game::set_global_placement(memory, tree.node(e.node).at.address(), e.world);
+			}
 			worst = std::max(worst, d);
 		}
 		std::cout << std::format("global transforms: {} checked, {} differ (worst {}), {} have none\n", checked, differ, worst, missing_transform);
