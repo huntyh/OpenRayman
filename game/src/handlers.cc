@@ -461,8 +461,8 @@ namespace openrayman::game
 		// --- Procedures --------------------------------------------------------------------------
 
 		// Calls whose systems don't exist yet: their arguments are evaluated (they may have side
-		// effects) and nothing else happens. 115..119 (0x4691E0): messages to the engine's mailboxes,
-		// not identified yet.
+		// effects) and nothing else happens. 116 (0x4691E0, with the sound procedures): not identified
+		// yet.
 		std::uint32_t not_yet(call& c)
 		{
 			std::uint32_t at = c.args;
@@ -2640,6 +2640,17 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 115, 117, 118, 119 (0x4691E0): play a sound: the argument is a sound event node, whose slot
+		// holds the event id once the .snd files are applied. Queued for the engine's sound player.
+		std::uint32_t play_sound(call& c)
+		{
+			value v;
+			next_arg(c, v);
+			if(v.word())
+				c.vm.play_sound(v.word(), c.vm.target(c.self, true), c.index);
+			return c.args;
+		}
+
 		// --- More conditions ---------------------------------------------------------------------
 
 		// 27..32 (0x48A330): the contact flags of the actor's dynamics report (dynamics base +0x150,
@@ -3952,8 +3963,10 @@ namespace openrayman::game
 		vm.on_procedure(68, change_other_behaviour);
 		vm.on_procedure(69, change_behaviour);
 		// 42..47: the scripts' fog override (0x468B90), until the renderer takes it.
-		for(std::uint32_t i : { 42, 43, 44, 45, 46, 47, 115, 116, 117, 118, 119 })
+		for(std::uint32_t i : { 42, 43, 44, 45, 46, 47, 116 })
 			vm.on_procedure(i, not_yet);
+		for(std::uint32_t i : { 115, 117, 118, 119 })
+			vm.on_procedure(i, play_sound);
 		// 505..507 (0x4731B0): the on-screen text slots the menu fills. Shared handler, so each
 		// entry gets its own function; the state lives in game/src/screen_text.cc.
 		vm.on_procedure(505, text_slot_set);

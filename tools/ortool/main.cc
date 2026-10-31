@@ -10,6 +10,7 @@
 #include <openrayman/game/input.h>
 #include <openrayman/game/interpreter.h>
 #include <openrayman/game/live_memory.h>
+#include <openrayman/game/sound_slots.h>
 #include <openrayman/cnt_archive.h>
 #include <openrayman/dsb_script.h>
 #include <openrayman/file.h>
@@ -1382,6 +1383,7 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 		fix_actors.push_back(placed.super_object.address());
 	if(const char* start = std::getenv("ORTOOL_START"); !start || std::string_view(start) != "new")
 		vm.set_story_bit(fix_actors, 1133);
+	std::cout << std::format("sound slots filled: {}\n", game::apply_sound_slots(memory, game, name));
 	// Keys to hold, as name:from-to ticks, comma separated (e.g. Up:60-200,A:100-110).
 	game::input keys(memory, read_input_actions(files));
 	struct held { std::uint8_t key; int from, to; };
@@ -1551,6 +1553,11 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 		{
 			throw format_error(std::format("tick {}, outside the actors' scripts (last node 0x{:08X}): {}", f, vm.last_node(), e.what()));
 		}
+		// The sounds the scripts and animations asked for this tick (ORTOOL_SOUNDS=1 lists them).
+		for(const auto& sound : vm.take_sounds())
+			if(std::getenv("ORTOOL_SOUNDS"))
+				std::cout << std::format("tick {:>4}: sound 0x{:08X} from node {} (procedure {}): {}\n", f, sound.event,
+					node_of.contains(sound.source) ? std::to_string(node_of[sound.source]) : std::string("generated"), sound.procedure, describe_sound(game, sound.event));
 		// Collision events another actor sent (procedures 232..234: a shot's hit), as they arrive.
 		for(std::uint32_t so : actors)
 		{

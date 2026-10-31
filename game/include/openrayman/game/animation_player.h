@@ -59,7 +59,10 @@ namespace openrayman::game
 	// armed at the world position of the event's part, which `part_point` gives (the animation
 	// reference, the event's frame, the part); without it at the origin. They last one tick.
 	using part_point = std::function<std::array<float, 3>(std::uint32_t reference, std::uint16_t frame, std::uint16_t part)>;
-	void play_animation(live_memory& memory, std::uint32_t data, std::uint32_t ms, const part_point& point = {}, std::uint32_t actor = 0);
+	// Sound events (type 0) go to `sound` with their event id (the slot the .snd files filled).
+	using event_sound = std::function<void(std::uint32_t event)>;
+	void play_animation(live_memory& memory, std::uint32_t data, std::uint32_t ms, const part_point& point = {}, std::uint32_t actor = 0,
+		const event_sound& sound = {});
 
 	// Select the collision groups for the current family state (0x40C9F0).
 	void select_zone_groups(live_memory& memory, std::uint32_t actor);

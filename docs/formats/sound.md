@@ -362,4 +362,9 @@ Implemented in `libopenrayman` as `bnm_bank` (`include/openrayman/bnm_bank.h`, `
 which reads a bank's header, events, resources, PCM payloads, group and theme entries, including the
 theme tail. `game_data::sound_bank(id)` finds `Bnk_<id>.bnm`. The data checks above live in
 `tests/bnm_tests.cc`; `ortool bank` lists a bank and exports its samples, and `ortool sound` resolves
-an id. Not implemented: a `.snd` reader, and any runtime that plays a queued sound.
+an id. Implemented since: the `.snd` reader (`snd_file.h`), the slots filled with event ids at load
+(`game/sound_slots.h`; ids, not pointers, which our player resolves), and the play requests queued
+by procedures 115/117/118/119 and animation events of type 0 (`interpreter::take_sounds`). In
+Learn_10, 496 slots are filled (Fix's 281 and the level's), and the first seconds ask for the
+ambient loops (FORET5, RIVIERE3/4, WATERF2, AMBEGOUT), the portal's spirale.wav and Magic33.wav,
+Rayman's stop events and his DECOL.WAV take-off.

@@ -52,12 +52,13 @@ namespace openrayman::game
 		constexpr std::uint32_t event_size = 12, event_frame = 6, event_part = 8;
 		constexpr std::uint32_t descriptor_type = 4, descriptor_start_gate = 6;
 		constexpr std::uint8_t event_marker = 3; // type 3, ids 6..13: arm marker id - 6 (0x41AFB0)
+		constexpr std::uint8_t event_sound_type = 0; // type 0: play the sound event at +0
 
 		// Plays the events of the current state's animation from the cursor (3D data +0x77) up to
-		// `frame`, all of them with `to_end` (0x41ACB0, 0x41AE80). Only markers do something yet;
-		// sounds (type 0) wait for milestone 3d. The exe also counts passes per event (the
-		// descriptor's gates) before firing; here every pass fires.
-		void play_events(live_memory& m, std::uint32_t data, std::uint32_t frame, bool to_end, const part_point& point)
+		// `frame`, all of them with `to_end` (0x41ACB0, 0x41AE80): markers, and sounds (type 0, their
+		// descriptor's +0 is the event the .snd files wrote). The exe also counts passes per event
+		// (the descriptor's gates) before firing; here every pass fires.
+		void play_events(live_memory& m, std::uint32_t data, std::uint32_t frame, bool to_end, const part_point& point, const event_sound& sound)
 		{
 			std::uint32_t s = m.u32(data + data_3d::current_state);
 			std::uint32_t reference = s ? m.u32(s + state::animation) : 0;
@@ -72,7 +73,15 @@ namespace openrayman::game
 				if(!to_end && m.read<std::uint16_t>(e + event_frame) > frame)
 					break;
 				std::uint32_t descriptor = m.u32(e);
-				if(!descriptor || m.u8(descriptor + descriptor_start_gate) == 0xFF || m.u8(descriptor + descriptor_type) != event_marker)
+				if(!descriptor || m.u8(descriptor + descriptor_start_gate) == 0xFF)
+					continue;
+				if(m.u8(descriptor + descriptor_type) == event_sound_type)
+				{
+					if(sound && m.u32(descriptor))
+						sound(m.u32(descriptor));
+					continue;
+				}
+				if(m.u8(descriptor + descriptor_type) != event_marker)
 					continue;
 				std::uint32_t id = m.u32(descriptor);
 				if(id < 6 || id > 13)
@@ -203,7 +212,7 @@ namespace openrayman::game
 		return true;
 	}
 
-	void play_animation(live_memory& m, std::uint32_t data, std::uint32_t ms, const part_point& point, std::uint32_t actor)
+	void play_animation(live_memory& m, std::uint32_t data, std::uint32_t ms, const part_point& point, std::uint32_t actor, const event_sound& sound)
 	{
 		std::uint32_t s = m.u32(data + data_3d::current_state);
 		std::uint32_t reference = s ? m.u32(s + state::animation) : 0;
@@ -237,7 +246,7 @@ namespace openrayman::game
 				// the scripts see condition 106 with this state still current (0x40E800, 0x40E945).
 				// Moving on at once let the next state's first tick look finished: Rayman's hand
 				// return after a throw was cut after one tick.
-				play_events(m, data, 0, true, point);
+				play_events(m, data, 0, true, point, sound);
 				m.write<std::uint8_t>(data + data_3d::finished, 1);
 				m.write<std::uint8_t>(data + data_3d::reached_end, 1);
 				m.write<std::uint32_t>(data + data_3d::elapsed, elapsed);
@@ -252,7 +261,7 @@ namespace openrayman::game
 			else if(after && after != s)
 			{
 				start(m, data, after, actor);
-				play_events(m, data, 0, false, point);
+				play_events(m, data, 0, false, point, sound);
 				return;
 			}
 			// Loop: keep the time past the end.
@@ -262,7 +271,7 @@ namespace openrayman::game
 		}
 		m.write<std::uint32_t>(data + data_3d::elapsed, elapsed);
 		m.write<std::uint16_t>(data + data_3d::frame, std::uint16_t(frame));
-		play_events(m, data, frame, false, point);
+		play_events(m, data, frame, false, point, sound);
 	}
 
 	void set_playback_rate(live_memory& m, std::uint32_t data, std::uint8_t rate)
@@ -388,7 +397,7 @@ namespace openrayman::game
 				};
 				std::uint32_t state_before = m.u32(data + data_3d::current_state);
 				int before = m.read<std::uint16_t>(data + data_3d::frame);
-				play_animation(m, data, vm.frame_ms(), part_at, actor);
+				play_animation(m, data, vm.frame_ms(), part_at, actor, [&](std::uint32_t event) { vm.play_sound(event, self, 0); });
 				if(actor && vm.animations())
 					animation_motion(m, *vm.animations(), actor, data, state_before, before);
 			}

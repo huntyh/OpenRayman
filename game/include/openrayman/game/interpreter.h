@@ -15,6 +15,7 @@
 #include <span>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace openrayman::game
@@ -140,6 +141,18 @@ namespace openrayman::game
 		// The particles the scripts started (procedure 503).
 		game::particles& particles() { return m_particles; }
 		const game::particles& particles() const { return m_particles; }
+		// Sounds asked for since the last take_sounds(): by the scripts (procedures 115, 117, 118, 119
+		// with a sound event node, 0x4691E0) and by animations (events of type 0, 0x41AFB0). The event
+		// is (bank << 16) | index, as the .snd files wrote it into the slot; `procedure` says which of
+		// the four asked (each hands the engine a different sound channel; 0 for animations).
+		struct sound_request
+		{
+			std::uint32_t event = 0;
+			std::uint32_t source = 0; // super object
+			std::uint32_t procedure = 0;
+		};
+		void play_sound(std::uint32_t event, std::uint32_t source, std::uint32_t procedure) { m_sounds.push_back({ event, source, procedure }); }
+		std::vector<sound_request> take_sounds() { return std::exchange(m_sounds, {}); }
 		// The on-screen text the scripts fill (procedures 505..507), still to be drawn.
 		game::screen_text& screen_text() { return m_screen_text; }
 		const game::screen_text& screen_text() const { return m_screen_text; }
@@ -316,6 +329,7 @@ namespace openrayman::game
 		std::vector<std::uint32_t> m_actors;
 		std::set<std::uint32_t> m_removed;
 		generated_actors m_generated;
+		std::vector<sound_request> m_sounds;
 		std::uint64_t m_ticks = 0;
 		std::uint32_t m_frame_ms = 16;
 		game::particles m_particles;

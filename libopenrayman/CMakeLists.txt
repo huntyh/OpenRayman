@@ -5,6 +5,7 @@ add_library(libopenrayman STATIC
 	src/animation.cc
 	src/apm_audio.cc
 	src/bnm_bank.cc
+	src/snd_file.cc
 	src/cnt_archive.cc
 	src/dsb_script.cc
 	src/file.cc
