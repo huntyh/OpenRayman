@@ -253,6 +253,7 @@ namespace openrayman::game
 		std::map<std::uint32_t, std::map<std::pair<const char*, std::uint32_t>, std::size_t>> missing_by_actor;
 
 	private:
+		void initialize_native_check(std::uint32_t self);
 		std::uint32_t m_running = 0; // the super object whose scripts run now
 		struct node_view
 		{

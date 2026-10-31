@@ -185,6 +185,55 @@ behaviour, 13 state, 14 an id (-1 = none), 15 and 16 references not identified y
 
 From an actor to its super object: actor +0x04 (standard game) +0x0C (0x4136D0).
 
+**Actor variables are stored as super objects.** Type 9's getter (0x481350) reads the stored
+pointer, checks that the pointed-to object's type is 2, and returns its actor at +4 as value
+type 0x0B. Its setter (0x481680) converts the evaluated actor back through its standard game's
+super object pointer. This applies to array elements of type 9 too. Returning the stored pointer
+as an actor prevented cross-actor variable access and calls through these variables from working.
+
+### Native startup checks and Learn_10's hanging cage
+
+Own analysis of Rayman2.exe with GPT-6 Astra (2026-10-31), checked against the GOG executable
+and Learn_10 data; no reference-project code or native payload code was copied.
+
+There is a startup pass outside the script interpreter: 0x404550 selects actors whose standard
+game custom bits include 0x01000000 (bit 25), then calls 0x467210 and 0x467350 on their minds.
+The latter recognizes initial var0 = 2. It decodes embedded native code in initial var1 and its
+argument in initial var3, invokes the code with the helper table built by 0x467130, and writes
+the returned integer to initial var4. These are ordinary type-21 integer arrays, not special
+variable getters. Their elements begin at +8; decoding XORs each word with the preceding
+encrypted word, seeded from the first word XOR (first word OR 0x00EC8B55).
+
+Learn_10 node 82 has this bit set (custom bits 0x0100A000). Its initial var0/var2/var4 are 2/5/0,
+whereas its saved current buffer contains 100/1/0. Its decoded probe temporarily changes the
+Windows error mode, calls helper slot 4, restores the error mode, and returns the helper result.
+That drive-type helper, 0x448EC4, returns 5 unconditionally in the supplied GOG executable.
+The probe's 47 instruction bytes have FNV-1a-32 fingerprint 0xB5546264 (padding excluded).
+After the startup pass, 0x4062F0 initializes actors; the brain path reaches 0x466D00/0x466A60,
+which restores each variable whose declaration +0x0C is nonzero from the initial buffer.
+Thus the script compares 5 with 5, not the stale saved 1 with 0. Declaration +0x08 is separate
+post-initialization processing (0x466BD0), not the restore flag.
+
+OpenRayman's `initialize_native_check` recognizes this probe by flag, initial mode, variable
+types, array sizes, expected value and decoded fingerprint. It supplies the GOG result and
+restores the probe's scalar inputs/results before scripts run. It does not execute embedded x86
+or assume success for unidentified probes. General native startup checks remain unimplemented.
+
+The resulting wake path uses the unmodified scripts:
+
+- Node 82's behaviour 1 adds its var7 (10) to node 83's var12 through var6, clears node 83's
+  custom bit 17, then removes itself.
+- Node 83 compares its count with var0 (3), clears custom bit 17 on its var1 (node 67), clamps
+  its count to 3 and puts its own brain to sleep. Procedure 311 is not needed on this path.
+- Node 67 can then run behaviour 0. With story bit 840 clear and var1 = 0, it selects state
+  04/01 +0xFB10, animation 427 (cage and chain), and changes to behaviour 1.
+
+Both the missing startup result and the type-9 pointer conversion were necessary fixes. No
+special wake-up in Murfy or the tutorial controller, nor a change to actor ordering, was needed.
+In a 600-tick `ortool run` with `ORTOOL_START=new`, node 67 changes from animation 433 to 427
+at tick 1 (live state address 0x07E5FB30). The default revisit start follows the same wake path;
+it sets story bit 1133 but does not imply that bit 840, the cage-broken flag, is set.
+
 **Waypoints and graphs.** A waypoint has three floats at +0 for position, a float radius at
 +0x0C, and an optional super object pointer at +0x10. When attached, its position is transformed
 by that object's global transform; otherwise it is already in world coordinates (0x487860).

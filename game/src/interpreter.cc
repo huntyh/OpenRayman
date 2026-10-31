@@ -98,7 +98,66 @@ namespace openrayman::game
 	{
 		m_actors = std::move(actors);
 		for(std::uint32_t self : m_actors)
+		{
+			initialize_native_check(self);
 			select_zone_groups(m_memory, actor_of(self));
+		}
+	}
+
+	void interpreter::initialize_native_check(std::uint32_t self)
+	{
+		// 0x404550 runs startup probes for custom bit 25 before variables are restored (0x466A60).
+		std::uint32_t actor = actor_of(self);
+		std::uint32_t standard = actor ? m_memory.u32(actor + 4) : 0;
+		if(!standard || !(m_memory.u32(standard + 0x24) & 0x01000000))
+			return;
+		std::uint32_t brain = m_memory.u32(actor + actor_field::brain);
+		std::uint32_t mind = brain ? m_memory.u32(brain) : 0;
+		std::uint32_t variables = mind ? m_memory.u32(mind + mind_field::variables) : 0;
+		if(!variables)
+			return;
+		std::uint32_t declaration = m_memory.u32(m_memory.u32(variables));
+		std::uint32_t initial = m_memory.u32(variables + 4);
+		if(!initial || m_memory.u8(declaration + declaration_count) < 6)
+			return;
+		std::uint32_t info = m_memory.u32(declaration + declaration_info);
+		auto initial_slot = [&](std::uint32_t index) {
+			return variable_slot{ initial + m_memory.u32(info + index * variable_info_size),
+				m_memory.u32(info + index * variable_info_size + 4) };
+		};
+		// Mode 2 (0x467350): arrays 1/3 contain a native probe and its argument, result in var4.
+		// Support the drive-type probe found in Learn_10: the GOG helper at 0x448EC4 returns 5.
+		// Do not execute the embedded x86, or treat other native probes as this one.
+		if(initial_slot(0).type != 5 || initial_slot(1).type != 21 || initial_slot(2).type != 5 ||
+			initial_slot(3).type != 21 || initial_slot(4).type != 5 || initial_slot(5).type != 5 ||
+			read_variable(initial_slot(0)).as_int() != 2 || read_variable(initial_slot(2)).as_int() != 5 ||
+			m_memory.u32(initial_slot(1).address) != 5 || m_memory.u8(initial_slot(1).address + 4) != 200 ||
+			m_memory.u32(initial_slot(3).address) != 5 || m_memory.u8(initial_slot(3).address + 4) != 50)
+			return;
+		// Fingerprint just the probe's instructions, excluding padding. Decode words as 0x467350
+		// does, but only hash the bytes: the same layout can also carry different native code.
+		std::uint32_t code = initial_slot(1).address + 8;
+		std::uint32_t previous = m_memory.u32(code);
+		previous ^= previous | 0x00EC8B55;
+		std::uint32_t fingerprint = 2166136261u;
+		for(std::uint32_t offset = 0; offset < 47; offset += 4)
+		{
+			std::uint32_t encrypted = m_memory.u32(code + offset);
+			std::uint32_t decoded = encrypted ^ previous;
+			previous = encrypted;
+			for(std::uint32_t byte = 0; byte < 4 && offset + byte < 47; byte++)
+				fingerprint = (fingerprint ^ ((decoded >> (8 * byte)) & 0xFF)) * 16777619u;
+		}
+		if(fingerprint != 0xB5546264)
+			return;
+		write_variable(initial_slot(4), value::integer(5));
+		// The saved current buffer has stale mode/expected/result values (100/1/0 in Learn_10).
+		// Restore the probe's scalar inputs/results where the declaration requests initialization.
+		for(std::uint32_t index : { 0u, 2u, 4u, 5u })
+		{
+			if(m_memory.u32(info + index * variable_info_size + 0x0C))
+				write_variable(variable(self, index), read_variable(initial_slot(index)));
+		}
 	}
 
 	interpreter::interpreter(live_memory& memory, std::uint32_t main_actor)
@@ -473,7 +532,8 @@ namespace openrayman::game
 		case 5: case 6: return value::integer(std::int32_t(m_memory.u32(a)));
 		case 7: return value::real(m_memory.f32(a));
 		case 8: return value::of(value_type::waypoint, m_memory.u32(a));
-		case 9: return value::of(value_type::actor, m_memory.u32(a));
+		// 0x481350: actor variables store a super object, but evaluate to its actor.
+		case 9: return value::of(value_type::actor, actor_of(m_memory.u32(a)));
 		case 10: return value::of(value_type::buffer, a);
 		case 11: return value::vector(m_memory.f32(a), m_memory.f32(a + 4), m_memory.f32(a + 8));
 		case 12: return value::of(value_type::behaviour, m_memory.u32(a));
@@ -498,11 +558,15 @@ namespace openrayman::game
 		case 3: case 4: m_memory.write<std::uint16_t>(a, std::uint16_t(v.as_int())); break;
 		case 5: case 6: m_memory.write<std::int32_t>(a, v.as_int()); break;
 		case 7: m_memory.write<float>(a, v.as_float()); break;
+		// 0x481680: store the actor's super object, the inverse of the type-9 getter.
+		case 9:
+			m_memory.write<std::uint32_t>(a, v.type == value_type::super_object ? v.word() : super_object_of(v.word()));
+			break;
 		case 11:
 			for(int i = 0; i < 3; i++)
 				m_memory.write<float>(a + std::uint32_t(i) * 4, v.component(i));
 			break;
-		case 8: case 9: case 12: case 13: case 14: case 15: case 16: case 17: case 24:
+		case 8: case 12: case 13: case 14: case 15: case 16: case 17: case 24:
 			m_memory.write<std::uint32_t>(a, v.word());
 			break;
 		default:
