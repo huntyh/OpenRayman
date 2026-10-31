@@ -1534,8 +1534,33 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 		}
 	};
 	std::map<std::uint32_t, std::uint8_t> event_last; // per actor: the collision event priority seen last
+	// ORTOOL_PLACE=x,y,z,yaw@tick puts the main actor there at that tick, facing yaw degrees (0 = +X;
+	// his -Y axis is his front), to test something far from his start, e.g. shooting at the hanging
+	// cage: ORTOOL_PLACE=-27,291.5,-7.3,0@240.
+	std::optional<std::array<float, 4>> place_at;
+	int place_tick = -1;
+	if(const char* place = std::getenv("ORTOOL_PLACE"))
+	{
+		std::array<float, 4> v{};
+		if(std::sscanf(place, "%f,%f,%f,%f@%d", &v[0], &v[1], &v[2], &v[3], &place_tick) == 5)
+			place_at = v;
+	}
 	for(int f = 0; f < frames; f++)
 	{
+		if(place_at && f == place_tick)
+		{
+			std::uint32_t t = memory.u32(main_actor + 0x24);
+			for(std::uint32_t k = 0; k < 3; k++)
+				memory.write<float>(t + 4 + k * 4, (*place_at)[k]);
+			const float fx = std::cos((*place_at)[3] * 0.01745329f), fy = std::sin((*place_at)[3] * 0.01745329f);
+			const float axes[9] = { -fy, fx, 0, -fx, -fy, 0, 0, 0, 1 }; // X, Y (his back), Z
+			for(std::uint32_t k = 0; k < 9; k++)
+			{
+				memory.write<float>(t + 0x10 + k * 4, axes[k]);
+				memory.write<float>(t + 0x34 + k * 4, axes[k]);
+			}
+			std::cout << std::format("tick {:>4}: main actor placed at {:.2f} {:.2f} {:.2f}\n", f, (*place_at)[0], (*place_at)[1], (*place_at)[2]);
+		}
 		// A key held in several spans is down in any of them.
 		std::array<bool, 256> down{};
 		for(const held& h : holds)
