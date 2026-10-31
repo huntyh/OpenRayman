@@ -609,6 +609,17 @@ namespace
 		}
 	}
 
+	// Taken out of the world by its scripts (procedure 139), or hidden: super object flag 0x2 (+0x30),
+	// which scripts set with procedure 312. Learn_10's tutorial controller (node 69) hides the
+	// Rayman-shaped double (node 71) and the caged Lum (node 70) this way until the tutorial
+	// starts, and node 45 the end cutscene's actors; we drew them all.
+	bool hidden(const app& a, std::uint32_t super_object)
+	{
+		if(a.vm->removed(super_object))
+			return true;
+		return a.live->contains(super_object + 0x30, 4) && (a.live->u32(super_object + 0x30) & 0x2);
+	}
+
 	void update_actors(app& a)
 	{
 		std::vector<posed_part> parts;
@@ -616,7 +627,7 @@ namespace
 		{
 			const actor_set::entry& actor = a.actors.actors[i];
 			// Taken out of the world by its scripts.
-			if(a.vm && a.scripts && i < a.super_object_at.size() && a.vm->removed(a.super_object_at[i]))
+			if(a.vm && a.scripts && i < a.super_object_at.size() && hidden(a, a.super_object_at[i]))
 				continue;
 			double frame = 0;
 			if(actor.animation && *actor.animation < a.bank.animations.size())
@@ -671,7 +682,7 @@ namespace
 		for(std::size_t i = 0; i < a.actors.actors.size(); i++)
 		{
 			const actor_set::entry& actor = a.actors.actors[i];
-			if(a.vm && a.scripts && i < a.super_object_at.size() && a.vm->removed(a.super_object_at[i]))
+			if(a.vm && a.scripts && i < a.super_object_at.size() && hidden(a, a.super_object_at[i]))
 				continue;
 			// Actors with nothing to show (set up by scripts later) don't get a shadow yet either.
 			bool visible = std::ranges::any_of(actor.meshes, [](const auto& mesh) { return mesh.has_value(); });
