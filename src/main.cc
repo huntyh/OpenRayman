@@ -146,6 +146,7 @@ namespace
 		// and flying the camera).
 		std::unique_ptr<openrayman::game::input> input;
 		bool playing = false;
+		bool chose_view = false; // a level was loaded once: later loads keep playing/flying as it is
 		// --keys Up:60-200,A:100-110: keys held over script ticks, to replay input for screenshots.
 		struct held_key { std::uint8_t key; long from, to; };
 		std::vector<held_key> held_keys;
@@ -1010,7 +1011,7 @@ namespace
 			a.state_since.assign(a.actors.actors.size(), 0.0);
 			// A first visit starts where the level's intro cutscene hands Rayman over (first_visit.h).
 			if(a.new_game && !header.placements.empty())
-				openrayman::game::apply_first_visit_hand_over(*a.live, *a.vm, tree, levels[index], header.placements[0].super_object.address());
+				openrayman::game::apply_first_visit_hand_over(*a.live, *a.vm, tree, levels[index], header.placements[0].super_object.address(), a.camera_super_object);
 			a.script_clock = 0;
 			a.animation_time = a.start_time.value_or(0.0);
 			a.start_time.reset();
@@ -1065,6 +1066,15 @@ namespace
 				a.camera = *a.start_camera;
 				a.start_camera.reset();
 			}
+			// Without --camera a game starts as the game does: the keyboard to Rayman and the view from
+			// the game's camera, which starts where the level puts it (so its arrival move shows).
+			// With --camera we fly from there; Tab switches either way.
+			else if(a.input && a.camera_super_object && !a.chose_view)
+			{
+				a.playing = true;
+				a.actor_note = "playing: keys go to the game, Tab to fly";
+			}
+			a.chose_view = true;
 			// --time: let the scripts run up to then, so screenshots show what they picked.
 			run_scripts(a, a.animation_time);
 			update_actors(a);

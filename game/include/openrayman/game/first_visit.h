@@ -35,26 +35,36 @@ namespace openrayman::game
 		{ "Learn_10", 30.292f, 295.230f, -7.295f, -0.883f, 0.469f, 38, 38 },
 	};
 
-	// Puts the main actor (`rayman`, a super object) where the level's intro leaves him and ends the
-	// intro's director. Returns false for levels without a known hand-over.
-	inline bool apply_first_visit_hand_over(live_memory& m, interpreter& vm, const scene& tree, std::string_view level, std::uint32_t rayman)
+	// Writes a super object's transform: position, then its X, Y and Z axes (twice: rotation and the
+	// combined matrix).
+	inline void write_transform(live_memory& m, std::uint32_t super_object, const float (&at)[3], const float (&axes)[9])
+	{
+		std::uint32_t t = m.u32(super_object + 0x24);
+		for(std::uint32_t k = 0; k < 3; k++)
+			m.write<float>(t + 4 + k * 4, at[k]);
+		for(std::uint32_t k = 0; k < 9; k++)
+		{
+			m.write<float>(t + 0x10 + k * 4, axes[k]);
+			m.write<float>(t + 0x34 + k * 4, axes[k]);
+		}
+	}
+
+	// Puts the main actor (`rayman`, a super object) where the level's intro leaves him, the game's
+	// camera (`camera`, 0 for none) behind him as the intro ends, and ends the intro's director.
+	// Returns false for levels without a known hand-over.
+	inline bool apply_first_visit_hand_over(live_memory& m, interpreter& vm, const scene& tree, std::string_view level, std::uint32_t rayman, std::uint32_t camera = 0)
 	{
 		for(const first_visit_hand_over& h : first_visit_hand_overs)
 		{
 			if(!std::ranges::equal(level, std::string_view(h.level), [](unsigned char a, unsigned char b) { return std::tolower(a) == std::tolower(b); }))
 				continue;
-			// The transform: position at +4, then his X, Y and Z axes (twice: rotation and the
-			// combined matrix); his -Y axis is his front.
-			std::uint32_t t = m.u32(rayman + 0x24);
-			const float axes[9] = { -h.front_y, h.front_x, 0, -h.front_x, -h.front_y, 0, 0, 0, 1 };
-			m.write<float>(t + 4, h.x);
-			m.write<float>(t + 8, h.y);
-			m.write<float>(t + 12, h.z);
-			for(std::uint32_t k = 0; k < 9; k++)
-			{
-				m.write<float>(t + 0x10 + k * 4, axes[k]);
-				m.write<float>(t + 0x34 + k * 4, axes[k]);
-			}
+			// His -Y axis is his front.
+			write_transform(m, rayman, { h.x, h.y, h.z }, { -h.front_y, h.front_x, 0, -h.front_x, -h.front_y, 0, 0, 0, 1 });
+			// The camera 6 units behind him and 2.5 up, looking along his front (its -Y looks): its
+			// scripts and mechanics take it from there.
+			if(camera)
+				write_transform(m, camera, { h.x - 6 * h.front_x, h.y - 6 * h.front_y, h.z + 2.5f },
+					{ -h.front_y, h.front_x, 0, -h.front_x, -h.front_y, 0, 0, 0, 1 });
 			// The scene is over: the director's own ending (its behaviour 1: custom bit 28 of the
 			// flag holder cleared, then procedure 139 on itself).
 			if(h.director < tree.nodes().size())

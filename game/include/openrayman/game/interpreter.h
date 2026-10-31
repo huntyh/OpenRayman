@@ -195,6 +195,24 @@ namespace openrayman::game
 		// The level's actors (super objects), for queries over the world such as procedure 22.
 		void set_actors(std::vector<std::uint32_t> actors);
 		const std::vector<std::uint32_t>& actors() const { return m_actors; }
+		// Procedures 76/77's counted loops (the exe keeps one stack for all scripts, 0x4E9420..).
+		struct loop_frame { std::int32_t count; std::uint32_t body; };
+		std::vector<loop_frame> loops;
+		// Procedure 345's byte (0x500FA6).
+		std::uint8_t game_byte = 0;
+		// Actors with a native startup probe (custom bit 25, the copy protection's hiding place) and
+		// whether it has the probe layout we answer (as passed): any other is left as a failed check.
+		struct native_check
+		{
+			std::uint32_t super_object = 0;
+			bool recognised = false;
+			std::array<std::uint32_t, 6> types{}; // the first six variables' types (5 int, 21 native code)
+			std::int32_t mode = -1, expected = -1; // var0 (the probe mode) and var2 (the answer it wants)
+			std::uint32_t code_size = 0;            // var1's array size
+			std::uint32_t fingerprint = 0;          // FNV-1a of the first 47 decoded bytes
+			std::vector<std::uint8_t> code;         // var1 decoded (Ubisoft code: never into the repo)
+		};
+		const std::vector<native_check>& native_checks() const { return m_native_checks; }
 		// Actors taken out of the world (procedure 139): they stop thinking and aren't drawn.
 		void remove(std::uint32_t super_object) { m_removed.insert(super_object); }
 		bool removed(std::uint32_t super_object) const { return m_removed.contains(super_object); }
@@ -254,6 +272,7 @@ namespace openrayman::game
 
 	private:
 		void initialize_native_check(std::uint32_t self);
+		std::vector<native_check> m_native_checks;
 		std::uint32_t m_running = 0; // the super object whose scripts run now
 		struct node_view
 		{

@@ -97,6 +97,7 @@ namespace openrayman::game
 	void interpreter::set_actors(std::vector<std::uint32_t> actors)
 	{
 		m_actors = std::move(actors);
+		m_native_checks.clear();
 		for(std::uint32_t self : m_actors)
 		{
 			initialize_native_check(self);
@@ -111,6 +112,7 @@ namespace openrayman::game
 		std::uint32_t standard = actor ? m_memory.u32(actor + 4) : 0;
 		if(!standard || !(m_memory.u32(standard + 0x24) & 0x01000000))
 			return;
+		m_native_checks.push_back({ self, false });
 		std::uint32_t brain = m_memory.u32(actor + actor_field::brain);
 		std::uint32_t mind = brain ? m_memory.u32(brain) : 0;
 		std::uint32_t variables = mind ? m_memory.u32(mind + mind_field::variables) : 0;
@@ -126,31 +128,48 @@ namespace openrayman::game
 				m_memory.u32(info + index * variable_info_size + 4) };
 		};
 		// Mode 2 (0x467350): arrays 1/3 contain a native probe and its argument, result in var4.
-		// Support the drive-type probe found in Learn_10: the GOG helper at 0x448EC4 returns 5.
-		// Do not execute the embedded x86, or treat other native probes as this one.
-		if(initial_slot(0).type != 5 || initial_slot(1).type != 21 || initial_slot(2).type != 5 ||
-			initial_slot(3).type != 21 || initial_slot(4).type != 5 || initial_slot(5).type != 5 ||
-			read_variable(initial_slot(0)).as_int() != 2 || read_variable(initial_slot(2)).as_int() != 5 ||
-			m_memory.u32(initial_slot(1).address) != 5 || m_memory.u8(initial_slot(1).address + 4) != 200 ||
-			m_memory.u32(initial_slot(3).address) != 5 || m_memory.u8(initial_slot(3).address + 4) != 50)
+		// These are the copy protection's CD checks (64 actors in 25 levels, all with this layout):
+		// the code gets a path (var3) and a table of file functions (0x467130) and measures the disc:
+		// the drive type, whether a file can be written or made writable, a file's size or times, each
+		// folded into a number the actor's script compares with var2 (equal: passed; else Learn_10's
+		// sets actor 6's var63, the pirate flag). The GOG release swaps that table's Windows
+		// functions for stubs at 0x448xxx that answer as the CD would (0x448EC4, the drive type,
+		// returns 5), so every probe passes there. We don't run the embedded x86; we give each probe
+		// the answer it expects, as the GOG release does (docs/formats/scripts.md).
+		native_check& check = m_native_checks.back();
+		for(std::uint32_t index = 0; index < 6; index++)
+			check.types[index] = initial_slot(index).type;
+		check.mode = initial_slot(0).type == 5 ? read_variable(initial_slot(0)).as_int() : -1;
+		check.expected = initial_slot(2).type == 5 ? read_variable(initial_slot(2)).as_int() : -1;
+		if(initial_slot(1).type != 21)
 			return;
-		// Fingerprint just the probe's instructions, excluding padding. Decode words as 0x467350
-		// does, but only hash the bytes: the same layout can also carry different native code.
+		check.code_size = m_memory.u8(initial_slot(1).address + 4);
+		// Decode the probe's words as 0x467350 does, for `ortool run` to list (the fingerprint tells
+		// the kinds apart: 0xB5546264 is the drive-type probe).
 		std::uint32_t code = initial_slot(1).address + 8;
 		std::uint32_t previous = m_memory.u32(code);
 		previous ^= previous | 0x00EC8B55;
 		std::uint32_t fingerprint = 2166136261u;
-		for(std::uint32_t offset = 0; offset < 47; offset += 4)
+		for(std::uint32_t offset = 0; offset < check.code_size && m_memory.contains(code + offset, 4); offset += 4)
 		{
 			std::uint32_t encrypted = m_memory.u32(code + offset);
 			std::uint32_t decoded = encrypted ^ previous;
 			previous = encrypted;
-			for(std::uint32_t byte = 0; byte < 4 && offset + byte < 47; byte++)
-				fingerprint = (fingerprint ^ ((decoded >> (8 * byte)) & 0xFF)) * 16777619u;
+			for(std::uint32_t byte = 0; byte < 4; byte++)
+			{
+				check.code.push_back(std::uint8_t(decoded >> (8 * byte)));
+				if(offset + byte < 47)
+					fingerprint = (fingerprint ^ ((decoded >> (8 * byte)) & 0xFF)) * 16777619u;
+			}
 		}
-		if(fingerprint != 0xB5546264)
+		check.fingerprint = fingerprint;
+		if(initial_slot(0).type != 5 || initial_slot(2).type != 5 || initial_slot(3).type != 21 ||
+			initial_slot(4).type != 5 || initial_slot(5).type != 5 || check.mode != 2 ||
+			m_memory.u32(initial_slot(1).address) != 5 || check.code_size != 200 ||
+			m_memory.u32(initial_slot(3).address) != 5 || m_memory.u8(initial_slot(3).address + 4) != 50)
 			return;
-		write_variable(initial_slot(4), value::integer(5));
+		write_variable(initial_slot(4), value::integer(check.expected));
+		check.recognised = true;
 		// The saved current buffer has stale mode/expected/result values (100/1/0 in Learn_10).
 		// Restore the probe's scalar inputs/results where the declaration requests initialization.
 		for(std::uint32_t index : { 0u, 2u, 4u, 5u })

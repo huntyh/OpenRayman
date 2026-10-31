@@ -1461,8 +1461,23 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 			node_of[actors.back()] = n;
 		}
 	vm.set_actors(actors);
+	// Native probes (the copy protection hides here): with ORTOOL_PROBES=1 also the decoded code, as
+	// hex (Ubisoft's code: keep such output in H:\r2export).
+	for(const auto& check : vm.native_checks())
+	{
+		std::cout << std::format("native probe: node {} {}, mode {}, expected {}, types {} {} {} {} {} {}, code {} bytes, fingerprint 0x{:08X}\n",
+			node_of[check.super_object], check.recognised ? "answered as passed" : "NOT recognised", check.mode, check.expected,
+			check.types[0], check.types[1], check.types[2], check.types[3], check.types[4], check.types[5], check.code_size, check.fingerprint);
+		if(std::getenv("ORTOOL_PROBES"))
+		{
+			std::string hex;
+			for(std::uint8_t b : check.code)
+				hex += std::format("{:02X}", b);
+			std::cout << "  code " << hex << "\n";
+		}
+	}
 	// After the placements above, which would undo it.
-	if(first_visit && !header.placements.empty() && game::apply_first_visit_hand_over(memory, vm, tree, name, header.placements[0].super_object.address()))
+	if(first_visit && !header.placements.empty() && game::apply_first_visit_hand_over(memory, vm, tree, name, header.placements[0].super_object.address(), header.placements.size() > 1 ? header.placements[1].super_object.address() : 0))
 		std::cout << "first visit: Rayman placed where the intro hands him over, its director ended\n";
 	std::map<std::size_t, std::string> errors;
 	// With a camera trace: the camera actor (the one with a camera object at actor +0x10), so every

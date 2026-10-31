@@ -201,6 +201,21 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 57 (0x48AF80): the actor is in the world: its standard game names a super object that is in
+		// the engine's table of actors (0x40C370) and that we haven't taken out. The cage asks this of
+		// the Lums it has just created (function 66).
+		std::uint32_t in_world(call& c, bool& result)
+		{
+			value a;
+			next_arg(c, a);
+			live_memory& m = c.vm.memory();
+			std::uint32_t actor = actor_value(c.vm, a);
+			std::uint32_t standard = actor && m.contains(actor, 8) ? m.u32(actor + actor_field::standard_game) : 0;
+			std::uint32_t so = standard && m.contains(standard + 0xC, 4) ? m.u32(standard + 0xC) : 0;
+			result = so && c.vm.actor_of(so) == actor && !c.vm.removed(so);
+			return c.args;
+		}
+
 		// 66 (0x48A950): a one-shot event flag in the actor's collision structure, cleared when read.
 		std::uint32_t collision_event_flag(call& c, bool& result)
 		{
@@ -4039,6 +4054,74 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 351 (0x46FC60): set (third argument not 0) or clear bit n (1-based) of a bit-array variable,
+		// the counterpart of function 248. Cages set their story bit this way when broken.
+		std::uint32_t set_array_bit(call& c)
+		{
+			value array, which, on;
+			next_arg(c, array);
+			next_arg(c, which);
+			next_arg(c, on);
+			live_memory& m = c.vm.memory();
+			std::int32_t n = which.as_int();
+			if(n < 1 || array.type != value_type::buffer)
+				return c.args;
+			// The array: u32 element type, u8 count, elements from +8.
+			std::uint32_t word = std::uint32_t(n - 1) / 32, bit = std::uint32_t(n - 1) % 32;
+			if(word >= m.u8(array.word() + 4))
+				return c.args;
+			std::uint32_t at = array.word() + 8 + word * 4;
+			m.write<std::uint32_t>(at, on.as_int() ? m.u32(at) | 1u << bit : m.u32(at) & ~(1u << bit));
+			return c.args;
+		}
+
+		// 76 (0x472E90), 77 (0x472F00): a counted loop. 76 starts it: with a count of 0 it skips past
+		// its matching 77 (nested 76/77 pairs counted, 0x472E20); otherwise it remembers the count
+		// and where the body starts. 77 counts down and goes back there until the count runs out.
+		std::uint32_t loop(call& c)
+		{
+			interpreter& vm = c.vm;
+			live_memory& m = vm.memory();
+			if(c.index == 77)
+			{
+				if(!vm.loops.empty() && --vm.loops.back().count > 0)
+					return vm.loops.back().body;
+				if(!vm.loops.empty())
+					vm.loops.pop_back();
+				return c.args;
+			}
+			std::uint32_t self = c.args - 8; // the 76 node
+			value count;
+			next_arg(c, count);
+			if(count.as_int() > 0)
+			{
+				vm.loops.push_back({ count.as_int(), c.args });
+				return c.args;
+			}
+			// Nodes are 8 bytes: param, u16, u8 indent, u8 type; type 4 is a procedure, 8 the end.
+			std::int32_t depth = 0;
+			for(std::uint32_t n = self; m.contains(n, 8) && m.u8(n + 7) != 8; n += 8)
+			{
+				if(m.u8(n + 7) != 4)
+					continue;
+				if(m.u32(n) == 76)
+					depth++;
+				else if(m.u32(n) == 77 && --depth < 1)
+					return n + 8;
+			}
+			return c.args;
+		}
+
+		// 345 (0x46BB10, with 343/344): keeps a byte for the game (0x500FA6), read back with 343/344
+		// (probably the HUD's counters). Nothing reads it yet.
+		std::uint32_t game_byte(call& c)
+		{
+			value v;
+			next_arg(c, v);
+			c.vm.game_byte = std::uint8_t(v.as_int());
+			return c.args;
+		}
+
 		// 67 (0x469580), 68 (0x469640): switch another actor's normal (67) or reflex (68) behaviour,
 		// as 69 and 70 do for the actor itself. The portal hands Rayman over this way, so his scripts
 		// go on straight from the frame he is let go.
@@ -4264,6 +4347,11 @@ namespace openrayman::game
 		vm.on_meta_action(1, change_state_and_wait());
 		vm.on_meta_action(2, wait_animation());
 		vm.on_procedure(174, set_custom_bits);
+		vm.on_procedure(351, set_array_bit);
+		vm.on_procedure(76, loop);
+		vm.on_procedure(77, loop);
+		vm.on_procedure(345, game_byte);
+		vm.on_condition(57, in_world);
 		vm.on_procedure(175, set_custom_bits);
 		// 444..500: the script camera's parameter blocks and its global settings.
 		for(std::uint32_t i : { 445, 446 })

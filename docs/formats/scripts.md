@@ -208,16 +208,27 @@ Learn_10 node 82 has this bit set (custom bits 0x0100A000). Its initial var0/var
 whereas its saved current buffer contains 100/1/0. Its decoded probe temporarily changes the
 Windows error mode, calls helper slot 4, restores the error mode, and returns the helper result.
 That drive-type helper, 0x448EC4, returns 5 unconditionally in the supplied GOG executable.
-The probe's 47 instruction bytes have FNV-1a-32 fingerprint 0xB5546264 (padding excluded).
+The probe's first 47 decoded bytes have FNV-1a-32 fingerprint 0xB5546264.
 After the startup pass, 0x4062F0 initializes actors; the brain path reaches 0x466D00/0x466A60,
 which restores each variable whose declaration +0x0C is nonzero from the initial buffer.
 Thus the script compares 5 with 5, not the stale saved 1 with 0. Declaration +0x08 is separate
 post-initialization processing (0x466BD0), not the restore flag.
 
-OpenRayman's `initialize_native_check` recognizes this probe by flag, initial mode, variable
-types, array sizes, expected value and decoded fingerprint. It supplies the GOG result and
-restores the probe's scalar inputs/results before scripts run. It does not execute embedded x86
-or assume success for unidentified probes. General native startup checks remain unimplemented.
+**All the CD checks.** `ortool run <level> 0` lists every actor with custom bit 25: 65 actors in
+25 levels, every one with this layout (mode 2, var1 200 bytes of code, var3 a 50-byte argument,
+var4 the result, var2 the expected answer) and every one with the same script: equal results count
+towards a counter actor, any other sets the pirate flag (Learn_10: `actor 6.var63 := 1`). The probe
+code gets the argument (a path; with var5 set, its first letter becomes the CD's drive letter,
+0x4A6AD8) and a table of file functions filled by 0x467130. The kinds seen, by what the code does:
+the drive type (10 actors, Learn_10 among them: the 0xB5546264 kind), clearing a file's read-only
+attribute and reading the attributes back (expected 57931 = 0xE24B x 1: still read-only), a file's
+size times 0xD21F, comparing two files' times, and creating a file, which must fail (expected 0). In
+the GOG executable that table points at stubs (0x448xxx) instead of the Windows functions, which
+answer as the CD would, so every probe passes. `initialize_native_check` therefore gives every probe
+of this layout its expected value (var4 := var2) and restores the scalar inputs/results before
+scripts run; it never runs the embedded x86. A probe with another layout would be left alone (none
+exist in the 70 levels). Own analysis of Rayman2.exe (0x467350, 0x467130) and the probes decoded
+by `ortool run` with `ORTOOL_PROBES=1` (output kept outside the repository), 2026-10-31.
 
 The resulting wake path uses the unmodified scripts:
 

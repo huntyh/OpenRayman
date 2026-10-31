@@ -101,13 +101,19 @@ once it plays right (they have issues of their own, found on a first look).
    11 u/s² down the fall line, `H:\r2export\live\slope_ly10_2026-10-31.txt`), the Lum collect
    effect, the faint crosshair-like lines around Rayman, and the mid-air stop while hovering near
    the spawn cliff (sloped face taken as floor).
+   **Standing on actors**: our collision is the level's triangles plus actors pushing Rayman
+   sideways; nothing lets him stand on an actor, so the tutorial's closed trapdoor (and every
+   moving platform) lets him fall through. Next: actors' collision shapes as floor.
 2. **The first-visit start** (`--start new`) works: Rayman starts where the intro hands him over,
    the tutorial cage hangs from its chain (it waits for the game's CD check, node 82, which we
    answer as the GOG release does), Murfy appears and whispers. The intro's director (node 38)
    is ended at the hand-over, since the intro itself is Phase 4 (`first_visit.h`). To check: the
    tutorial chain (cage, Lum, trapdoor) and the condor leaving once Rayman exits the cave. Still
    to identify: a Rayman-shaped actor near `--camera 62.7,250.1,15.5`. Node 71 (the tutorial's
-   stand-in) walks a bit and stops.
+   stand-in) walks a bit and stops. Breaking the cage now sets its story bit (procedure 351) and frees
+   its Lums (the 76/77 loop, condition 57): to check in play. Every level's CD checks (65 actors
+   in 25 levels) get the passing answer, as on GOG. Without `--camera` a game starts playing,
+   seen through the game's camera.
 3. **3d: sound** plays (user confirmed 2026-10-31: shots, steps by ground type, voices, ambience,
    the big-nosed flier's buzz). Left: the dialogs (Murfy stalls waiting for one), the game's own
    3D falloff and panning (ours is a stand-in, so the flier's buzz is louder than in the game and
