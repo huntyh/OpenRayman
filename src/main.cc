@@ -385,8 +385,8 @@ namespace
 	}
 
 	// How loud a sound from an actor is where the camera listens, and from which side. A stand-in
-	// until the game's own 3D sound settings are read: full within 5 units, silent at 50, panned by
-	// the camera's right.
+	// until the sound DLL's own falloff is read: full within 8 units, silent at 30 (Snd_Cpa.ini's
+	// SXD_DIST_SATUR=8 and SXD_DIST_FADE=30, by their names), panned by the camera's right.
 	std::pair<float, float> sound_placement(const app& a, std::uint32_t source)
 	{
 		auto placed = a.live ? openrayman::game::global_placement(*a.live, source) : std::nullopt;
@@ -394,7 +394,7 @@ namespace
 			return { 1.0f, 0.0f };
 		glm::vec3 to = glm::vec3(placed->m[0][3], placed->m[1][3], placed->m[2][3]) - a.camera.position;
 		float distance = glm::length(to);
-		float gain = std::clamp((50.0f - distance) / 45.0f, 0.0f, 1.0f);
+		float gain = std::clamp((30.0f - distance) / (30.0f - 8.0f), 0.0f, 1.0f);
 		glm::vec3 right = glm::cross(a.camera.forward(), glm::vec3(0, 0, 1));
 		float pan = distance > 1e-3f && glm::length(right) > 1e-4f ? 0.8f * glm::dot(to / distance, glm::normalize(right)) : 0.0f;
 		return { gain, pan };
@@ -454,9 +454,16 @@ namespace
 			for(const auto& request : a.vm->take_sounds())
 				if(a.sounds && !a.screenshot && a.last_frame != 0)
 				{
-					auto [gain, pan] = sound_placement(a, request.source);
-					a.sounds->request(request.event, request.source, gain, pan);
-					a.sound_sources.insert(request.source);
+					// Procedure 115 and animations sound from their actor; 117..119 have no emitter
+					// (0x4691E0 passes -1; 0x4520A0 centres them).
+					if(request.procedure == 115 || request.procedure == 0)
+					{
+						auto [gain, pan] = sound_placement(a, request.source);
+						a.sounds->request(request.event, request.source, gain, pan);
+						a.sound_sources.insert(request.source);
+					}
+					else
+						a.sounds->request(request.event, request.source, 1.0f, 0.0f);
 				}
 			if(a.camera_log && a.playing && a.camera_super_object)
 			{

@@ -377,3 +377,15 @@ by procedures 115/117/118/119 and animation events of type 0 (`interpreter::take
 Learn_10, 496 slots are filled (Fix's 281 and the level's), and the first seconds ask for the
 ambient loops (FORET5, RIVIERE3/4, WATERF2, AMBEGOUT), the portal's spirale.wav and Magic33.wav,
 Rayman's stop events and his DECOL.WAV take-off.
+
+### Where a sound comes from
+
+Procedure 115 plays from the running (or named) actor through channel `DAT_004FF7D0`, and so do
+animation events (0x41AFB0). Procedures 117, 118 and 119 pass -1 as the object (`DAT_004FF788`,
+`DAT_004FF7D0`, `DAT_004FF78C`): no emitter, and 0x4520A0 starts them centred (pan 0x40, flags 3).
+0x40A3E0 gives `DAT_004FF7D0` the actor callbacks; 0x40A0A0 measures a distance, clamped to
+0.1..200 in 16.16 and shifted right 7, before the sound DLL turns it into volume and pan (not
+traced further). The sample modules are WAVMWBVR.dll (with MMX) or WAVPWBVR.dll, resolved at run
+time (`_SND_fn_lPlaySxd@20`, 0x1000B690 in WAVMWBVR). Our falloff is a stand-in: full within 8
+units, silent at 30, named after `SXD_DIST_SATUR=8` and `SXD_DIST_FADE=30` in Snd_Cpa.ini; the loop
+flag at resource +0x30 is likewise unconfirmed. Traced with GPT-6.1 Terra, 2026-10-31.

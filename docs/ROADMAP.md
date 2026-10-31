@@ -92,32 +92,38 @@ once it plays right (they have issues of their own, found on a first look).
   theme** — an ordered list of external `.apm` segments (147 in 85 banks, 1425 `.snd` pairs
   across 58 levels), so the adaptive sequencing is not a separate format.
 
-**Open** (agreed order with the user, 2026-10-30)
+**Open** (agreed order with the user, 2026-10-30; overnight state 2026-10-31)
 
 1. **Finish 3c: the shot** ⬅ now. The shot is a generated actor (function 66 copies its
    template, the fast mechanics, the shrinking fade after 1.5 s, slot freeing; confirmed by the
-   user 2026-10-31 after 097275e).
-   Still missing: hitting actors (procedure 22's touch query finds nobody yet), homing
-   (function 113), the hand snap while hovering (the strafing one is in the original; optional
-   smoothing is a later improvement). Then the leftovers: the clip out of the tunnel after
-   the Globox kids, the arrival pan, Murfy's freeze, slippery slopes (slide uphill — likely a
-   sign in the slope direction; user: `--level Ly_10 --camera -4776.4,-8543.0,-8238.9,-122.6,
+   user 2026-10-31 after 097275e). It now hits actors (9f56191: procedure 22's touch query,
+   collision events 232..234 / 205..207, zone groups chosen per state): a shot at the hanging
+   cage's height leaves it priority 10 and the shot's strength, to be checked by the user
+   (the cage only reacts while its brain is on, i.e. on a first visit).
+   Still missing: homing (function 113), the hand snap while hovering (the strafing one is in
+   the original; optional smoothing is a later improvement). Then the leftovers: the clip out
+   of the tunnel after the Globox kids, the arrival pan, Murfy's freeze, slippery slopes (slide
+   uphill; the exe's resolver and Rayman's slide script are traced in
+   `H:\r2export\re\handlers\slope_answer.md`; the push is `12 x var102` along his own Z when
+   `var92` is set, so the sign needs a live log on the real slope: `r2live --vars
+   8,31,87,92,100,102 --contacts` at `--level Ly_10 --camera -4776.4,-8543.0,-8238.9,-122.6,
    -43.9`), the Lum collect effect, the faint crosshair-like lines around Rayman, and the
    mid-air stop while hovering near the spawn cliff (sloped face taken as floor).
-2. **The first-visit start**: story bit 1133 left off, Rayman placed where the intro cutscene
-   would end, so the tutorial chain (cage, Murfy, Lum, trapdoor) runs. Our default start is a
-   half-revisit (only 1133 set: the trapdoor opens, the Teensies leave, the hanging cage node
-   67 is still there, asleep — a real revisit has it broken). Reading real saves' story bits is
-   Phase 4.
-3. **3d: playing sound**, together with the dialogs (Murfy, the Teensies), which need the
-   voices. Goal: the first-visit start playable with its conversations. In order: the
-   `snd_file` reader for the `(event id, slot address)` pairs; a sound module in `game` (loaded
-   banks, slot -> event, groups, play/stop queue, wired to the animation player's event type 0
-   and script node type 30 plus procedures 115/117/118/119); an SDL mixer for the 16-bit mono
-   22050 PCM and the external `.apm` pieces (honour the static volume at resource `+0x14` and
-   the event's pitch variation at `+0x0C`, `0x10000 ± v`); adaptive music (a theme's segments
-   in order from `+0x1C`, then the `+0x28` tail, `silence.apm` as a fade-out — which segment to
-   move to, and when, is the open question; see `SXD_DIST_*` in `Snd_Cpa.ini`).
+2. **The first-visit start**, ready to test: `--start new` leaves story bit 1133 off; the
+   loader puts Rayman at the level header's placement (64.38, 248.71, 33.09) and he lands at
+   z 12.15 (`ORTOOL_START=new ortool run ...` shows the same). Murfy (node 62) and node 69 then
+   wait for story bits 841/840, which the tutorial's trigger zones should set. To check: is that
+   where the real game hands over after the intro (an `r2live` log of a new game's first
+   seconds would settle it), and does the tutorial chain (cage, Murfy, Lum, trapdoor) run.
+   Reading real saves' story bits is Phase 4.
+3. **3d: sound**, playing since 1e813a9, not listened to yet: the `.snd` slots hold event ids,
+   procedures 115/117/118/119 and animation events of type 0 queue requests, and
+   `src/audio/sound_player` mixes the banks' samples (stops, pitch variation, volume, variant
+   and weighted sets, loops by resource +0x30 as a guess). Left: the game's own 3D falloff and
+   panning (ours is a stand-in), external `.apm` samples, the dialogs (Murfy, the Teensies),
+   adaptive music (a theme's segments in order from `+0x1C`, then the `+0x28` tail,
+   `silence.apm` as a fade-out; which segment to move to, and when, is the open question; see
+   `SXD_DIST_*` in `Snd_Cpa.ini`). Goal: the first-visit start playable with its conversations.
 4. **The game's camera**, still to check against the game: the field of view (Rayman looked
    smaller in OpenRayman), Murfy's freeze at the stone, the arrival pan. In the game the
    player may turn the camera (Q/W) only where the level allows it, level presets often
