@@ -125,6 +125,11 @@ namespace openrayman::game
 		// every 6th.
 		bool event_fires(live_memory& m, std::uint32_t data, std::uint8_t i, std::uint32_t descriptor)
 		{
+			// An animation that was already playing when the level loaded (no state start here)
+			// takes its countdowns from the descriptors the first time; left at 0 they fired the
+			// big-nosed fliers' 0xFF-gated stop at the end of every pass and silenced their buzz.
+			if(!event_gates().contains(data))
+				load_event_gates(m, data, m.u32(data + data_3d::current_state));
 			std::vector<std::uint8_t>& gates = event_gates()[data];
 			if(i >= gates.size())
 				gates.resize(i + 1u, 0);
@@ -302,6 +307,9 @@ namespace openrayman::game
 
 	std::size_t install_level_events(live_memory& m, const animation_bank& bank)
 	{
+		// A new level: no countdowns or leaving sounds carry over (the addresses repeat on a reload).
+		event_gates().clear();
+		leaving_sounds().clear();
 		if(!bank.events_at)
 			return 0;
 		std::size_t written = 0;
