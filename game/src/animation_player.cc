@@ -3,6 +3,7 @@
 #include <openrayman/error.h>
 
 #include <array>
+#include <cstring>
 #include <format>
 #include <unordered_map>
 #include <vector>
@@ -297,6 +298,24 @@ namespace openrayman::game
 		m.write<std::uint32_t>(data + data_3d::changed_at, clock);
 		start(m, data, play, actor);
 		return true;
+	}
+
+	std::size_t install_level_events(live_memory& m, const animation_bank& bank)
+	{
+		if(!bank.events_at)
+			return 0;
+		std::size_t written = 0;
+		for(std::size_t i = 0; i < bank.level_events.size(); i++)
+		{
+			std::uint32_t at = bank.events_at->address() + std::uint32_t(bank.fix_events + i) * event_size;
+			if(!m.contains(at, event_size))
+				break;
+			const animation_bank::level_event& e = bank.level_events[i];
+			m.write<std::uint32_t>(at, e.descriptor);
+			std::memcpy(m.span(at + 4, 8).data(), e.rest.data(), 8);
+			written++;
+		}
+		return written;
 	}
 
 	void play_animation(live_memory& m, std::uint32_t data, std::uint32_t ms, const part_point& point, std::uint32_t actor, const event_sound& sound)

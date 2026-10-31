@@ -101,6 +101,18 @@ namespace openrayman
 		std::vector<std::uint32_t> frame_keys;
 		std::vector<animation_keyframe> keyframes;
 		std::size_t fix_animations = 0;
+		// The animations' events (12 bytes each: descriptor pointer, frame, part, ...) live in one
+		// array in Fix's memory, Fix's first; the level's come from the level GPT and the engine copies
+		// them in behind Fix's at load. `events_at` is where the array starts, `fix_events` how many
+		// are Fix's, and `level_events` the level's records with their descriptor's address resolved.
+		struct level_event
+		{
+			std::uint32_t descriptor = 0;     // address of the event descriptor, 0 for none
+			std::array<std::byte, 8> rest{};  // the record's other 8 bytes, as stored
+		};
+		std::optional<memory_location> events_at;
+		std::uint32_t fix_events = 0;
+		std::vector<level_event> level_events;
 	};
 
 	// Reads Fix's bank (arrays in Fix's memory, located by Fix.gpt) and appends the level's

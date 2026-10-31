@@ -186,6 +186,11 @@ namespace openrayman
 					throw format_error("Fix animation array without data");
 				continue;
 			}
+			if(which == a_events)
+			{
+				bank.events_at = at;
+				bank.fix_events = fix_stacks[which].count;
+			}
 			std::size_t bytes = fix_stacks[which].count * element_size[which];
 			if(std::size_t(at->offset) + bytes > at->block->data.size())
 				throw format_error("Fix animation array runs past its memory block");
@@ -204,13 +209,26 @@ namespace openrayman
 			if(level_stacks[which].in_fix != fix_stacks[which].count)
 				throw format_error(std::format("level animation array {} doesn't continue from Fix's", which));
 		}
-		// Events (they hold pointers) and morph data come after this and aren't needed yet.
 		for(int which = 0; which < a_events; which++)
 		{
 			std::size_t count = level_stacks[which].count - level_stacks[which].in_fix;
 			if(count && level.position() % 4)
 				level.skip(4 - level.position() % 4);
 			read_elements(bank, which, level, count);
+		}
+		// The level's events: a pointer to the descriptor (resolved through the GPT's table), then 8
+		// bytes (frame, part). The morph data after them isn't needed yet.
+		std::size_t events = level_stacks[a_events].count - level_stacks[a_events].in_fix;
+		if(events && level.position() % 4)
+			level.skip(4 - level.position() % 4);
+		for(std::size_t i = 0; i < events; i++)
+		{
+			animation_bank::level_event e;
+			if(auto descriptor = level.pointer())
+				e.descriptor = descriptor->address();
+			for(std::byte& b : e.rest)
+				b = std::byte(level.u8());
+			bank.level_events.push_back(e);
 		}
 		return bank;
 	}

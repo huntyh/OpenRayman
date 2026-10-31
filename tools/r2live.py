@@ -283,34 +283,46 @@ def snapshot(m, variables, contacts=False, zones=False, camera=False, generated=
 
 def story_bits(m):
 	"""The story bits that are on (numbered from 1, as the scripts' function 248 counts them). They are
-	variable 42 of one Fix actor, a bit array: u8 count of 32-bit words at +4, the words from +8. That
-	actor is found among Rayman's siblings in the scene (super object +0x1C parent, +0x08 first child,
-	+0x14 next) as the first whose variable 42 is such an array."""
-	rayman = m.u32(MAIN_ACTOR)
-	parent = m.u32(rayman + 0x1C) if rayman else 0
-	child = m.u32(parent + 0x08) if parent else 0
-	for _ in range(512):
-		if not child:
+	variable 42 of one actor, a bit array: u8 count of 32-bit words at +4, the words from +8. That
+	actor is searched through the whole scene: from Rayman's super object up to the root (+0x1C parent)
+	and down every child list (+0x08 first child, +0x14 next)."""
+	node = m.u32(MAIN_ACTOR)
+	for _ in range(16):
+		parent = m.u32(node + 0x1C) if node else 0
+		if not parent:
 			break
-		actor = m.u32(child + 4) if m.u32(child) == 2 else 0
+		node = parent
+	stack, seen = [node], set()
+	while stack and len(seen) < 4096:
+		so = stack.pop()
+		if not so or so in seen:
+			continue
+		seen.add(so)
+		child = m.u32(so + 0x08)
+		while child and child not in seen:
+			stack.append(child)
+			child = m.u32(child + 0x14)
+		actor = m.u32(so + 4) if m.u32(so) == 2 else 0
 		brain = m.u32(actor + 0xC) if actor else 0
 		mind = m.u32(brain) if brain else 0
 		memory = m.u32(mind + 0xC) if mind else 0
 		declaration = m.u32(m.u32(memory)) if memory else 0
-		if declaration and m.u8(declaration + 0xC) > 42:
-			info = m.u32(declaration + 4) + 42 * 0x10
-			if m.u32(info + 4) == 10:
-				at = m.u32(memory + 8) + m.u32(info)
-				words = m.u8(at + 4)
-				if 36 <= words <= 255:
-					on = set()
-					for w in range(words):
-						value = m.u32(at + 8 + 4 * w)
-						for b in range(32):
-							if value >> b & 1:
-								on.add(w * 32 + b + 1)
-					return on
-		child = m.u32(child + 0x14)
+		if not declaration or m.u8(declaration + 0xC) <= 42:
+			continue
+		info = m.u32(declaration + 4) + 42 * 0x10
+		if m.u32(info + 4) != 10:
+			continue
+		at = m.u32(memory + 8) + m.u32(info)
+		words = m.u8(at + 4)
+		if not 36 <= words <= 255:
+			continue
+		on = set()
+		for w in range(words):
+			value = m.u32(at + 8 + 4 * w)
+			for b in range(32):
+				if value >> b & 1:
+					on.add(w * 32 + b + 1)
+		return on
 	return None
 
 

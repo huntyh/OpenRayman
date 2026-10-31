@@ -1383,6 +1383,7 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 		fix_actors.push_back(placed.super_object.address());
 	if(const char* start = std::getenv("ORTOOL_START"); !start || std::string_view(start) != "new")
 		vm.set_story_bit(fix_actors, 1133);
+	std::cout << std::format("level animation events: {}\n", game::install_level_events(memory, bank));
 	std::cout << std::format("sound slots filled: {}\n", game::apply_sound_slots(memory, game, name));
 	// Keys to hold, as name:from-to ticks, comma separated (e.g. Up:60-200,A:100-110).
 	game::input keys(memory, read_input_actions(files));

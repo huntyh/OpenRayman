@@ -845,6 +845,68 @@ namespace openrayman::game
 			std::uint32_t t = transform_of(vm, super_object);
 			return t ? read3(vm.memory(), t + 4) : vec3{};
 		}
+		// 0x487860: a waypoint can be attached to any super object's global transform.
+		vec3 waypoint_position(live_memory& m, std::uint32_t waypoint)
+		{
+			if(!waypoint || !m.contains(waypoint, 0x14))
+				return {};
+			vec3 p = read3(m, waypoint);
+			std::uint32_t owner = m.u32(waypoint + 0x10);
+			std::uint32_t t = owner && m.contains(owner + 0x24, 4) ? m.u32(owner + 0x24) : 0;
+			if(!t || !m.contains(t, 0x58))
+				return p;
+			vec3 world = read3(m, t + 4);
+			for(int i = 0; i < 3; i++)
+			{
+				vec3 axis = read3(m, t + 0x34 + std::uint32_t(i) * 12);
+				for(int j = 0; j < 3; j++)
+					world[std::size_t(j)] += p[std::size_t(i)] * axis[std::size_t(j)];
+			}
+			return world;
+		}
+
+		// 18 (0x47B860): the waypoint's world position, or zero for a null reference.
+		std::uint32_t waypoint_location(call& c, value& out)
+		{
+			value waypoint;
+			next_arg(c, waypoint);
+			out = value_of(waypoint_position(c.vm.memory(), waypoint.word()));
+			return c.args;
+		}
+
+		// 114 (0x477630): nearest graph waypoint to the actor, without obstacle testing.
+		std::uint32_t nearest_waypoint(call& c, value& out)
+		{
+			value graph, obstacles;
+			next_arg(c, graph);
+			next_arg(c, obstacles);
+			live_memory& m = c.vm.memory();
+			std::uint32_t g = graph.word();
+			std::uint32_t best = 0;
+			float best_distance = 3.4028234e38f;
+			if(g && m.contains(g, 12) && !obstacles.as_int())
+			{
+				std::uint32_t node = m.u32(g);
+				std::uint32_t count = m.u32(g + 8);
+				vec3 origin = position_of(c.vm, c.vm.target(c.self, true));
+				for(std::uint32_t i = 0; i < count && node && m.contains(node, 0x14); i++)
+				{
+					std::uint32_t w = m.u32(node + 0xC);
+					if(w && m.contains(w, 0x14))
+					{
+						float d = length(sub(waypoint_position(m, w), origin));
+						if(d < best_distance)
+						{
+							best_distance = d;
+							best = w;
+						}
+					}
+					node = m.u32(node);
+				}
+			}
+			out = value::of(value_type::waypoint, best);
+			return c.args;
+		}
 		vec3 axis_of(interpreter& vm, std::uint32_t super_object, int axis)
 		{
 			std::uint32_t t = transform_of(vm, super_object);
@@ -2010,7 +2072,7 @@ namespace openrayman::game
 			if(c.index == 17)
 			{
 				std::uint32_t w = other.word();
-				out = value::real(w && m.contains(w, 16) ? length(sub(position_of(c.vm, self), read3(m, w))) : 3.4028234e38f);
+				out = value::real(w && m.contains(w, 0x14) ? length(sub(position_of(c.vm, self), waypoint_position(m, w))) : 3.4028234e38f);
 				return c.args;
 			}
 			std::uint32_t them = c.vm.super_object_of(actor_value(c.vm, other));
@@ -2776,9 +2838,9 @@ namespace openrayman::game
 			std::uint32_t so = c.vm.super_object_of(actor_value(c.vm, who));
 			std::uint32_t w = waypoint.word();
 			result = false;
-			if(!so || !w || !m.contains(w, 16))
+			if(!so || !w || !m.contains(w, 0x14))
 				return c.args;
-			vec3 d = sub(read3(m, w), position_of(c.vm, so));
+			vec3 d = sub(waypoint_position(m, w), position_of(c.vm, so));
 			float r = m.f32(w + 0xC);
 			result = dot(d, d) <= r * r;
 			return c.args;
@@ -3922,6 +3984,8 @@ namespace openrayman::game
 			vm.on_condition(i, actor_inside_zone);
 
 		vm.on_function(0, position);
+		vm.on_function(18, waypoint_location);
+		vm.on_function(114, nearest_waypoint);
 		for(std::uint32_t i : { 43, 44, 45, 46, 47, 48 })
 			vm.on_function(i, hit_points);
 		vm.on_function(10, distance);

@@ -180,10 +180,26 @@ not used, 7 and 8 the previous normal and reflex behaviours, 9 and 10 the shadow
 
 **Variable types** (table 0x4A4278, 12-byte entries: size, get, set): 0 to 6 integers (signed and
 unsigned 8, 16, 32 bits), 7 float, 8 waypoint, 9 actor, 10 a buffer reference, 11 vector, 12
-behaviour, 13 state, 14 an id (-1 = none), 15 to 17 references not identified yet, 18 to 23 arrays
+behaviour, 13 state, 14 an id (-1 = none), 15 and 16 references not identified yet, 17 waypoint graph, 18 to 23 arrays
 (u32 element type, u8 count, elements from +8; vectors take 12 bytes), 24 super object.
 
 From an actor to its super object: actor +0x04 (standard game) +0x0C (0x4136D0).
+
+**Waypoints and graphs.** A waypoint has three floats at +0 for position, a float radius at
++0x0C, and an optional super object pointer at +0x10. When attached, its position is transformed
+by that object's global transform; otherwise it is already in world coordinates (0x487860).
+Function 18 returns that world position (0x47B860), function 17 measures distance to it
+(0x47B8D0), and condition 74 tests the actor against the waypoint sphere (0x48B190).
+Learn_10's waypoint 0d/01 +0x46C7C is unattached and reads (30.2676, 295.213, -3.66803).
+
+A graph has a first node pointer at +0 and node count at +8. Nodes link through +0, name a
+waypoint at +0x0C, hold flags at +0x10 and point at an outgoing link list at +0x18 (0x480050,
+0x47FD20). Function 114 selects the nearest waypoint (0x477630); its nonzero second argument
+also requests an obstacle test, which OpenRayman does not yet implement. Function 122 constructs
+an ordered path from a starting waypoint; functions 126, 130, 132 and 133 access that path
+(0x4770F0, 0x477300). Those path functions are not yet implemented.
+
+These waypoint and graph findings are own analysis of Rayman2.exe with GPT-6.1 Terra.
 
 **Turning and moving.** Procedure 171 (0x469CB0) turns an actor so that two given directions A and
 B become two of its axes, picked by a mode (tables 0x46A848, 0x46A860; 0x445F20 splits a
