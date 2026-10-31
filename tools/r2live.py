@@ -281,6 +281,39 @@ def snapshot(m, variables, contacts=False, zones=False, camera=False, generated=
 	return s
 
 
+def story_bits(m):
+	"""The story bits that are on (numbered from 1, as the scripts' function 248 counts them). They are
+	variable 42 of one Fix actor, a bit array: u8 count of 32-bit words at +4, the words from +8. That
+	actor is found among Rayman's siblings in the scene (super object +0x1C parent, +0x08 first child,
+	+0x14 next) as the first whose variable 42 is such an array."""
+	rayman = m.u32(MAIN_ACTOR)
+	parent = m.u32(rayman + 0x1C) if rayman else 0
+	child = m.u32(parent + 0x08) if parent else 0
+	for _ in range(512):
+		if not child:
+			break
+		actor = m.u32(child + 4) if m.u32(child) == 2 else 0
+		brain = m.u32(actor + 0xC) if actor else 0
+		mind = m.u32(brain) if brain else 0
+		memory = m.u32(mind + 0xC) if mind else 0
+		declaration = m.u32(m.u32(memory)) if memory else 0
+		if declaration and m.u8(declaration + 0xC) > 42:
+			info = m.u32(declaration + 4) + 42 * 0x10
+			if m.u32(info + 4) == 10:
+				at = m.u32(memory + 8) + m.u32(info)
+				words = m.u8(at + 4)
+				if 36 <= words <= 255:
+					on = set()
+					for w in range(words):
+						value = m.u32(at + 8 + 4 * w)
+						for b in range(32):
+							if value >> b & 1:
+								on.add(w * 32 + b + 1)
+					return on
+		child = m.u32(child + 0x14)
+	return None
+
+
 def main():
 	parser = argparse.ArgumentParser(description="Watch Rayman in the running Rayman2.exe (read-only).")
 	parser.add_argument("--vars", default="", help="script variable indexes, comma separated")
@@ -290,6 +323,7 @@ def main():
 	parser.add_argument("--contacts", action="store_true", help="also the contact report: word and slots with both materials' flags")
 	parser.add_argument("--zones", action="store_true", help="also which of Rayman's kind-1 collision zones are switched on")
 	parser.add_argument("--camera", action="store_true", help="also camera position, distance, mode and renderer projection")
+	parser.add_argument("--story", action="store_true", help="also the story bits as they turn on or off (numbered as function 248 counts them)")
 	parser.add_argument("--generated", action="store_true", help="also the generated actors (Rayman's shots): slot, maker, position, state, timers")
 	parser.add_argument("--parts", action="store_true", help="log animation frame and Rayman's part positions")
 	args = parser.parse_args()
@@ -310,6 +344,7 @@ def main():
 
 	say(f"watching {args.process} (pid {pid}); Ctrl+C stops")
 	last_clock = None
+	last_story = None
 	last = {}
 	try:
 		while True:
@@ -324,6 +359,16 @@ def main():
 				position = tuple(map(float, now["camera_at"].split()))
 				previous = tuple(map(float, last["camera_at"].split()))
 				now["camera_speed"] = f"{math.dist(position, previous) * 1000 / (clock - last_clock):.3f}"
+			if args.story:
+				bits = story_bits(m)
+				if bits is not None and bits != last_story:
+					if last_story is None:
+						say(f"t {clock:>9}: story bits on: {' '.join(str(b) for b in sorted(bits))}")
+					else:
+						added = sorted(bits - last_story)
+						removed = sorted(last_story - bits)
+						say(f"t {clock:>9}: story bits" + (f" +{' +'.join(map(str, added))}" if added else "") + (f" -{' -'.join(map(str, removed))}" if removed else ""))
+					last_story = bits
 			last_clock = clock
 			changed = {k: v for k, v in now.items() if last.get(k) != v}
 			if any(k not in quiet for k in changed):
