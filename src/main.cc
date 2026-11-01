@@ -1637,6 +1637,16 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 
 	Uint64 now = SDL_GetTicks();
 	float dt = a.last_frame ? std::min((now - a.last_frame) / 1000.0f, 0.1f) : 0.0f;
+	// OPENRAYMAN_FRAMES=1 logs the average frame time every two seconds (performance checks).
+	static const bool log_frames = std::getenv("OPENRAYMAN_FRAMES") != nullptr;
+	static Uint64 frames_since = now;
+	static int frames = 0;
+	if(log_frames && ++frames && now - frames_since >= 2000)
+	{
+		SDL_Log("frames: %.1f ms average, %.1f fps", double(now - frames_since) / frames, frames * 1000.0 / double(now - frames_since));
+		frames_since = now;
+		frames = 0;
+	}
 	a.last_frame = now;
 	if(a.mode == app::view::level)
 	{

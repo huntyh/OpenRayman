@@ -12,6 +12,13 @@ first. The format docs under `formats/` are the permanent home of the findings t
 - The hand no longer snaps back when shooting while hovering.
 - The Lum collect effect exists (it came with the shot's bounce sparkles) and Lums play their
   pickup sound; the user checks whether the game shows any other effect.
+- 3 fps at `--camera -69.3,207.6,2.0,297.6,-0.4`: the camera's obstacle search ran with the
+  game camera dragged far from Rayman by the fly camera, so every cast and sweep spanned the level.
+  It now skips cameras more than 20 units from their target, and segment casts use the collision
+  grid (155 ms to 6 ms a frame). `OPENRAYMAN_FRAMES=1` logs frame times.
+- With `--story-bits 1095` the Globox kids cheer from the start: their own script picks that
+  state for bit 1095 (the silver shot, much later in the game). The user logs a real
+  playthrough's story bits with `r2live.py --story-only` to see which bits a first visit has.
 - New finds: Rayman jumps up through ceilings (the bridge near the waterfall, the Globox kids'
   cave roof); the Globox kids start in the wrong state; a "Hey!" voice repeats where the debug
   Rayman was; the flier's buzz goes on after it vanishes.

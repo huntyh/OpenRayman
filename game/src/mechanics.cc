@@ -240,12 +240,24 @@ namespace openrayman::game
 	std::optional<world_collision::segment_hit> world_collision::first_hit(const std::array<float, 3>& start, const std::array<float, 3>& end, std::uint16_t any_of) const
 	{
 		// Every solid triangle the segment crosses (Moller-Trumbore, both faces), keeping the
-		// nearest. The segments the scripts cast are short, so all triangles are tried.
+		// nearest. Only the triangles in the grid cells under the segment's box are tried: the
+		// camera's obstacle search casts up to 96 of these a tick, and trying the whole level each
+		// time ran the game at 3 fps whenever the camera lost sight of Rayman.
 		const vec d = { end[0] - start[0], end[1] - start[1], end[2] - start[2] };
+		std::vector<std::uint32_t> tried;
+		const int x0 = int(std::floor(std::min(start[0], end[0]) / cell)), x1 = int(std::floor(std::max(start[0], end[0]) / cell));
+		const int y0 = int(std::floor(std::min(start[1], end[1]) / cell)), y1 = int(std::floor(std::max(start[1], end[1]) / cell));
+		for(int x = x0; x <= x1; x++)
+			for(int y = y0; y <= y1; y++)
+				if(auto found = m_cells.find({ x, y }); found != m_cells.end())
+					tried.insert(tried.end(), found->second.begin(), found->second.end());
+		std::sort(tried.begin(), tried.end());
+		tried.erase(std::unique(tried.begin(), tried.end()), tried.end());
 		std::optional<segment_hit> best;
 		float nearest = 1.0f;
-		for(const collision_triangle& t : m_triangles)
+		for(std::uint32_t i : tried)
 		{
+			const collision_triangle& t = m_triangles[i];
 			if((t.flags & surface::no_contact) || (any_of && !(t.flags & any_of)))
 				continue;
 			const vec e1 = { t.corners[1][0] - t.corners[0][0], t.corners[1][1] - t.corners[0][1], t.corners[1][2] - t.corners[0][2] };

@@ -281,11 +281,10 @@ def snapshot(m, variables, contacts=False, zones=False, camera=False, generated=
 	return s
 
 
-def story_bits(m):
-	"""The story bits that are on (numbered from 1, as the scripts' function 248 counts them). They are
-	variable 42 of one actor, a bit array: u8 count of 32-bit words at +4, the words from +8. That
-	actor is searched through the whole scene: from Rayman's super object up to the root (+0x1C parent)
-	and down every child list (+0x08 first child, +0x14 next)."""
+def story_address(m):
+	"""Where the story bits live: variable 42 of one actor, a bit array (u8 count of 32-bit words at +4,
+	the words from +8). That actor is searched through the whole scene: from Rayman's super object up
+	to the root (+0x1C parent) and down every child list (+0x08 first child, +0x14 next)."""
 	node = m.u32(MAIN_ACTOR)
 	for _ in range(16):
 		parent = m.u32(node + 0x1C) if node else 0
@@ -316,14 +315,67 @@ def story_bits(m):
 		words = m.u8(at + 4)
 		if not 36 <= words <= 255:
 			continue
-		on = set()
-		for w in range(words):
-			value = m.u32(at + 8 + 4 * w)
-			for b in range(32):
-				if value >> b & 1:
-					on.add(w * 32 + b + 1)
-		return on
+		return at
 	return None
+
+
+def read_story(m, at):
+	"""The story bits that are on at `at` (numbered from 1, as the scripts' function 248 counts them),
+	or None when the array can't be read (the level is being unloaded)."""
+	words = m.u8(at + 4)
+	raw = m.read(at + 8, 4 * words) if 36 <= words <= 255 else None
+	if not raw or len(raw) != 4 * words:
+		return None
+	on = set()
+	for w, value in enumerate(struct.unpack(f"<{words}I", raw)):
+		for b in range(32):
+			if value >> b & 1:
+				on.add(w * 32 + b + 1)
+	return on
+
+
+def story_bits(m):
+	at = story_address(m)
+	return read_story(m, at) if at else None
+
+
+def watch_story(m, say):
+	"""Only the story bits, cheap enough for a whole playthrough: the bit array is found once per
+	level (when Rayman's super object changes) and then read directly. Each change is logged with the
+	game clock and where Rayman stands; which script set it can't be seen from outside, the place
+	and moment say it."""
+	rayman, at, last, last_clock = None, None, None, None
+	while True:
+		time.sleep(0.005)
+		clock = m.u32(CLOCK)
+		if clock == last_clock:
+			continue
+		last_clock = clock
+		so = m.u32(MAIN_ACTOR)
+		if so != rayman:
+			rayman, at = so, None
+			say(f"t {clock:>9}: level changed (Rayman's super object 0x{so:08X})")
+		if not so:
+			continue
+		if at is None:
+			at = story_address(m)
+			if at is None:
+				continue
+		bits = read_story(m, at)
+		if bits is None:
+			at = None
+			continue
+		if bits == last:
+			continue
+		t = m.u32(so + 0x24)
+		where = fmt(m.f32s(t + 4, 3)) if t else "?"
+		if last is None:
+			say(f"t {clock:>9}: story bits on ({len(bits)}), Rayman at {where}: {' '.join(str(b) for b in sorted(bits))}")
+		else:
+			added, removed = sorted(bits - last), sorted(last - bits)
+			say(f"t {clock:>9}: story bits" + (f" +{' +'.join(map(str, added))}" if added else "")
+				+ (f" -{' -'.join(map(str, removed))}" if removed else "") + f" | Rayman at {where}")
+		last = bits
 
 
 def main():
@@ -336,6 +388,7 @@ def main():
 	parser.add_argument("--zones", action="store_true", help="also which of Rayman's kind-1 collision zones are switched on")
 	parser.add_argument("--camera", action="store_true", help="also camera position, distance, mode and renderer projection")
 	parser.add_argument("--story", action="store_true", help="also the story bits as they turn on or off (numbered as function 248 counts them)")
+	parser.add_argument("--story-only", action="store_true", help="log only the story bits, each change with the clock and Rayman's position (for a whole playthrough)")
 	parser.add_argument("--generated", action="store_true", help="also the generated actors (Rayman's shots): slot, maker, position, state, timers")
 	parser.add_argument("--parts", action="store_true", help="log animation frame and Rayman's part positions")
 	args = parser.parse_args()
@@ -355,6 +408,15 @@ def main():
 			log.flush()
 
 	say(f"watching {args.process} (pid {pid}); Ctrl+C stops")
+	if args.story_only:
+		try:
+			watch_story(m, say)
+		except KeyboardInterrupt:
+			pass
+		finally:
+			if log:
+				log.close()
+		return
 	last_clock = None
 	last_story = None
 	last = {}

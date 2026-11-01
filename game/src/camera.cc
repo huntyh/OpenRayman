@@ -259,7 +259,9 @@ namespace openrayman::game
 	std::optional<std::array<float, 3>> camera_obstacle_waypoint(const world_collision& world,
 		const std::array<float, 3>& target, const std::array<float, 3>& position, const std::array<float, 3>& desired, float radius)
 	{
-		if(radius <= 0)
+		// A camera this far from its target isn't following it (the viewer's fly camera carries it
+		// while not playing): the candidates on a circle that wide cost seconds of casts and sweeps.
+		if(radius <= 0 || length(sub(position, target)) > 20.0f)
 			return std::nullopt;
 		const bool blocked = world.first_hit(target, position).has_value();
 		// Start looking before the camera's collision sphere actually touches a wall. The larger
