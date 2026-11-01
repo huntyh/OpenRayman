@@ -46,6 +46,9 @@ namespace openrayman::game
 		constexpr float follow_down = 0.3f, climb_up = 0.5f, foot_radius = 0.5f;
 		// How tall the cylinder walls push out of is, above the step height.
 		constexpr float body_height = 1.8f;
+		// How high a ceiling stops a jump: the top of Rayman's ears. The body (1.8) let the ears
+		// through the Learn_10 bridge, which the game never does (user, 2026-11-02); tuned by eye.
+		constexpr float head_height = 2.2f;
 		constexpr float wall_touch = 0.05f; // how near a wall counts as touching it
 		constexpr float floor_normal = 0.5f; // cos 60°, the support limit of 0x43A260
 
@@ -892,8 +895,8 @@ namespace openrayman::game
 		// down (the underside of the Learn_10 bridge by the waterfall, the Globox kids' cave roof).
 		// Without this a jump rose through them until the floor search found their top.
 		if((flags & collides) && !world.empty() && !climbing && target[2] > current[2])
-			if(auto ceiling = world.ceiling_at(target[0], target[1], target[2] + body_height, current[2] + body_height - 0.05f))
-				target[2] = std::max(current[2], ceiling->height - body_height);
+			if(auto ceiling = world.ceiling_at(target[0], target[1], target[2] + head_height, current[2] + head_height - 0.05f))
+				target[2] = std::max(current[2], ceiling->height - head_height);
 
 		// The floor. The exe gathers contacts with the actor's collision spheres and picks the
 		// nearest (0x43EEC0, 0x43F510); here the actor is a small disc at its origin, tested straight down.

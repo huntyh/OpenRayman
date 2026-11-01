@@ -180,6 +180,12 @@ namespace openrayman
 		m_voices.clear();
 	}
 
+	void sound_player::stop_source(std::uint32_t source)
+	{
+		std::lock_guard lock(m_mutex);
+		std::erase_if(m_voices, [&](const voice& v) { return v.source == source; });
+	}
+
 	void sound_player::set_paused(bool paused)
 	{
 		if(m_stream)

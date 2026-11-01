@@ -538,10 +538,21 @@ namespace
 		}
 		sync_generated(a);
 		if(a.sounds)
-			for(std::uint32_t source : a.sound_sources)
+			for(auto it = a.sound_sources.begin(); it != a.sound_sources.end();)
 			{
+				// An actor taken out of the world or hidden falls silent (the big-nosed flier buzzed on
+				// after it flew off and put itself away). Hidden, not frozen: the ambient emitters
+				// (Learn_10 nodes 31, 32) carry custom bit 14 and must keep playing.
+				std::uint32_t source = *it;
+				if(a.vm && (a.vm->removed(source) || (a.live->contains(source + 0x30, 4) && (a.live->u32(source + 0x30) & 0x2))))
+				{
+					a.sounds->stop_source(source);
+					it = a.sound_sources.erase(it);
+					continue;
+				}
 				auto [gain, pan] = sound_placement(a, source);
 				a.sounds->place(source, gain, pan);
+				++it;
 			}
 		// Where each actor is now: scripts move and turn them.
 		for(std::size_t i = 0; i < a.actors.actors.size() && i < a.super_object_at.size(); i++)

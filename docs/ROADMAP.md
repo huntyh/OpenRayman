@@ -109,18 +109,21 @@ once it plays right (they have issues of their own, found on a first look).
    accelerates about 11 u/s² down the fall line, a 2026-10-31 recording). Faint crosshair-like
    lines are seen around Rayman from afar. Nothing lets him stand on an actor, so the
    tutorial's closed trapdoor and every moving platform let him fall through; next: actors'
-   collision shapes as floor. The first-visit start has its own open checks: the condor should
-   leave once Rayman exits the cave, and node 71 (the tutorial's stand-in) walks a bit and
+   collision shapes as floor. The river condor snaps upwards a little on each wing flap
+   (`--camera -65.1,289.0,-18.7,-28.6,-15.6`). The first-visit start has its own open checks: the
+   condor should leave once Rayman exits the cave, and node 71 (the tutorial's stand-in) walks a bit and
    stops. (The Globox kids cheering from the start was `--story-bits 1095`: their script picks
    that pose for the silver shot; without it they idle, and their scene should make them cheer,
    then cry once Rayman says Globox is missing, story bit 1092.)
 2. **Dialogs.** Function 158 runs: the string table comes from Fix, and the events match a
-   recorded playthrough. Drawing the text and procedure 393 are being done; the Globox kids'
-   scene doesn't start its dialog and breaks the sequence, and the Murfy and kids scenes still
-   need a check in play.
+   recorded playthrough, and the Globox kids' scene now plays like the game's (user,
+   2026-11-02). Left: the text is drawn with a stand-in font in the wrong place (Murfy's lands in
+   the world); next are function 158's placement and the game's own glyphs; procedure 393.
+   Font wishes for later: smooth edges, and fixing the original's text that runs off the screen
+   (the "Yahoo!" for all Lums, the menu's overwrite-save message).
 3. **Music.** The themes and how the game moves between their segments are now understood from
    a recorded playthrough ([ROADMAP_LOG.md](ROADMAP_LOG.md) 2026-11-01,
-   [formats/sound.md](formats/sound.md)); playing them is open.
+   [formats/sound.md](formats/sound.md)); playing them is open (no music plays yet).
 4. **The game's camera**, still to check against the game: the arrival pan. In the game the
    player may turn the camera (Q/W) only where the level allows it, level presets often
    overrule it, and a camera icon with a red X shows when turning is refused.

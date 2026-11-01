@@ -25,6 +25,7 @@ namespace openrayman
 		void request(std::uint32_t id, std::uint32_t source, float gain, float pan, std::int32_t selector = -1);
 		void place(std::uint32_t source, float gain, float pan);
 		void stop_all();
+		void stop_source(std::uint32_t source); // every voice an actor started
 		void set_paused(bool paused);
 
 	private:

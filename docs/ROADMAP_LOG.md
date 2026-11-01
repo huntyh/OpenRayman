@@ -18,6 +18,26 @@ first. The format docs under `formats/` are the permanent home of the findings t
 - Homing (functions 113 and 154) investigated, notes in `formats/generated.md`; implementation
   in progress.
 
+## 2026-11-02: the Globox kids' scene plays (user)
+
+- The Globox kids' cutscene plays with Rayman talking and the same animations as the game (the
+  dialog text isn't there yet).
+- Murfy's text shows (the stand-in font), placed in the world; text placement is not right yet.
+- A long "380:380:..." line floated over the river (from `--camera -3.6,6.1,1.6,294.1,-11.8`,
+  where a Ly head used to be): a scene director's cue string; text without letters is no longer
+  drawn.
+- "Hey!" from the hidden end-scene Rayman is gone; the cave spot runs smoothly (no 3 fps).
+- The bridge: Rayman no longer passes, but his ears did; the ceiling test now uses the top of
+  his ears (2.2) instead of his body (1.8).
+- The big-nosed flier puts itself away after checking Rayman but kept buzzing: removed or hidden
+  actors now fall silent.
+- The river condor (`--camera -65.1,289.0,-18.7,-28.6,-15.6`) snaps upwards a little on each wing
+  flap before settling.
+- Music still doesn't play.
+- The font, later: smooth (antialiased) edges instead of the old PC aliasing, and fix the
+  original's placement slips (the big "Yahoo!" when all of a level's Lums are collected and the
+  menu's "overwrite save" text run off the screen).
+
 ## 2026-11-01 (late): text overlay and homing, first tries
 
 - The dialog text is drawn by a stand-in overlay (SDL's debug font) until the game's glyphs are

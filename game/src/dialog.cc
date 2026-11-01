@@ -224,8 +224,14 @@ namespace openrayman::game
 		if(!state) { systems.erase(it); return result; }
 		for(auto actor = state->actors.begin(); actor != state->actors.end();)
 		{
-			if(vm.removed(actor->first)) actor = state->actors.erase(actor);
-			else { result.push_back(actor->second.visible); ++actor; }
+			if(vm.removed(actor->first)) { actor = state->actors.erase(actor); continue; }
+			// Scene directors run cue strings through function 158 too (Learn_10 node 3's
+			// "/E105:/E100:..." timing lists): only events, never shown in the game. Until we know
+			// what keeps them off screen there, text without a single letter isn't drawn.
+			const std::string& text = actor->second.visible.text;
+			if(std::ranges::any_of(text, [](char ch) { return std::isalpha(static_cast<unsigned char>(ch)) != 0; }))
+				result.push_back(actor->second.visible);
+			++actor;
 		}
 		return result;
 	}
