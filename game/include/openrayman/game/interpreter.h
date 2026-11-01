@@ -177,8 +177,8 @@ namespace openrayman::game
 
 		// Turn on story bit `n` (from 1) of the game's bit array: variable 42 of the global actor,
 		// the first of `candidates` that has it as a bit array (Learn_10: node 6). A save game keeps
-		// these; bit 1133 means Rayman arrived through the portal from the hub. False when no
-		// candidate has the array.
+		// these; bit 1133 means Learn_10 was finished (set at its exit gate), which our revisit start
+		// uses (first_visit.h, docs/formats/scripts.md). False when no candidate has the array.
 		bool set_story_bit(std::span<const std::uint32_t> candidates, std::int32_t n);
 		std::uint32_t eval(std::uint32_t self, std::uint32_t node, value& out); // 0x480B90
 		// Skips a node and its arguments.
