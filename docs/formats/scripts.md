@@ -172,6 +172,18 @@ signal state. Meta-actions and macros waiting inside a script keep their place h
 +0x0C (scripts read it as fields 7 and 8), the new one to +0x08, the actions in progress are
 cleared, and the schedule starts at the new behaviour's beginning.
 
+**Hit points and a custom bit.** Own analysis of `Rayman2.exe` (2026-11-01): procedure 0
+(0x467D90 → 0x467E80 → 0x4949C0) writes the low byte of its second argument to the named actor's
+standard game +0x21 (hit points). Procedure 6 (0x467FA0 → 0x468060 → 0x494A90) writes it to
++0x22 (maximum hit points); function 46 (0x47C940 → 0x494A80) reads that byte. Neither changes
+the animation or state, and these direct writes do not clamp the other hit-point fields.
+The scripts use maximum hit points as a mailbox: `var0 := function_46(me)` then
+`procedure_6(me, 0)` reads a number another actor left there and clears it (node 45's end scene
+steps through its states this way, nodes 2 and 39 the same).
+Procedure 318 (0x46DEA0) sets or clears standard game +0x24 bit 0x100 on the selected actor.
+Procedure 85 (0x467970 → 0x4061B0) tears down animation parts and associated sound state; it is
+not yet implemented.
+
 **Fields** (type 9, table 0x4A6598, 12-byte entries: kind, get, set): 0 position (super object
 +0x24, the global transform: position at +4), 1 a direction, 2 and 3 speed (vector, length), 4 to 6
 not used, 7 and 8 the previous normal and reflex behaviours, 9 and 10 the shadow size (3D data
@@ -332,6 +344,22 @@ scene stalls. The 30 text actors are listed at 0x4FF8C0 (free markers 0x4FFD40; 
 records at 0x4FFDC0: +4 timing, +8 last update, +0xC last event, +0x10 i16 reveal cursor into the
 prepared string). The menu's 50 screen slots (`menu.md`) are a different path. From a helper
 (GPT-6.1 Terra, read-only, 2026-11-01), its addresses checked against the decompile.
+
+**Dialogs: implementation notes.** Own analysis of the decompile at 0x475680, 0x409060,
+0x409720, 0x470560 and 0x469AC0: procedure 430 resolves three text arguments and writes the
+first two concatenated into the third; procedure 243 resolves its first argument as a destination
+and writes its second argument as a decimal integer (real values are truncated). The reveal
+cursor counts bytes in the prepared string, including controls; `/E` emits an event, `/D` changes
+the stored delay and `/P` asks for a temporary delay. Function 158 writes the resulting timing
+back to its fifth argument. Generated actor removal releases its pool slot.
+
+The preliminary `game/dialog` module accepts a language-ID resolver from its caller: the loader
+does not yet expose the executable globals or their corresponding Fix table roots. It handles
+direct text pointers and caller-resolved IDs, stores changed ID strings separately, and exposes
+revealed text. Registration from `register_handlers` and a real table resolver are still needed.
+The parser's timing and layout are incomplete: substitutions, font/colour and screen placement
+are not implemented, and its timing has not been validated against the live recording. It does
+not claim the intro or Murfy sequences work yet.
 
 ## Numbers
 

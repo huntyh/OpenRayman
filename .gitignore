@@ -17,3 +17,4 @@ android/local.properties
 
 # Notes for AI agents, kept local
 AGENTS.md
+__pycache__/

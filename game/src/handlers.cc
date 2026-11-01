@@ -520,6 +520,39 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 0 (0x467D90 -> 0x467E80 -> 0x4949C0) and 6 (0x467FA0 -> 0x468060 -> 0x494A90):
+		// set the named actor's hit points or maximum hit points to the low byte of the number.
+		std::uint32_t set_hit_points(call& c)
+		{
+			value who, amount;
+			next_arg(c, who);
+			next_arg(c, amount);
+			live_memory& m = c.vm.memory();
+			std::uint32_t actor = actor_value(c.vm, who);
+			std::uint32_t standard = actor && m.contains(actor + actor_field::standard_game, 4)
+				? m.u32(actor + actor_field::standard_game) : 0;
+			std::uint32_t field = c.index == 0 ? standard_game_field::hit_points : standard_game_field::max_hit_points;
+			if(standard && m.contains(standard + field))
+				m.write<std::uint8_t>(standard + field, std::uint8_t(amount.as_int()));
+			return c.args;
+		}
+
+		// 318 (0x46DEA0): set or clear custom bit 9 on the selected actor.
+		std::uint32_t set_custom_bit_9(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value on;
+			next_arg(c, on);
+			live_memory& m = c.vm.memory();
+			std::uint32_t standard = actor_part(c.vm, self, actor_field::standard_game);
+			if(standard && m.contains(standard + standard_game_field::custom_bits, 4))
+			{
+				std::uint32_t bits = m.u32(standard + standard_game_field::custom_bits);
+				m.write<std::uint32_t>(standard + standard_game_field::custom_bits, on.word() ? bits | 0x100u : bits & ~0x100u);
+			}
+			return c.args;
+		}
+
 		// 70 (0x469710): switch the reflex behaviour. 71 (0x469760): switch both, normal first, each
 		// passing 0x469600 a "don't restart" flag of 0.
 		std::uint32_t change_behaviours(call& c)
@@ -4296,6 +4329,9 @@ namespace openrayman::game
 		for(std::uint32_t i = 102; i <= 107; i++)
 			vm.on_function(i, gauge_function);
 
+		vm.on_procedure(0, set_hit_points);
+		vm.on_procedure(6, set_hit_points);
+		vm.on_procedure(318, set_custom_bit_9);
 		vm.on_procedure(67, change_other_behaviour);
 		vm.on_procedure(68, change_other_behaviour);
 		vm.on_procedure(69, change_behaviour);

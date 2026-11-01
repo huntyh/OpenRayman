@@ -4,6 +4,7 @@
 add_library(openrayman_game STATIC
 	src/animation_player.cc
 	src/camera.cc
+	src/dialog.cc
 	src/handlers.cc
 	src/input.cc
 	src/interpreter.cc
