@@ -98,7 +98,8 @@ once it plays right (they have issues of their own, found on a first look).
    says "help!"); still missing: homing (function 113). Then: the
    clip out of the tunnel after the Globox kids, jumping up through ceilings (under the bridge
    at `--camera 40.8,305.1,-8.3,5.2,14.2` he lands on top of it; the Globox kids' cave roof at
-   `--camera -66.7,198.4,1.2,279.7,24.1`), slippery slopes (Rayman slides down now, user
+   `--camera -66.7,198.4,1.2,279.7,24.1`; a ceiling test is in since 800c6c2, the user still has
+   to try both spots), slippery slopes (Rayman slides down now, user
    2026-10-31, but the acceleration is off: the real slide accelerates about 11 u/s² down the
    fall line, `H:\r2export\live\slope_ly10_2026-10-31.txt`), whether the Lum collect effect
    matches the game's (user checking), the faint crosshair-like lines around Rayman seen from
@@ -142,8 +143,10 @@ once it plays right (they have issues of their own, found on a first look).
   next to the game's own guided camera. It will see what the guided camera never shows, which
   needs handling: half-built cutscene sets (e.g. above the waterfall in The Woods of Light,
   `--camera 36.2,328.9,-3.7,-50.1,24.2`) and painted "paper" trees that simply end.
-- Phase 4 starts with the real intro cutscene in front of the first-visit start (r2live logs of
-  the pirate ship and the crash into the woods are in `H:\r2export\live\`).
+- Phase 4 starts with the real intro cutscene in front of the first-visit start: after the Ubisoft
+  logo the camera pans over the dark sea to the pirate ship (Jail_10, Jail_20), then the crash into
+  the woods. Recordings of a whole new game with `tools/r2record.py` (camera, actors, text,
+  sound, music, story bits) are in `H:\r2export\live\run3` and `run4`.
 
 ## Phase 4: the whole game
 
@@ -170,6 +173,8 @@ Everything the PC game has, working before we port it anywhere:
 - A modern lighting mode that keeps the art direction, and HDR, designed together (both change how
   the lights are used)
 - Controller support with the right button icons
+- Sharper logos: the Ubisoft logo and the tiled Rayman 2 logo look rough in the original; upscale
+  them, or use a better texture if the data has one (optional, the user's wish)
 - Antialiasing (MSAA, with alpha to coverage for cut-out textures)
 - Smoother cut-out textures: colour-keyed and alpha-tested textures have jagged, "cut out with
   scissors" edges (Globox's eyes); smoothing their edges, as we did for the leaves in 2c
