@@ -17,6 +17,10 @@ worked first time (Jail_20 into Learn_10 keeps Rayman's super object; fixed). Wh
   end, then 3, and the box goes; `texts.txt` has the strings with their control codes
   (`/o200:` highlights, `/p<ms>:` pauses, `/D<n>:` reveal speed).
 - The story bits match the earlier log exactly.
+- `run4` repeats the run with Learn_10 as its own level (L4): Murfy's talks, the Globox kids'
+  scene, the Teensies' cage and the end scene. In Learn_10 the recorder's "actor N" is node N+2:
+  text boxes come from nodes 38 (the intro), 42 (Murfy), 3 (the kids' director), 46, 47, 68.
+  The user also noted the shots home in on cages (function 113, still missing).
 
 ## 2026-11-01: the tutorial chain works (user)
 
