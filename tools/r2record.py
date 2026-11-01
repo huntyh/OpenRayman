@@ -154,9 +154,12 @@ class recorder:
 
 	def frame(self, clock):
 		m = self.m
+		# A new level: Rayman's super object changes, or (Jail_20 into Learn_10) it keeps its address
+		# and only the game clock starting again from 0 tells.
+		restarted = clock < self.clock
 		self.clock = clock
 		so = m.u32(live.MAIN_ACTOR)
-		if so != self.rayman:
+		if so != self.rayman or (so and restarted):
 			if so:
 				self.level += 1
 			self.reset()
