@@ -34,6 +34,9 @@ first. The format docs under `formats/` are the permanent home of the findings t
 - The river condor (`--camera -65.1,289.0,-18.7,-28.6,-15.6`) snaps upwards a little on each wing
   flap before settling.
 - Music still doesn't play.
+- Breaking the last cage plays the end-of-level Teensie scene through to the end; Rayman is a
+  bit buggy in it, but it works.
+- Rayman's pupils still show a little when he closes his eyes (blinks).
 - The font, later: smooth (antialiased) edges instead of the old PC aliasing, and fix the
   original's placement slips (the big "Yahoo!" when all of a level's Lums are collected and the
   menu's "overwrite save" text run off the screen).

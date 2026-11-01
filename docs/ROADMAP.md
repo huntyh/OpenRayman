@@ -127,8 +127,9 @@ once it plays right (they have issues of their own, found on a first look).
 4. **The game's camera**, still to check against the game: the arrival pan. In the game the
    player may turn the camera (Q/W) only where the level allows it, level presets often
    overrule it, and a camera icon with a red X shows when turning is refused.
-5. **The end-of-level cutscene**: breaking the last cage starts a Teensie and Rayman scene
-   (node 45 keeps its actors hidden until then); with the cutscenes in Phase 4.
+5. **The end-of-level cutscene**: breaking the last cage plays the Teensie and Rayman scene
+   through to the end (user, 2026-11-02); Rayman is a bit buggy in it. Also: his pupils still
+   show a little when he closes his eyes.
 6. **Performance checks**: the 3 fps drop at `--camera -69.3,207.6,2.0,297.6,-0.4` has a fix in
    (the camera's obstacle search no longer runs at a distance, and the segment casts use the
    collision grid — 155 ms to 6 ms a frame); the user should confirm it runs smoothly. The
