@@ -319,6 +319,28 @@ What is still open: how the runtime decides *when* to move between segments (`SX
 `SXD_DIST_FADE=30` in `Snd_Cpa.ini` suggest a distance-based mix) and what the per-segment words
 mean.
 
+The theme player's state is a block at 0x4B95B8 (`dbgSND_fn_bGetThemePosition`, 0x459760, returns
++0x14, +0x2C, +0x20): +0 active, +0x14 the theme resource, +0x18 a remembered repeat entry and +0x1C
+its index, +0x20 the repeat state, +0x28 the current entry and +0x2C its index, +0x34 the entry
+being prepared and +0x38 its index, +0x3C the resource prepared next, +0x40 a requested theme. A
+loaded theme has its entry count at +0x1C, the tail at +0x20, the entries (0x18 bytes, first word a
+resource pointer after loading, 0x459840) at +0x2C. 0x459460 advances: an entry whose +4 is nonzero
+is remembered as a repeat point, +0xC drives repeating; 0x4595D0 queues a requested theme and picks
+a transition from the current entry's +0x10. Scripts ask for themes with the ordinary sound
+procedures (115, 117..119, 0x4691E0).
+
+## Playing sounds in memory
+
+For watching the running game (`tools/r2record.py`): voices are a linked list from 0x4B7470 (count
+0x4B7478; inserted at 0x451B60, updated and removed at 0x452B70 on the sound thread). A record has
++8 the emitter (a super object, -1 for none), +0xC the channel, +0x10 the event, +0x18 the player
+wrapper, +0x1C the resource, +0x20 nonzero while active, +0x28 a request serial, +0x34 next. Loaded
+banks are listed from 0x514D50 (+0x3C next, +4 bank number, +0x24 tables: +4/+8 the events, 0x20
+bytes each, +0xC/+0x10 the resources, 0x5C bytes each), which turns an event address back into
+`(bank << 16) | index`. Both from a helper (GPT-6.1 Terra, read-only, 2026-11-01); the theme
+accessor's fields and the list functions were checked against the decompile, the live chains wait
+for a recording.
+
 ## Checks
 
 A parser built from the above passes all 405 banks:

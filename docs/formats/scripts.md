@@ -317,6 +317,22 @@ and 182 set a speed at dynamics +0x24, in the actor's own axes (176) or the worl
 of +8). Node type 30 is a sound event: procedure 115 with one is a sound request (the invisible
 actors 31 and 32 of Learn_10 only play ambient sounds).
 
+**Dialogs: function 158** (0x475680, not implemented yet). It makes and updates a generated text
+actor, reveals its text over time and returns events to the script; procedure 139 removes it. The
+text argument is a string or a text id (0x4829D0 → 0x494C70): ids below 20000 index the current
+language's string table (`*(0x50026C) + language * 8`, first word; language = low byte of
+0x500FA8), 20000 and up a shared table (`*(0x500270)`, id − 20000). Strings are NUL-terminated
+bytes with control codes read by 0x409060: `/L:` new line, `/C:` centre, `/H`, `/W`, `/Z` layout,
+`/E<n>:` returns event n, `/D<n>:` and `/P<n>:` the reveal timing, `/%I…:` and `/%F…:` insert
+values. Murfy (node 42) builds each page with procedure 430 (0x470560, appending `/e9:`), calls
+function 158 until it returns 9, then waits for a fresh press of Space (condition 45). His box is
+drawn separately, by particle kind 110 (procedure 503) between two corners. The Globox kids'
+scene (director node 3) steers the kids and the camera by function 158's events, so without it the
+scene stalls. The 30 text actors are listed at 0x4FF8C0 (free markers 0x4FFD40; 0x14-byte state
+records at 0x4FFDC0: +4 timing, +8 last update, +0xC last event, +0x10 i16 reveal cursor into the
+prepared string). The menu's 50 screen slots (`menu.md`) are a different path. From a helper
+(GPT-6.1 Terra, read-only, 2026-11-01), its addresses checked against the decompile.
+
 ## Numbers
 
 Over all 70 levels: 5,020 actors with a brain, 1,944 AI models, 15,679 behaviours, 2,151 reflexes,
