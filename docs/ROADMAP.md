@@ -128,7 +128,8 @@ once it plays right (they have issues of their own, found on a first look).
    player may turn the camera (Q/W) only where the level allows it, level presets often
    overrule it, and a camera icon with a red X shows when turning is refused.
 5. **The end-of-level cutscene**: breaking the last cage plays the Teensie and Rayman scene
-   through to the end (user, 2026-11-02); Rayman is a bit buggy in it. Also: his pupils still
+   through to the end (user, 2026-11-02). When Rayman shouts "Stop!" at the arguing Teensies and
+   spreads his hands, that animation loops (repeats the hand spreading) instead of playing once. Also: his pupils still
    show a little when he closes his eyes.
 6. **Performance checks**: the 3 fps drop at `--camera -69.3,207.6,2.0,297.6,-0.4` has a fix in
    (the camera's obstacle search no longer runs at a distance, and the segment casts use the
