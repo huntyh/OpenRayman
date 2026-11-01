@@ -4,6 +4,13 @@ A level is loaded from `Fix.sna` (data shared by every level) plus `<Level>/<Lev
 a dump of the original game's memory, cut into blocks, with absolute 1999 memory addresses as
 pointers. Rebuilding that memory image is what `memory_image` in libopenrayman does.
 
+Where this came from: own analysis of the game files (the exact block layout, the XOR mask shared
+with DSB and LEVELS0.DAT, the announce-then-data entry order, the per-file memory maps, the
+runtime-only regions, and the 8-byte address offset on the Fix blocks a level announces) — checked
+on Learn_10 and across all 70 levels, where every pointer resolves. The general model of memory
+dumps cut into blocks with relocation tables follows Raymap (reference only); nothing is taken
+from it.
+
 ## File layout
 
 The whole file is XOR masked like DSB files: the first 4 bytes are the initial mask, see

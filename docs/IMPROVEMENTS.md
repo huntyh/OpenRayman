@@ -32,6 +32,14 @@ of them off may come later.
 Not changed yet, candidates for later: the every-2/4/8/16-frames checks in scripts (keywords 2 to 5)
 are kept as the game has them, since changing their timing could change gameplay.
 
+## Sound
+
+| What | The game | OpenRayman | Since |
+| --- | --- | --- | --- |
+| 3D sound | Each sound's distance from the listener is turned into volume and panning by the sound DLL (0x40A0A0, not traced further) | A stand-in falloff: full within 8 units, silent at 30, named after `SXD_DIST_SATUR`/`SXD_DIST_FADE` in `Snd_Cpa.ini`; panning from the angle to the listener (docs/formats/sound.md) | 3d |
+| Sound loops | Loop points from the sample's decoder DLL | Whole samples loop when the (tentative) +0x30 flag is set; some seam clicks remain | 3d |
+| Music themes | The theme player sequences a theme's segments and transitions between them | Not playing yet; the formats side is understood (docs/formats/sound.md) | – |
+
 ## While the engine is unfinished
 
 These aren't improvements, they keep things working until the missing parts exist, and go away
@@ -40,22 +48,26 @@ as those arrive:
 - Script handlers that aren't written yet do nothing and read as 0; `ortool run` lists them.
 - A reference to an actor that isn't set (or has no brain) reads as nobody, and a distance to
   nobody as very far, instead of stopping the actor's scripts.
-- The game's physics isn't there yet: a speed the scripts set moves the actor straight on, with no
-  gravity or collision (right for flying actors such as the fireflies).
+- Actors other than Rayman have no dynamics: a speed the scripts set moves them straight on, with
+  no gravity or collision (right for flying actors such as the fireflies).
 - The game's camera runs while playing; while flying (Tab), its actor is put where the viewer's
   camera is every tick, so scripts that work around the camera do so around the view. Its target
   tracking and obstacle search approximate parts of the original, and the occlusion pass is still
   missing (docs/formats/camera.md). A look-at point that jumps more than 10 units in a frame cuts
   the view there. The game view uses the 0.9-radian vertical field of view measured in Learn_10;
-  other scenes and display configurations still need checking.
+  other scenes and display configurations still need checking. The obstacle search also skips
+  cameras more than 20 units from their target, so a fly camera dragged far away does not slow the
+  viewer down; segment casts try only the triangles in the collision grid cells under the segment.
 - Input: the keyboard only (no gamepad yet), and cheat codes (typed key sequences) don't fire.
   Tab switches the keyboard between the viewer's fly camera and the game.
 - Animation events: markers fire on every pass (the event gates aren't counted) and carry the
-  actor's position instead of the body part's; sound events wait for milestone 3d. Actors the
-  scripts create (function 66, e.g. Rayman's fist) aren't made yet.
-- Only particle effects 23 and 28 are known; the others are started but do nothing.
+  actor's position instead of the body part's.
+- Some particle effects are not read yet (the kinds the exe's table names but we haven't traced);
+  an unknown kind is started but does nothing (docs/formats/particles.md).
 - Messages to the engine, on-screen text and the scripts' fog override are read
   but have no effect yet.
-- Physics is partial (docs/formats/dynamics.md): an actor is a small disc that finds the floor straight
-  below it, not the game's collision spheres. Walls now stop it, as a 0.5-radius cylinder from 0.5 to
-  1.8 above its feet; ceilings, slopes sliding and moving platforms aren't handled yet.
+- Physics is partial (docs/formats/dynamics.md): an actor is a small disc that finds the floor
+  straight below it, not the game's collision spheres. Walls now stop it, as a 0.5-radius
+  cylinder from 0.5 to 1.8 above its feet; ceilings stop a jump where the head would pass a
+  downward-facing surface; slopes slide downhill but with the wrong acceleration; nothing acts as
+  a floor for moving platforms.

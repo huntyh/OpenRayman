@@ -55,3 +55,10 @@ The initial mask is `step(L | T<<8 | n<<16 | (~n & 0xFF)<<24)`.
 Decoded, the first 4 bytes differ per copy (meaning unknown). The rest has the same layout as
 `Fix.rtb`: u8 block count, u32 unknown, then per block: u8 module, u8 id, u32 pointer count, and
 8 byte entries (u32 address, u8 target module, u8 target id, 2 padding bytes `CD CD`).
+
+## Where this came from
+
+Own analysis of `Rayman2.exe` (GOG release) and the file itself: the parameter setup, lookup and
+table-stream-setup code the document names, the encoded values and header, and that all table
+positions resolve to real data. Verified on all 70 levels — every pointer in every level's tables
+resolves inside the memory image. Nothing taken from other projects.

@@ -154,20 +154,34 @@ it darker or brighter (the title bar shows the luminosity; it starts at 0.50).
 - [ ] Characters (Lums, mushrooms, the Globox kids) are lit like the scenery around them, not
       black and not glowing
 
+## Round 6: Phase 3 checks
+
+Fixes that landed since the last look, each at its own spot:
+
+- [ ] Jumping no longer goes up through ceilings: the bridge under the waterfall,
+      `--level Learn_10 --camera 40.8,305.1,-8.3,5.2,14.2`, and the Globox kids' cave roof,
+      `--level Learn_10 --camera -66.7,198.4,1.2,279.7,24.1` — jump straight up at each and he
+      should land on top of it, not pass through
+- [ ] The hidden end-of-level Rayman no longer calls "Hey!": play to the end scene, then look at
+      `--level Learn_10 --camera 21.6,115.8,29.6,266.5,-25.8` — he is gone and there is no
+      repeating voice
+- [ ] Running is smooth near the Globox kids:
+      `--level Learn_10 --camera -69.3,207.6,2.0,297.6,-0.4` — in the game camera it should
+      not drop to 3 frames per second
+- [ ] The big-nosed flier: when it flies up and away, its buzz should stop, like in the game
+      (currently it keeps buzzing where it vanished)
+
 ## Known limitations
 
 Don't report these as bugs, they're the next steps:
 
 - Some actors are invisible on purpose (triggers, waypoints)
-- Actors play the state they were saved in, which is often a still or a placeholder: the game's own
-  scripts switch them to their real state when the level starts, and those scripts don't run yet.
-  So Lums hang still without flapping their wings, the mushroom clusters show 3 of their 5
-  mushrooms, the breakable cages stand without their chains, and the butterfly flies its loop
-  instead of its real path
-- No fireflies or other particles yet: scripts spawn them (Phase 3)
+- Nothing lets Rayman stand on an actor: the tutorial's closed trapdoor and moving platforms
+  let him fall through
+- The shot's homing is not in yet; dialogs run but their text is not drawn yet; the game's
+  music themes do not play yet
 - The start view uses the game camera's saved position, which can be an odd spot (e.g. among the
   treetops in The Woods of Light); press R after flying off to get back there
-- The sky is a plain colour
 - Some lights also change how see-through water and glass are; that isn't done yet, so water and
   glass may look too pale or too solid
 

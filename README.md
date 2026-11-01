@@ -36,9 +36,13 @@ What works today:
   see-through water and characters' shadows. The Woods of Light look the same as the real game
   side by side.
 - The game's music.
-- A texture browser and `ortool` for looking inside the game's files.
+- It is becoming playable: in the first level Rayman walks, runs, jumps, grabs ledges and shoots;
+  the sound effects and voices play; the game's camera follows him.
+- A texture browser, `ortool` for looking inside the game's files, and `tools/r2record.py`, which
+  records a playthrough of the real game for studying it.
 
-Not yet: sound effects and voices, collision, and controlling Rayman. See
+Not yet: the shot's homing, the dialog text, the game's music themes, standing on moving
+platforms, and everything beyond the first level. See
 [docs/ROADMAP.md](docs/ROADMAP.md) for the details. It renders with OpenGL today; the plan is Vulkan
 or Direct3D 12, keeping OpenGL for older devices.
 
@@ -91,6 +95,15 @@ For checking things by eye there are also `--camera x,y,z,yaw,pitch` (as P copie
 scripts in another behaviour, e.g. `--behaviour 4:1` for The Woods of Light's floating specks) and
 `--collision on` (what the level collides with, coloured by surface type; C in the viewer).
 
+Gameplay (The Woods of Light first):
+
+```
+openrayman --game "<Rayman 2 folder>" --level Learn_10 [--start new] [--camera x,y,z,yaw,pitch]
+```
+
+`--start new` starts a first visit (Rayman at the hand-over, the tutorial cage waiting). Without
+`--camera` it plays seen through the game's camera.
+
 On first start without `--game`, a folder picker asks for your Rayman 2 folder and remembers it.
 It opens The Woods of Light (`Learn_10`), or the level given with `--level`, seen from where the
 game's camera starts.
@@ -113,7 +126,7 @@ In a level:
 | F6 / F7 | Darker / brighter, like the game's luminosity setting |
 | F5 / F4 | Put the actor you're looking at into its next / previous state (Shift: its whole family), to preview animations the game's scripts would pick |
 | T | Switch to the texture browser and back |
-| Tab | Play: the keyboard goes to the game (arrows, A jump, Space shoot, Shift walk, Q/W camera, Ctrl recentre) until Tab again. Rayman's scripts react, but he can't move yet (physics comes next) |
+| Tab | Play: the keyboard goes to the game (arrows, A jump, Space shoot, Shift walk, Q/W camera, Ctrl recentre) until Tab again |
 
 In the texture browser:
 

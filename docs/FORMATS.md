@@ -22,7 +22,7 @@ came from. Update this whenever a format is added or corrected.
 | GF texture | inside CNT | Complete for the formats in use (888, 8888) | `gf_texture.cc` |
 | APM music | `World/Sound/*.apm` | Complete, see open question | `apm_audio.cc` |
 | DSB script | `Game.dsb`, `<Level>.dsb` | All sections in the game parsed; some meanings unknown | `dsb_script.cc` |
-| SNA memory blocks | `Fix.sna`, `<Level>.sna` | Block layout complete; contents not yet interpreted | `sna_file.cc`, `memory_image.cc` |
+| SNA memory blocks | `Fix.sna`, `<Level>.sna` | Block layout complete; contents interpreted by the other format notes | `sna_file.cc`, `memory_image.cc` |
 | Relocation tables | `Fix.rtb/.rtp/.rtt/.rts` | Complete | `relocation.cc` |
 | LEVELS0.DAT | `World/Levels/LEVELS0.DAT` | Complete | `relocation.cc` |
 | GPT | `Fix.gpt`, `<Level>.gpt` | Level header (Fix actors, world roots) and the animation bank; some header fields unknown | `pointer_stream.cc`, `level_header.cc` |
@@ -32,9 +32,29 @@ came from. Update this whenever a format is added or corrected.
 | Collision | inside SNA | The level's collision triangles and surface flags, actors' zones and their per-state groups; some flag meanings not yet | `collision.cc` |
 | Input | inside `Fix.gpt`, SNA | Input actions and their key expressions; joystick kinds partly, 17..32 not yet | `input.cc` |
 | PTX | `Fix.ptx`, `<Level>.ptx` | Texture slots and names; trailing values unknown | `texture_table.cc` |
-| Scripts (AI) | inside SNA | Brains, models, behaviours, reflexes, macros, variables, script nodes; keywords and operators named | `brain.cc`, `script_text.cc` |
+| Scripts (AI) | inside SNA | Brains, models, behaviours, reflexes, macros, variables, script nodes, dialogs and the story bit table; keywords and operators named | `brain.cc`, `script_text.cc` |
 | BNM sound banks | `World/Sound/*.bnm` | Reader complete for effects and themes; effects play (`src/audio/sound_player`), music themes not yet | `bnm_bank.cc` |
 | SND | `<Level>.snd`, `Fix.snd` | Pair list understood; see [formats/sound.md](formats/sound.md) | |
+
+## The docs, one line each
+
+| Doc | What it covers |
+| --- | --- |
+| [formats/sna.md](formats/sna.md) | SNA files: masked memory dumps in blocks, per-file memory maps, the relocation tables |
+| [formats/levels0-dat.md](formats/levels0-dat.md) | LEVELS0.DAT: the encrypted per-level relocation tables hidden in 150 MB of filler |
+| [formats/gpt.md](formats/gpt.md) | GPT/PTX streams, the level header, Fix actor placements, the scene tree, texture lists |
+| [formats/geometry.md](formats/geometry.md) | Static geometry: sectors, meshes, triangles, UVs, materials, sprites |
+| [formats/lighting.md](formats/lighting.md) | Sector lights (ambient, parallel, spherical, fog), boxes, how lights combine with materials |
+| [formats/collision.md](formats/collision.md) | The level's collision triangles, surface flags, actors' zones and their per-state groups |
+| [formats/input.md](formats/input.md) | Fix's 138 input actions: key expressions and the counters scripts test |
+| [formats/animation.md](formats/animation.md) | Actor object lists, the shared animation bank, posing, blending, events, morphs |
+| [formats/scripts.md](formats/scripts.md) | The AI: brains, models, behaviours, reflexes, macros, the 41 node types, dialogs, the story bit table |
+| [formats/particles.md](formats/particles.md) | Particle effects: how scripts start them, how the engine moves, fades and draws them |
+| [formats/dynamics.md](formats/dynamics.md) | The dynamics base, per-state mechanics, gravity, one tick of movement |
+| [formats/generated.md](formats/generated.md) | Generated actors (function 66): Rayman's shot, what the copy gets, how it goes away |
+| [formats/sound.md](formats/sound.md) | BNM banks, events and resources, the `.snd` slot fix-up, music themes, where sounds come from |
+| [formats/menu.md](formats/menu.md) | The main menu level and its screen-space text layer |
+| [formats/camera.md](formats/camera.md) | The camera actor, its parameter blocks, the solve and mechanics, Q/W turning |
 
 ## CNT texture archives
 
@@ -74,16 +94,9 @@ first; mono files (only `outro1.apm`) are one nibble per sample.
 
 ## BNM sound banks and SND files
 
-Full details in [formats/sound.md](formats/sound.md). In short: a bank is a 0x2C header, events of
-`0x20` bytes, resources of `0x5C` bytes, a group-data area and up to four sample-data regions
-(MPEG, MIDI, PCM, ADPCM; only PCM is used in the shipped banks). Ids are
-`(bank << 16) | index` and name an event: type 1 plays its resource, type 2 stops the voices a
-given event started. Type-1 resources are either headerless 16-bit mono 22050 Hz PCM in the bank's
-PCM region or external `.apm` files. Types 4, 8 and 10 group samples; **type 11 is a music theme**,
-an ordered list of external `.apm` pieces — that is where the adaptive sequencing lives.
-`<Level>.snd` / `Fix.snd` list `(event id, slot address)` pairs; at load the engine writes the
-resolved event pointer into the slot, which is how the scripts (node type 30) and the animation
-events (type 0) get their sound pointers.
+See [formats/sound.md](formats/sound.md). Bank layout, events and resources, the `.snd` slot
+fix-up, the music themes and their state in memory, and where each sound comes from (channel,
+falloff, footstep variants).
 
 - Sources: own analysis of all 405 banks and of `FUN_00453990`, `FUN_00453BF0`,
   `FUN_00453F50`/`FUN_00453F90` (id lookups), `FUN_00452D50`/`FUN_00457E60` (play dispatch) and

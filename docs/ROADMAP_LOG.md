@@ -3,6 +3,21 @@
 The dated investigation notes from `ROADMAP.md`, kept here so the roadmap stays short. Newest
 first. The format docs under `formats/` are the permanent home of the findings themselves.
 
+## 2026-11-01 (evening): fixes and dialogs
+
+- Ceilings stop jumps (800c6c2): `world_collision::ceiling_at` stops a move up where the head
+  would pass a downward-facing surface — the bridge and the Globox kids' cave roof. Awaiting the
+  user's test at both spots.
+- The hidden end-of-level Rayman (`--camera 21.6,115.8,29.6,266.5,-25.8`) no longer calls
+  "Hey!": actors put away with custom bit 14 (0x2000) skip their animation step as in the exe
+  (0x40A5C0).
+- Dialogs run: function 158, procedures 430/243 wired, the string table from Fix (6facc6f).
+  Jail_10's first narration line returns events 10, 11, 3 at the same reveal positions as the
+  recorded game, about 90 ms later. Drawing the text and procedure 393 are still open; the
+  Globox kids' scene doesn't start its dialog.
+- Homing (functions 113 and 154) investigated, notes in `formats/generated.md`; implementation
+  in progress.
+
 ## 2026-11-01: a recorded playthrough (`tools/r2record.py`)
 
 The user recorded a new game from the menu through the pirate ship (Jail_10, Jail_20), Learn_10
@@ -136,9 +151,12 @@ Rayman's resolver 0x437E60.
 
 ## 2026-10-29: starts and story bits
 
-Story bit 1133 (actor 6's bit array, variable 42) means Learn_10 is being revisited from the
-hub: the scripts then remove the Teensies, the chain and Murfy's tutorial (node 62 and
-others), as the real game does (user confirmed). Our default start is a half-revisit: only
+Story bit 1133 (actor 6's bit array, variable 42) was first read as "Learn_10 is being revisited
+from the hub" — a 2026-11-01 recording showed the bit is set when Rayman jumps into the exit
+gate, i.e. when the level is **finished** ([formats/scripts.md](formats/scripts.md) has the
+story bit table). The practical consequence noted here is unchanged: the scripts then remove
+the Teensies, the chain and Murfy's tutorial (node 62 and others), as the real game does (user
+confirmed). Our default start is a half-revisit: only
 story bit 1133 is set, so the trapdoor opens and the Teensies leave, but the hanging cage
 (node 67) is still there, asleep (brain-off bit in the data; its wake-up chain: trigger node
 82 -> counter node 83 -> clear bit 17). A real revisit has the cage broken. Next: a
