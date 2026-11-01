@@ -5,7 +5,8 @@
 #
 #   python tools/r2record.py H:\r2export\live\run1
 #
-# Files (every line starts with the game clock in ms and the level number of this session):
+# Files (every line starts with the seconds since recording began, which never reset, then the
+# game clock in ms, which restarts each level and stops while paused, and the level number):
 #   session.txt    levels as they load (Rayman's super object changes), and what was recorded
 #   story.txt      story bits turning on or off, with Rayman's position
 #   rayman.txt     Rayman's behaviour, reflex and state changes, with position
@@ -120,6 +121,7 @@ class recorder:
 		self.m = m
 		self.files = {t: open(os.path.join(folder, f"{t}.txt"), "a", encoding="utf-8") for t in topics}
 		self.level = 0
+		self.started = time.monotonic()  # wall-clock seconds since recording began: never resets
 		self.clock = 0
 		self.strings_dumped = False
 		self.reset()
@@ -143,7 +145,7 @@ class recorder:
 	def say(self, topic, line):
 		f = self.files.get(topic)
 		if f:
-			f.write(f"t {self.clock:>9} L{self.level}: {line}\n")
+			f.write(f"{time.monotonic() - self.started:9.3f}s t {self.clock:>9} L{self.level}: {line}\n")
 			f.flush()
 
 	def close(self):
