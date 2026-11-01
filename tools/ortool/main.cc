@@ -1394,16 +1394,15 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	game::register_handlers(vm);
 	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
 	vm.set_animations(&bank);
-	// As the viewer does: arrived from the hub through the portal (story bit 1133), unless
-	// ORTOOL_START=new asks for a first visit (the viewer's --start new).
+	// As the viewer does (first_visit.h): a revisit, unless ORTOOL_START=new asks for a first visit
+	// (the viewer's --start new).
 	std::vector<std::uint32_t> fix_actors;
 	for(const auto& placed : header.placements)
 		fix_actors.push_back(placed.super_object.address());
-	bool first_visit = false;
-	if(const char* start = std::getenv("ORTOOL_START"); !start || std::string_view(start) != "new")
-		vm.set_story_bit(fix_actors, 1133);
-	else
-		first_visit = true;
+	const char* start = std::getenv("ORTOOL_START");
+	bool first_visit = start && std::string_view(start) == "new";
+	for(std::uint32_t bit : first_visit ? std::span<const std::uint32_t>(game::first_visit_story_bits) : std::span<const std::uint32_t>(game::revisit_story_bits))
+		vm.set_story_bit(fix_actors, bit);
 	std::cout << std::format("level animation events: {}\n", game::install_level_events(memory, bank));
 	std::cout << std::format("sound slots filled: {}\n", game::apply_sound_slots(memory, game, name));
 	// Keys to hold, as name:from-to ticks, comma separated (e.g. Up:60-200,A:100-110).

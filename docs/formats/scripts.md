@@ -245,6 +245,25 @@ In a 600-tick `ortool run` with `ORTOOL_START=new`, node 67 changes from animati
 at tick 1 (live state address 0x07E5FB30). The default revisit start follows the same wake path;
 it sets story bit 1133 but does not imply that bit 840, the cage-broken flag, is set.
 
+**Story bits of a new game.** Logged in the real game with `r2live.py --story-only`
+(`H:\r2export\live\story_newgame_2026-11-01.txt`; a new game, the pirate ship, then all of Learn_10 into the Hall of
+Doors). They are actor 6's variable 42, a type-21 bit array, numbered as function 248 counts them.
+
+| Bit | Set when | Read by (Learn_10) |
+| --- | --- | --- |
+| 1089 | the pirate ship level ends | — |
+| 1091 | the intro hands Rayman over, at (30.27, 295.21) | node 4 (an intro effect, particle 110, until set) |
+| 1176, 1175, 1177 | Murfy's talks: by the stone, the Lum tutorial, near the bridge | set through variables |
+| 840 | the tutorial cage breaks | node 69; node 4 counts 840..841 (function 249) |
+| 1396..1400 | each of the five Lums is collected (one bit each) | the scene directors (1399, 1400) |
+| 1092 | talking to the Globox kids | node 39: crying pose, brain off (1095, the silver shot, makes them cheer) |
+| 841 | the Teensies' cage breaks | nodes 2 (the end scene's Rayman), 4, 62 |
+| 1133 | jumping into the exit gate: the level is finished | nodes 4, 43, 62 |
+| 960, 961, 989 | the Hall of Doors: arriving, Murfy's tutorial | — |
+
+1027, 1028, 1059 and 1060 survive starting a new game (options or the save slot, not the story).
+Our starts set 1089 and 1091 for a first visit and 1133 for a revisit (`first_visit.h`).
+
 **Scene directors.** Six Learn_10 actors (nodes 3, 38, 46, 56, 57, 58) share one model, 0d/01
 +0x11BEC: a director that hands a scene from Rayman to a stand-in. Its var2 is the actor whose
 custom bit 28 arms the scene, var3 the subject (Rayman), var4 the stand-in, var1 a waypoint and

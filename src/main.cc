@@ -951,16 +951,16 @@ namespace
 			if(a.sounds)
 				a.sounds->stop_all();
 			a.sound_sources.clear();
-			// The story so far: arriving from the hub through the portal (story bit 1133), which
-			// Learn_10's start reads; a new game plays the pirate ship cutscene instead.
+			// The story so far (first_visit.h): a revisit has Learn_10 finished (story bit 1133); a new
+			// game has the pirate ship and the intro behind it.
 			// Further bits stand in for a save game until saves are read (Phase 4): 1095 gives
 			// Rayman the silver (blue) shot, 1143 the golden one that charges.
 			{
 				std::vector<std::uint32_t> fix_actors;
 				for(const fix_actor_placement& placed : header.placements)
 					fix_actors.push_back(placed.super_object.address());
-				if(!a.new_game)
-					a.vm->set_story_bit(fix_actors, 1133);
+				for(std::uint32_t bit : a.new_game ? std::span<const std::uint32_t>(openrayman::game::first_visit_story_bits) : std::span<const std::uint32_t>(openrayman::game::revisit_story_bits))
+					a.vm->set_story_bit(fix_actors, bit);
 				for(std::int32_t bit : a.story_bits)
 					a.vm->set_story_bit(fix_actors, bit);
 			}
