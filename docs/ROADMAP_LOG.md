@@ -3,6 +3,21 @@
 The dated investigation notes from `ROADMAP.md`, kept here so the roadmap stays short. Newest
 first. The format docs under `formats/` are the permanent home of the findings themselves.
 
+## 2026-11-01: a recorded playthrough (`tools/r2record.py`)
+
+The user recorded a new game from the menu through the pirate ship (Jail_10, Jail_20), Learn_10
+and into the Hall of Doors (Mapmonde): `H:\r2export\live\run3\`. Everything but the level split
+worked first time (Jail_20 into Learn_10 keeps Rayman's super object; fixed). What it showed:
+
+- Music is scripted per moment. Learn_10 opens with theme 12 of bank 9 (event 0x90009), its
+  segments 1..3 repeated on a countdown; at the hand-over (the frame story bit 1091 is set) a
+  script asks for event 0x90008, theme 5 (30 segments, `FO02.apm`...), and on the way to the Globox
+  kids' cave event 0x9000A, theme 13. Segments last 2.3..4.8 s and follow on the frame one ends.
+- The intro narration's text boxes: each line returns event 10 as it starts showing, 11 at its
+  end, then 3, and the box goes; `texts.txt` has the strings with their control codes
+  (`/o200:` highlights, `/p<ms>:` pauses, `/D<n>:` reveal speed).
+- The story bits match the earlier log exactly.
+
 ## 2026-11-01: the tutorial chain works (user)
 
 - The tutorial cage breaks, its Lum breaks out and flies its little loops as in the game, and
