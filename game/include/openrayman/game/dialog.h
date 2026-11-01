@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+namespace openrayman { struct level_files; }
+
 namespace openrayman::game
 {
 	class interpreter;
@@ -23,7 +25,10 @@ namespace openrayman::game
 
 	// The loader must provide the selected language's text IDs. Bytes are kept in game encoding.
 	using dialog_resolver = std::function<std::optional<std::string>(std::int32_t)>;
+	class live_memory;
+	dialog_resolver make_dialog_resolver(live_memory& memory, const openrayman::level_files& files, unsigned language = 0);
 	void register_dialog_handlers(interpreter& vm);
 	void set_dialog_resolver(interpreter& vm, dialog_resolver resolver);
+	void set_dialog_resolver(interpreter& vm, const openrayman::level_files& files, unsigned language = 0);
 	std::vector<dialog_text> visible_dialogs(interpreter& vm);
 }

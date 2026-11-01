@@ -18,6 +18,7 @@
 #include <openrayman/game/animation_player.h>
 #include <openrayman/game/first_visit.h>
 #include <openrayman/game/handlers.h>
+#include <openrayman/game/dialog.h>
 #include <openrayman/game/interpreter.h>
 #include <openrayman/game/input.h>
 #include <openrayman/game/live_memory.h>
@@ -942,6 +943,8 @@ namespace
 			std::uint32_t main_actor = header.placements.empty() ? 0 : header.placements[0].super_object.address();
 			a.vm = std::make_unique<openrayman::game::interpreter>(*a.live, main_actor);
 			openrayman::game::register_handlers(*a.vm);
+			openrayman::game::register_dialog_handlers(*a.vm);
+			openrayman::game::set_dialog_resolver(*a.vm, files);
 			a.vm->set_world(openrayman::game::world_collision(std::move(collision)));
 			a.vm->set_animations(&a.bank);
 			// The level's animation events, then the sound events the scripts and animations name

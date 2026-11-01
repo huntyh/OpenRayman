@@ -329,7 +329,7 @@ and 182 set a speed at dynamics +0x24, in the actor's own axes (176) or the worl
 of +8). Node type 30 is a sound event: procedure 115 with one is a sound request (the invisible
 actors 31 and 32 of Learn_10 only play ambient sounds).
 
-**Dialogs: function 158** (0x475680, not implemented yet). It makes and updates a generated text
+**Dialogs: function 158** (0x475680). It makes and updates a generated text
 actor, reveals its text over time and returns events to the script; procedure 139 removes it. The
 text argument is a string or a text id (0x4829D0 → 0x494C70): ids below 20000 index the current
 language's string table (`*(0x50026C) + language * 8`, first word; language = low byte of
@@ -353,13 +353,25 @@ cursor counts bytes in the prepared string, including controls; `/E` emits an ev
 the stored delay and `/P` asks for a temporary delay. Function 158 writes the resulting timing
 back to its fifth argument. Generated actor removal releases its pool slot.
 
-The preliminary `game/dialog` module accepts a language-ID resolver from its caller: the loader
-does not yet expose the executable globals or their corresponding Fix table roots. It handles
-direct text pointers and caller-resolved IDs, stores changed ID strings separately, and exposes
-revealed text. Registration from `register_handlers` and a real table resolver are still needed.
-The parser's timing and layout are incomplete: substitutions, font/colour and screen placement
-are not implemented, and its timing has not been validated against the live recording. It does
-not claim the intro or Murfy sequences work yet.
+Own analysis of Fix loader 0x402960 and the relocated GPT stream: offsets 0xCB8 and 0xCBC hold
+the language-record and shared-table roots, respectively. In this installation the language 0
+record is at 0e/00 +0x125A0, its pointer array at +0x456D0, and the upper half of its second word
+is 666, matching the recorded English IDs 0 through 665. The meaning of the lower half remains
+unconfirmed. The resolver uses relocated live memory and currently defaults to language 0; reading
+the config remains to be done. The shared table's bounds are not yet established.
+
+The `game/dialog` module is registered by the viewer and ortool, and resolves IDs through those
+tables. It stores changed ID strings separately and exposes revealed text. Parser 0x408DD0's `/O`
+sets the glyph index offset used by 0x409720; its relationship to highlighting remains to be
+confirmed. The parser and timing are preliminary: substitutions and screen placement are not implemented and
+the event timing is not validated against the live recording. The first-visit 3000-tick ortool run
+did not reach Murfy's conversation, so it does not establish that he waits for Space. Set
+`ORTOOL_TEXT=1` to print dialog event, clock, creator, ID and cursor for further comparison.
+Own comparison against `run4/text.txt`: in Jail_10, ID 1 events 10, 11, 3 occur at cursors
+12, 110, 114 and clocks 8300, 14350, 14366 ms in ortool; the recording has 8209, 14257,
+14273 ms at those cursors. The full Learn_10 comparison and interactive Murfy check remain open.
+The recorded dump's mutable ID 286 differs from its initial Fix contents, consistent with the
+script writing that destination; the table tests therefore use unchanged IDs instead.
 
 ## Numbers
 

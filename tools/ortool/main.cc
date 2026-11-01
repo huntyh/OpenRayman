@@ -8,6 +8,7 @@
 #include <openrayman/game/animation_player.h>
 #include <openrayman/game/first_visit.h>
 #include <openrayman/game/handlers.h>
+#include <openrayman/game/dialog.h>
 #include <openrayman/game/input.h>
 #include <openrayman/game/interpreter.h>
 #include <openrayman/game/live_memory.h>
@@ -1392,6 +1393,8 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	std::cout << "\n";
 	game::interpreter vm(memory, main_actor);
 	game::register_handlers(vm);
+	game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
 	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
 	vm.set_animations(&bank);
 	// As the viewer does (first_visit.h): a revisit, unless ORTOOL_START=new asks for a first visit

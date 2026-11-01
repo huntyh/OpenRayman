@@ -2,10 +2,12 @@
 // GNU General Public License, version 3. See LICENSE_openrayman for the full license.
 #include <openrayman/game/dialog.h>
 #include <openrayman/game/interpreter.h>
+#include <openrayman/pointer_stream.h>
 
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <cstdio>
 #include <map>
 #include <memory>
 
@@ -130,7 +132,14 @@ namespace openrayman::game
 					char code = char(std::tolower(static_cast<unsigned char>((*text)[e.cursor + 1])));
 					int n = std::atoi(text->c_str() + e.cursor + 2);
 					e.cursor = end + 1;
-					if(code == 'e') { e.event = n; break; }
+					if(code == 'e')
+					{
+						e.event = n;
+						if(std::getenv("ORTOOL_TEXT"))
+							std::printf("dialog clock %u creator 0x%08X id %d event %d cursor %zu\n",
+								c.vm.clock(), c.self, source.type == value_type::id ? source.as_int() : -1, n, e.cursor);
+						break;
+					}
 					if(code == 'd' || code == 'p')
 					{
 						if(code == 'd') e.delay = std::max(0, n);
@@ -162,6 +171,40 @@ namespace openrayman::game
 	{
 		auto it = systems.find(&vm);
 		if(it != systems.end()) if(auto state = it->second.lock()) state->resolver = std::move(resolver);
+	}
+
+	dialog_resolver make_dialog_resolver(live_memory& memory, const level_files& files, unsigned language)
+	{
+		// Fix loader 0x402960 reads these roots from its GPT; 0x494C70 selects the table.
+		pointer_stream fix(files.fix_gpt, files.fix_gpt_table, files.memory, 0);
+		fix.skip_to(0xCB8);
+		auto languages = fix.pointer();
+		auto shared = fix.pointer();
+		std::uint32_t record = languages ? languages->address() + language * 8 : 0;
+		std::uint32_t general = memory.contains(record, 8) ? memory.u32(record) : 0;
+		std::uint32_t count = memory.contains(record, 8) ? memory.u32(record + 4) >> 16 : 0;
+		std::uint32_t common = shared && memory.contains(shared->address(), 4) ? memory.u32(shared->address()) : 0;
+		return [&memory, general, common, count](std::int32_t id) -> std::optional<std::string>
+		{
+			if(id < 0 || (id < 20000 && std::uint32_t(id) >= count)) return std::nullopt;
+			std::uint32_t index = id >= 20000 ? std::uint32_t(id - 20000) : std::uint32_t(id);
+			std::uint32_t table = id >= 20000 ? common : general;
+			if(index > 100000 || !table || !memory.contains(table + index * 4, 4)) return std::nullopt;
+			std::uint32_t p = memory.u32(table + index * 4);
+			std::string text;
+			while(p && memory.contains(p) && text.size() < 65536)
+			{
+				char c = char(memory.u8(p++));
+				if(!c) return text;
+				text.push_back(c);
+			}
+			return std::nullopt;
+		};
+	}
+
+	void set_dialog_resolver(interpreter& vm, const level_files& files, unsigned language)
+	{
+		set_dialog_resolver(vm, make_dialog_resolver(vm.memory(), files, language));
 	}
 
 	std::vector<dialog_text> visible_dialogs(interpreter& vm)

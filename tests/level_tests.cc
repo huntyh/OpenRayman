@@ -20,6 +20,7 @@
 #include <openrayman/mask.h>
 #include <openrayman/memory_image.h>
 #include <openrayman/pointer_stream.h>
+#include <openrayman/game/dialog.h>
 #include <openrayman/relocation.h>
 #include <openrayman/scene.h>
 #include <openrayman/sna_file.h>
@@ -737,6 +738,29 @@ TEST_CASE("real data: Learn_10's scripts run")
 				MESSAGE(std::format("tick {}, node 0x{:08X}: {}", tick, vm.last_node(), e.what()));
 		});
 	CHECK(errors == 0);
+}
+
+TEST_CASE("real data: English dialog table")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto game = game_data::locate(*dir);
+	REQUIRE(game.has_value());
+	level_files files = load_level_files(*game, "Learn_10");
+	game::live_memory memory(files.memory);
+	auto resolve = game::make_dialog_resolver(memory, files);
+	struct sample { int id, length, sum; };
+	for(auto [id, length, sum] : { sample{0,51,3268}, sample{1,114,8442}, sample{2,85,6330},
+		sample{100,4,224}, sample{665,45,3563} })
+	{
+		auto s = resolve(id);
+		REQUIRE(s.has_value());
+		int actual = 0;
+		for(unsigned char c : *s) actual += c;
+		CHECK(s->size() == length);
+		CHECK(actual == sum);
+	}
+	CHECK_FALSE(resolve(666).has_value());
 }
 
 TEST_CASE("real data: input actions follow the keys")

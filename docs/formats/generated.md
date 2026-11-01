@@ -115,3 +115,23 @@ read the running actor's values. Condition 66 reads and clears the priority byte
 Procedure 333 (0x46E360) clears super object flag 1 for a nonzero argument and
 sets it for zero. These details come from the project's own executable analysis,
 provided in the implementation task, and have not yet been checked in live play.
+
+## Target search investigation (not implemented yet)
+
+Own analysis of Rayman2.exe's Ghidra output at 0x476960 and 0x476300, and the shot template's
+scripts printed by `ortool brain` (04/00 +0x14708): function 113 takes seven arguments: a custom-bit
+mask, three scoring weights, a search direction and two angles in degrees. It returns an actor or
+no actor. The candidate must have every requested custom bit at standard game +0x24, and bit 1 of
+standard game +0x29 must be clear. The executable searches the current sector and linked sectors;
+it ranks candidates within the angular limits using the three weights. The exact ranking and sector
+selection still need checking against disassembly before implementation.
+
+The shot calls it with mask 32, Rayman's variables 107..109, its flight direction and 35/35 degrees.
+On success the script calls function 154 (0x4782C0, helper 0x476630) with the target and mask 1 to
+obtain a collision-zone centre in the target's axes. The helper searches active kind-2 zones and
+also examines part geometry; it can fall back to the actor origin when none qualifies. The script
+aims at that centre and casts against the world; when the cast hits before the target, it falls back
+to the original direction. This is the script's line-of-sight check, separate from function 113.
+The script runs this search during launch and again after a bounce; it does not repeatedly retarget
+on every flight tick. The details of the zone material test and transformed part geometry remain to
+be verified. Function 154, like 113, is not registered in OpenRayman.
