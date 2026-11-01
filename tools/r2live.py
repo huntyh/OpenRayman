@@ -28,6 +28,7 @@ import time
 MAIN_ACTOR = 0x500578
 CLOCK = 0x5003EC
 FIX_CAMERA = 0x4B7308  # second Fix entry: camera actor (0x403730)
+FIX_ACTORS = 0x4B7300  # u32 count, then the Fix actors (0x403730)
 PROJECTION = 0x4A723C  # current renderer projection record (0x4228D0)
 
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -281,10 +282,31 @@ def snapshot(m, variables, contacts=False, zones=False, camera=False, generated=
 	return s
 
 
+def story_array(m, actor):
+	"""The actor's variable 42 when it is the story bit array (variable type 21: u8 count of 32-bit
+	words at +4, the words from +8), else None."""
+	brain = m.u32(actor + 0xC) if actor else 0
+	mind = m.u32(brain) if brain else 0
+	memory = m.u32(mind + 0xC) if mind else 0
+	declaration = m.u32(m.u32(memory)) if memory else 0
+	if not declaration or m.u8(declaration + 0xC) <= 42:
+		return None
+	info = m.u32(declaration + 4) + 42 * 0x10
+	if m.u32(info + 4) != 21:
+		return None
+	at = m.u32(memory + 8) + m.u32(info)
+	return at if 36 <= m.u8(at + 4) <= 255 else None
+
+
 def story_address(m):
-	"""Where the story bits live: variable 42 of one actor, a bit array (u8 count of 32-bit words at +4,
-	the words from +8). That actor is searched through the whole scene: from Rayman's super object up
-	to the root (+0x1C parent) and down every child list (+0x08 first child, +0x14 next)."""
+	"""Where the story bits live: variable 42 of one actor (Learn_10's node 6, a Fix actor). Fix's
+	actors are listed at 0x4B7304 (count at 0x4B7300, filled at 0x403730); failing that the whole
+	scene is searched, from Rayman's super object up to the root (+0x1C parent) and down every
+	child list (+0x08 first child, +0x14 next)."""
+	for i in range(min(m.u32(FIX_ACTORS), 32)):
+		at = story_array(m, m.u32(FIX_ACTORS + 4 + 4 * i))
+		if at:
+			return at
 	node = m.u32(MAIN_ACTOR)
 	for _ in range(16):
 		parent = m.u32(node + 0x1C) if node else 0
@@ -301,21 +323,9 @@ def story_address(m):
 		while child and child not in seen:
 			stack.append(child)
 			child = m.u32(child + 0x14)
-		actor = m.u32(so + 4) if m.u32(so) == 2 else 0
-		brain = m.u32(actor + 0xC) if actor else 0
-		mind = m.u32(brain) if brain else 0
-		memory = m.u32(mind + 0xC) if mind else 0
-		declaration = m.u32(m.u32(memory)) if memory else 0
-		if not declaration or m.u8(declaration + 0xC) <= 42:
-			continue
-		info = m.u32(declaration + 4) + 42 * 0x10
-		if m.u32(info + 4) != 10:
-			continue
-		at = m.u32(memory + 8) + m.u32(info)
-		words = m.u8(at + 4)
-		if not 36 <= words <= 255:
-			continue
-		return at
+		at = story_array(m, m.u32(so + 4) if m.u32(so) == 2 else 0)
+		if at:
+			return at
 	return None
 
 
@@ -344,7 +354,7 @@ def watch_story(m, say):
 	level (when Rayman's super object changes) and then read directly. Each change is logged with the
 	game clock and where Rayman stands; which script set it can't be seen from outside, the place
 	and moment say it."""
-	rayman, at, last, last_clock = None, None, None, None
+	rayman, at, last, last_clock, missing = None, None, None, None, False
 	while True:
 		time.sleep(0.005)
 		clock = m.u32(CLOCK)
@@ -360,7 +370,11 @@ def watch_story(m, say):
 		if at is None:
 			at = story_address(m)
 			if at is None:
+				if not missing:
+					say(f"t {clock:>9}: story bits not found yet (searching each frame)")
+					missing = True
 				continue
+			missing = False
 		bits = read_story(m, at)
 		if bits is None:
 			at = None
