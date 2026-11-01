@@ -3,6 +3,19 @@
 The dated investigation notes from `ROADMAP.md`, kept here so the roadmap stays short. Newest
 first. The format docs under `formats/` are the permanent home of the findings themselves.
 
+## 2026-11-01: the tutorial chain works (user)
+
+- The tutorial cage breaks, its Lum breaks out and flies its little loops as in the game, and
+  collecting it opens the trapdoor.
+- The field of view matches: the game's is 51.6 degrees vertical, which the game camera uses
+  (0.9 rad); the fly camera keeps 60.
+- The hand no longer snaps back when shooting while hovering.
+- The Lum collect effect exists (it came with the shot's bounce sparkles) and Lums play their
+  pickup sound; the user checks whether the game shows any other effect.
+- New finds: Rayman jumps up through ceilings (the bridge near the waterfall, the Globox kids'
+  cave roof); the Globox kids start in the wrong state; a "Hey!" voice repeats where the debug
+  Rayman was; the flier's buzz goes on after it vanishes.
+
 ## 2026-10-31: the first visit plays
 
 - Murfy's freeze at the stone is gone: since the first-visit start runs (node 38's intro ended at

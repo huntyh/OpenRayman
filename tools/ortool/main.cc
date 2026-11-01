@@ -745,6 +745,23 @@ static int cmd_collide(const fs::path& folder, const std::string& name)
 				if(auto physical = memory.follow(*node.data))
 					survey("ipo", *physical);
 		}
+		// ORTOOL_NEAR=x,y,r lists the level's collision triangles within r of (x, y).
+		if(const char* near = std::getenv("ORTOOL_NEAR"))
+		{
+			float nx = 0, ny = 0, nr = 0;
+			if(std::sscanf(near, "%f,%f,%f", &nx, &ny, &nr) == 3)
+				for(const collision_triangle& t : static_collision(memory, tree))
+				{
+					float cx = (t.corners[0][0] + t.corners[1][0] + t.corners[2][0]) / 3;
+					float cy = (t.corners[0][1] + t.corners[1][1] + t.corners[2][1]) / 3;
+					if(std::hypot(cx - nx, cy - ny) > nr)
+						continue;
+					std::cout << std::format("  tri flags {:04X} normal ({:.2f} {:.2f} {:.2f})", t.flags, t.normal[0], t.normal[1], t.normal[2]);
+					for(const auto& c : t.corners)
+						std::cout << std::format(" ({:.1f} {:.1f} {:.1f})", c[0], c[1], c[2]);
+					std::cout << "\n";
+				}
+		}
 		animation_bank bank = read_animation_bank(files);
 		for(std::size_t child : tree.node(tree.dynamic_world()).children)
 		{

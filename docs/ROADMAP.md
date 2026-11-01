@@ -95,23 +95,28 @@ once it plays right (they have issues of their own, found on a first look).
 **Open** (agreed order with the user, 2026-10-30; state 2026-10-31 evening)
 
 1. **3c leftovers.** The shot flies, bounces, fades and hits actors (the hanging cage reacts and
-   says "help!"); still missing: homing (function 113) and the hand snap while hovering. Then: the
-   clip out of the tunnel after the Globox kids, slippery slopes (Rayman slides down now, user
+   says "help!"); still missing: homing (function 113). Then: the
+   clip out of the tunnel after the Globox kids, jumping up through ceilings (under the bridge
+   at `--camera 40.8,305.1,-8.3,5.2,14.2` he lands on top of it; the Globox kids' cave roof at
+   `--camera -66.7,198.4,1.2,279.7,24.1`), slippery slopes (Rayman slides down now, user
    2026-10-31, but the acceleration is off: the real slide accelerates about 11 u/s² down the
-   fall line, `H:\r2export\live\slope_ly10_2026-10-31.txt`), the Lum collect
-   effect, the faint crosshair-like lines around Rayman, and the mid-air stop while hovering near
-   the spawn cliff (sloped face taken as floor).
+   fall line, `H:\r2export\live\slope_ly10_2026-10-31.txt`), whether the Lum collect effect
+   matches the game's (user checking), the faint crosshair-like lines around Rayman seen from
+   afar, and possibly a mid-air stop while hovering near the spawn cliff (unconfirmed).
    **Standing on actors**: our collision is the level's triangles plus actors pushing Rayman
    sideways; nothing lets him stand on an actor, so the tutorial's closed trapdoor (and every
    moving platform) lets him fall through. Next: actors' collision shapes as floor.
 2. **The first-visit start** (`--start new`) works: Rayman starts where the intro hands him over,
    the tutorial cage hangs from its chain (it waits for the game's CD check, node 82, which we
    answer as the GOG release does), Murfy appears and whispers. The intro's director (node 38)
-   is ended at the hand-over, since the intro itself is Phase 4 (`first_visit.h`). To check: the
-   tutorial chain (cage, Lum, trapdoor) and the condor leaving once Rayman exits the cave. Still
-   to identify: a Rayman-shaped actor near `--camera 62.7,250.1,15.5`. Node 71 (the tutorial's
-   stand-in) walks a bit and stops. Breaking the cage now sets its story bit (procedure 351) and frees
-   its Lums (the 76/77 loop, condition 57): to check in play. Every level's CD checks (65 actors
+   is ended at the hand-over, since the intro itself is Phase 4 (`first_visit.h`). The tutorial
+   cage breaks, its Lum flies loops like the game's and collecting it opens the trapdoor (user
+   2026-11-01). To check: the condor leaving once Rayman exits the cave. Node 71 (the tutorial's
+   stand-in) walks a bit and stops. The debug Rayman and Teensies near
+   `--camera 21.6,115.8,29.6,266.5,-25.8` are no longer seen, but a "Hey!" voice still repeats
+   there. The Globox kids (`--camera -67.4,206.9,2.1,-56.5,-12.7`) start in the wrong state: they
+   should idle, cheer when they see Rayman, then cry once he says Globox is missing (and keep
+   crying). Every level's CD checks (65 actors
    in 25 levels) get the passing answer, as on GOG. Without `--camera` a game starts playing,
    seen through the game's camera.
 3. **3d: sound** plays (user confirmed 2026-10-31: shots, steps by ground type, voices, ambience,
@@ -119,13 +124,12 @@ once it plays right (they have issues of their own, found on a first look).
    then he waves and leaves; the Globox kids' scene at `--camera -72.3,211.9,3.8,-55.0,-18.7`
    doesn't start its dialog and breaks the sequence), the game's own
    3D falloff and panning (ours is a stand-in, so the flier's buzz is louder than in the game and
-   still heard when it flies off to sit by the camera, which the game's flier also does), a
+   still heard after it flies up and vanishes, which in the game is silent), a
    smoother loop seam for looping sounds (an improvement, to list in IMPROVEMENTS), external
    `.apm` samples, and adaptive music (a theme's segments in order from `+0x1C`, then the `+0x28`
    tail, `silence.apm` as a fade-out; which segment to move to, and when, is the open question;
    see `SXD_DIST_*` in `Snd_Cpa.ini`). Goal: the first-visit start playable with its conversations.
-4. **The game's camera**, still to check against the game: the field of view (Rayman looked
-   smaller in OpenRayman), the arrival pan. In the game the
+4. **The game's camera**, still to check against the game: the arrival pan. In the game the
    player may turn the camera (Q/W) only where the level allows it, level presets often
    overrule it, and a camera icon with a red X shows when turning is refused.
 5. **The end-of-level cutscene**: breaking the last cage starts a Teensie and Rayman scene

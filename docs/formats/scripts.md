@@ -257,6 +257,14 @@ Rayman, so before it the scene never took hold of him. Until cutscenes play (Pha
 first-visit start ends node 38 the way it ends itself (`game/include/openrayman/game/first_visit.h`).
 Own analysis with `ortool brain`/`run` (2026-10-31).
 
+**Custom bit 14 (0x2000) freezes the animation.** The per-actor update 0x40A5C0 skips the
+animation step (0x40E9E0, which also fires its sound events) when the actor's custom bits
+(standard game +0x24) carry 0x2000 and its super object has children (the parts), unless 0x800000
+asks for it anyway. Scripts put an actor away with `procedure_312(1, 1)` and `procedure_174(14, 1)`
+together: Learn_10's end-of-level Rayman (node 2) waits that way until the last cage breaks. Its
+idle animation's "Hey!" stayed audible while we kept animating it. Brain and mechanics still run
+(0x412230 follows unconditionally). Own analysis of the Ghidra decompile (2026-11-01).
+
 **Waypoints and graphs.** A waypoint has three floats at +0 for position, a float radius at
 +0x0C, and an optional super object pointer at +0x10. When attached, its position is transformed
 by that object's global transform; otherwise it is already in world coordinates (0x487860).

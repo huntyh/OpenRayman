@@ -36,6 +36,10 @@ namespace openrayman::game
 		// in [bottom, top], or nothing.
 		std::optional<surface_hit> floor_at(float x, float y, float top, float bottom) const;
 
+		// The lowest ceiling (a triangle facing down, at most 60° from flat) over (x, y) with a height in
+		// [bottom, top], or nothing.
+		std::optional<surface_hit> ceiling_at(float x, float y, float top, float bottom) const;
+
 		// The highest water triangle (collide flag 0x4000, at most 60Â° from flat) over (x, y) with a
 		// height in [bottom, top], or nothing: the surface of the pond the actor is in (0x43F510).
 		std::optional<surface_hit> water_at(float x, float y, float top, float bottom) const;

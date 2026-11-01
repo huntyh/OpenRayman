@@ -116,12 +116,12 @@ namespace openrayman::game
 			}
 		}
 
-		// The highest of `candidates` that `accepts` allows under (x, y), with its height in
+		// The highest (or lowest) of `candidates` that `accepts` allows under (x, y), with its height in
 		// [bottom, top]: barycentric coordinates on the ground plane, then the height of the plane
-		// there (shared by floor_at and water_at).
+		// there (shared by floor_at, ceiling_at and water_at).
 		template<typename Accept>
 		std::optional<world_collision::surface_hit> highest_surface(const std::vector<collision_triangle>& triangles,
-			const std::vector<std::uint32_t>& candidates, float x, float y, float top, float bottom, Accept accepts)
+			const std::vector<std::uint32_t>& candidates, float x, float y, float top, float bottom, Accept accepts, bool lowest = false)
 		{
 			std::optional<world_collision::surface_hit> best;
 			for(std::uint32_t i : candidates)
@@ -139,7 +139,7 @@ namespace openrayman::game
 				if(u < -1e-5f || v < -1e-5f || w < -1e-5f)
 					continue;
 				float z = u * a[2] + v * b[2] + w * c[2];
-				if(z <= top && z >= bottom && (!best || z > best->height))
+				if(z <= top && z >= bottom && (!best || (lowest ? z < best->height : z > best->height)))
 					best = world_collision::surface_hit{ z, t.material, t.normal };
 			}
 			return best;
@@ -228,6 +228,13 @@ namespace openrayman::game
 		return highest_surface(m_triangles, under(x, y), x, y, top, bottom, [](const collision_triangle& t) {
 			return t.normal[2] >= floor_normal && !(t.flags & surface::no_contact); // walls, water, 0x8000
 		});
+	}
+
+	std::optional<world_collision::surface_hit> world_collision::ceiling_at(float x, float y, float top, float bottom) const
+	{
+		return highest_surface(m_triangles, under(x, y), x, y, top, bottom, [](const collision_triangle& t) {
+			return t.normal[2] <= -floor_normal && !(t.flags & surface::no_contact);
+		}, true);
 	}
 
 	std::optional<world_collision::segment_hit> world_collision::first_hit(const std::array<float, 3>& start, const std::array<float, 3>& end, std::uint16_t any_of) const
@@ -868,6 +875,13 @@ namespace openrayman::game
 				wall_normal = { touch[0] / l, touch[1] / l, 0.0f };
 		}
 		const bool on_wall = wall_normal[0] != 0 || wall_normal[1] != 0;
+
+		// Ceilings stop a move up at the top of the body: the head may not pass a surface facing
+		// down (the underside of the Learn_10 bridge by the waterfall, the Globox kids' cave roof).
+		// Without this a jump rose through them until the floor search found their top.
+		if((flags & collides) && !world.empty() && !climbing && target[2] > current[2])
+			if(auto ceiling = world.ceiling_at(target[0], target[1], target[2] + body_height, current[2] + body_height - 0.05f))
+				target[2] = std::max(current[2], ceiling->height - body_height);
 
 		// The floor. The exe gathers contacts with the actor's collision spheres and picks the
 		// nearest (0x43EEC0, 0x43F510); here the actor is a small disc at its origin, tested straight down.

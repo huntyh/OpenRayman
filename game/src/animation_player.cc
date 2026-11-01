@@ -481,7 +481,15 @@ namespace openrayman::game
 		auto advance = [&](std::uint32_t self) {
 			std::uint32_t actor = vm.actor_of(self);
 			std::uint32_t data = actor ? m.u32(actor) : 0;
-			if(data && !vm.removed(self))
+			// Custom bit 14 (0x2000) freezes the animation of an actor whose super object has
+			// children (0x40A5C0; the exe hangs each part's super object under the actor, so any actor
+			// with a body), unless bit 24 (0x800000) asks for it anyway. Scripts set it next to
+			// procedure 312 to put actors away: the end-of-level Rayman (Learn_10 node 2) would
+			// otherwise call "Hey!" from his hiding place through his animation's sound events.
+			std::uint32_t standard = actor ? m.u32(actor + 0x04) : 0;
+			std::uint32_t custom = standard ? m.u32(standard + 0x24) : 0;
+			const bool frozen = (custom & 0x2000) && !(custom & 0x800000);
+			if(data && !vm.removed(self) && !frozen)
 			{
 				// Where a part of the actor is at a frame of an animation: the channel's pose, through
 				// its parents, placed where the actor is (the parts' super objects the game keeps).
