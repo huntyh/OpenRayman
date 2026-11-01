@@ -21,12 +21,14 @@ namespace openrayman::game
 			std::size_t cursor = 0;
 			std::uint32_t last = 0;
 			int delay = 0, event = 0;
+			int colour = 0;
 		};
 		struct dialog_state
 		{
 			dialog_resolver resolver;
 			std::map<std::int32_t, std::string> changed;
 			std::map<std::uint32_t, entry> actors;
+			bool screen = false;
 		};
 		std::map<interpreter*, std::weak_ptr<dialog_state>> systems;
 
@@ -109,6 +111,7 @@ namespace openrayman::game
 				auto& e = state.actors[so];
 				e = {};
 				e.visible.creator = c.self;
+				e.visible.screen = state.screen;
 				e.visible.x = pos.component(0); e.visible.y = pos.component(1); e.visible.z = pos.component(2);
 				e.delay = std::max(0, timing.as_int());
 				e.last = c.vm.clock() - std::uint32_t(e.delay);
@@ -147,10 +150,13 @@ namespace openrayman::game
 						timed_control = true;
 						break;
 					}
-					if(code == 'l') e.visible.text.push_back('\n');
+					if(code == 'l') { e.visible.text.push_back('\n'); e.visible.colours.push_back(e.colour); }
+					if(code == 'c') e.visible.centred = true;
+					if(code == 'o') e.colour = n;
 				}
 				if(e.event || timed_control || e.cursor >= text->size() || (*text)[e.cursor] == '/') break;
 				e.visible.text.push_back((*text)[e.cursor++]);
+				e.visible.colours.push_back(e.colour);
 				++e.visible.revealed;
 			} while(e.delay == 0);
 			out = value::integer(e.event);
@@ -163,6 +169,8 @@ namespace openrayman::game
 		auto state = std::make_shared<dialog_state>();
 		systems[&vm] = state;
 		vm.on_function(158, [state](call& c, value& out) { return dialog(c, out, *state); });
+		// 443 (0x470270) selects placement for subsequent function 158 calls.
+		vm.on_procedure(443, [state](call& c) { value v; argument(c, v); state->screen = v.as_int() != 0; return c.args; });
 		vm.on_procedure(430, [state](call& c) { return concatenate(c, *state); });
 		vm.on_procedure(243, [state](call& c) { return format_integer(c, *state); });
 	}

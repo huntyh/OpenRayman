@@ -17,9 +17,11 @@ namespace openrayman::game
 	struct dialog_text
 	{
 		std::string text;
+		std::vector<int> colours; // one colour code per byte, including line breaks
 		int revealed = 0;
 		float x = 0, y = 0, z = 0;
 		bool screen = false;
+		bool centred = false;
 		std::uint32_t creator = 0;
 	};
 

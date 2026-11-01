@@ -135,3 +135,11 @@ to the original direction. This is the script's line-of-sight check, separate fr
 The script runs this search during launch and again after a bounce; it does not repeatedly retarget
 on every flight tick. The details of the zone material test and transformed part geometry remain to
 be verified. Function 154, like 113, is not registered in OpenRayman.
+
+Further own analysis of 0x476300 and 0x476630: the search examines the current sector's
+actor list and the sectors in its +0x24 linked list. The score uses reciprocal lateral offset,
+reciprocal horizontal distance and reciprocal full distance, with the three script weights,
+subject to angular tests. The exact axes and edge cases still need verifying against disassembly.
+The zone helper checks each active kind-2 zone for a matching material, then takes the first
+element's sphere centre or box midpoint (0x476880); if no zone qualifies, it also searches
+part-attached geometry. These findings have not yet been validated against an off-axis shot.

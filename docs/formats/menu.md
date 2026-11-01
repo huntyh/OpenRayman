@@ -231,6 +231,13 @@ file.
 
 ## Where this came from
 
+The dialog glyph path is distinct from the menu's slot renderer: own analysis of 0x409720 and
+0x409500 shows that each byte selects an entry in the generated actor's font object and creates a
+glyph child using the entry's object pointer. Lowercase maps to the uppercase range; bytes above
+0x9F use a different offset. The font-object root, glyph geometry, and byte mapping have not yet
+been connected to the viewer. Its current SDL debug font, colour approximation and positioning
+are temporary; they do not establish the original appearance.
+
 - Own analysis of the retail GOG install (`Rayman2.exe`, timestamp 1999-10-15 23:19:39) and of the
   game files, on 2026-10-30.
 - Which level it is, its super objects, textures, Fix textures and brains: `ortool scene`,

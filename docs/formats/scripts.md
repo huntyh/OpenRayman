@@ -363,8 +363,10 @@ the config remains to be done. The shared table's bounds are not yet established
 The `game/dialog` module is registered by the viewer and ortool, and resolves IDs through those
 tables. It stores changed ID strings separately and exposes revealed text. Parser 0x408DD0's `/O`
 sets the glyph index offset used by 0x409720; its relationship to highlighting remains to be
-confirmed. The parser and timing are preliminary: substitutions and screen placement are not implemented and
-the event timing is not validated against the live recording. The first-visit 3000-tick ortool run
+confirmed. Procedure 443 (0x470270) sets the global placement mode used when function 158 creates
+an actor: zero selects world placement, nonzero selects the screen branch. The viewer now preserves
+that mode and uses a provisional overlay; its placement and font are not yet faithful. The parser
+and timing are preliminary: substitutions are not implemented. The first-visit 3000-tick ortool run
 did not reach Murfy's conversation, so it does not establish that he waits for Space. Set
 `ORTOOL_TEXT=1` to print dialog event, clock, creator, ID and cursor for further comparison.
 Own comparison against `run4/text.txt`: in Jail_10, ID 1 events 10, 11, 3 occur at cursors
@@ -372,6 +374,14 @@ Own comparison against `run4/text.txt`: in Jail_10, ID 1 events 10, 11, 3 occur 
 14273 ms at those cursors. The full Learn_10 comparison and interactive Murfy check remain open.
 The recorded dump's mutable ID 286 differs from its initial Fix contents, consistent with the
 script writing that destination; the table tests therefore use unchanged IDs instead.
+
+Procedure 393 (0x470F20, shared with 392 and 394) evaluates one argument and calls 0x416D70
+on the object at the calling actor's +0x1C. It writes mode 1 to +0x38, the low byte of the
+argument to +0x39, zero to +0x3A, and floating-point zero to +0x3C. The 600-tick first-visit
+run reaches it 600 times; the trace includes a generated actor, but the caller has not yet been
+identified. The object's role is not established, so this belongs in the actor handler system once
+identified, rather than being registered as a dialog operation. Own analysis of the executable's
+handler and setter; no reference implementation was used.
 
 ## Numbers
 

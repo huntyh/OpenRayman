@@ -18,6 +18,20 @@ first. The format docs under `formats/` are the permanent home of the findings t
 - Homing (functions 113 and 154) investigated, notes in `formats/generated.md`; implementation
   in progress.
 
+## 2026-11-01 (late): text overlay and homing, first tries
+
+- The dialog text is drawn by a stand-in overlay (SDL's debug font) until the game's glyphs are
+  decoded. At `--level Jail_10 --time 10` nothing shows yet: the narration line is there (55
+  letters revealed) but flagged as world text at (60, 200, 17), which look like screen
+  coordinates, so procedure 443's "screen/world" reading is likely wrong. A scene director's cue
+  string (id 20016, `/E105:/E100:...`, timing events only) is also listed as text; the game
+  never shows those. Next: function 158's placement branches and which text actors are visible.
+- The Jail_10 screenshots show the camera already panning over the sea from its scripts.
+- Homing: a first implementation didn't hit the cage and was removed; the exe's search walks
+  per-sector actor lists our engine doesn't keep. Findings in `formats/generated.md`.
+- Procedure 393 (reached every tick on a first visit since function 158 runs) sets fields on an
+  object attached to the calling actor; caller and meaning still unknown.
+
 ## 2026-11-01: a recorded playthrough (`tools/r2record.py`)
 
 The user recorded a new game from the menu through the pirate ship (Jail_10, Jail_20), Learn_10

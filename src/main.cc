@@ -82,6 +82,14 @@ namespace
 		}
 	)";
 
+	// Temporary SDL debug font overlay until the Fix glyph objects are decoded.
+	const char* text_fragment_shader = R"(
+		in vec2 v_uv;
+		out vec4 o_color;
+		uniform sampler2D u_texture;
+		void main() { o_color = texture(u_texture, v_uv); }
+	)";
+
 	struct texture_ref
 	{
 		const cnt_archive* archive;
@@ -94,6 +102,7 @@ namespace
 		SDL_GLContext context = nullptr;
 		gl::api api = gl::api::desktop_gl33;
 		GLuint program = 0;
+		GLuint text_program = 0;
 		GLuint vao = 0;
 		GLint u_rect = -1;
 
@@ -1259,6 +1268,66 @@ namespace
 			a.level->draw(view, projection);
 			if(a.scripts)
 				update_visibility(a, projection * view);
+			if(a.vm)
+			{
+				auto dialogs = game::visible_dialogs(*a.vm);
+				if(!dialogs.empty())
+				{
+					// Fixed-resolution software surface keeps this provisional font independent of GL.
+					constexpr int tw = 640, th = 360;
+					SDL_Surface* surface = SDL_CreateSurface(tw, th, SDL_PIXELFORMAT_ABGR8888);
+					SDL_Renderer* text = surface ? SDL_CreateSoftwareRenderer(surface) : nullptr;
+					if(text)
+					{
+						SDL_SetRenderDrawColor(text, 0, 0, 0, 0);
+						SDL_RenderClear(text);
+						for(const auto& dialog : dialogs)
+						{
+							float x, y;
+							if(dialog.screen) { x = dialog.x * tw / 1000.0f; y = dialog.y * th / 1000.0f; }
+							else
+							{
+								glm::vec4 p = projection * view * glm::vec4(dialog.x, dialog.y, dialog.z, 1);
+								if(p.w <= 0) continue;
+								x = (p.x / p.w + 1) * tw * 0.5f;
+								y = (1 - p.y / p.w) * th * 0.5f;
+							}
+							std::size_t start = 0;
+							while(start < dialog.text.size())
+							{
+								auto end = dialog.text.find('\n', start);
+								if(end == std::string::npos) end = dialog.text.size();
+								float left = x - (dialog.centred ? float(end - start) * 4 : 0);
+								for(std::size_t i = start; i < end; ++i)
+								{
+									int colour = i < dialog.colours.size() ? dialog.colours[i] : 0;
+									if(colour == 200) SDL_SetRenderDrawColor(text, 250, 70, 70, 255);
+									else if(colour == 400) SDL_SetRenderDrawColor(text, 255, 255, 120, 255);
+									else SDL_SetRenderDrawColor(text, 110, 190, 255, 255);
+									char glyph[] = { dialog.text[i], 0 };
+									SDL_RenderDebugText(text, left + float(i - start) * 8, y, glyph);
+								}
+								y += 10;
+								start = end + 1;
+							}
+						}
+						SDL_RenderPresent(text);
+						GLuint overlay = gl::create_texture(tw, th, std::span(static_cast<const std::uint8_t*>(surface->pixels), tw * th * 4));
+						glDisable(GL_DEPTH_TEST);
+						glEnable(GL_BLEND);
+						glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+						glUseProgram(a.text_program);
+						glUniform4f(glGetUniformLocation(a.text_program, "u_rect"), -1, -1, 1, 1);
+						glActiveTexture(GL_TEXTURE0);
+						glBindTexture(GL_TEXTURE_2D, overlay);
+						glBindVertexArray(a.vao);
+						glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+						glDeleteTextures(1, &overlay);
+						SDL_DestroyRenderer(text);
+					}
+					if(surface) SDL_DestroySurface(surface);
+				}
+			}
 		}
 		else if(a.texture && w > 0 && h > 0)
 		{
@@ -1332,6 +1401,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 	try
 	{
 		a->program = gl::create_program(a->api, vertex_shader, fragment_shader);
+		a->text_program = gl::create_program(a->api, vertex_shader, text_fragment_shader);
 	}
 	catch(const std::exception& e)
 	{
