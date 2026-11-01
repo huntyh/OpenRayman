@@ -48,6 +48,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <utility>
 #include <set>
 #include <string>
 #include <vector>
@@ -119,6 +120,11 @@ namespace
 		// follow where they are).
 		std::unique_ptr<sound_player> sounds;
 		std::set<std::uint32_t> sound_sources;
+		// Sectors play sounds when Rayman walks in (the music of Learn_10's hand-over): their boxes,
+		// super objects and data, and the sector he was last in.
+		openrayman::level_lights sound_sectors;
+		std::vector<std::uint32_t> sound_sector_super_objects, sound_sector_data;
+		std::optional<std::size_t> rayman_sector;
 		std::vector<fs::path> music_files;
 		std::optional<std::size_t> music_index;
 
@@ -412,6 +418,41 @@ namespace
 		return { gain, pan };
 	}
 
+	// The sector Rayman is in, by the lighting's rule (the smallest box that holds him). The exe
+	// finds it its own way (0x4128D0, 0x44BF80), not read yet.
+	std::optional<std::size_t> rayman_sector_now(const app& a)
+	{
+		auto placed = a.live && a.vm ? openrayman::game::global_placement(*a.live, a.vm->main_actor()) : std::nullopt;
+		if(!placed)
+			return std::nullopt;
+		return a.sound_sectors.sector_at({ placed->m[0][3], placed->m[1][3], placed->m[2][3] });
+	}
+
+	// When Rayman moves to another sector, that sector's sound list plays the entries for the sector
+	// he came from or for any (0x412880: sector data +0x54 first element, +0x5C count; an element is
+	// the sector come from or null, the event slot the .snd files filled, the next element). The
+	// exe follows the actor at 0x4FF764 there, taken to be Rayman: in a recorded first visit
+	// Learn_10's music changed when the hand-over moved him from the intro's sector into the woods'.
+	void play_sector_sounds(app& a)
+	{
+		auto now = rayman_sector_now(a);
+		if(!now || now == a.rayman_sector)
+			return;
+		std::optional<std::size_t> before = std::exchange(a.rayman_sector, now);
+		std::uint32_t data = a.sound_sector_data[*now];
+		if(!data || !a.sounds || !a.live->contains(data + 0x54, 12))
+			return;
+		std::uint32_t from = before ? a.sound_sector_super_objects[*before] : 0;
+		std::uint32_t element = a.live->u32(data + 0x54);
+		for(std::uint32_t n = a.live->u32(data + 0x5C); n && element && a.live->contains(element, 12); n--)
+		{
+			std::uint32_t wanted = a.live->u32(element);
+			if(!wanted || wanted == from)
+				a.sounds->request(a.live->u32(element + 4), 0, 1.0f, 0.0f, -1);
+			element = a.live->u32(element + 8);
+		}
+	}
+
 	// Custom bit 12 (0x800 in standard game +0x24): the actor isn't in view. The renderer sets it for
 	// actors whose bounding sphere (super object +0x34: centre, radius at +0x0C) lies outside the
 	// camera's side planes or behind its near plane, and clears it for the others (0x45C450, after
@@ -519,6 +560,8 @@ namespace
 					else
 						a.sounds->request(request.event, request.source, 1.0f, 0.0f, request.selector);
 				}
+			if(!a.screenshot && a.last_frame != 0)
+				play_sector_sounds(a);
 			if(a.camera_log && a.playing && a.camera_super_object)
 			{
 				auto camera = openrayman::game::global_placement(*a.live, a.camera_super_object);
@@ -822,6 +865,7 @@ namespace
 			std::vector<std::optional<std::size_t>> sectors;
 			for(const placed_geometry& placed : geometry)
 				sectors.push_back(lights.sector_of(tree, placed.node));
+			a.sound_sectors = lights;
 			// Every shadow in the game uses the same blob material, from Fix.
 			const visual_material* shadow_material = nullptr;
 			for(const actor_set::entry& actor : a.actors.actors)
@@ -1032,6 +1076,16 @@ namespace
 				a.super_object_at.push_back(tree.node(actor.node).at.address());
 			}
 			a.state_since.assign(a.actors.actors.size(), 0.0);
+			a.sound_sector_super_objects.clear();
+			a.sound_sector_data.clear();
+			for(const sector& s : a.sound_sectors.sectors)
+			{
+				a.sound_sector_super_objects.push_back(tree.node(s.node).at.address());
+				a.sound_sector_data.push_back(tree.node(s.node).data ? tree.node(s.node).data->address() : 0);
+			}
+			// Where Rayman stands before the hand-over: his saved place (the intro's), so moving him
+			// to the hand-over plays what the game plays there.
+			a.rayman_sector = rayman_sector_now(a);
 			// A first visit starts where the level's intro cutscene hands Rayman over (first_visit.h).
 			if(a.new_game && !header.placements.empty())
 				openrayman::game::apply_first_visit_hand_over(*a.live, *a.vm, tree, levels[index], header.placements[0].super_object.address(), a.camera_super_object);

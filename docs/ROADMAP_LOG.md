@@ -3,6 +3,18 @@
 The dated investigation notes from `ROADMAP.md`, kept here so the roadmap stays short. Newest
 first. The format docs under `formats/` are the permanent home of the findings themselves.
 
+## 2026-11-02 (night): music plays; homing second try came back empty
+
+- Two GPT-6.1 Terra jobs. Music: a theme player in `sound_player` (segments, repeat points,
+  restart, tail, stop), built and tested, but its own runs logged no music: nothing asked for a
+  theme. The asker turned out to be the sectors (0x412880: a sector's list of sounds for walking
+  in, from a given sector or any). Learn_10's only entry plays 9:5 entering the woods' sector from
+  the intro's, which the hand-over does; the engine now follows Rayman's sector and plays these
+  lists. The user heard the music in game; the segment log matches the run4 recording to 0.02 s.
+- Homing (functions 113/154): no code landed. The job found the cage's sector (12) and the zone
+  centre helper 0x476880, but could not make Rayman shoot in its ortool trace, so it had nothing
+  to test against (`formats/generated.md`).
+
 ## 2026-11-01 (evening): fixes and dialogs
 
 - Ceilings stop jumps (800c6c2): `world_collision::ceiling_at` stops a move up where the head

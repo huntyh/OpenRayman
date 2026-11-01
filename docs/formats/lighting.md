@@ -15,6 +15,7 @@ The data of a sector super object (type 0x04, see [geometry.md](geometry.md)):
 | 0x0C | static lights: first element, last element, u32 count |
 | 0x18 | dynamic lights (empty in the saved levels) |
 | 0x24, 0x30, 0x3C | lists of neighbouring sectors (not decoded yet) |
+| 0x54 | sounds on entering: first element, last element, u32 count at 0x5C (see [sound.md](sound.md#sector-sounds)) |
 | 0x60 | box: 3 floats minimum, 3 floats maximum |
 | 0x7C | u8: 1 for a virtual sector |
 | 0x80 | sky: a visual material, or null (then +0x84 is 100 as well) |

@@ -143,3 +143,10 @@ subject to angular tests. The exact axes and edge cases still need verifying aga
 The zone helper checks each active kind-2 zone for a matching material, then takes the first
 element's sphere centre or box midpoint (0x476880); if no zone qualifies, it also searches
 part-attached geometry. These findings have not yet been validated against an off-axis shot.
+
+Own follow-up inspection of 0x476880 confirms that it examines the first element type: a sphere
+uses its first centre vertex and a box uses the midpoint of its first two vertices. The saved
+Learn_10 tutorial cage (node 67) is at (-22.3, 291.5, -5.6), in lighting sector 12 (sector node
+147), according to `ortool lights`. This does not establish its live custom bits or whether the
+shot's search can reach it. A first-visit placement at (-27, 289, -7.3) with LCtrl or Z at ticks
+245-249 did not produce a Rayman shot in the trace, so it is not trajectory evidence.

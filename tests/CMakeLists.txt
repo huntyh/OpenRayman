@@ -36,7 +36,7 @@ ortool_check(scene_learn_10
 	3fe286e1d8312574c6873d4cfbb6cac2a79abcbd65485434cba37ce83effa1c9
 	scene <game> Learn_10)
 ortool_check(lights_learn_10
-	e3271af66002ab034b1b2309ae2d86a222518117985cd9ecc23d884c4a2e2eb2
+	876acac9d431a97e3382d98f35d222270eecec3a571a84a7aea3be22aacb21c4
 	lights <game> Learn_10)
 ortool_check(motion_learn_10
 	0f45f2c48a8621e62fbc215476c36c14820e15c5aa2967226a4bb78f6830a9c7

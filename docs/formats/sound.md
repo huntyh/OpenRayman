@@ -115,9 +115,9 @@ unnamed).
 | +0x0C | u32 | data size in bytes |
 | +0x10 | u32 | data offset inside the resource's data area, 4-byte aligned |
 | +0x14 | u32 | static volume 0–127 (127 in most records) |
-| +0x18 | u32 | type 10: entry count; otherwise a flag |
-| +0x1C | u32 | type 11: start segment; type 10: gain; otherwise a flag |
-| +0x20 | u32 | type 8: entry count; otherwise a flag |
+| +0x18 | u32 | type 10: entry count; type 11: restart segment |
+| +0x1C | u32 | type 10: gain; otherwise a flag |
+| +0x20 | u32 | type 8: entry count; type 11: number of list passes, 0 = unlimited |
 | +0x24 | u32 | type 11: entry count; otherwise a flag |
 | +0x28 | u32 | type 4: entry count; type 11: offset of the tail entry, or `0xFFFFFFFF` |
 | +0x2C | u32 | 1 = external file with no data region, 0 = embedded |
@@ -191,9 +191,12 @@ whose loop handling still needs tracing. No sample loop points have been establi
 `.apm` files are the 2–3 second pieces, so this is where the game's adaptive music actually lives.
 
 - Entries are 6 words (stride 0x18), count at +0x24, base +0x10 off the extra area. Word 0 is the
-  segment's resource id; the rest are per-segment parameters, not decoded (word 1 looks like a 0/1
-  "entry point" flag and word 3 like a "loops" flag).
-- +0x1C is the segment the theme starts on, 0 in every shipped record.
+  segment's resource id; word 1 marks a repeat point, word 2 makes the sequencer jump back to
+  that point while its counter is nonzero, word 3 supplies that counter, and word 4 selects the
+  transition when a new theme is requested. Initial playback begins at entry 0. After the list
+  ends, +0x18 selects the restart entry and +0x20 limits the number of passes (0 means unlimited).
+  These fields follow the executable's loader 0x459800 and sequencer 0x459460; the 9:12 repeat
+  sequence in `H:/r2export/live/run4/music.txt` corroborates the interpretation.
 - +0x28 is either `0xFFFFFFFF` (no tail) or an offset **from this theme's own entry block** holding
   one more resource id, played when the list runs out. `0x459840` computes it as
   `entry_base + resource.offset + [+0x28]`, not from the start of the extra area. 9 themes have one,
@@ -315,9 +318,11 @@ Transitions and mixing go through the APM mixer server DLLs (`APMmxSVR.dll` / `A
 by `Snd_Cpa.ini`'s `[DLL_Adpcm]` section); the in-process side is the `_SND_fn_lPlayTransitionSxd` /
 `bSetNextTransitionSxd` / `vPauseTransitionSxd` family, reached from the theme player.
 
-What is still open: how the runtime decides *when* to move between segments (`SXD_DIST_SATUR=8` and
-`SXD_DIST_FADE=30` in `Snd_Cpa.ini` suggest a distance-based mix) and what the per-segment words
-mean.
+The executable prepares the next segment in advance and advances at segment boundaries. A request
+uses the current entry's transition word: 1 schedules the new theme at the boundary, 2 schedules
+this theme's tail first when one exists, and 0 calls the transition DLL's immediate path. The DLL's
+fade shape and timing have not been traced. `SXD_DIST_SATUR` and `SXD_DIST_FADE` relate to sound
+placement and do not establish a music transition rule.
 
 The theme player's state is a block at 0x4B95B8 (`dbgSND_fn_bGetThemePosition`, 0x459760, returns
 +0x14, +0x2C, +0x20): +0 active, +0x14 the theme resource, +0x18 a remembered repeat entry and +0x1C
@@ -371,9 +376,7 @@ Totals: 1012 events, 2055 resources — 1830 type-1 (740 PCM + 1090 APM), 78 gro
   the tentative +0x30 loop interpretation comes from comparing the installed bank records.
 - Own analysis of `DLL/Snd_Cpa.ini`: the module names behind the four regions and the
   `SXD_DIST_*`/`FORCE_LOAD_BANKS` options.
-- Not decoded yet: the complete group selection and transition rules (types 4, 8, 10), the per-segment parameter words of a
-  theme beyond the id, and the meaning of the resource flags +0x18/+0x1C/+0x20/+0x24 when they are
-  not counts and of +0x30. Event types 3, 4, 5, 9, 11 and resource types 2, 3, 5, 6 are handled by
+- Not decoded yet: the complete group selection and transition rules (types 4, 8, 10), the transition DLL fade and the meaning of remaining resource flags, including +0x30. Event types 3, 4, 5, 9, 11 and resource types 2, 3, 5, 6 are handled by
   the exe but absent from the shipped banks, so their layouts are known only from the handlers.
 
 What was wrong in the earlier notes (`H:\r2export\sound-report.md`), for anyone who still has them
@@ -428,3 +431,38 @@ A weighted set (type 10, 0x45A0A0) first draws a number below 0x10000: under the
 plays; the rest walks the entries' weights (second word). Rayman's panting set has 51760 (it plays
 about one time in five), his jump voices 29788 (about half the jumps). The game also avoids repeating
 the last pick; we don't yet. Traced with GPT-6.1 Terra, 2026-10-31.
+
+### Sector sounds
+
+Who asks for a theme: in Learn_10 not a script but a **sector**. A sector's data holds a list of
+sounds played when the listener walks in (0x412880, called from the sector updates 0x4128D0 and
+0x4054D0): first element +0x54, last +0x58, count +0x5C; an element is the sector super object
+come from (null = from anywhere), the event slot (filled by the `.snd` files like the scripts'),
+and the next element. The exe plays the entries whose "from" is the sector just left or null.
+It does this for the actor at 0x4FF764, which is read from the level's header right after the main
+actor; we take it to be Rayman (not confirmed). `ortool lights` lists each sector's entries.
+
+Learn_10 has a single entry: sector 11 (the woods around the start, node 135) plays the 9:5 theme
+when entered from sector 4 (node 102, where Rayman stands during the crash intro). That is the
+hand-over in the recorded first visit (run4, 255.3 s: Rayman jumps from (64, 249, 33) to (30, 295,
+-4), 0x90008 plays "from none" in the same frame). The intro's own theme 9:12 (0x90009 at clock 0) and
+the Globox kids' theme 9:13 (0x9000A, mid-cutscene, Rayman and the camera standing still) come from
+elsewhere: the scripts' no-emitter sound procedures (117/119), not checked yet.
+
+Own analysis of the decompile and the run4 recording, 2026-11-02.
+
+### Player status (2026-11-02)
+
+The player (`src/audio/sound_player.cc`, written by GPT-6.1 Terra from our task, reviewed here)
+resolves theme events, decodes the external APM segments from the installed game and mixes them
+with the effects. It follows the repeat and restart fields above; transition 0 is a cut for now, and
+type-10 segment groups pick their first entry. The engine follows Rayman's sector each tick (the
+lighting's smallest-box rule, not the exe's own sector search) and plays the sector lists, so a
+first visit of Learn_10 starts the 9:5 theme at the hand-over. `OPENRAYMAN_MUSIC_LOG=1` logs each
+segment: the first 12 segments of 9:5 switch within 0.02 s of the recorded game's (FO02 at 0,
+FO03 at 4.78 s, ..., FO13 at 36.01 s against 36.02 s).
+
+Open: a theme is decoded whole when it is asked for, under the mixer's lock, so a theme change can
+stall the audio for a moment; the transition DLL's fade; group selection; the intro and cutscene
+themes (see above). These rules come from our reading of 0x459460, 0x4595D0, 0x459670 and 0x459800
+and the run4 recording.

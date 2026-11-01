@@ -1129,6 +1129,21 @@ static int cmd_lights(const fs::path& folder, const std::string& name, std::opti
 			kinds[{ int(lights.lights[i].type), lights.lights[i].targets }]++;
 		for(auto [k, n] : kinds)
 			std::cout << std::format(" t{}/{}x{}", k.first, k.second, n);
+		// Sounds played on entering the sector (0x412880): list at +0x54, count at +0x5C; an element
+		// is the sector come from (null = any), the event slot (the .snd files fill it at load, so
+		// this prints the saved word), the next element.
+		if(const auto& data = tree.node(c.node).data)
+		{
+			auto element = files.memory.follow(*data + 0x54);
+			for(std::uint32_t k = files.memory.read_u32(*data + 0x5C); k && element; k--)
+			{
+				auto from = files.memory.follow(*element);
+				auto from_node = from ? tree.find(*from) : std::nullopt;
+				std::cout << std::format(" sound slot 0x{:08X} from {}", files.memory.read_u32(*element + 4),
+					from_node ? std::format("node {}", *from_node) : from ? std::string("?") : std::string("any"));
+				element = files.memory.follow(*element + 8);
+			}
+		}
 		std::cout << '\n';
 	}
 	for(std::size_t i = 0; i < lights.lights.size(); i++)

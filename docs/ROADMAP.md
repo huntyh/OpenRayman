@@ -121,9 +121,11 @@ once it plays right (they have issues of their own, found on a first look).
    the world); next are function 158's placement and the game's own glyphs; procedure 393.
    Font wishes for later: smooth edges, and fixing the original's text that runs off the screen
    (the "Yahoo!" for all Lums, the menu's overwrite-save message).
-3. **Music.** The themes and how the game moves between their segments are now understood from
-   a recorded playthrough ([ROADMAP_LOG.md](ROADMAP_LOG.md) 2026-11-01,
-   [formats/sound.md](formats/sound.md)); playing them is open (no music plays yet).
+3. **Music.** Learn_10's woods theme plays (user, 2026-11-02): sectors start sounds when Rayman
+   walks in, and the hand-over moves him into the woods' sector; its segments switch on the
+   recorded game's beat ([formats/sound.md](formats/sound.md#sector-sounds)). Left: the intro's and
+   the Globox kids' themes (asked by scripts, not traced yet), the transition fades, and decoding a
+   theme without a brief audio stall when it is asked for.
 4. **The game's camera**, still to check against the game: the arrival pan. In the game the
    player may turn the camera (Q/W) only where the level allows it, level presets often
    overrule it, and a camera icon with a red X shows when turning is refused.

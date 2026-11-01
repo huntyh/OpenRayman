@@ -1,15 +1,20 @@
 ﻿#include <audio/sound_player.h>
 
 #include <SDL3/SDL_log.h>
+#include <openrayman/apm_audio.h>
+#include <openrayman/file.h>
 
 #include <algorithm>
 #include <cmath>
 #include <exception>
+#include <cctype>
+#include <cstdlib>
 
 namespace openrayman
 {
 	sound_player::sound_player(const game_data& game) : m_game(game)
 	{
+		m_music_log = std::getenv("OPENRAYMAN_MUSIC_LOG") && std::string(std::getenv("OPENRAYMAN_MUSIC_LOG")) == "1";
 		SDL_AudioSpec spec{ SDL_AUDIO_S16, 2, 22050 };
 		m_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, &sound_player::feed, this);
 		if(m_stream)
@@ -53,6 +58,8 @@ namespace openrayman
 		// 0x452D50 and 0x451E20: stop voices by their originating event.
 		if(event->type == bnm_event_type::stop)
 		{
+			if(m_theme.event == event->target) { m_music_index = -1; m_pending_theme.reset(); }
+			else if(m_pending_theme && m_pending_theme->event == event->target) m_pending_theme.reset();
 			std::erase_if(m_voices, [event](const voice& v) { return v.event == event->target; });
 			return;
 		}
@@ -77,6 +84,11 @@ namespace openrayman
 		if(!resource)
 			return;
 		volume *= static_cast<float>(std::min(resource->volume, 127u)) / 127.0f;
+		if(resource->type == bnm_resource_type::theme)
+		{
+			request_theme(id, event, volume);
+			return;
+		}
 		if(resource->type == bnm_resource_type::sample)
 		{
 			if(bnm_bank::is_external(*resource) || resource->data_format != bnm_data_format::pcm ||
@@ -161,6 +173,125 @@ namespace openrayman
 		}
 	}
 
+
+	// Segment data is decoded before playback, so the audio callback never waits on disk.
+	sound_player::music_segment sound_player::load_music_segment(std::uint32_t id, unsigned depth)
+	{
+		music_segment result;
+		if(depth >= 16) return result;
+		auto key = bnm_id::of(id);
+		const auto* b = bank(key.bank);
+		const auto* resource = b ? b->resource(key.index) : nullptr;
+		if(!resource) return result;
+		if(resource->type == bnm_resource_type::group10)
+		{
+			auto entries = b->entries(*resource);
+			if(!entries.empty()) return load_music_segment(entries.front()[0], depth + 1);
+		}
+		if(resource->type != bnm_resource_type::sample || !bnm_bank::is_external(*resource)) return result;
+		try
+		{
+			auto lower = [](std::string value) { std::ranges::transform(value, value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }); return value; };
+			for(const auto& path : m_game.music_files())
+				if(lower(path.filename().string()) == lower(resource->name))
+				{
+					apm_decoder decoder(read_file(path));
+					result.channels = decoder.channels();
+					result.rate = decoder.sample_rate();
+					result.samples = decoder.decode_all();
+					result.name = resource->name;
+					result.volume = static_cast<float>(std::min(resource->volume, 127u)) / 127.0f;
+					break;
+				}
+		}
+		catch(const std::exception& e) { SDL_Log("Cannot load music %s: %s", resource->name.c_str(), e.what()); }
+		return result;
+	}
+
+	void sound_player::request_theme(std::uint32_t id, std::uint32_t event, float volume)
+	{
+		if(m_music_index >= 0 && m_theme.id == id && !m_pending_theme) return;
+		auto key = bnm_id::of(id);
+		const auto* b = bank(key.bank);
+		const auto* resource = b ? b->resource(key.index) : nullptr;
+		if(!resource) return;
+		theme next;
+		next.id = id; next.event = event; next.volume = volume;
+		next.restart = resource->group10_count; next.cycles = resource->group8_count;
+		next.entries = b->entries(*resource);
+		if(next.entries.empty()) return;
+		auto tail = b->theme_tail(*resource);
+		for(const auto& entry : next.entries) next.segments.push_back(load_music_segment(entry[0]));
+		if(tail) next.tail = load_music_segment(tail);
+		if(m_music_index < 0) start_theme(std::move(next));
+		else
+		{
+			// 0x4595D0: transition 2 uses the old theme's tail; 1 waits for the boundary.
+			// Transition 0 asks the DLL for an immediate switch, approximated here as a cut.
+			auto mode = m_music_tail ? 1u : m_theme.entries[m_music_index][4];
+			m_pending_theme = std::make_unique<theme>(std::move(next));
+			if(mode == 0) next_music_segment();
+			else if(mode == 2 && !m_theme.tail.samples.empty()) m_music_tail = false;
+		}
+	}
+
+	void sound_player::log_music(const music_segment& segment, int index)
+	{
+		if(m_music_log) SDL_Log("Music %u:%u segment %d %s %.3fs", m_theme.id >> 16, m_theme.id & 0xffff, index, segment.name.c_str(), static_cast<double>(m_music_frames) / 22050.0);
+	}
+
+	void sound_player::start_theme(theme next)
+	{
+		m_theme = std::move(next); m_music_index = 0; m_music_tail = false;
+		m_music_position = 0; m_repeat_index = -1; m_repeat = 0xffffffff; m_cycles = 0;
+		if(m_theme.entries[0][1]) { m_repeat_index = 0; m_repeat = m_theme.entries[0][3]; }
+		log_music(m_theme.segments[0], 0);
+	}
+
+	void sound_player::next_music_segment()
+	{
+		m_music_position = 0;
+		if(m_pending_theme)
+		{
+			if(!m_music_tail && m_music_index >= 0 && m_theme.entries[m_music_index][4] == 2 && !m_theme.tail.samples.empty())
+			{
+				m_music_tail = true; log_music(m_theme.tail, -1); return;
+			}
+			auto next = std::move(*m_pending_theme); m_pending_theme.reset(); start_theme(std::move(next)); return;
+		}
+		if(m_music_tail) { m_music_index = -1; return; }
+		// 0x459460: a marked entry supplies the repeat count; a later +8 entry takes the jump.
+		const auto& current = m_theme.entries[m_music_index];
+		if(current[2] && m_repeat != 0)
+		{
+			--m_repeat; m_music_index = m_repeat_index < 0 ? 0 : m_repeat_index;
+		}
+		else
+		{
+			if(m_repeat == 0) m_repeat_index = -1;
+			++m_music_index;
+			if(static_cast<std::size_t>(m_music_index) >= m_theme.entries.size())
+			{
+				if(m_theme.cycles && ++m_cycles >= m_theme.cycles)
+				{
+					if(m_theme.tail.samples.empty()) { m_music_index = -1; return; }
+					m_music_tail = true; log_music(m_theme.tail, -1); return;
+				}
+				m_music_index = static_cast<int>(std::min<std::size_t>(m_theme.restart, m_theme.entries.size() - 1));
+				// On a restart, find the most recent repeat marker unless a jump boundary intervenes.
+				for(int i = m_music_index; i >= 0; --i)
+				{
+					const auto& candidate = m_theme.entries[i];
+					if(candidate[1]) { m_repeat_index = i; m_repeat = candidate[3]; break; }
+					if(i == 0 || m_theme.entries[i - 1][2]) break;
+				}
+			}
+		}
+		const auto& entry = m_theme.entries[m_music_index];
+		if(entry[1] && m_repeat_index < 0) { m_repeat_index = m_music_index; m_repeat = entry[3]; }
+		log_music(m_theme.segments[m_music_index], m_music_index);
+	}
+
 	void sound_player::place(std::uint32_t source, float gain, float pan)
 	{
 		std::lock_guard lock(m_mutex);
@@ -178,6 +309,8 @@ namespace openrayman
 	{
 		std::lock_guard lock(m_mutex);
 		m_voices.clear();
+		m_music_index = -1;
+		m_pending_theme.reset();
 	}
 
 	void sound_player::stop_source(std::uint32_t source)
@@ -208,6 +341,29 @@ namespace openrayman
 		for(std::size_t frame = 0; frame < frames; ++frame)
 		{
 			float mix[2]{};
+			if(player.m_music_index >= 0)
+			{
+				auto* segment = player.m_music_tail ? &player.m_theme.tail : &player.m_theme.segments[player.m_music_index];
+				if(!segment->channels || player.m_music_position >= segment->samples.size() / segment->channels)
+				{
+					player.next_music_segment();
+					segment = player.m_music_index < 0 ? nullptr : (player.m_music_tail ? &player.m_theme.tail : &player.m_theme.segments[player.m_music_index]);
+				}
+				if(segment && segment->channels && !segment->samples.empty())
+				{
+					std::size_t count = segment->samples.size() / segment->channels;
+					std::size_t a = std::min(static_cast<std::size_t>(player.m_music_position), count - 1);
+					std::size_t b = std::min(a + 1, count - 1);
+					float fraction = static_cast<float>(player.m_music_position - a);
+					for(unsigned c = 0; c < 2; ++c)
+					{
+						unsigned input = segment->channels == 1 ? 0 : c;
+						mix[c] += (segment->samples[a * segment->channels + input] * (1 - fraction) + segment->samples[b * segment->channels + input] * fraction) * segment->volume * player.m_theme.volume;
+					}
+					player.m_music_position += static_cast<double>(segment->rate) / 22050.0;
+				}
+			}
+			++player.m_music_frames;
 			for(auto& v : player.m_voices)
 			{
 				std::size_t count = v.samples.size() / v.channels;
