@@ -470,9 +470,10 @@ mixer never waits on it (decoding under the mixer's lock stuttered the Globox ki
 segments are kept, since themes share many. A stop for that theme drops a load still under way.
 
 Loudness: `tools/r2audio.py` measures the sound output (Windows loopback, RMS and peak every 50 ms)
-for both the real game (r2record's `audio` topic) and ours. Learn_10's woods theme alone measures
-about -26 dBFS RMS in ours (2026-11-02); the game's level is still to be recorded, and the mix is
-left as it is until then.
+for both the real game (r2record's `audio` topic) and ours. Lined up on the same segments, the real
+game's woods theme (volume options at maximum, run5) measured 6.4 dB below ours at the samples' full
+level, so the music now plays at 0.48 of it; ours then measures 0.8 dB from the game's. The
+effects are next: the same route played in both (run6 for the game).
 
 Open: the transition DLL's fade; group selection; the intro's theme (comes with the intro). These rules come from our reading of 0x459460, 0x4595D0, 0x459670 and 0x459800
 and the run4 recording.

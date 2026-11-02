@@ -392,6 +392,12 @@ namespace openrayman
 		}
 	}
 
+	// The music sits this far below the samples' own level in the game's mix: Learn_10's woods theme
+	// measured 6.4 dB quieter in the real game than ours at full scale (tools/r2audio.py, the same
+	// segments lined up, 2026-11-02, the game's volume options at maximum), so it is the game's own
+	// mix, not a setting; with it ours measures within 0.8 dB. Where the DLL applies it is not read.
+	constexpr float music_gain = 0.48f;
+
 	void SDLCALL sound_player::feed(void* self, SDL_AudioStream* stream, int additional, int)
 	{
 		if(additional <= 0)
@@ -423,7 +429,7 @@ namespace openrayman
 					for(unsigned c = 0; c < 2; ++c)
 					{
 						unsigned input = segment->channels == 1 ? 0 : c;
-						mix[c] += (segment->samples[a * segment->channels + input] * (1 - fraction) + segment->samples[b * segment->channels + input] * fraction) * segment->volume * player.m_theme.volume;
+						mix[c] += (segment->samples[a * segment->channels + input] * (1 - fraction) + segment->samples[b * segment->channels + input] * fraction) * segment->volume * player.m_theme.volume * music_gain;
 					}
 					player.m_music_position += static_cast<double>(segment->rate) / 22050.0;
 				}
