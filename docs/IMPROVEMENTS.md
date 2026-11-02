@@ -38,7 +38,7 @@ are kept as the game has them, since changing their timing could change gameplay
 | --- | --- | --- | --- |
 | 3D sound | Each sound's distance from the listener is turned into volume and panning by the sound DLL (0x40A0A0, not traced further) | A stand-in falloff: full within 8 units, silent at 30, named after `SXD_DIST_SATUR`/`SXD_DIST_FADE` in `Snd_Cpa.ini`; panning from the angle to the listener (docs/formats/sound.md) | 3d |
 | Sound loops | Loop points from the sample's decoder DLL | Whole samples loop when the (tentative) +0x30 flag is set; some seam clicks remain | 3d |
-| Music themes | The theme player sequences a theme's segments and transitions between them | Not playing yet; the formats side is understood (docs/formats/sound.md) | – |
+| Music themes | The theme player sequences a theme's segments and transitions between them | The same player, driven by the sectors' entry lists and the scripts; the first 12 segments of the woods' theme switch within 0.02 s of the recorded game (`OPENRAYMAN_MUSIC_LOG=1` logs each) | 3d |
 
 ## While the engine is unfinished
 
@@ -60,14 +60,12 @@ as those arrive:
   viewer down; segment casts try only the triangles in the collision grid cells under the segment.
 - Input: the keyboard only (no gamepad yet), and cheat codes (typed key sequences) don't fire.
   Tab switches the keyboard between the viewer's fly camera and the game.
-- Animation events: markers fire on every pass (the event gates aren't counted) and carry the
-  actor's position instead of the body part's.
-- Some particle effects are not read yet (the kinds the exe's table names but we haven't traced);
-  an unknown kind is started but does nothing (docs/formats/particles.md).
-- Messages to the engine, on-screen text and the scripts' fog override are read
-  but have no effect yet.
+- Some particle effects are not read yet (e.g. kinds 5 and 45, the golden burst of a breaking
+  cage); an unknown kind is started but does nothing (docs/formats/particles.md).
+- Messages to the engine and the scripts' fog override (procedures 42..47) are read but have no
+  effect yet.
 - Physics is partial (docs/formats/dynamics.md): an actor is a small disc that finds the floor
-  straight below it, not the game's collision spheres. Walls now stop it, as a 0.5-radius
-  cylinder from 0.5 to 1.8 above its feet; ceilings stop a jump where the head would pass a
-  downward-facing surface; slopes slide downhill but with the wrong acceleration; nothing acts as
-  a floor for moving platforms.
+  straight below it, not the game's collision spheres. Walls now stop it, as a cylinder up to
+  1.8 above its feet, the radius of its first kind-1 zone (Rayman's 0.8); ceilings stop a jump
+  where the top of his head (2.2 above his feet) would pass a downward-facing surface; slopes
+  slide downhill but with the wrong acceleration.

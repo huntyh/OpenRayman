@@ -112,7 +112,9 @@ Dated details of everything above, and the user's look-by-look feedback, are in
    far left and up, and need the menu font (its colour is a little off too). In the Globox kids'
    scene the kids' yellow and red are about right (same small adjustments as Murfy's), but
    Rayman's lines come out blue where the game's are white-ish.
-   Rayman's health bar is missing from the HUD (user, 2026-11-02).
+   Rayman's health bar is missing from the HUD (user, 2026-11-02). Lead, unverified: node 44
+   draws with kinds 50/125 from a material chain ending at the `jauge_in2_horizont` texture, and
+   kind 120 (not handled yet) writes a bar table at 0x4E0F20.
    Cutscenes: the game narrows the picture with black bars, taller at the bottom than at the
    top, and the subtitles are made to sit on them. Do the bars as the game does, on by default;
    later an option to turn them off, which then puts a darker backing behind the text (user,
@@ -122,7 +124,9 @@ Dated details of everything above, and the user's look-by-look feedback, are in
    kids' bit, is set and node 3 still starts the scene); the save has more (brief ready:
    build/task_revisit_state.md).
    The first cage: breaking it makes a golden starry burst and its Lum appears at once; ours has
-   no burst and the Lum shows up with a delay, before Rayman is walked to Murfy's spot.
+   no burst and the Lum shows up with a delay, before Rayman is walked to Murfy's spot. The burst
+   is particle kind 5 (puffs) and three kind 45 calls (golden sparkles) in the cage's script
+   (node 53's, the same model); we have neither kind yet.
    Font wishes for later: fixing the original's text that runs off the screen (the "Yahoo!" for
    all Lums, the menu's overwrite-save message).
 3. **Sound leftovers.** The transition fades between themes; how loud a sound is by distance

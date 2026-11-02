@@ -169,20 +169,16 @@ Fixes that landed since the last look, each at its own spot:
       `--level Learn_10 --camera -69.3,207.6,2.0,297.6,-0.4` — in the game camera it should
       not drop to 3 frames per second
 - [ ] The big-nosed flier: when it flies up and away, its buzz should stop, like in the game
-      (currently it keeps buzzing where it vanished)
 
 ## Known limitations
 
 Don't report these as bugs, they're the next steps:
 
 - Some actors are invisible on purpose (triggers, waypoints)
-- Nothing lets Rayman stand on an actor: the tutorial's closed trapdoor and moving platforms
-  let him fall through
-- The shot's homing is not in yet; dialogs run but their text is not drawn yet; the game's
-  music themes do not play yet
-- The start view uses the game camera's saved position, which can be an odd spot (e.g. among the
-  treetops in The Woods of Light); press R after flying off to get back there
-- Some lights also change how see-through water and glass are; that isn't done yet, so water and
-  glass may look too pale or too solid
+- The HUD is still rough: no health bar, and the counters sit a little too far left and up and
+  lack the menu font; the dialog text's colour, size and padding are a little off
+- The arrival start (without `--start new`) begins the camera behind a wall, out of bounds
+- Revisiting a finished level does not look finished: Lums and Teensies remain, the kids' scene
+  still starts, the HUD shows 0
 
 Tip: compare with the real game at the same spot.

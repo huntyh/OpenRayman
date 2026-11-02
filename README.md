@@ -36,15 +36,16 @@ What works today:
   see-through water and characters' shadows. The Woods of Light look the same as the real game
   side by side.
 - The game's music.
-- It is becoming playable: in the first level Rayman walks, runs, jumps, grabs ledges and shoots;
-  the sound effects and voices play; the game's camera follows him.
+- It is becoming playable: in the first level Rayman walks, runs, jumps, grabs ledges and shoots
+  (the shots home in on targets); the sound effects and voices play; the game's music themes play;
+  dialogs and the HUD are on screen in the game's own letters; the game's camera follows him.
 - A texture browser, `ortool` for looking inside the game's files, and `tools/r2record.py`, which
   records a playthrough of the real game for studying it.
 
-Not yet: the shot's homing, the dialog text, the game's music themes, standing on moving
-platforms, and everything beyond the first level. See
-[docs/ROADMAP.md](docs/ROADMAP.md) for the details. It renders with OpenGL today; the plan is Vulkan
-or Direct3D 12, keeping OpenGL for older devices.
+Not yet: the dialog's exact colour, size and padding, the health bar and the HUD's menu-font
+counters, the arrival camera pan, everything about revisiting a finished level, and everything
+beyond the first level. See [docs/ROADMAP.md](docs/ROADMAP.md) for the details. It renders with
+OpenGL today; the plan is Vulkan or Direct3D 12, keeping OpenGL for older devices.
 
 Where OpenRayman deliberately does something differently from the game (no shadow limit, soft leaf
 edges, smoother animation loops, ...), it's listed in [docs/IMPROVEMENTS.md](docs/IMPROVEMENTS.md).
@@ -92,17 +93,22 @@ openrayman [--game "<Rayman 2 folder>"] [--level <name>]
 
 For checking things by eye there are also `--camera x,y,z,yaw,pitch` (as P copies it), `--time <seconds>`,
 `--screenshot <file>`, `--actor-state <node>:<state>` and `--behaviour <node>:<index>` (start an actor's
-scripts in another behaviour, e.g. `--behaviour 4:1` for The Woods of Light's floating specks) and
-`--collision on` (what the level collides with, coloured by surface type; C in the viewer).
+scripts in another behaviour, e.g. `--behaviour 4:1` for The Woods of Light's floating specks),
+`--lighting on|off`, `--luminosity <n>`, `--edge-clamp on|off` and
+`--collision on` (what the level collides with, coloured by surface type; L, F6/F7, F2 and C in the viewer).
 
 Gameplay (The Woods of Light first):
 
 ```
-openrayman --game "<Rayman 2 folder>" --level Learn_10 [--start new] [--camera x,y,z,yaw,pitch]
+openrayman --game "<Rayman 2 folder>" --level Learn_10 [--start new|portal] [--story-bits 1095,1143]
+            [--keys <name:from-to,...>] [--camera x,y,z,yaw,pitch]
 ```
 
-`--start new` starts a first visit (Rayman at the hand-over, the tutorial cage waiting). Without
-`--camera` it plays seen through the game's camera.
+`--start new` starts a first visit (Rayman at the hand-over, the tutorial cage waiting); without
+it the start is as if the level were reached from the Hall of Doors. `--story-bits` sets a save's
+story bits at load, `--keys` holds keys on schedule as in `ortool run`, and `--camera-log <file>`
+writes the camera's position every tick as CSV. Without `--camera` it plays seen through the
+game's camera.
 
 On first start without `--game`, a folder picker asks for your Rayman 2 folder and remembers it.
 It opens The Woods of Light (`Learn_10`), or the level given with `--level`, seen from where the
@@ -125,6 +131,7 @@ In a level:
 | L | Switch between the game's lighting and fog and a plain light |
 | F6 / F7 | Darker / brighter, like the game's luminosity setting |
 | F5 / F4 | Put the actor you're looking at into its next / previous state (Shift: its whole family), to preview animations the game's scripts would pick |
+| G | Turn the scripts on and off (they are off while flying) |
 | T | Switch to the texture browser and back |
 | Tab | Play: the keyboard goes to the game (arrows, A jump, Space shoot, Shift walk, Q/W camera, Ctrl recentre) until Tab again |
 
@@ -157,17 +164,37 @@ the debug build is several times slower.
 ortool info "<game folder>"                 Summary: levels, archives, music
 ortool textures "<game folder>" <out>       Export every texture as PNG
 ortool music "<game folder>" <out>          Export every music file as WAV
+ortool bank "<game folder>" <bank|all> [out] A BNM sound bank's events, and its samples exported
+ortool sound "<game folder>" <id>           Resolve a bank << 16 | event id to what it plays
 ortool level "<game folder>" <name|all>     Load a level and check all its pointers
+ortool gpt "<game folder>" <level>          The level header: Fix actors, world roots, animation bank
 ortool obj "<game folder>" <level> <out>    Export a level's scenery as OBJ with textures
 ortool scene "<game folder>" <level>        Print a level's scene tree
+ortool actors "<game folder>" <level>       The level's actors and their 3D data
+ortool pose "<game folder>" <level>         The main actor's animation channels at frame 0
+ortool motion "<game folder>" <level>       Every actor: node, position, animation, how far its parts move
+ortool states "<game folder>" <level> <node> A family's states and their animations
+ortool anim "<game folder>" <level> <index> <frame> One animation bank entry at one frame
 ortool lights "<game folder>" <level>       Sectors and their lights
 ortool collide "<game folder>" <level|all> Collision data: collide sets, element types, surface flags
 ortool brain "<game folder>" <level> [node|block+offset] The scripts of one actor by scene node or by memory address
 ortool run "<game folder>" <level> <ticks> [node] [keys] Runs the level's scripts for that many 60 Hz ticks and lists what changed (keys held as Up:60-200,A:100-110)
+ortool camrun "<game folder>" <level> <ticks> <keys> The same run, with the game camera's blocks and view each tick
 ortool input "<game folder>" <level>        The input actions and the keys each one tests
+ortool refs "<game folder>" <level> <block> <hexoff> Every pointer that leads to this spot, walked backwards
+ortool mesh "<game folder>" <level> <block> <hexoff> What a physical object shows: sprites, elements, material colours
+ortool peek "<game folder>" <level> <block> <hexoff> <words> Raw words at a memory spot
 ortool dsb <file.dsb>                       Print a DSB script
 ortool cnt <file.cnt>                       List a texture archive
 ```
+
+`ortool run` also reads settings from the environment: `ORTOOL_PLACE=x,y,z,yaw@tick` puts Rayman
+somewhere at that tick (several separated by `;`), `ORTOOL_START=new` starts a first visit,
+`ORTOOL_COST=1` ranks the actors by how long their scripts take, `ORTOOL_VARS=node:i,j` prints an
+actor's variables after the first tick, `ORTOOL_IDS=1` lists every actor's id, flags and type,
+`ORTOOL_TEXT=1` logs each dialog event, and `ORTOOL_SHOTS=1`, `ORTOOL_TARGETS=1`,
+`ORTOOL_SOUNDS=1`, `ORTOOL_CONTACTS=1`, `ORTOOL_ACTOR_SURFACES=1` and `ORTOOL_NEAR=x,y,r` add
+traces and checks.
 
 ## Testing
 
