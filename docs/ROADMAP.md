@@ -123,9 +123,10 @@ once it plays right (they have issues of their own, found on a first look).
    (the "Yahoo!" for all Lums, the menu's overwrite-save message).
 3. **Music.** Learn_10's woods theme plays (user, 2026-11-02): sectors start sounds when Rayman
    walks in, and the hand-over moves him into the woods' sector; its segments switch on the
-   recorded game's beat ([formats/sound.md](formats/sound.md#sector-sounds)). Left: the intro's and
-   the Globox kids' themes (asked by scripts, not traced yet), the transition fades, and decoding a
-   theme without a brief audio stall when it is asked for.
+   recorded game's beat ([formats/sound.md](formats/sound.md#sector-sounds)). The Globox kids'
+   scene asks for its own theme and, about 30 s later, the next one (scripts, already played;
+   awaiting the user's ears). The intro's theme comes with the intro (Phase 4). Left: the
+   transition fades, and decoding a theme without a brief audio stall when it is asked for.
 4. **The game's camera**, still to check against the game: the arrival pan. In the game the
    player may turn the camera (Q/W) only where the level allows it, level presets often
    overrule it, and a camera icon with a red X shows when turning is refused.

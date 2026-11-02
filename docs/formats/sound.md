@@ -445,9 +445,12 @@ actor; we take it to be Rayman (not confirmed). `ortool lights` lists each secto
 Learn_10 has a single entry: sector 11 (the woods around the start, node 135) plays the 9:5 theme
 when entered from sector 4 (node 102, where Rayman stands during the crash intro). That is the
 hand-over in the recorded first visit (run4, 255.3 s: Rayman jumps from (64, 249, 33) to (30, 295,
--4), 0x90008 plays "from none" in the same frame). The intro's own theme 9:12 (0x90009 at clock 0) and
-the Globox kids' theme 9:13 (0x9000A, mid-cutscene, Rayman and the camera standing still) come from
-elsewhere: the scripts' no-emitter sound procedures (117/119), not checked yet.
+-4), 0x90008 plays "from none" in the same frame). The other themes come from scripts (procedure 117,
+no emitter); `Learn_10.snd` names the slots: 0x90009 (theme 9:12, the intro's) is played by node 45,
+a level director, in its mailbox-98 step that also clears story bit 1133 at the level's start, so
+it belongs to the intro and stops at the hand-over; 0x9000A (9:13) by node 39, a Globox kid, in its
+mailbox-4 step mid-cutscene; 0x00EF0000 (239:0) by node 41 about 30 s later (ortool: 1811 ticks
+apart; recording: 29.5 s), switching at the end of the playing segment.
 
 Own analysis of the decompile and the run4 recording, 2026-11-02.
 
