@@ -322,7 +322,12 @@ namespace
 		auto at = [&](zone z) { return std::size_t(z); };
 		std::vector<std::string> lines;
 		lines.push_back(std::format("{:.0f} fps  {:.2f} ms  worst {:.2f}", r.frames / r.seconds, r.average_ms[at(zone::frame)], r.worst_ms[at(zone::frame)]));
-		lines.push_back(std::format("vsync {}  cap {}", vsync_name(a.vsync), a.fps_limit ? std::to_string(a.fps_limit) : "off"));
+		#ifdef NDEBUG
+		constexpr const char* build_kind = "release";
+#else
+		constexpr const char* build_kind = "debug build (about 6x slower)";
+#endif
+		lines.push_back(std::format("vsync {}  cap {}  {}", vsync_name(a.vsync), a.fps_limit ? std::to_string(a.fps_limit) : "off", build_kind));
 		lines.push_back("");
 		lines.push_back("              avg   worst");
 		for(std::size_t i = 1; i < std::size_t(zone::count); i++)

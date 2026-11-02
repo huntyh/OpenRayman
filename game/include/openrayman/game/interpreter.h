@@ -107,6 +107,8 @@ namespace openrayman::game
 		// One frame of an actor's brain (0x4120D0): its reflex first, then, unless the reflex took
 		// over, its normal behaviour.
 		void think(std::uint32_t super_object);
+		// When set, step() adds each actor's thinking time (nanoseconds) here, to find costly scripts.
+		std::map<std::uint32_t, std::int64_t>* think_costs = nullptr;
 
 		// The engine's per-actor gate (0x412230) on the actor's custom bits (standard game +0x24)
 		// and flags (+0x29): whether its brain runs this frame, and whether its mechanics does.

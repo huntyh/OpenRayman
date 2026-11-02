@@ -109,7 +109,18 @@ Dated details of everything above, and the user's look-by-look feedback, are in
    replays Murfy's scene. Left: the text colour, a little off (user's measurements of the game:
    yellow #FFFF5D at the bottom to #F6F6E8 at the top, red #A11838 to #F6CCB5), the exact glyph
    size and left padding. The HUD's icons look right now (user); its counters sit a little too
-   far left and up, and need the menu font.
+   far left and up, and need the menu font. In the Globox kids' scene Rayman's lines come out
+   blue (white-ish in the game) and the kids' should be Murfy's yellow with red highlights.
+   Cutscenes: the game narrows the picture with black bars, taller at the bottom than at the
+   top, and the subtitles are made to sit on them. Do the bars as the game does, on by default;
+   later an option to turn them off, which then puts a darker backing behind the text (user,
+   2026-11-02).
+   The revisit start should look like a finished level: no Lums, no Teensies, no final cage, the
+   kids' scene not replaying, the HUD at 5/5 and 2/2. The story bits alone don't do it (1092, the
+   kids' bit, is set and node 3 still starts the scene); the save has more (brief ready:
+   build/task_revisit_state.md).
+   The first cage: breaking it makes a golden starry burst and its Lum appears at once; ours has
+   no burst and the Lum shows up with a delay, before Rayman is walked to Murfy's spot.
    Font wishes for later: fixing the original's text that runs off the screen (the "Yahoo!" for
    all Lums, the menu's overwrite-save message).
 3. **Sound leftovers.** The transition fades between themes; how loud a sound is by distance
@@ -122,12 +133,18 @@ Dated details of everything above, and the user's look-by-look feedback, are in
    when turning is refused.
 5. **The end-of-level cutscene** plays through (user, 2026-11-02), but when Rayman shouts "Stop!"
    at the arguing Teensies and spreads his hands, that animation loops instead of playing once.
-   His pupils still show a little when he closes his eyes.
+   His pupils still show a little when he closes his eyes. In some looping animations the
+   Teensies and Rayman jerk every few seconds, as if yanked on strings, parts pulling apart for a
+   moment (Rayman standing and listening, for one). Likely a general animation bug (a loop's wrap
+   or a keyframe blend), so fixing it may fix other animations too (user, 2026-11-02).
 6. **Other machines**: the user will try a Linux laptop with a Fermi-era Quadro 2000M (NVIDIA
    390xx driver from the AUR, so real hardware acceleration).
 7. **Performance**, measured with the profiler (F8): about 960 draw calls a frame for 6,500
    triangles (fine on a desktop, too many for phones: batch them), and a script spike of up to
-   6 ms once a second (a source of stutter: find the actor).
+   6 ms once a second (a source of stutter: find the actor). In the Globox kids' scene (debug
+   build) the scripts took 14 ms a frame with about 90 actors thinking; `ORTOOL_COST=1 ortool run`
+   ranks the actors by script time (near the kids: the camera, node 5, about a fifth, the rest
+   spread out), so the interpreter itself is the cost, not one actor.
 
 **Later in Phase 3 / Phase 4**
 

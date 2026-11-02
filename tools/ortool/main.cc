@@ -1604,6 +1604,9 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 			if(std::sscanf(p, "%f,%f,%f,%f@%d", &v[0], &v[1], &v[2], &v[3], &tick) == 5)
 				places[tick] = v;
 		}
+	// ORTOOL_COST=1: which actors' scripts take the most time over the run.
+	std::map<std::uint32_t, std::int64_t> costs;
+	if(std::getenv("ORTOOL_COST")) vm.think_costs = &costs;
 	for(int f = 0; f < frames; f++)
 	{
 		if(auto placed = places.find(f); placed != places.end())
@@ -1866,6 +1869,17 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	for(const auto& [node, e] : errors)
 		std::cout << std::format("node {:>4} stopped: {}\n", node, e);
 	std::cout << std::format("{} particles\n", vm.particles().all().size());
+	if(!costs.empty())
+	{
+		std::vector<std::pair<std::int64_t, std::uint32_t>> ranked;
+		std::int64_t total = 0;
+		for(const auto& [so, ns] : costs) { ranked.push_back({ ns, so }); total += ns; }
+		std::ranges::sort(ranked, std::greater<>());
+		std::cout << std::format("scripts: {:.2f} ms a tick on average; costliest actors:\n", total / 1e6 / std::max(frames, 1));
+		for(std::size_t i = 0; i < ranked.size() && i < 12; i++)
+			std::cout << std::format("  node {:>4}: {:.3f} ms a tick ({:.0f}%)\n", node_of.contains(ranked[i].second) ? int(node_of[ranked[i].second]) : -1,
+				ranked[i].first / 1e6 / std::max(frames, 1), 100.0 * ranked[i].first / std::max<std::int64_t>(total, 1));
+	}
 	std::vector<std::pair<std::size_t, std::string>> missing;
 	for(const auto& [what, n] : vm.missing)
 		missing.push_back({ n, std::format("{} {}", what.first, what.second) });

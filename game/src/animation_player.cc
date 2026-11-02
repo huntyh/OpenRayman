@@ -4,6 +4,7 @@
 #include <openrayman/error.h>
 
 #include <array>
+#include <chrono>
 #include <cstring>
 #include <format>
 #include <unordered_map>
@@ -466,6 +467,12 @@ namespace openrayman::game
 		auto think = [&](std::uint32_t self) {
 			profiler::scope timed(profiler::zone::brains);
 			profiler::add(profiler::counter::actors);
+			struct cost
+			{
+				interpreter& vm; std::uint32_t self;
+				std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+				~cost() { if(vm.think_costs) (*vm.think_costs)[self] += (std::chrono::steady_clock::now() - start).count(); }
+			} measured{ vm, self };
 			if(!on_error)
 			{
 				vm.think(self);
