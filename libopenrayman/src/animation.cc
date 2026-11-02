@@ -334,14 +334,17 @@ namespace openrayman
 				if(q[0] * q2[0] + q[1] * q2[1] + q[2] * q2[2] + q[3] * q2[3] < 0)
 					for(float& v : q2)
 						v = -v;
+				// Blend the final positions: blending position and multiplier apart and multiplying
+				// afterwards overshoots midway, pulling parts apart once per loop.
 				for(int k = 0; k < 3; k++)
 				{
-					position[k] += (position2[k] - position[k]) * s;
+					const float from = position[k] * multiplier;
+					position[k] = from + (position2[k] * start.position_multiplier - from) * s;
 					scale[k] += (scale2[k] - scale[k]) * s;
 				}
 				for(int k = 0; k < 4; k++)
 					q[k] += (q2[k] - q[k]) * s;
-				multiplier += (start.position_multiplier - multiplier) * s;
+				multiplier = 1;
 			}
 			const animation_object& object = at(bank.objects, at(bank.ntto_choices, std::size_t(channel.ntto) + f.ntto, "object choice"), "object");
 

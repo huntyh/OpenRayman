@@ -113,6 +113,12 @@ TEST_CASE("pose: blends between keyframes, holds after the last, loops back when
 	// first frame's x = 0; halfway (smoothstep 0.5) is x = 2.
 	CHECK(pose(bank, 0, 3.5, 2)[0].local.m[0][3] == doctest::Approx(2.0f));
 	CHECK(pose(bank, 0, 2.5, 2)[0].local.m[0][3] == doctest::Approx(4.0f));
+	// The glide blends final positions: a held x of 4 × multiplier 2 = 8 is halfway at 4, not at
+	// (4 → 0) × (2 → 1) = 3.
+	bank.keyframes[1].position_multiplier = 2;
+	CHECK(pose(bank, 0, 2.5, 2)[0].local.m[0][3] == doctest::Approx(8.0f));
+	CHECK(pose(bank, 0, 3.5, 2)[0].local.m[0][3] == doctest::Approx(4.0f));
+	bank.keyframes[1].position_multiplier = 1;
 
 	// Halfway through the turn: 45 degrees, not the long way round.
 	auto halfway = pose(bank, 0, 1);
