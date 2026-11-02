@@ -653,6 +653,37 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 84 (0x467970 -> 0x405FA0) and 85 (-> 0x4061B0): switch an actor on and off. Standard game
+		// +0x29 bit 1 is "active": the frame loop (0x40AB90) runs only such actors. 84 moves the
+		// actor into the dynamic world and sets bits 1 and 2; 85 tears down its animation links and
+		// sounds and, if it is in the world (bit 0 clear) and active, clears bits 0..2. The Globox
+		// kids' scene switches its stand-in Rayman (node 41) on at the start and off at the end.
+		std::uint32_t switch_actor(call& c)
+		{
+			value who;
+			next_arg(c, who);
+			std::uint32_t target = c.vm.super_object_of(actor_value(c.vm, who));
+			std::uint32_t actor = target ? c.vm.actor_of(target) : 0;
+			std::uint32_t standard = actor ? c.vm.memory().u32(actor + 4) : 0;
+			if(!standard)
+				return c.args;
+			live_memory& m = c.vm.memory();
+			std::uint8_t flags = m.u8(standard + 0x29);
+			if(c.index == 84)
+			{
+				m.write<std::uint8_t>(standard + 0x29, flags | 0x6);
+				c.vm.restore(target);
+			}
+			else if(!(flags & 0x1) && (flags & 0x2))
+			{
+				m.write<std::uint8_t>(standard + 0x29, flags & ~0x7);
+				c.vm.remove(target);
+				if(target == c.self)
+					c.vm.signal(3);
+			}
+			return c.args;
+		}
+
 		// 312 (0x46D920): set or clear bit n (0-based) of the super object's flags (+0x30).
 		std::uint32_t super_object_flag(call& c)
 		{
@@ -4554,6 +4585,8 @@ namespace openrayman::game
 			vm.on_procedure(i, change_state_procedure);
 		vm.on_procedure(88, pending_signal);
 		vm.on_procedure(89, set_animation_speed);
+		vm.on_procedure(84, switch_actor);
+		vm.on_procedure(85, switch_actor);
 		vm.on_procedure(139, remove_actor);
 		for(std::uint32_t i : { 177, 178, 179, 180 })
 			vm.on_procedure(i, set_dynamics_axis);
