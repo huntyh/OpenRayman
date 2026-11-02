@@ -3,6 +3,29 @@
 The dated investigation notes from `ROADMAP.md`, kept here so the roadmap stays short. Newest
 first. The format docs under `formats/` are the permanent home of the findings themselves.
 
+## 2026-11-02 (night): dialogs, HUD, scenes
+
+- Dialog colours confirmed (user: "look amazing", no aliasing): the glyphs' vertex colours are
+  signed 16-bit, divided by 256 (0x431400) and doubled and clamped by the material conversion
+  (0x42D520); we had divided by 255, which made Rayman's white lines blue (Codex). The font list
+  has 882 objects: blue at /O 0, red 200, yellow 400, white 800.
+- Health bar works (user); Rayman starts Learn_10 below his maximum on a new game, as in the game
+  (he collects red Lums on the prison ship). Found by DeepSeek in node 44's macro 2 (kinds 50/120).
+- The first cage's burst (kinds 5, 9, 45) looks right (user). The game's Lum also waits 500 ms
+  after bit 840; the burst hides the wait.
+- Revisit start looks finished (user): no Lums, Teensies, final cage or kids' scene, HUD 5/5 and
+  2/2. The save findings are in [formats/saves.md](formats/saves.md).
+- The twin Rayman after the kids' scene is gone (user): procedures 84/85 switch the scene's
+  stand-in (node 41) on and off.
+- End scene: the loop seam overshoot is fixed (parts pulling apart once per loop); the user still
+  sees the Teensies vibrate now and then. Dialog cues after an event are read at once (0x475680),
+  so the Teensies should appear with the camera cut (not yet confirmed).
+- Black bars slide in from the top and bottom as a scene starts (user). DeepSeek: no script draws
+  them; the camera actor's custom bit 30 marks the scene's length.
+- New: in the kids' cave, running towards the camera makes it circle round to Rayman's back as
+  long as he moves (`--camera -67.6,206.3,3.1,-74.8,-10.5`); Codex is porting the rest of the
+  swing-round (0x486400's candidate test, the retry, the blocked state).
+
 ## 2026-11-02 (evening): the user's retests
 
 - Ceilings hold (user retested): the bridge, the ears and the Globox kids' cave roof. Standing on

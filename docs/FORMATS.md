@@ -55,6 +55,7 @@ came from. Update this whenever a format is added or corrected.
 | [formats/sound.md](formats/sound.md) | BNM banks, events and resources, the `.snd` slot fix-up, music themes, where sounds come from |
 | [formats/menu.md](formats/menu.md) | The main menu level and its screen-space text layer |
 | [formats/camera.md](formats/camera.md) | The camera actor, its parameter blocks, the solve and mechanics, Q/W turning |
+| [formats/saves.md](formats/saves.md) | General and level saves: registered variables, the type-5 out-of-world bits, the HUD counters, our revisit snapshot |
 
 ## CNT texture archives
 

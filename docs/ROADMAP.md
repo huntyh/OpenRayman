@@ -96,6 +96,11 @@ once it plays right (they have issues of their own, found on a first look).
   zones and animated parts count as floor, wall and ceiling, so the tutorial's closed trapdoor
   holds Rayman, and moving supports carry him. Ceilings (user retested 2026-11-02): the bridge,
   the ears and the Globox kids' cave roof all stop him.
+- ✅ **Dialogs and the HUD, first pass** (user 2026-11-02): dialogs in the game's own glyphs and
+  colours, sharp and fast (OpenGL), Murfy's box and portrait, the tablet tips coming back and F1
+  replaying Murfy; the HUD's icons and Rayman's health bar (particle kinds 50/120); a breaking
+  cage's golden burst (kinds 5/45); the revisit start looking like a finished level (interim
+  snapshot, [formats/saves.md](formats/saves.md)).
 
 Dated details of everything above, and the user's look-by-look feedback, are in
 [ROADMAP_LOG.md](ROADMAP_LOG.md).
@@ -104,33 +109,16 @@ Dated details of everything above, and the user's look-by-look feedback, are in
 
 1. **3c leftovers.** The slippery slope's acceleration is off (the real slide accelerates about
    11 u/s² down the fall line). Faint crosshair-like lines around Rayman from afar.
-2. **Dialogs and the HUD.** Dialogs are on screen in the game's own glyphs with Murfy's box and
-   portrait, drawn with OpenGL (2026-11-02); the tablet tips come back each visit, and F1 there
-   replays Murfy's scene. Left: the text colour, a little off (user's measurements of the game:
-   yellow #FFFF5D at the bottom to #F6F6E8 at the top, red #A11838 to #F6CCB5), the exact glyph
-   size and left padding. The HUD's icons look right now (user); its counters sit a little too
-   far left and up, and need the menu font (its colour is a little off too). In the Globox kids'
-   scene the kids' yellow and red are about right (same small adjustments as Murfy's), but
-   Rayman's lines come out blue where the game's are white-ish.
-   Rayman's health bar is missing from the HUD (user, 2026-11-02). Node 44 draws it with particle
-   kind 120 (0x4648B0 → 0x460530, slots at 0x4E0F20, drawn by 0x460670/0x429670): a bar at
-   12..12 + 0.46 × max hit points by 8.5..11.5 percent of the screen, filled to the percent of
-   hit points, texture `jauge_in_horizont`. Kinds 50 and 120 are in now (2026-11-02), to check by eye.
-   Cutscenes: the game narrows the picture with black bars, taller at the bottom than at the
-   top, and the subtitles are made to sit on them. Do the bars as the game does, on by default;
-   later an option to turn them off, which then puts a darker backing behind the text (user,
-   2026-11-02).
-   The revisit start has an interim finished-Learn_10 snapshot: the Lums, Teensies, final cage and
-   kids' director are absent, with the HUD at 5/5 and 2/2; check it by eye. The level save records
-   the out-of-world bit for the type-5 actor node 71, and the general save includes the story array;
-   how the rest of the finished scene is restored remains open
-   ([formats/scripts.md](formats/scripts.md#saved-variables)). Dialog glyph colours now use the
-   executable's vertex conversion; compare Rayman, the kids and Murfy with the real game.
-   The first cage: breaking it makes a golden starry burst and its Lum appears at once; ours has
-   no burst and the Lum shows up with a delay, before Rayman is walked to Murfy's spot. The burst
-   is node 67's break rule: particle kinds 5 (smoke puffs), 9 (flash, ours has it) and three
-   kind 45 calls (nine golden sparks each), all in now (2026-11-02), to check by eye. The game's Lum also waits 500 ms (node 69 waits after
-   bit 840), hidden behind the burst (DeepSeek's reading, 2026-11-02).
+2. **Dialogs and the HUD.** Left: the exact glyph size and left padding of the dialog text; the
+   HUD's counters sit a little too far left and up and need the menu font (its colour is a little
+   off too). Cutscenes: the game narrows the picture with black bars that slide in from the top
+   and bottom as a scene starts, the bottom one taller, and the subtitles are made to sit on them.
+   Do the bars as the game does, on by default; later an option to turn them off, which then puts
+   a darker backing behind the text (user, 2026-11-02). Not drawn by the scene scripts; the kids'
+   director sets the camera actor's custom bit 30 (and its var6 := 65000) for the scene's length,
+   so the engine probably draws them while that is set; procedure 502 is unexplored
+   (build/helpers/black_bars_report.md). Revisit start: an interim finished-level snapshot until
+   saves are read ([formats/saves.md](formats/saves.md)).
    Font wishes for later: fixing the original's text that runs off the screen (the "Yahoo!" for
    all Lums, the menu's overwrite-save message).
 3. **Sound leftovers.** The transition fades between themes; how loud a sound is by distance
