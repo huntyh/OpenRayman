@@ -1893,6 +1893,8 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	for(const auto& [node, e] : errors)
 		std::cout << std::format("node {:>4} stopped: {}\n", node, e);
 	std::cout << std::format("{} particles\n", vm.particles().all().size());
+	if(!vm.level_request.empty())
+		std::cout << std::format("the scripts asked for level {}\n", vm.level_request);
 	if(!costs.empty())
 	{
 		std::vector<std::pair<std::int64_t, std::uint32_t>> ranked;

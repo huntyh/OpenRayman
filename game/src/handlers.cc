@@ -4416,6 +4416,17 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 86, 87 (0x467970 -> 0x4054D0): go to the named level. The engine loads it after the tick;
+		// the menu's New Game ends in procedure_87("jail_10").
+		std::uint32_t change_level(call& c)
+		{
+			value name;
+			next_arg(c, name);
+			c.vm.level_request = text_of(c.vm, name);
+			c.vm.level_request_flag = c.index == 86;
+			return c.args;
+		}
+
 		// 252 (0x47AAD0): the language index the game runs in.
 		std::uint32_t language(call& c, value& out)
 		{
@@ -4681,6 +4692,8 @@ namespace openrayman::game
 		for(std::uint32_t i : { 343, 344, 345 })
 			vm.on_procedure(i, menu_request);
 		vm.on_function(252, language);
+		vm.on_procedure(86, change_level);
+		vm.on_procedure(87, change_level);
 		vm.on_function(265, save_slot_count);
 		vm.on_condition(57, in_world);
 		vm.on_procedure(175, set_custom_bits);

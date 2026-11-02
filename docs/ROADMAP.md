@@ -177,7 +177,10 @@ Dated details of everything above, and the user's look-by-look feedback, are in
 Everything the PC game has, working before we port it anywhere. The order the user set
 (2026-11-02):
 
-1. The main menu (the menu level and its on-screen text, `docs/formats/menu.md`).
+1. The main menu (the menu level and its on-screen text, `docs/formats/menu.md`). The language
+   prompt, the main menu with its colours, and New Game -> name -> Jail_10 run from the level's
+   scripts (2026-11-02). Open: writing the save (functions 90/93/95), Load / Delete / Options,
+   the per-character flash, the user's look against the game.
 2. The new-game intro cutscene, in front of the first-visit start.
 3. Save games: starting a new game writes one; reading the real saves' story bits
    ([formats/saves.md](formats/saves.md)) replaces the revisit snapshot.

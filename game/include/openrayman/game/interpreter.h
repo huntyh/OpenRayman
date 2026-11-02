@@ -184,6 +184,10 @@ namespace openrayman::game
 		// these; bit 1133 means Learn_10 was finished (set at its exit gate), which our revisit start
 		// uses (first_visit.h, docs/formats/scripts.md). False when no candidate has the array.
 		bool set_story_bit(std::span<const std::uint32_t> candidates, std::int32_t n);
+		// The whole story-bit array (var42's words) of the first candidate that has one, and putting
+		// it back: Fix stays loaded from level to level in the game, so its words carry over.
+		std::vector<std::uint32_t> story_words(std::span<const std::uint32_t> candidates) const;
+		void set_story_words(std::span<const std::uint32_t> candidates, std::span<const std::uint32_t> words);
 		std::uint32_t eval(std::uint32_t self, std::uint32_t node, value& out); // 0x480B90
 		// Skips a node and its arguments.
 		std::uint32_t skip(std::uint32_t node) const;
@@ -209,6 +213,10 @@ namespace openrayman::game
 		// clears them when the fourth, set by the engine, says so), 345 sets the third. The menu
 		// reads the pair at startup to know where it was asked to go; at boot all are 0.
 		std::array<std::uint8_t, 4> menu_request{};
+		// Procedures 86/87 (0x4054D0): the level the scripts asked to go to, for the engine to load
+		// after the tick; `level_request_flag` is true for 86 (what the exe does with it isn't read).
+		std::string level_request;
+		bool level_request_flag = false;
 		// Function 252: the language index (the low byte of 0x500FA8, from ubi.ini at start-up).
 		std::uint8_t language = 0;
 		// Function 265: the save folder, whose `Slot*` folders are the save slots (Data/SaveGame).

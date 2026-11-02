@@ -193,6 +193,10 @@ namespace
 		std::vector<held_key> held_keys;
 		bool new_game = false; // --start new: levels start as on a new game, not as reached from the hub
 		std::vector<std::int32_t> story_bits; // --story-bits 1095,1143: more of a save's story, set at load
+		// The story-bit words a level change carries over (Fix stays loaded in the game), set when the
+		// scripts ask for another level (procedures 86/87) and used by the next load.
+		std::optional<std::vector<std::uint32_t>> carried_story;
+		std::vector<std::uint32_t> fix_actors; // the loaded level's placed Fix actors (super objects)
 		long tick = 0;
 		std::vector<std::uint32_t> thinkers;     // super objects of the actors with a brain
 		// The game's camera actor (the placed Fix actor with a camera part). Until the game's camera
@@ -567,6 +571,31 @@ namespace
 	// Runs the game's scripts for `seconds`, in ticks of 1/60 s, then shows the states they picked.
 	// An error outside one actor's scripts (input, placing the actors) is logged and the scripts
 	// stop, rather than closing the viewer.
+	void load_level(app& a, std::size_t index);
+
+	// Procedures 86/87 asked for another level (the menu's New Game asks for Jail_10): load it as
+	// a new game would reach it, with the story words the scripts left in Fix.
+	void change_requested_level(app& a)
+	{
+		if(!a.vm || a.vm->level_request.empty() || !a.game)
+			return;
+		std::string name = a.vm->level_request;
+		a.vm->level_request.clear();
+		const auto& levels = a.game->game_dsb().levels;
+		auto same = [&](const std::string& level) {
+			return std::ranges::equal(level, name, [](unsigned char x, unsigned char y) { return std::tolower(x) == std::tolower(y); });
+		};
+		auto found = std::ranges::find_if(levels, same);
+		if(found == levels.end())
+		{
+			SDL_Log("The scripts asked for level %s, which Game.dsb doesn't list", name.c_str());
+			return;
+		}
+		a.carried_story = a.vm->story_words(a.fix_actors);
+		a.new_game = true;
+		load_level(a, std::size_t(found - levels.begin()));
+	}
+
 	void run_scripts(app& a, double seconds)
 	{
 		try
@@ -725,6 +754,12 @@ namespace
 			openrayman::game::step(*a.vm, a.thinkers, [](std::uint32_t self, const std::exception& e) {
 				SDL_Log("Script error, actor 0x%08X: %s", self, e.what());
 			});
+			// A level change waits for the frame to finish (change_requested_level).
+			if(!a.vm->level_request.empty())
+			{
+				a.script_clock = 0;
+				break;
+			}
 			// Screenshots and the --time run at load stay silent.
 			for(const auto& request : a.vm->take_sounds())
 				if(a.sounds && !a.screenshot && !a.silent_run)
@@ -1210,8 +1245,16 @@ namespace
 				std::vector<std::uint32_t> fix_actors;
 				for(const fix_actor_placement& placed : header.placements)
 					fix_actors.push_back(placed.super_object.address());
-				for(std::uint32_t bit : a.new_game ? std::span<const std::uint32_t>(openrayman::game::first_visit_story_bits) : std::span<const std::uint32_t>(openrayman::game::revisit_story_bits))
-					a.vm->set_story_bit(fix_actors, bit);
+				// The menu starts from Fix's own state, as the game boots: no save is loaded yet.
+				bool menu = std::ranges::equal(levels[index], std::string_view("Menu"),
+					[](unsigned char x, unsigned char y) { return std::tolower(x) == std::tolower(y); });
+				if(a.carried_story)
+					a.vm->set_story_words(fix_actors, *a.carried_story);
+				else if(!menu)
+					for(std::uint32_t bit : a.new_game ? std::span<const std::uint32_t>(openrayman::game::first_visit_story_bits) : std::span<const std::uint32_t>(openrayman::game::revisit_story_bits))
+						a.vm->set_story_bit(fix_actors, bit);
+				a.carried_story.reset();
+				a.fix_actors = fix_actors;
 				for(std::int32_t bit : a.story_bits)
 					a.vm->set_story_bit(fix_actors, bit);
 			}
@@ -1411,6 +1454,10 @@ namespace
 				return std::ranges::equal(name, a.start_level, [](unsigned char x, unsigned char y) { return std::tolower(x) == std::tolower(y); });
 			});
 			load_level(a, start == levels.end() ? 0 : static_cast<std::size_t>(start - levels.begin()));
+			// A screenshot follows a level change the --time run asked for (the new level runs its
+			// own --time from the start), so the menu's New Game can be checked in one shot.
+			if(a.screenshot)
+				change_requested_level(a);
 			return true;
 		}
 		catch(const std::exception& e)
@@ -1554,6 +1601,18 @@ namespace
 								text.line_height = 0.45f;
 								text.screen = true;
 								text.x = slot.x; text.y = slot.y; text.z = slot.size;
+								// 0x4660B0: the colour mode picks the tint (0/1 blue, 2 red, 3 yellow, as
+								// the /O codes), the slot's alpha fades it (the menu greys entries out at 90),
+								// and the wobble lifts the string by sin(5 t) * 7, t the particle clock.
+								std::array<float, 4> tint{110 / 255.0f, 190 / 255.0f, 1, slot.alpha / 255.0f};
+								if(slot.flags & game::screen_text::colour_set)
+								{
+									if(slot.colour == 2) tint = {250 / 255.0f, 70 / 255.0f, 70 / 255.0f, tint[3]};
+									else if(slot.colour == 3) tint = {1, 1, 120 / 255.0f, tint[3]};
+								}
+								text.tint = tint;
+								if(slot.wobble)
+									text.lift = std::sin(float(a.vm->clock()) / 1000.0f * 5.0f) * 7.0f;
 								dialogs.push_back(std::move(text));
 							}
 				const auto& boxes = a.vm->particles().screen_rectangles();
@@ -2029,6 +2088,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 			game::profiler::scope timed(game::profiler::zone::scripts);
 			run_scripts(a, dt);
 		}
+		change_requested_level(a);
 		game::profiler::scope timed(game::profiler::zone::posing);
 		update_actors(a);
 	}

@@ -202,7 +202,7 @@ namespace openrayman
 			if(dialog.screen)
 			{
 				x = std::trunc(dialog.x) * 0.64f;
-				y = std::trunc(dialog.y) * 0.48f;
+				y = (std::trunc(dialog.y) - dialog.lift) * 0.48f;
 				// 0x422940 uses reciprocal screen depth. The final glyph magnification is
 				// provisional pending a matched capture from the original renderer.
 				float depth = std::abs(std::trunc(dialog.z)) * 0.001f;
@@ -219,6 +219,9 @@ namespace openrayman
 			if(layout.centred) x = (dialog.screen ? 320 : x) - layout.width * unit * 0.5f;
 			else if(dialog.screen && dialog.creator) x += 4.0f; // provisional dialog inset, reference pixels
 			auto& font = font_for(dialog.template_actor);
+			std::optional<SDL_FColor> tint;
+			if(dialog.tint)
+				tint = SDL_FColor{(*dialog.tint)[0], (*dialog.tint)[1], (*dialog.tint)[2], (*dialog.tint)[3]};
 			for(const auto& item : layout.glyphs)
 			{
 				if(!item.revealed) continue;
@@ -237,7 +240,7 @@ namespace openrayman
 							const auto& p = g->object.vertices[element.triangles[t][c]];
 							const auto& uv = element.uvs[element.uv_triangles[t][c]];
 							vertices.push_back({{x + (item.x + item.advance * 0.5f + p[0] * item.scale) * unit,
-								y + (item.y - p[2] * item.scale) * unit}, g->colours[element.triangles[t][c]], {uv[0], 1 - uv[1]}});
+								y + (item.y - p[2] * item.scale) * unit}, tint ? *tint : g->colours[element.triangles[t][c]], {uv[0], 1 - uv[1]}});
 						}
 					if(!vertices.empty()) append(g->texture, element.material && element.material->texture && (element.material->texture->flags & texture_flag::additive), vertices);
 				}

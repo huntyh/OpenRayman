@@ -32,6 +32,11 @@ namespace openrayman::game
 		float x = 0, y = 0, z = 0;
 		bool screen = false;
 		std::uint32_t creator = 0;
+		// Screen slots (0x4660B0) draw each glyph's texture times one flat colour, RGBA 0..1, instead
+		// of the glyph's painted gradient; `lift` raises the whole string (the wobble), in the
+		// slots' 0..1000 units.
+		std::optional<std::array<float, 4>> tint;
+		float lift = 0;
 	};
 
 	struct dialog_glyph

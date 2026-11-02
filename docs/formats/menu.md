@@ -250,8 +250,35 @@ level):
   entry is id 0x16C instead.
 
 Our engine implements 252, 265 and 343..345, so the prompt, the main menu and the cursor's
-skipping of greyed entries all run from the level's own scripts. Not drawn yet: field 7's colour
-modes (the highlighted and the greyed entry look like the others).
+skipping of greyed entries all run from the level's own scripts.
+
+### How an entry looks (0x4660B0)
+
+Each glyph is drawn as its font object's texture times one flat colour, not with the painted
+gradient a dialog glyph has: colour mode 0/1 (or flag 0x10 clear) blue (0x6E, 0xBE, 0xFF), 2 red
+(0xFA, 0x46, 0x46), 3 yellow (0xFF, 0xFF, 0x78), the same three as the `/O` codes 0/600, 200, 400,
+with the slot's alpha. Node 6 marks the cursor's entry mode 3 and the current one (the language
+in use) mode 2, and sets the greyed entries' alpha to 90 (its var1). Field 1 (+0x12) sways the
+whole string: it is lifted by sin(5 t) × 7 slot units, t the particle clock in seconds (constants
+0x49CA90, 0x49C9E4). Flag 0x04 does the same to one character only (the +0x14 index counts the
+glyphs and spaces from 1) at half alpha; we don't draw that one yet. Flag 0x08 draws a box behind
+the text (0x465E30 measures it, 0x429820 draws it), not a shake as noted above.
+
+### New Game
+
+New Game (entry 0) opens the name entry (`AAA`, behaviour 7: arrows pick the three letters).
+Enter on it checks for a slot of that name (function 95, 0x47D730: the slot number holding the
+same three letters, or 0), names the slot (procedure 431, 0x4702A0: name plus percentage, as
+`Current.cfg` lists them) and writes the save (function 90/93, 0x47D830). When the write works the
+menu shows message 0x183 and the next Enter calls `procedure_86("jail_10")`; when it fails it
+calls `procedure_87("jail_10")` at once. Procedures 86/87 (0x467970 -> 0x4054D0) change the level
+by name; 86 passes a flag the level loader gets (not read yet).
+
+Ours doesn't write saves yet (functions 90/93 and 95 are missing and give 0, so the menu goes
+straight to Jail_10, the intro), so nothing in the install's save folder changes. The engine
+loads the requested level after the tick and carries the Fix story-bit array over, as Fix stays
+loaded in the game; the Menu level itself starts with Fix's own bits (no save loaded), not with
+our revisit bits.
 
 ## Where this came from
 

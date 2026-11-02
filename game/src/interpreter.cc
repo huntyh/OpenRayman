@@ -1150,6 +1150,51 @@ namespace openrayman::game
 		return false;
 	}
 
+	std::vector<std::uint32_t> interpreter::story_words(std::span<const std::uint32_t> candidates) const
+	{
+		for(std::uint32_t self : candidates)
+		{
+			value array;
+			try
+			{
+				array = get_variable(self, 42);
+			}
+			catch(const std::exception&)
+			{
+				continue;
+			}
+			if(array.type != value_type::buffer)
+				continue;
+			std::vector<std::uint32_t> words(m_memory.u8(array.word() + 4));
+			for(std::size_t i = 0; i < words.size(); i++)
+				words[i] = m_memory.u32(array.word() + 8 + std::uint32_t(i) * 4);
+			return words;
+		}
+		return {};
+	}
+
+	void interpreter::set_story_words(std::span<const std::uint32_t> candidates, std::span<const std::uint32_t> words)
+	{
+		for(std::uint32_t self : candidates)
+		{
+			value array;
+			try
+			{
+				array = get_variable(self, 42);
+			}
+			catch(const std::exception&)
+			{
+				continue;
+			}
+			if(array.type != value_type::buffer)
+				continue;
+			std::size_t count = std::min<std::size_t>(words.size(), m_memory.u8(array.word() + 4));
+			for(std::size_t i = 0; i < count; i++)
+				m_memory.write<std::uint32_t>(array.word() + 8 + std::uint32_t(i) * 4, words[i]);
+			return;
+		}
+	}
+
 	std::int32_t interpreter::ground_sound_type(std::uint32_t super_object) const
 	{
 		std::uint32_t actor = actor_of(super_object);
