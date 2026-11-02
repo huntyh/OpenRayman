@@ -3,6 +3,23 @@
 The dated investigation notes from `ROADMAP.md`, kept here so the roadmap stays short. Newest
 first. The format docs under `formats/` are the permanent home of the findings themselves.
 
+## 2026-11-03: the menu Teensy's hat
+
+The flip is at frames 48..49 of animation 316 (50 frames, a plain loop): the hat channel (12)
+switches object from 13 (frames 42..47) to 11 (48..49), then 16 (0..5). Its pose is smooth across
+the switch (z turn -168, -160, -140; `pose()` with and without our 4-frame loop seam differs by at
+most 0.07, and the part matrices reaching the renderer are smooth), and object 11 looks right on
+frames 38..41 at a similar angle. So the jump is the data's object swap meeting this pose; the
+game must pick another object for those frames or resolve index 11 differently. Ruled out: the
+loop wrap (clock 1672 -> 22 ms is continuous), the seam glide, look-at cards (none on the
+Teensy), the hierarchy (same on every frame), an out-of-range object slot (6 per channel). Next:
+read the real game's part objects on those frames live (r2live --parts with the object per part).
+`ORTOOL_EVERY=1` now prints the traced actor every tick with its animation clock and rate.
+
+The whale (node 25): its brain runs every frame here (procedure 341(4) is lifted, IMPROVEMENTS),
+its position and animation clock advance evenly every tick, so the slow tail fin is in how that
+channel is posed or drawn, not in the scripts. Not found yet.
+
 ## 2026-11-02 (late night): the cutscene bars, round two
 
 DeepSeek (read-only, build/helpers/black_bars_report2.md), checked by us: no exe code reads the

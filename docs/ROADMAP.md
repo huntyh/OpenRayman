@@ -182,9 +182,20 @@ Everything the PC game has, working before we port it anywhere. The order the us
 
 1. The main menu (the menu level and its on-screen text, `docs/formats/menu.md`). The language
    prompt, the main menu with its colours, and New Game -> name -> Jail_10 run from the level's
-   scripts (2026-11-02). Open: writing the save (functions 90/93/95), Load / Delete / Options,
-   the per-character flash, the user's look against the game.
-2. The new-game intro cutscene, in front of the first-visit start.
+   scripts; the user confirmed it works (2026-11-03). Open: writing the save (functions
+   90/93/95), Load / Delete (it deletes a save slot) / Options (not wired), the per-character
+   flash; "Site Rayman2" opens a dead 1999 URL, to be replaced with something of ours later.
+   The menu's scenery: the Teensy tipping its hat (node 29, animation 316) shows its hat flipped
+   for a moment near the end of each loop (user's recording); only the whale's tail fin looks
+   slow, its body is smooth (in the game the fin is smooth too); the game has a smiling butterfly
+   that lands on the selected entry, which ours doesn't show (likely the morph-animated butterfly,
+   morphs aren't read yet). No music anywhere yet (3d). Hat findings in ROADMAP_LOG 2026-11-03.
+   Gameplay: steering while sliding isn't implemented (the pirate ship's chute, user).
+2. The new-game intro cutscene, in front of the first-visit start. Jail_10 (user, 2026-11-03):
+   the pan over the dark sea is choppy and jitters left and right; on the pirate ship the cages
+   show light bleeding through, and the laser bars of Rayman's cell are a plain white rectangle
+   instead of red beams; in the cell Rayman and Globox are missing at first, Rayman appears when
+   he gets the silver Lum, Globox never does.
 3. Save games: starting a new game writes one; reading the real saves' story bits
    ([formats/saves.md](formats/saves.md)) replaces the revisit snapshot.
 4. The pause menu and the F1 glossary. The pause menu already half-runs from its own scripts:

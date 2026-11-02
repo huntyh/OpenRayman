@@ -1750,11 +1750,19 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 			watch(traced_super, "traced", 97);
 			if(traced_super != main_actor)
 				watch(main_actor, "main", 115);
-			if(f % 30 == 0)
+			// ORTOOL_EVERY=n: the position every n ticks instead of every 30.
+			static const int every = std::getenv("ORTOOL_EVERY") ? std::max(1, std::atoi(std::getenv("ORTOOL_EVERY"))) : 30;
+			if(f % every == 0)
 			{
 				if(auto p = game::global_placement(memory, tree.node(*trace).at.address()))
-					std::cout << std::format("tick {:>4}: at {:.2f} {:.2f} {:.2f}\n", f, p->m[0][3], p->m[1][3], p->m[2][3]);
-				if(traced_super != main_actor)
+				{
+					std::uint32_t data = memory.u32(memory.u32(tree.node(*trace).at.address() + 4));
+					std::cout << std::format("tick {:>4}: at {:.2f} {:.2f} {:.2f}", f, p->m[0][3], p->m[1][3], p->m[2][3]);
+					if(every != 30 && data && memory.contains(data + game::data_3d::playback_rate, 1))
+						std::cout << std::format(", animation clock {} ms at rate {}", memory.u32(data + 0xC0), memory.u8(data + game::data_3d::playback_rate));
+					std::cout << "\n";
+				}
+				if(every == 30 && traced_super != main_actor)
 					if(auto p = game::global_placement(memory, main_actor))
 					{
 						std::uint32_t actor = memory.u32(main_actor + 4);
