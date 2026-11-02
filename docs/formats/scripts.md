@@ -407,6 +407,15 @@ corners (4, 80) and (14, 95), a material pointing to the Murfy icon texture, and
 second vector's Z component. 0x4605A0 writes the slot and 0x460600 draws nonzero slots; a later
 zero-opacity write clears it. Where this came from: own analysis of Murfy's script and the executable.
 
+Learn_10 node 44 formats its Lum and cage counts through procedures 243 and 430 and sends them
+to screen-text slots 15 and 16 with procedure 505. Procedure 505 resolves IDs through the same text
+table as function 158 and retains the third position component as the slot size (0x465A50). The
+viewer draws these slots with the available Fix alphabet objects; its menu-slot layout is still
+approximate. Dialogs and screen images are rasterized at viewport resolution using 640x480 reference
+coordinates. Dialogs have a provisional four-reference-pixel left inset: 0x409500 places each glyph
+at the pen plus half its advance, but the remaining observed bearing difference is not established.
+Where this came from: own analysis of node 44's script, 0x465A50 and 0x409500, and user captures.
+
 Kind 110 (0x4648B0) makes a type-0x11 particle whose two vectors are opposite screen corners;
 0x460A10 draws it once through 0x429820 and 0x429670 as a black rectangle, with the supplied
 opacity. The coordinates are percentages of the viewport. The alpha setter at 0x42A300 divides

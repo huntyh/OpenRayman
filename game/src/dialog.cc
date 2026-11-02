@@ -271,6 +271,13 @@ namespace openrayman::game
 		if(it != systems.end()) if(auto state = it->second.lock()) state->resolver = std::move(resolver);
 	}
 
+	std::optional<std::string> resolve_dialog_value(interpreter& vm, const value& v)
+	{
+		auto it = systems.find(&vm);
+		if(it != systems.end()) if(auto state = it->second.lock()) return resolve(vm, *state, v);
+		return std::nullopt;
+	}
+
 	dialog_resolver make_dialog_resolver(live_memory& memory, const level_files& files, unsigned language)
 	{
 		// Fix loader 0x402960 reads these roots from its GPT; 0x494C70 selects the table.

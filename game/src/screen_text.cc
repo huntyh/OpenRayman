@@ -10,7 +10,7 @@ namespace openrayman::game
 		return index < screen_text::slot_count;
 	}
 
-	bool screen_text::set(std::size_t index, float x, float y, std::string text, std::uint8_t alpha)
+	bool screen_text::set(std::size_t index, float x, float y, std::string text, std::uint8_t alpha, float size)
 	{
 		if(!in_range(index))
 			return false;
@@ -19,7 +19,7 @@ namespace openrayman::game
 		s.text = std::move(text);
 		s.x = x;
 		s.y = y;
-		s.size = 0;
+		s.size = size;
 		s.alpha = alpha;
 		s.wobble = 0;
 		s.flags = 0;

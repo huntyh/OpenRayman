@@ -1526,12 +1526,30 @@ namespace
 			if(a.vm && a.dialog_overlay)
 			{
 				auto dialogs = game::visible_dialogs(*a.vm);
+				// Screen slots are the separate menu/HUD text path (0x465C10). Their
+				// text IDs are resolved by the script handlers before reaching here.
+				if(a.dialog_memory)
+					if(const auto* fix = a.dialog_memory->find({4, 0}))
+						for(const auto& slot : a.vm->screen_text().all())
+							if(slot.used && slot.alpha && !slot.text.empty())
+							{
+								game::dialog_text text;
+								text.prepared = slot.text;
+								text.revealed = int(slot.text.size());
+								text.template_actor = fix->base + 0x15ca8;
+								text.widths.fill(0.38f);
+								text.default_scale = 1;
+								text.line_height = 0.45f;
+								text.screen = true;
+								text.x = slot.x; text.y = slot.y; text.z = slot.size;
+								dialogs.push_back(std::move(text));
+							}
 				const auto& boxes = a.vm->particles().screen_rectangles();
 				const auto& images = a.vm->particles().screen_images();
 				if(!dialogs.empty() || !boxes.empty() || !images.empty())
-					if(SDL_Surface* surface = a.dialog_overlay->draw(dialogs, boxes, images, projection * view, projection))
+					if(SDL_Surface* surface = a.dialog_overlay->draw(dialogs, boxes, images, projection * view, projection, w, h, a.animation_time))
 					{
-						GLuint overlay = gl::create_texture(640, 480, std::span(static_cast<const std::uint8_t*>(surface->pixels), 640 * 480 * 4));
+						GLuint overlay = gl::create_texture(w, h, std::span(static_cast<const std::uint8_t*>(surface->pixels), std::size_t(w) * h * 4));
 						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 						glDisable(GL_DEPTH_TEST);
 						glEnable(GL_BLEND);

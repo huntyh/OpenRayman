@@ -18,8 +18,7 @@
 
 namespace openrayman
 {
-	// A 640x480 transparent surface stretched over the viewport. Its software renderer and
-	// decoded glyphs live for the level, so neither meshes nor textures are rebuilt per frame.
+	// A viewport-sized surface with coordinates in the game's 640x480 reference space.
 	class dialog_renderer
 	{
 	public:
@@ -30,7 +29,7 @@ namespace openrayman
 		SDL_Surface* draw(std::span<const game::dialog_text> dialogs,
 			std::span<const game::particles::screen_rectangle> boxes,
 			std::span<const game::particles::screen_image> images,
-			const glm::mat4& view_projection, const glm::mat4& projection);
+			const glm::mat4& view_projection, const glm::mat4& projection, int width, int height, double time);
 	private:
 		struct glyph { geometric_object object; SDL_Texture* texture = nullptr; std::vector<SDL_FColor> colours; };
 		struct font { std::vector<actor_object> objects; std::map<int, std::optional<glyph>> glyphs; };

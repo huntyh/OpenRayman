@@ -1,5 +1,6 @@
 #include <openrayman/game/handlers.h>
 #include <openrayman/game/animation_player.h>
+#include <openrayman/game/dialog.h>
 #include <openrayman/input.h>
 
 #include <array>
@@ -3460,6 +3461,8 @@ namespace openrayman::game
 		// The id table itself isn't read yet, so ids come back empty; see docs/formats/menu.md.
 		std::string text_of(interpreter& vm, const value& v)
 		{
+			if(v.type == value_type::id)
+				return resolve_dialog_value(vm, v).value_or(std::string{});
 			if(v.type != value_type::text)
 				return {};
 			std::uint32_t address = v.word();
@@ -3485,7 +3488,7 @@ namespace openrayman::game
 		}
 
 		// 505 (0x465A50): set a slot up: slot, position, text, alpha. The position is a vector used
-		// for its X and Y. The exe also zeroes the slot's size, wobble and flags here.
+		// for X, Y and size. The exe zeroes the wobble and flags here.
 		std::uint32_t text_slot_set(call& c)
 		{
 			value slot, position, text, alpha;
@@ -3494,7 +3497,7 @@ namespace openrayman::game
 			next_arg(c, text);
 			next_arg(c, alpha);
 			vec3 p = vec_of(position);
-			c.vm.screen_text().set(text_slot(slot), p[0], p[1], text_of(c.vm, text), std::uint8_t(alpha.as_int()));
+			c.vm.screen_text().set(text_slot(slot), p[0], p[1], text_of(c.vm, text), std::uint8_t(alpha.as_int()), p[2]);
 			return c.args;
 		}
 

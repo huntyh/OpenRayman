@@ -8,8 +8,8 @@
 namespace openrayman::game
 {
 	// The game's on-screen text: 50 slots filled by procedures 505..507 and drawn every frame by
-	// the exe's text pass (0x465C10). Swapping and drawing are the renderer's job (nothing draws
-	// them yet); this keeps the state the scripts build. Table 0x4E1080, slot size 0x1C, and the
+	// the exe's text pass (0x465C10). The renderer draws these from the state scripts build.
+	// Table 0x4E1080, slot size 0x1C, and the
 	// flag bits below are the exe's own; see docs/formats/menu.md.
 	class screen_text
 	{
@@ -41,7 +41,7 @@ namespace openrayman::game
 		};
 
 		// procedure 505 (0x465A50): set a slot up. Returns false when the index is past the table.
-		bool set(std::size_t index, float x, float y, std::string text, std::uint8_t alpha);
+		bool set(std::size_t index, float x, float y, std::string text, std::uint8_t alpha, float size = 0);
 		// procedure 506 (0x465AA0): the field setter, switching on `what` like the exe does.
 		// `value` is passed as a float; the integer cases truncate it.
 		bool set_field(std::size_t index, int what, float value);

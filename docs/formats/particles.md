@@ -12,6 +12,11 @@ effect: index = kind − 1 (0..0x42) into a byte table at 0x464864, which picks 
 table at 0x4647CC. What the point, vector and number mean depends on the kind. Some kinds draw on
 the screen instead (the scripts' HUD: kind 125 with screen coordinates, 110 a full-screen overlay).
 
+Kind 125 writes a persistent screen-image slot (0x4605A0, drawn by 0x460600). Learn_10's HUD
+uses animated material frames for the Lum and a still material for the cage. The Lum texture has
+mirror-U tiling: the stored half is reflected to form the full image. Where this came from: own
+analysis of node 44's script, Fix material and texture records, and the executable.
+
 Particles go into a pool (0x4E5800, 0x48 bytes each, 150 of them, added by 0x4600C0, at most 35
 per frame). Every frame 0x4608B0 drops finished ones, then moves each by its type (0x461120, a
 switch on the low byte of its flags) and draws it as a camera-facing square with the game

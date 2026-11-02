@@ -128,10 +128,15 @@ Dated details of everything above, and the user's look-by-look feedback, are in
 
 **Later in Phase 3 / Phase 4**
 
-- Parked (user, 2026-11-02, fine as it is): the river condor (node 7) bobs with each wing flap
-  where the game's glides as if on rails (`--camera -65.1,289.0,-18.7,-28.6,-15.6`). Its path is
-  smooth every 30 ticks; its flap animation (309) lifts the root about 0.06 up and down. Worth a
-  per-tick trace if other flying actors bob too, since then the mechanics would be the cause.
+- Flying actors bob where the game's hover still. The river condor (node 7) bobs with each wing
+  flap where the game's glides as if on rails (`--camera -65.1,289.0,-18.7,-28.6,-15.6`; parked by
+  the user as fine). Murfy bobs up and down in place during his tutorial scenes too, where the
+  game's hovers steadily (user, 2026-11-02). Two actors now, so the cause is likely shared (the
+  mechanics, or how a flapping animation's root motion is applied): trace both per tick. The
+  condor's path is smooth every 30 ticks; its flap animation (309) lifts the root about 0.06.
+- F1 holds Murfy's help: in the game it opens a glossary, and on a tutorial tablet it makes
+  Murfy repeat his scene; ours brings up the menu swirl. Esc's pause menu shows some of its
+  elements now (user, 2026-11-02).
 
 - An optional modern camera, turned freely with the right stick like in today's platformers,
   next to the game's own guided camera. It will see what the guided camera never shows, which

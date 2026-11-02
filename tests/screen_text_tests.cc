@@ -2,6 +2,13 @@
 
 #include <doctest/doctest.h>
 
+TEST_CASE("screen text preserves the size from the script position")
+{
+	openrayman::game::screen_text text;
+	REQUIRE(text.set(15, 690, 70, "1;5", 255, 18));
+	CHECK(text.at(15).size == doctest::Approx(18));
+}
+
 using openrayman::game::screen_text;
 
 TEST_CASE("screen text: 505 sets a slot up and 507 types into it one character at a time")

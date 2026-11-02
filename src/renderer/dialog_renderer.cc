@@ -11,8 +11,6 @@ namespace openrayman
 	dialog_renderer::dialog_renderer(const memory_image& memory, std::span<const std::unique_ptr<cnt_archive>> archives)
 		: m_memory(memory), m_archives(archives)
 	{
-		m_surface = SDL_CreateSurface(640, 480, SDL_PIXELFORMAT_ABGR8888);
-		if(m_surface) m_renderer = SDL_CreateSoftwareRenderer(m_surface);
 	}
 
 	dialog_renderer::~dialog_renderer()
@@ -116,8 +114,20 @@ namespace openrayman
 	SDL_Surface* dialog_renderer::draw(std::span<const game::dialog_text> dialogs,
 		std::span<const game::particles::screen_rectangle> boxes,
 		std::span<const game::particles::screen_image> images,
-		const glm::mat4& view_projection, const glm::mat4& projection)
+		const glm::mat4& view_projection, const glm::mat4& projection, int width, int height, double time)
 	{
+		if(width <= 0 || height <= 0) return nullptr;
+		if(!m_surface || m_surface->w != width || m_surface->h != height)
+		{
+			for(auto [path, texture] : m_textures) if(texture) SDL_DestroyTexture(texture);
+			m_textures.clear();
+			for(auto& [address, font] : m_fonts) font.glyphs.clear();
+			if(m_renderer) SDL_DestroyRenderer(m_renderer);
+			if(m_surface) SDL_DestroySurface(m_surface);
+			m_surface = SDL_CreateSurface(width, height, SDL_PIXELFORMAT_ABGR8888);
+			m_renderer = m_surface ? SDL_CreateSoftwareRenderer(m_surface) : nullptr;
+			if(m_renderer) SDL_SetRenderScale(m_renderer, width / 640.0f, height / 480.0f);
+		}
 		if(!m_renderer) return nullptr;
 		SDL_SetRenderDrawBlendMode(m_renderer, SDL_BLENDMODE_NONE);
 		SDL_SetRenderDrawColor(m_renderer, 0, 0, 0, 0);
@@ -138,14 +148,36 @@ namespace openrayman
 					{
 						auto info = read_visual_material(m_memory, *visual);
 						if(info.texture)
-							if(auto* texture = texture_for(*info.texture))
+						{
+							const texture_info* frame = &*info.texture;
+							float duration = 0;
+							for(const auto& f : info.frames) duration += std::max(0.0f, f.duration);
+							if(duration > 0)
+							{
+								float at = float(std::fmod(time, duration));
+								for(const auto& f : info.frames)
+								{
+									frame = &f.texture;
+									if(at < f.duration) break;
+									at -= std::max(0.0f, f.duration);
+								}
+							}
+							if(auto* texture = texture_for(*frame))
 							{
 								SDL_SetTextureAlphaModFloat(texture, std::clamp(image.second[2] / 255.0f, 0.0f, 1.0f));
 								SDL_FRect r{image.first[0] * 6.4f, image.first[1] * 4.8f,
 									(image.second[0] - image.first[0]) * 6.4f, (image.second[1] - image.first[1]) * 4.8f};
-								SDL_RenderTexture(m_renderer, texture, nullptr, &r);
+								if(frame->tiling & texture_tiling::mirror_u)
+								{
+									SDL_FRect half{r.x, r.y, r.w * 0.5f, r.h};
+									SDL_RenderTexture(m_renderer, texture, nullptr, &half);
+									half.x += half.w;
+									SDL_RenderTextureRotated(m_renderer, texture, nullptr, &half, 0, nullptr, SDL_FLIP_HORIZONTAL);
+								}
+								else SDL_RenderTexture(m_renderer, texture, nullptr, &r);
 								SDL_SetTextureAlphaModFloat(texture, 1);
 							}
+						}
 					}
 			}
 			catch(const std::exception& e) { SDL_Log("Screen image: %s", e.what()); }
@@ -170,6 +202,7 @@ namespace openrayman
 			}
 			auto layout = game::layout_dialog(dialog);
 			if(layout.centred) x = (dialog.screen ? 320 : x) - layout.width * unit * 0.5f;
+			else if(dialog.screen && dialog.creator) x += 4.0f; // provisional dialog inset, reference pixels
 			auto& font = font_for(dialog.template_actor);
 			for(const auto& item : layout.glyphs)
 			{

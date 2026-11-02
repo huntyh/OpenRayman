@@ -14,6 +14,8 @@ namespace openrayman { struct level_files; }
 namespace openrayman::game
 {
 	class interpreter;
+	struct value;
+	std::optional<std::string> resolve_dialog_value(interpreter& vm, const value& v);
 
 	// Object-list index selected by the dialog renderer (0x409720), before bounds checking.
 	std::optional<int> dialog_glyph_index(std::uint8_t byte, int offset = 0);
