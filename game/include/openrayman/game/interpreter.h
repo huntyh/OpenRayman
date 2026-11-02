@@ -205,8 +205,14 @@ namespace openrayman::game
 		// Procedures 76/77's counted loops (the exe keeps one stack for all scripts, 0x4E9420..).
 		struct loop_frame { std::int32_t count; std::uint32_t body; };
 		std::vector<loop_frame> loops;
-		// Procedure 345's byte (0x500FA6).
-		std::uint8_t game_byte = 0;
+		// Procedures 343..345's bytes (0x500FA4): 343 sets the first two, 344 reads them back (and
+		// clears them when the fourth, set by the engine, says so), 345 sets the third. The menu
+		// reads the pair at startup to know where it was asked to go; at boot all are 0.
+		std::array<std::uint8_t, 4> menu_request{};
+		// Function 252: the language index (the low byte of 0x500FA8, from ubi.ini at start-up).
+		std::uint8_t language = 0;
+		// Function 265: the save folder, whose `Slot*` folders are the save slots (Data/SaveGame).
+		std::string save_folder;
 		// Actors with a native startup probe (custom bit 25, the copy protection's hiding place) and
 		// whether it has the probe layout we answer (as passed): any other is left as a failed check.
 		struct native_check

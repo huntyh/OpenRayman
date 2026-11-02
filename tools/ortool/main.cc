@@ -1417,6 +1417,8 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	game::register_handlers(vm);
 	game::register_dialog_handlers(vm);
 	game::set_dialog_resolver(vm, files);
+	if(auto saves = game.directory("saves"))
+		vm.save_folder = saves->string();
 	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
 	vm.set_animations(&bank);
 	// As the viewer does (first_visit.h): a revisit, unless ORTOOL_START=new asks for a first visit

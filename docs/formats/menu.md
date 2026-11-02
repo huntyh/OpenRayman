@@ -229,6 +229,30 @@ buttons. The level's data refers to them by path in the form `menu\menu.wp^Isola
 install — so those are references into the level's own waypoint list rather than to a separate
 file.
 
+## The boot flow (2026-11-02)
+
+Node 6 types the menu. At startup it reads procedure 344's two bytes (0x500FA4, both 0 at
+boot; 343 sets them and 345 the third, so a level can ask the menu to open somewhere else) and,
+when both are 0, tests story bit 1006 in the Fix actor's bit array (`actor 3.var42` in this
+level):
+
+- bit 1006 clear: the **language prompt**, ids 0x5030..0x5034 (English, Français, Español,
+  Italiano, Deutsch), with the current language (function 252, 0x47AAD0: the low byte of
+  0x500FA8) highlighted. The GOG game shows it at every start too (user, 2026-11-02): the
+  installed saves don't carry bit 1006.
+- picking a language sets bit 1006 (procedure 351) and types the **main menu**, ids 0x166,
+  0x167, 0x16D, 0x168, 0x16A, 0x16B: New game, Load, Delete, Options, Site Rayman2, Exit.
+  Macro 0, the new game's reset of the general variables, sets 1006 as well.
+- Load and Delete are greyed (`procedure_506(slot, 7, …)`) by the save count, function 265
+  (0x47AD30 -> 0x408290 -> 0x408200): the folders in the save folder whose names start with
+  `Slot` (so not `HiddenSlot`). Its argument is evaluated and ignored.
+- With a request pending (344 gives non-zero bytes), the menu opens on a variant whose first
+  entry is id 0x16C instead.
+
+Our engine implements 252, 265 and 343..345, so the prompt, the main menu and the cursor's
+skipping of greyed entries all run from the level's own scripts. Not drawn yet: field 7's colour
+modes (the highlighted and the greyed entry look like the others).
+
 ## Where this came from
 
 The dialog glyph path is distinct from the menu's slot renderer: own analysis of 0x409720 and

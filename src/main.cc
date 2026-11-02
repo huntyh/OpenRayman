@@ -1191,6 +1191,8 @@ namespace
 			openrayman::game::register_handlers(*a.vm);
 			openrayman::game::register_dialog_handlers(*a.vm);
 			openrayman::game::set_dialog_resolver(*a.vm, files);
+			if(auto saves = a.game->directory("saves"))
+				a.vm->save_folder = saves->string();
 			a.vm->set_world(openrayman::game::world_collision(std::move(collision)));
 			a.vm->set_animations(&a.bank);
 			// The level's animation events, then the sound events the scripts and animations name

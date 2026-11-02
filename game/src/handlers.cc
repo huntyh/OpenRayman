@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <map>
 #include <memory>
 
@@ -4380,13 +4381,65 @@ namespace openrayman::game
 			return c.args;
 		}
 
-		// 345 (0x46BB10, with 343/344): keeps a byte for the game (0x500FA6), read back with 343/344
-		// (probably the HUD's counters). Nothing reads it yet.
-		std::uint32_t game_byte(call& c)
+		// 343..345 (0x46BB10): the bytes at 0x500FA4. 343 (value, value) sets the first two unless
+		// the fourth is set; 344 (variable, variable) writes them into two of the actor's variables
+		// (with the fourth set it clears each and gives 0); 345 (value) sets the third. The menu's
+		// node 6 reads the pair at startup: both 0 is the boot menu.
+		std::uint32_t menu_request(call& c)
 		{
+			auto& bytes = c.vm.menu_request;
+			if(c.index == 344)
+			{
+				for(int i = 0; i < 2; i++)
+				{
+					std::uint8_t b = bytes[i];
+					if(bytes[3])
+						bytes[i] = b = 0;
+					c.args = c.vm.assign(c.self, c.args, value::integer(b));
+				}
+				return c.args;
+			}
 			value v;
 			next_arg(c, v);
-			c.vm.game_byte = std::uint8_t(v.as_int());
+			if(c.index == 345)
+			{
+				bytes[2] = std::uint8_t(v.as_int());
+				return c.args;
+			}
+			value w;
+			next_arg(c, w);
+			if(!bytes[3])
+			{
+				bytes[0] = std::uint8_t(v.as_int());
+				bytes[1] = std::uint8_t(w.as_int());
+			}
+			return c.args;
+		}
+
+		// 252 (0x47AAD0): the language index the game runs in.
+		std::uint32_t language(call& c, value& out)
+		{
+			out = value::integer(c.vm.language);
+			return c.args;
+		}
+
+		// 265 (0x47AD30, 0x408290 -> 0x408200): how many save slots there are, counted as the folders
+		// in the save folder whose names start with "Slot" (so not HiddenSlot). Its argument is
+		// evaluated and not used.
+		std::uint32_t save_slot_count(call& c, value& out)
+		{
+			value unused;
+			next_arg(c, unused);
+			std::int32_t n = 0;
+			std::error_code error;
+			if(!c.vm.save_folder.empty())
+				for(const auto& entry : std::filesystem::directory_iterator(c.vm.save_folder, error))
+				{
+					std::string name = entry.path().filename().string();
+					if(entry.is_directory(error) && name.size() >= 4 && name.compare(0, 4, "Slot") == 0)
+						n++;
+				}
+			out = value::integer(n);
 			return c.args;
 		}
 
@@ -4625,7 +4678,10 @@ namespace openrayman::game
 		vm.on_procedure(351, set_array_bit);
 		vm.on_procedure(76, loop);
 		vm.on_procedure(77, loop);
-		vm.on_procedure(345, game_byte);
+		for(std::uint32_t i : { 343, 344, 345 })
+			vm.on_procedure(i, menu_request);
+		vm.on_function(252, language);
+		vm.on_function(265, save_slot_count);
 		vm.on_condition(57, in_world);
 		vm.on_procedure(175, set_custom_bits);
 		// 444..500: the script camera's parameter blocks and its global settings.

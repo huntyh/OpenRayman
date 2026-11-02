@@ -28,6 +28,34 @@ A save does not store the world. It stores a list of registered values, in regis
   actor, node 71 (the tutorial's Rayman double), and the installed level saves' one byte is 0x01:
   node 71 is out of the world, as procedure 139 (0x406220) leaves it.
 
+## The file encoding (0x48D890)
+
+Every `.sav` and `Options/Current.cfg` use the same wrapping, read in our own words:
+
+- byte 0 XOR 0x53 is a checksum seed; bytes 1..4 XOR 0x54555657 are the expanded length.
+- every further byte is XORed with 0xB9 and with the bit-reversed value of a counter that starts
+  at 0x57 and goes up by one per byte (0x48D5A0, 0x48D420). The seed minus every decoded byte
+  must end at 0.
+- the decoded stream is a dictionary of 256 blocks of 8 bytes, block i starting as eight copies
+  of i (0x48D660). Each step reads a block number and a mask byte; each set mask bit replaces
+  that byte of the block with the next byte from the stream, and the block is the next 8 bytes
+  of output. The previous block is written when the next one starts; at the end the last one is
+  written whole, or, when the stream ends after a block number, only that many of its bytes.
+
+Decoded with a scratch script (2026-11-02): all three installed `General.sav` files give their
+196 bytes with a zero checksum, `Current.cfg` 72 (the slot count, the slot names with their
+percentages, e.g. `AAA 00.5`, then the options' volumes), and `Bast_20_0.sav` 1 byte.
+
+### General.sav's layout
+
+The story-bit array (Fix actor 6's var42: an 8-byte array header, then 45 words, 1440 bits)
+sits at offset 11 of the 196 bytes **with its words in reverse order** (word 44 first), as
+0x44A240 prepends each registered entry to the list it writes. With that placement every bit a
+Learn_10 playthrough sets (840, 841, 1089, 1091, 1092, 1133, 1175..1177, 1396..1400) is set in
+all three installed saves. The 11 bytes before and the 5 after are the other flagged variables
+(6, 20, 45, 46, 49, 50, 67), not yet matched one by one. Bit 1006 (the menu's "language picked")
+is clear in all three.
+
 ## The HUD's counters
 
 Node 44 shows Fix actor 6's variables: the cages as vars 4 / 5 (freed / in the level), the Lums as

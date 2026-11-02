@@ -174,12 +174,22 @@ Dated details of everything above, and the user's look-by-look feedback, are in
 
 ## Phase 4: the whole game
 
-Everything the PC game has, working before we port it anywhere:
+Everything the PC game has, working before we port it anywhere. The order the user set
+(2026-11-02):
 
-- The real intro cutscene
-- Save games (reading the real saves' story bits)
-- Menus. The pause menu already half-runs from its own scripts: Esc while playing Learn_10
-  brings up the menu's swirl in front of Rayman, and it stays there (user, 2026-10-30)
+1. The main menu (the menu level and its on-screen text, `docs/formats/menu.md`).
+2. The new-game intro cutscene, in front of the first-visit start.
+3. Save games: starting a new game writes one; reading the real saves' story bits
+   ([formats/saves.md](formats/saves.md)) replaces the revisit snapshot.
+4. The pause menu and the F1 glossary. The pause menu already half-runs from its own scripts:
+   Esc while playing Learn_10 brings up the menu's swirl in front of Rayman, and it stays there
+   (user, 2026-10-30).
+5. The Hall of Doors: the next bigger goal, the way from one level to the next.
+6. Optional autosave, off by default: save at level transitions without asking every time, as a
+   setting the player turns on (not forced). Goes into IMPROVEMENTS when built.
+
+Then:
+
 - Cutscenes
 - All the levels, from start to end
 - Widescreen and high resolutions, plus modern quality-of-life options
