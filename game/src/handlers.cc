@@ -2669,6 +2669,191 @@ namespace openrayman::game
 			return out;
 		}
 
+		// Coordinates in a basis, including scale or shear, for collision-centre offsets.
+		vec3 basis_coordinates(const vec3& v, const vec3& x, const vec3& y, const vec3& z)
+		{
+			float determinant = dot(x, cross(y, z));
+			if(std::abs(determinant) < 1e-12f)
+				return {};
+			return { dot(v, cross(y, z)) / determinant, dot(v, cross(z, x)) / determinant, dot(v, cross(x, y)) / determinant };
+		}
+
+		// 0x476880: only the first element supplies the centre. 0x40C7C0 tests all the zone's
+		// materials before that: the qualifying material need not belong to that first element.
+		bool zone_centre(live_memory& m, std::uint32_t zone, std::uint16_t mask, vec3& centre)
+		{
+			if(!zone)
+				return false;
+			std::uint32_t kinds = safe_u32(m, zone + 0x10);
+			int first_kind = kinds ? safe_i16(m, kinds) : 0;
+			if(first_kind != 7 && first_kind != 8)
+				return false;
+			bool matches = mask == 0;
+			std::uint32_t elements = safe_u32(m, zone + 0x14);
+			for(std::uint32_t i = 0; !matches && i < safe_u16(m, zone + 0x2E); i++)
+			{
+				int kind = safe_i16(m, kinds + i * 2);
+				std::uint32_t element = safe_u32(m, elements + i * 4);
+				auto material_matches = [&](std::uint32_t material) {
+					std::uint32_t collide = material && material != 0xFFFFFFFF ? safe_u32(m, material + 0xC) : 0;
+					return collide && collide != 0xFFFFFFFF && (safe_u16(m, collide + 2) & mask) == mask;
+				};
+				// 0x41E360/0x41E5F0: triangle and single-sphere materials. The other layouts
+				// are 0x41E790 (sphere array), 0x41EA50 (boxes), 0x41EE00 (capsules).
+				if(kind == 1 || kind == 5)
+					matches = material_matches(safe_u32(m, element + (kind == 1 ? 0 : 8)));
+				else if(kind == 7 || kind == 8 || kind == 9)
+					for(std::uint32_t j = 0; !matches && j < safe_u16(m, element + 4); j++)
+						matches = material_matches(safe_u32(m, safe_u32(m, element) + j * (kind == 8 ? 8 : 12) + (kind == 9 ? 8 : 4)));
+			}
+			if(!matches)
+				return false;
+			auto shapes = touch_shapes(m, zone);
+			if(shapes.empty())
+				return false;
+			const touch_shape& first = shapes.front();
+			centre = first.a;
+			if(first_kind == 8)
+				for(std::size_t axis = 0; axis < 3; axis++)
+					centre[axis] = (first.a[axis] + first.b[axis]) * 0.5f;
+			return true;
+		}
+
+		// 0x476630: active kind-2 zones first, then visible collision-bearing parts. The search
+		// asks for world space; function 154 asks for an offset to feed through function 53.
+		vec3 target_centre(interpreter& vm, std::uint32_t so, std::uint16_t mask, bool world)
+		{
+			live_memory& m = vm.memory();
+			std::uint32_t transform = transform_of(vm, so);
+			vec3 origin = position_of(vm, so), centre{};
+			std::uint32_t set = collision_set(vm, so);
+			std::uint32_t head = set ? safe_u32(m, set + 4) : 0;
+			for(std::uint32_t i = 0; head && i < safe_u32(m, head + 8); i++)
+				if(zone_centre(m, find_zone(vm, so, 2, i), mask, centre))
+				{
+					vec3 point = touch_world(m, transform, centre);
+					if(world)
+						return point;
+					if(!transform || safe_u32(m, transform) < 4)
+						return centre;
+					return basis_coordinates(sub(point, origin), axis_of(vm, so, 0), axis_of(vm, so, 1), axis_of(vm, so, 2));
+				}
+			std::uint32_t actor = vm.actor_of(so);
+			std::uint32_t data = actor ? safe_u32(m, actor) : 0;
+			std::uint32_t link = data ? safe_u32(m, data + 0x98) : 0;
+			std::set<std::uint32_t> seen;
+			while(link && seen.insert(link).second)
+			{
+				std::uint32_t part = safe_u32(m, link);
+				if(part && (m.u8(part) & 0x18) && !(m.u8(part + 0x30) & 2))
+				{
+					std::uint32_t object = safe_u32(m, part + 4);
+					std::uint32_t physical = object ? safe_u32(m, object + 4) : 0;
+					std::uint32_t zone = physical ? safe_u32(m, physical + 8) : 0;
+					if(zone_centre(m, zone, mask, centre))
+					{
+						vec3 point = touch_world(m, safe_u32(m, part + 0x24), centre);
+						if(world)
+							return point;
+						if(!transform)
+							return sub(point, origin);
+						// Part fallback uses the inverse full actor transform (0x444D60).
+						return basis_coordinates(sub(point, origin), read3(m, transform + 0x34), read3(m, transform + 0x40), read3(m, transform + 0x4C));
+					}
+				}
+				link = safe_u32(m, link + 8);
+			}
+			return world ? origin : vec3{};
+		}
+
+		// 154 (0x4782C0): an actor's kind-2 collision centre, as a local offset; no zone means zero.
+		std::uint32_t collision_centre(call& c, value& out)
+		{
+			value actor, mask;
+			next_arg(c, actor);
+			next_arg(c, mask);
+			std::uint32_t so = super_object_value(c.vm, actor);
+			out = value_of(so ? target_centre(c.vm, so, std::uint16_t(mask.as_int()), false) : vec3{});
+			return c.args;
+		}
+
+		// 113 (0x476960, ranking 0x476300): choose an actor carrying every requested custom bit,
+		// in this sector or one of its +0x24 neighbours. Ranking uses a frame facing down -Y.
+		std::uint32_t homing_target(call& c, value& out)
+		{
+			value mask, weights[3], direction, horizontal, vertical;
+			next_arg(c, mask);
+			for(value& weight : weights)
+				next_arg(c, weight);
+			next_arg(c, direction);
+			next_arg(c, horizontal);
+			next_arg(c, vertical);
+			out = value::of(value_type::actor, 0);
+			std::uint32_t self = c.vm.target(c.self, true);
+			vec3 origin = position_of(c.vm, self);
+			std::uint32_t sector = c.vm.sector_at(origin);
+			if(!sector)
+				return c.args;
+			live_memory& m = c.vm.memory();
+			std::vector<std::uint32_t> sectors{ sector };
+			std::uint32_t data = safe_u32(m, sector + 4), link = safe_u32(m, data + 0x24);
+			for(std::uint32_t i = 0; link && i < safe_u32(m, data + 0x2C); i++, link = safe_u32(m, link + 8))
+				sectors.push_back(safe_u32(m, link + 4));
+			vec3 x = axis_of(c.vm, self, 0), y = axis_of(c.vm, self, 1), z = axis_of(c.vm, self, 2);
+			vec3 flight = vec_of(direction);
+			if(length(flight) != 0)
+			{
+				y = normalised({ -flight[0], -flight[1], -flight[2] });
+				// Keep the actor's up axis except when it is parallel to the new back axis.
+				if(std::abs(dot(z, y) - 1.0f) < 0.002f)
+					z = cross(x, y);
+				x = cross(y, z);
+			}
+			float yaw_limit = std::cos(horizontal.as_float() * 0.01745329252f);
+			float elevation_limit = std::sin(vertical.as_float() * 0.01745329252f);
+			constexpr float extreme = 3.402822e38f; // 0x49CCB8/0x49CCBC, slightly below FLT_MAX
+			float best = -extreme * 0.5f;
+			std::vector<std::uint32_t> candidates = c.vm.actors();
+			for(std::uint32_t so : c.vm.generated().alive())
+				candidates.push_back(so);
+			for(std::uint32_t in_sector : sectors)
+				for(std::uint32_t so : candidates)
+				{
+					if(so == self || c.vm.removed(so))
+						continue;
+					std::uint32_t standard = actor_part(c.vm, so, actor_field::standard_game);
+					std::uint32_t bits = std::uint32_t(mask.as_int());
+					if(!standard || (m.u8(standard + 0x29) & 1) || (m.u32(standard + 0x24) & bits) != bits)
+						continue;
+					if(c.vm.sector_at(position_of(c.vm, so)) != in_sector)
+						continue;
+					// 0x444B80 uses the transposed rotation, ignoring stretch. Keep the cross
+					// product's length: for tilted shots this differs from a true matrix inverse.
+					vec3 delta = sub(target_centre(c.vm, so, 1, true), origin);
+					vec3 p{ dot(delta, x), dot(delta, y), dot(delta, z) };
+					float planar = std::hypot(p[0], p[1]), distance = length(p);
+					if(!(planar * yaw_limit < -p[1]) || !distance)
+						continue;
+					// The exe's elevation comparison is signed, including for targets below the shot.
+					if(!(p[2] / distance < elevation_limit))
+						continue;
+					float lateral = std::abs(p[0]);
+					float score;
+					if(p[1] >= 0)
+						score = lateral == 0 ? -extreme : -std::abs(p[1] / p[0]);
+					else if(lateral == 0)
+						score = extreme;
+					else
+						score = weights[0].as_float() / lateral + weights[1].as_float() / planar + weights[2].as_float() / distance;
+					if(score > best)
+					{
+						best = score;
+						out = value::of(value_type::actor, c.vm.actor_of(so));
+					}
+				}
+			return c.args;
+		}
+
 		// 0x4465E0: how much a transform scales a sphere: 1 below type 4, else the longest row.
 		float touch_scale(live_memory& m, std::uint32_t t)
 		{
@@ -4306,6 +4491,8 @@ namespace openrayman::game
 		vm.on_procedure(94, set_object_list);
 		vm.on_procedure(160, shift_self);
 		vm.on_function(67, generated_count);
+		vm.on_function(113, homing_target);
+		vm.on_function(154, collision_centre);
 		vm.on_function(186, direction_angle);
 		vm.on_function(187, direction_angle);
 		vm.on_function(190, contact_normal);

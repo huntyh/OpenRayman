@@ -95,7 +95,7 @@ sweep; every size and offset above was checked against the Learn_10 template's m
 `ortool peek` (actor 04/00 +0x14708, its mind at 0d/00 +0x4E3EC, its intelligence at 0d/00 +0x52164,
 its variables at 0d/00 +0x4E8A0) and the dynamics allocator 0x412CA0. The rank countdown and the pool size
 were checked against the real game with `tools/r2live.py --generated`. Not done yet in OpenRayman:
-where the pool's capacity comes from (we use Learn_10's 40), function 113's target search.
+where the pool's capacity comes from (we use Learn_10's 40).
 
 ## Shot collision events
 
@@ -116,37 +116,101 @@ Procedure 333 (0x46E360) clears super object flag 1 for a nonzero argument and
 sets it for zero. These details come from the project's own executable analysis,
 provided in the implementation task, and have not yet been checked in live play.
 
-## Target search investigation (not implemented yet)
+## Target search and aim correction
 
-Own analysis of Rayman2.exe's Ghidra output at 0x476960 and 0x476300, and the shot template's
-scripts printed by `ortool brain` (04/00 +0x14708): function 113 takes seven arguments: a custom-bit
-mask, three scoring weights, a search direction and two angles in degrees. It returns an actor or
-no actor. The candidate must have every requested custom bit at standard game +0x24, and bit 1 of
-standard game +0x29 must be clear. The executable searches the current sector and linked sectors;
-it ranks candidates within the angular limits using the three weights. The exact ranking and sector
-selection still need checking against disassembly before implementation.
+Function 113 (0x476960, candidate ranking 0x476300) is implemented. Its seven arguments are a
+custom-bit mask, three scoring weights, a world search direction, and horizontal/vertical limits
+in degrees. It returns an actor or no actor. Candidates need every requested custom bit at
+standard game +0x24; standard game +0x29 bit 0 excludes them. The shot supplies mask 32,
+Rayman's variables 107..109, its flight direction and limits 35/35.
 
-The shot calls it with mask 32, Rayman's variables 107..109, its flight direction and 35/35 degrees.
-On success the script calls function 154 (0x4782C0, helper 0x476630) with the target and mask 1 to
-obtain a collision-zone centre in the target's axes. The helper searches active kind-2 zones and
-also examines part geometry; it can fall back to the actor origin when none qualifies. The script
-aims at that centre and casts against the world; when the cast hits before the target, it falls back
-to the original direction. This is the script's line-of-sight check, separate from function 113.
-The script runs this search during launch and again after a bounce; it does not repeatedly retarget
-on every flight tick. The details of the zone material test and transformed part geometry remain to
-be verified. Function 154, like 113, is not registered in OpenRayman.
+The executable walks the current sector's actor list, then its +0x24 neighbour list. The latter
+has first/last/count at sector data +0x24/+0x28/+0x2C; each link stores the sector super object
+at +4 and the next link at +8. Only this list is used, without recursively visiting neighbours.
+OpenRayman discovers sectors through the scene links when `set_actors` runs. Queries classify
+placed and generated actors by their current position using the same smallest non-virtual box,
+or nearest box, rule as `level_lights::sector_at`. This avoids using the saved actor lists after
+movement or generation. Within each sector candidates follow runtime actor order; exact ties can
+differ from the executable's live list insertion order.
 
-Further own analysis of 0x476300 and 0x476630: the search examines the current sector's
-actor list and the sectors in its +0x24 linked list. The score uses reciprocal lateral offset,
-reciprocal horizontal distance and reciprocal full distance, with the three script weights,
-subject to angular tests. The exact axes and edge cases still need verifying against disassembly.
-The zone helper checks each active kind-2 zone for a matching material, then takes the first
-element's sphere centre or box midpoint (0x476880); if no zone qualifies, it also searches
-part-attached geometry. These findings have not yet been validated against an off-axis shot.
+The search frame's back axis is the negative normalised flight direction; its up axis comes
+from the source actor. A cross product supplies the sideways axis. When back and up nearly agree
+(abs(dot - 1) < 0.002), the old sideways axis supplies a replacement up axis. The search then uses
+the **transposed rotation** (0x444B80), ignoring source stretch and keeping the cross product's
+length, even for tilted shots; this is not a general matrix inverse. For a candidate centre's
+dot products with those axes `(x,y,z)`, let
+`h = sqrt(x*x+y*y)` and `d = sqrt(x*x+y*y+z*z)`. The angular tests are strict:
 
-Own follow-up inspection of 0x476880 confirms that it examines the first element type: a sphere
-uses its first centre vertex and a box uses the midpoint of its first two vertices. The saved
-Learn_10 tutorial cage (node 67) is at (-22.3, 291.5, -5.6), in lighting sector 12 (sector node
-147), according to `ortool lights`. This does not establish its live custom bits or whether the
-shot's search can reach it. A first-visit placement at (-27, 289, -7.3) with LCtrl or Z at ticks
-245-249 did not produce a Rayman shot in the trace, so it is not trajectory evidence.
+```
+-y > h * cos(horizontal_limit)
+z / d < sin(vertical_limit)
+```
+
+The elevation comparison really is signed in the executable: a target far below can pass.
+For a forward candidate (`y < 0`), the score is `w0/abs(x) + w1/h + w2/d`. Exactly zero lateral
+offset gets 3.402822e38 (slightly below the largest finite float), without division. Wider-than-90-degree searches can also
+admit rearward candidates: their score is `-abs(y/x)`, or the negative of that constant when x is
+zero. A strictly greater score replaces the winner;
+equal scores keep the first candidate.
+
+Function 154 (0x4782C0) returns the target's kind-2 collision centre as an **offset**, zero if
+none qualifies. Its helper 0x476630 searches active zones using the same state/group selection as
+collision queries (0x40C700). Zone material matching (0x40C7C0, 0x42DB70, 0x42DE00) requires all
+bits of the requested mask in the collide material's u16 +2; mask zero accepts any material.
+It checks materials throughout the zone, then 0x476880 obtains the centre from only the first
+element: the first sphere's actual centre vertex (kind 7), or the midpoint of the first box's
+two vertices (kind 8). Other first element kinds do not supply a centre. The material accessors
+are 0x41E360 (triangles), 0x41E5F0 (single sphere), 0x41E790 (sphere array), 0x41EA50 (boxes),
+and 0x41EE00 (capsules).
+
+For direct zones, function 154 includes the actor's stretch in that offset but leaves rotation
+to the script. If there is no qualifying direct zone, the helper searches 3D data +0x98's part
+list: link +0 names a part super object, +8 is the next link; part flags need 0x18 and must not
+have +0x30 bit 1. The part's physical object kind-2 geometry is at
+`[[part+4]+4]+8`, transformed by part +0x24. For this fallback the executable applies the inverse
+full actor transform for the local result (0x444D60). This path reads the available runtime part
+transforms; animated part attachment tracking is not added by this change.
+
+Ranking asks that same helper for a **world** centre with material mask 1, falling back to the
+actor origin. After selection the script calls 154 with mask 1, applies function 53 in the target's
+axes, adds its world position, and aims at the resulting point. Its world cast rejects a direction
+blocked before the target. This line-of-sight check stays in the script. The search runs at launch
+and after bounces, rather than continuously during flight; the correction is a change of launch
+direction, not a per-frame turn.
+
+### Reproduction and evidence (2026-11-02)
+
+The last Learn_10 cage is **node 53**, origin approximately (32.6,106.1,33.9). Use the default
+revisit start, `ORTOOL_PLACE=24.8,125,24.25,270@240`, and:
+
+```
+ortool run "F:\Games\Rayman 2" Learn_10 410 53 "Space:300-305"
+```
+
+`ORTOOL_SHOTS=1` adds each Rayman-generated actor's position, imposed velocity, selected target
+and current sector every tick. Space creates the shot at tick 309. Before these handlers it flies
+at z=25.89 with x=24.78, missing the cage by about 7.8 units sideways. With them it selects node 53
+and its velocity becomes (9.6236,-21.4180,8.5824), length 25:
+
+| Tick | Before: position | After: position |
+| --- | --- | --- |
+| 309 | 24.78,123.11,25.89 | 24.9300,123.1703,26.0233 |
+| 320 | 24.78,118.51,25.89 | 26.7007,119.2293,27.6025 |
+| 340 | 24.78,110.19,25.89 | 29.9054,112.0972,30.4604 |
+| 350 | 24.78,106.01,25.89 | 31.5125,108.5203,31.8937 |
+
+The cage gets priority 10 and strength 1 at tick **352**, then changes state at **353** (behaviour
+4, state index 9 / animation 436). Facing yaw 90 from the same position leaves no target in the
+cone: the shot keeps velocity (0,25,0), e.g. (24.8240,131.4871,25.8860) at tick 320.
+Regression tests cover the hit, the same shot with search disabled, the empty cone, moving between
+sectors, linked-sector ranking, masks and exclusions, the signed elevation test, and a rotated,
+scaled box's centre.
+
+**Where this came from:** our own reading of the Ghidra decompilation at the addresses above,
+checked against the original executable's x86 disassembly for the score, angle signs, frame
+construction and special float constants (0x49CCB8/0x49CCBC, tolerance double at 0x49CCD0).
+The shot's script comes from `ortool brain ... Learn_10 04/00+14708`; positions and reactions
+above come from before/after runs against the GOG data. The real-game `run4/generated.txt`
+records nearby shots at 391.078s and 391.484s, but logs creation/state/removal rather than every
+flight position, so it does not validate the exact trajectory or hit tick. Visual comparison
+in the running game remains a human check. No reference-project code was used.

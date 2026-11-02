@@ -3,6 +3,15 @@
 The dated investigation notes from `ROADMAP.md`, kept here so the roadmap stays short. Newest
 first. The format docs under `formats/` are the permanent home of the findings themselves.
 
+## 2026-11-02 (morning): shot homing, third try
+
+- GPT-6.1 Sol (task with the right shoot key, Space, and the user's test spot at the last cage)
+  wrote functions 113 (target search: custom bit mask, cone, three-weight score, the current
+  sector and its +0x24 neighbours, sectors followed live by box) and 154 (collision-zone centre).
+  `ORTOOL_PLACE=24.8,125,24.25,270@240 ORTOOL_SHOTS=1 ortool run ... Learn_10 410 53 Space:300-305`:
+  a shot fired 23 degrees off turns towards cage node 53 at launch and hits it at tick 352; with
+  nothing ahead it flies straight. Pinned in the tests. Reviewed and reproduced here.
+
 ## 2026-11-02 (night): music plays; homing second try came back empty
 
 - Two GPT-6.1 Terra jobs. Music: a theme player in `sound_player` (segments, repeat points,

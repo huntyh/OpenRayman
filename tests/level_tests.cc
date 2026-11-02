@@ -10,6 +10,7 @@
 #include <openrayman/game/interpreter.h>
 #include <openrayman/game/input.h>
 #include <openrayman/game/live_memory.h>
+#include <openrayman/game/first_visit.h>
 #include <openrayman/cnt_archive.h>
 #include <openrayman/error.h>
 #include <openrayman/game_data.h>
@@ -738,6 +739,272 @@ TEST_CASE("real data: Learn_10's scripts run")
 				MESSAGE(std::format("tick {}, node 0x{:08X}: {}", tick, vm.last_node(), e.what()));
 		});
 	CHECK(errors == 0);
+}
+
+TEST_CASE("homing ranks live actors only in the current and linked sectors")
+{
+	game::live_memory m(three_super_objects());
+	auto make_actor = [&](vec3 position) {
+		std::uint32_t so = m.allocate(0x48), actor = m.allocate(0x38), standard = m.allocate(0x34), transform = m.allocate(0x58);
+		m.write<std::uint32_t>(so, 2);
+		m.write(so + 4, actor);
+		m.write<std::uint32_t>(so + 0x1C, 0x1000);
+		m.write(so + 0x24, transform);
+		m.write(actor + 4, standard);
+		m.write(standard + 0xC, so);
+		m.write<std::uint32_t>(standard + 0x24, 32);
+		m.write<std::uint32_t>(transform, 3);
+		m.write(transform + 4, position);
+		for(std::uint32_t i = 0; i < 3; i++)
+		{
+			m.write<float>(transform + 0x10 + i * 16, 1);
+			m.write<float>(transform + 0x34 + i * 16, 1);
+		}
+		return so;
+	};
+	auto make_sector = [&](float low, float high) {
+		std::uint32_t so = m.allocate(0x48), data = m.allocate(0x88);
+		m.write<std::uint32_t>(so, 4);
+		m.write(so + 4, data);
+		m.write(data + 0x60, vec3{ low, -20, -40 });
+		m.write(data + 0x6C, vec3{ high, 20, 40 });
+		return so;
+	};
+	std::uint32_t self = make_actor({ 0, 0, 0 }), near = make_actor({ 5, 2, 0 }), far = make_actor({ 15, 1, 0 });
+	std::uint32_t a = make_sector(-10, 10), b = make_sector(10, 30);
+	m.write(0x1008, a);
+	m.write(a + 0x14, b);
+	game::interpreter vm(m, self);
+	game::register_handlers(vm);
+	vm.set_actors({ self, near, far });
+	CHECK(vm.sector_at({ 15, 1, 0 }) == b);
+	std::uint32_t script = m.allocate(8 * 8), direction = m.allocate(12);
+	m.write(direction, vec3{ 1, 0, 0 });
+	auto node = [&](std::uint32_t at, node_type type, std::uint32_t param) {
+		m.write(at, param);
+		m.write<std::uint8_t>(at + 6, at == script ? 0 : 1);
+		m.write<std::uint8_t>(at + 7, std::uint8_t(type));
+	};
+	node(script, node_type::function, 113);
+	node(script + 8, node_type::integer, 32);
+	node(script + 16, node_type::integer, 1); // lateral weight
+	node(script + 24, node_type::integer, 0);
+	node(script + 32, node_type::integer, 0);
+	node(script + 40, node_type::constant_vector, direction);
+	node(script + 48, node_type::integer, 35);
+	node(script + 56, node_type::integer, 35);
+	auto search = [&] {
+		game::value out;
+		CHECK(vm.eval(self, script, out) == script + 64);
+		CHECK(out.type == game::value_type::actor);
+		return out.word();
+	};
+	CHECK(search() == vm.actor_of(near));
+	// The more distant actor wins on lateral alignment once its sector becomes reachable.
+	std::uint32_t link = m.allocate(12), sector_data = m.u32(a + 4);
+	m.write(link + 4, b);
+	m.write(sector_data + 0x24, link);
+	m.write<std::uint32_t>(sector_data + 0x2C, 1);
+	CHECK(search() == vm.actor_of(far));
+	node(script + 16, node_type::integer, 0);
+	node(script + 24, node_type::integer, 1); // horizontal distance instead of lateral alignment
+	CHECK(search() == vm.actor_of(near));
+	node(script + 24, node_type::integer, 0);
+	node(script + 32, node_type::integer, 1); // full distance
+	CHECK(search() == vm.actor_of(near));
+	node(script + 32, node_type::integer, 0);
+	node(script + 16, node_type::integer, 1);
+	std::uint32_t standard = m.u32(vm.actor_of(far) + 4), transform = m.u32(far + 0x24);
+	m.write<std::uint8_t>(standard + 0x29, 1);
+	CHECK(search() == vm.actor_of(near));
+	m.write<std::uint8_t>(standard + 0x29, 0);
+	m.write<std::uint32_t>(standard + 0x24, 0);
+	CHECK(search() == vm.actor_of(near));
+	m.write<std::uint32_t>(standard + 0x24, 32);
+	m.write(transform + 4, vec3{ 15, 1, 30 });
+	CHECK(search() == vm.actor_of(near)); // above the elevation limit
+	m.write(transform + 4, vec3{ 15, 1, -30 });
+	CHECK(search() == vm.actor_of(far)); // the exe's elevation limit is signed
+	m.write(transform + 4, vec3{ 5, 0, 0 });
+	m.write<std::uint32_t>(sector_data + 0x2C, 0);
+	CHECK(search() == vm.actor_of(far)); // live move across the sector boundary; exact axis
+	vm.remove(far);
+	CHECK(search() == vm.actor_of(near));
+	m.write(direction, vec3{ 1, 0, 1 });
+	CHECK(search() == vm.actor_of(near)); // transpose of the non-unit frame, not its matrix inverse
+	m.write(direction, vec3{ -1, 0, 0 });
+	CHECK(search() == 0);
+
+	// A scaled and rotated box centre must be an offset in the target's rotation axes, not a
+	// world position. Its active state and material mask both matter (function 154).
+	std::uint32_t actor = vm.actor_of(near), set = m.allocate(0x68), head = m.allocate(12), entry = m.allocate(8);
+	std::uint32_t zone = m.allocate(0x30), vertices = m.allocate(24), kinds = m.allocate(4), elements = m.allocate(4);
+	std::uint32_t element = m.allocate(8), box = m.allocate(8), material = m.allocate(16), collide = m.allocate(4);
+	m.write(actor + 0x14, set);
+	m.write(set + 4, head);
+	m.write<std::uint32_t>(set + 0x34, 1);
+	m.write(head, entry);
+	m.write<std::uint32_t>(head + 8, 1);
+	m.write(entry + 4, zone);
+	m.write(zone, vertices);
+	m.write(zone + 0x10, kinds);
+	m.write(zone + 0x14, elements);
+	m.write<std::uint16_t>(zone + 0x2E, 1);
+	m.write(vertices, vec3{ 0, 0, 0 });
+	m.write(vertices + 12, vec3{ 2, 4, 6 });
+	m.write<std::uint16_t>(kinds, 8);
+	m.write(elements, element);
+	m.write(element, box);
+	m.write<std::uint16_t>(element + 4, 1);
+	m.write<std::uint16_t>(box + 2, 1);
+	m.write(box + 4, material);
+	m.write(material + 0xC, collide);
+	m.write<std::uint16_t>(collide + 2, 1);
+	std::uint32_t t = m.u32(near + 0x24);
+	m.write<std::uint32_t>(t, 4);
+	m.write(t + 0x10, vec3{ 0, 1, 0 });
+	m.write(t + 0x1C, vec3{ -1, 0, 0 });
+	m.write(t + 0x34, vec3{ 0, 2, 0 });
+	m.write(t + 0x40, vec3{ -3, 0, 0 });
+	m.write(t + 0x4C, vec3{ 0, 0, 4 });
+	node(script, node_type::function, 154);
+	node(script + 8, node_type::actor, actor);
+	node(script + 16, node_type::mask, 1);
+	game::value centre;
+	CHECK(vm.eval(self, script, centre) == script + 24);
+	CHECK(centre.component(0) == doctest::Approx(2));
+	CHECK(centre.component(1) == doctest::Approx(6));
+	CHECK(centre.component(2) == doctest::Approx(12));
+	m.write<std::uint16_t>(collide + 2, 2);
+	vm.eval(self, script, centre);
+	CHECK(centre.words == game::value::vector(0, 0, 0).words);
+	m.write<std::uint16_t>(collide + 2, 1);
+	m.write<std::uint32_t>(set + 0x34, 2);
+	vm.eval(self, script, centre);
+	CHECK(centre.words == game::value::vector(0, 0, 0).words);
+
+	// With direct zones off, a collision-bearing part supplies a world centre, converted back
+	// through the full actor matrix. Hiding that part restores the zero-offset fallback.
+	std::uint32_t data = m.allocate(0x118), part_link = m.allocate(12), part = m.allocate(0x48);
+	std::uint32_t object = m.allocate(8), physical = m.allocate(16), part_transform = m.allocate(0x58);
+	m.write(actor, data);
+	m.write(data + 0x98, part_link);
+	m.write(part_link, part);
+	m.write<std::uint32_t>(part, 0x10);
+	m.write(part + 4, object);
+	m.write(object + 4, physical);
+	m.write(physical + 8, zone);
+	m.write(part + 0x24, part_transform);
+	m.write<std::uint32_t>(part_transform, 3);
+	m.write(part_transform + 4, vec3{ 5, 2, 0 });
+	for(std::uint32_t i = 0; i < 3; i++)
+		m.write<float>(part_transform + 0x34 + i * 16, 1);
+	vm.eval(self, script, centre);
+	CHECK(centre.component(0) == doctest::Approx(1));
+	CHECK(centre.component(1) == doctest::Approx(-1.0f / 3));
+	CHECK(centre.component(2) == doctest::Approx(0.75f));
+	m.write<std::uint32_t>(part + 0x30, 2);
+	vm.eval(self, script, centre);
+	CHECK(centre.words == game::value::vector(0, 0, 0).words);
+}
+
+TEST_CASE("real data: an off-axis shot hits Learn_10's last cage")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto game = game_data::locate(*dir);
+	REQUIRE(game);
+	level_files files = load_level_files(*game, "Learn_10");
+	level_header header = read_level_header(files);
+	scene tree(files.memory, header);
+	animation_bank bank = read_animation_bank(files);
+	game::live_memory m(files.memory);
+	std::uint32_t rayman = header.placements.at(0).super_object.address();
+	game::interpreter vm(m, rayman);
+	game::register_handlers(vm);
+	game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
+	vm.set_animations(&bank);
+	game::install_level_events(m, bank);
+	std::vector<std::uint32_t> actors;
+	for(const scene_node& n : tree.nodes())
+		if(n.type == super_object_type::actor)
+			actors.push_back(n.at.address());
+	vm.set_actors(actors);
+	CHECK(vm.set_story_bit(actors, 1133));
+	actor_set set = read_actors(files.memory, tree, bank);
+	for(const actor_set::entry& e : set.actors)
+		game::set_global_placement(m, tree.node(e.node).at.address(), e.world);
+	level_lights lights = read_lights(files.memory, tree);
+	for(std::uint32_t so : actors)
+		if(auto placement = game::global_placement(m, so))
+		{
+			vec3 p{ placement->m[0][3], placement->m[1][3], placement->m[2][3] };
+			auto sector = lights.sector_at(p);
+			REQUIRE(sector);
+			CHECK(vm.sector_at(p) == tree.node(lights.sectors[*sector].node).at.address());
+		}
+	bool homing = true, away = false;
+	SUBCASE("a 23 degree miss is corrected into the cage") {}
+	SUBCASE("without the target search the same shot misses")
+	{
+		homing = false;
+		vm.on_function(113, [](game::call& c, game::value& out) {
+			for(int i = 0; i < 7; i++) c.args = c.vm.skip(c.args);
+			out = game::value::of(game::value_type::actor, 0);
+			return c.args;
+		});
+	}
+	SUBCASE("nothing in the cone leaves a straight shot") { away = true; }
+	game::input keys(m, read_input_actions(files));
+	std::uint32_t cage_so = tree.node(53).at.address(), cage = vm.actor_of(cage_so);
+	std::uint32_t cage_set = m.u32(cage + 0x14), cage_data = m.u32(cage);
+	int made = -1, hit = -1, reaction = -1;
+	std::uint32_t waiting_state = 0;
+	std::size_t errors = 0;
+	for(int tick = 0; tick < 370; tick++)
+	{
+		if(tick == 240)
+		{
+			float sign = away ? -1.0f : 1.0f;
+			game::write_transform(m, rayman, { 24.8f, 125, 24.25f }, { sign, 0, 0, 0, sign, 0, 0, 0, 1 });
+		}
+		keys.set_key(0x39, tick >= 300 && tick < 305); // Space
+		keys.step();
+		game::step(vm, actors, [&](std::uint32_t, const std::exception& e) {
+			if(errors++ == 0) MESSAGE(e.what());
+		});
+		if(tick == 308) waiting_state = m.u32(cage_data + 4);
+		if(tick > 308 && hit < 0 && m.u8(cage_set + 0x65))
+		{
+			hit = tick;
+			CHECK(m.u8(cage_set + 0x65) == 10);
+			CHECK(m.f32(cage_set + 0x5C) == doctest::Approx(1));
+		}
+		if(tick > 308 && reaction < 0 && m.u32(cage_data + 4) != waiting_state)
+			reaction = tick;
+		for(const auto& slot : vm.generated().slots())
+			if(slot.creator == rayman && !vm.removed(slot.super_object))
+			{
+				if(made < 0) made = tick;
+				auto target = vm.get_variable(slot.super_object, 22);
+				if(tick == 309)
+					CHECK(target.word() == (homing && !away ? cage : 0));
+				if(away && tick <= 330)
+				{
+					CHECK(target.word() == 0);
+					auto velocity = vm.get_variable(slot.super_object, 13);
+					CHECK(velocity.component(0) == doctest::Approx(0).epsilon(0.0001));
+					CHECK(velocity.component(1) == doctest::Approx(25));
+					CHECK(velocity.component(2) == doctest::Approx(0));
+				}
+			}
+	}
+	CHECK(errors == 0);
+	CHECK(made == 309);
+	CHECK(hit == (homing && !away ? 352 : -1));
+	CHECK(reaction == (homing && !away ? 353 : -1));
 }
 
 TEST_CASE("real data: English dialog table")

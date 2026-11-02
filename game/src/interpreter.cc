@@ -4,6 +4,7 @@
 #include <openrayman/error.h>
 
 #include <bit>
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <format>
@@ -97,12 +98,54 @@ namespace openrayman::game
 	void interpreter::set_actors(std::vector<std::uint32_t> actors)
 	{
 		m_actors = std::move(actors);
+		m_sectors.clear();
+		std::vector<std::uint32_t> pending = m_actors;
+		std::set<std::uint32_t> seen;
+		while(!pending.empty())
+		{
+			std::uint32_t so = pending.back();
+			pending.pop_back();
+			if(!so || !m_memory.contains(so, 0x24) || !seen.insert(so).second)
+				continue;
+			if(m_memory.u32(so) == 4)
+				m_sectors.push_back(so);
+			// First child, next sibling and parent reach the sector tree even though Fix's
+			// own scene links may be supplied by the level header instead of its saved memory.
+			for(std::uint32_t offset : { 0x08u, 0x14u, 0x1Cu })
+				pending.push_back(m_memory.u32(so + offset));
+		}
 		m_native_checks.clear();
 		for(std::uint32_t self : m_actors)
 		{
 			initialize_native_check(self);
 			select_zone_groups(m_memory, actor_of(self));
 		}
+	}
+
+	std::uint32_t interpreter::sector_at(const std::array<float, 3>& position) const
+	{
+		// Same smallest-containing-box / nearest-box rule as level_lights::sector_at. Virtual
+		// sectors light scenery only and never own actors (0x412850, 0x44BDC0, 0x44BE50).
+		std::uint32_t best = 0;
+		float best_distance = 0, best_volume = 0;
+		for(std::uint32_t so : m_sectors)
+		{
+			std::uint32_t data = m_memory.u32(so + 4);
+			if(!data || !m_memory.contains(data, 0x7D) || m_memory.u8(data + 0x7C))
+				continue;
+			float distance = 0, volume = 1;
+			for(std::uint32_t axis = 0; axis < 3; axis++)
+			{
+				float low = m_memory.f32(data + 0x60 + axis * 4);
+				float high = m_memory.f32(data + 0x6C + axis * 4);
+				float outside = std::max({ low - position[axis], position[axis] - high, 0.0f });
+				distance += outside * outside;
+				volume *= high - low;
+			}
+			if(!best || distance < best_distance || (distance == best_distance && volume < best_volume))
+				best = so, best_distance = distance, best_volume = volume;
+		}
+		return best;
 	}
 
 	void interpreter::initialize_native_check(std::uint32_t self)

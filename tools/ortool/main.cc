@@ -1700,6 +1700,24 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 						std::cout << std::format("   missing {} {} x{}\n", k.first, k.second, n);
 				}
 		}
+		// ORTOOL_SHOTS=1: each generated actor's trajectory and chosen homing target every tick,
+		// even without a traced node. This is read-only; it does not replace any script handler.
+		if(std::getenv("ORTOOL_SHOTS"))
+			for(const auto& slot : vm.generated().slots())
+			{
+				if(slot.creator != main_actor || vm.removed(slot.super_object))
+					continue;
+				std::uint32_t so = slot.super_object;
+				auto p = game::global_placement(memory, so);
+				if(!p)
+					continue;
+				game::value target = vm.get_variable(so, 22), speed = vm.get_variable(so, 13);
+				std::uint32_t target_so = vm.super_object_of(target.word());
+				std::uint32_t sector = vm.sector_at({ p->m[0][3], p->m[1][3], p->m[2][3] });
+				std::cout << std::format("tick {:>4}: shot 0x{:X} at {:.4f} {:.4f} {:.4f}, velocity {:.4f} {:.4f} {:.4f}, target {}, sector 0x{:X}\n",
+					f, so, p->m[0][3], p->m[1][3], p->m[2][3], speed.component(0), speed.component(1), speed.component(2),
+					node_of.contains(target_so) ? std::to_string(node_of[target_so]) : std::string("none"), sector);
+			}
 		if(camera_trace && camera_object)
 		{
 			auto at3 = [&](std::uint32_t at) {

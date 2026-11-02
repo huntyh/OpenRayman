@@ -195,6 +195,9 @@ namespace openrayman::game
 		// The level's actors (super objects), for queries over the world such as procedure 22.
 		void set_actors(std::vector<std::uint32_t> actors);
 		const std::vector<std::uint32_t>& actors() const { return m_actors; }
+		// Sector super objects found through the loaded actors' scene links. Membership is queried
+		// from live positions, including generated actors, rather than the saved sector actor lists.
+		std::uint32_t sector_at(const std::array<float, 3>& position) const;
 		// Procedures 76/77's counted loops (the exe keeps one stack for all scripts, 0x4E9420..).
 		struct loop_frame { std::int32_t count; std::uint32_t body; };
 		std::vector<loop_frame> loops;
@@ -355,6 +358,7 @@ namespace openrayman::game
 		std::uint32_t m_last_node = 0;
 		std::uint32_t m_clock = 0;
 		std::vector<std::uint32_t> m_actors;
+		std::vector<std::uint32_t> m_sectors;
 		std::set<std::uint32_t> m_removed;
 		generated_actors m_generated;
 		std::vector<sound_request> m_sounds;

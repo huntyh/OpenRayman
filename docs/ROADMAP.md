@@ -78,7 +78,7 @@ once it plays right (they have issues of their own, found on a first look).
   inertia, ledge grab and the climb, the portal hop (dropping under it as in the game) and
   its pull with the spark particles, the shallow-water depth cast with splashes and ripples,
   Rayman's shot as a generated actor (its flight, hit on actors, fade and slot freeing
-  ([formats/generated.md](formats/generated.md)); homing still to come), the
+  ([formats/generated.md](formats/generated.md)); homing in, awaiting the user's test), the
   long-idle animations (the "basketball" one), and the game camera following him: scripts
   fill the parameter blocks, the solve and mechanics move it, Q/W turning swings round in pi/8
   steps like the exe, camera collision, and an interim obstacle search the user is happy with
@@ -101,7 +101,9 @@ once it plays right (they have issues of their own, found on a first look).
 
 **Open** (agreed order with the user, 2026-10-30; state 2026-11-01)
 
-1. **3c leftovers.** The shot homing is being implemented (functions 113 and 154). The tunnel
+1. **3c leftovers.** Shot homing is in (functions 113 and 154): a shot aims at the best target in
+   front of it at launch and after each bounce; in ortool an off-centre shot at the last cage
+   hits it. The user should try shots past the cages in play. The tunnel
    clip after the Globox kids is still open. The ceilings that let him jump through (the bridge
    at `--camera 40.8,305.1,-8.3,5.2,14.2` and the Globox kids' cave roof at `--camera
    -66.7,198.4,1.2,279.7,24.1`) have a fix in since 800c6c2, awaiting the user's test. The
