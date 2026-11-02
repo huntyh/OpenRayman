@@ -170,6 +170,16 @@ Fixes that landed since the last look, each at its own spot:
       not drop to 3 frames per second
 - [ ] The big-nosed flier: when it flies up and away, its buzz should stop, like in the game
 
+## Finished-level revisit and dialog colours
+
+- [ ] Start `--game "F:\Games\Rayman 2" --level Learn_10` without `--start new`. Walk to the
+      Globox kids' cave: the scene should not start. Check the Lum locations and the final cage:
+      the collected Lums, freed Teensies and final cage should be absent; the HUD should show
+      5/5 Lums and 2/2 cages.
+- [ ] Start again with `--start new` and reach the kids' scene. Compare it with the real game:
+      Rayman's letters should look white-ish, the kids' letters yellow with red highlights, and
+      Murfy's yellow and red should match. Check the colour across both top and bottom of letters.
+
 ## Known limitations
 
 Don't report these as bugs, they're the next steps:
@@ -178,7 +188,5 @@ Don't report these as bugs, they're the next steps:
 - The HUD is still rough: no health bar, and the counters sit a little too far left and up and
   lack the menu font; the dialog text's colour, size and padding are a little off
 - The arrival start (without `--start new`) begins the camera behind a wall, out of bounds
-- Revisiting a finished level does not look finished: Lums and Teensies remain, the kids' scene
-  still starts, the HUD shows 0
 
 Tip: compare with the real game at the same spot.

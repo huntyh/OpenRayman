@@ -49,6 +49,40 @@ namespace openrayman::game
 		840, 841, 1089, 1091, 1092, 1133, 1175, 1176, 1177, 1396, 1397, 1398, 1399, 1400,
 	};
 
+	// Temporary completed-level snapshot until saves are read. These are scene node numbers, not
+	// save-file IDs. It approximates the requested finished scene; the full save/load mechanism
+	// for its other actors is not yet established. Lum bits 1396..1400 and cage bits 840/841
+	// describe what was collected. In particular node 69
+	// freezes node 70 before its Lum script can see bit 1399. Node 62 removes cage 53 in its
+	// reflex after its bit 28 is set, but its completed-level startup removes the director first.
+	inline constexpr std::size_t learn_10_revisit_absent[] = {
+		3, 11, 12, 13, 36, 53, 56, 57, 58, 59, 60, 61, 70, 71,
+	};
+
+	inline void apply_revisit_state(interpreter& vm, const scene& tree, std::string_view level)
+	{
+		if(!std::ranges::equal(level, std::string_view("Learn_10"),
+			[](unsigned char a, unsigned char b) { return std::tolower(a) == std::tolower(b); }))
+			return;
+		for(std::size_t node : learn_10_revisit_absent)
+			if(node < tree.nodes().size())
+			{
+				const auto so = tree.node(node).at.address();
+				const auto actor = vm.actor_of(so);
+				auto& memory = vm.memory();
+				const auto standard = actor ? memory.u32(actor + 4) : 0;
+				if(standard && memory.contains(standard, 0x2a))
+				{
+					// 0x406220 marks a removed placed actor with bit 0 and clears bit 2.
+					// Type 5 is inactive too; other types retain bit 1.
+					auto flags = std::uint8_t((memory.u8(standard + 0x29) | 1) & ~4);
+					flags = std::uint8_t(memory.u32(standard + 0x14) == 5 ? flags & ~2 : flags | 2);
+					memory.write<std::uint8_t>(standard + 0x29, flags);
+				}
+				vm.remove(so);
+			}
+	}
+
 	// Writes a super object's transform: position, then its X, Y and Z axes (twice: rotation and the
 	// combined matrix).
 	inline void write_transform(live_memory& m, std::uint32_t super_object, const float (&at)[3], const float (&axes)[9])

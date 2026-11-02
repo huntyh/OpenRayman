@@ -50,6 +50,21 @@ pointer to the model's declaration pointer, +0x04 the initial buffer, +0x08 the 
 actor's own values). Reading variable n: description n's offset into the current buffer, read by
 its type (0x4815F0).
 
+## Saved variables
+
+Own analysis of the GOG executable (2026-11-02): 0x466BD0 walks each variable declaration and
+registers entries whose save flags at description +0x08 are nonzero. The save registry at 0x44A240
+stores the target address, type and flags; 0x44A650 writes selected entries and 0x44AC10 reads them.
+During level loading, 0x403730 loads the level file and general file separately and 0x449E80
+applies their registered entries. Fix actor 6 variables 6, 20, 42, 45, 46, 49, 50 and 67 have
+save flag 0x80; variable 42 is the story-bit array. No Learn_10 scene actor designer variable
+examined has flags 0x100 or 0x200. Separately, 0x4135C0 registers bit 0 of standard-game +0x29
+for type-5 actors under save flag 0x200; 0x44ACD0 and 0x44AD20 pack these bits into bytes.
+Learn_10 has one type-5 placed actor, node 71. Each of the three installed `Learn_10_0.sav` files
+expands to one byte 0x01 (0x48D890), so its saved out-of-world bit is set in those files. This is evidence
+about those specific files and declarations, not a complete save format or proof of how all actors
+are restored on a finished-level revisit.
+
 ## Script nodes
 
 8 bytes each: u32 parameter, u16 cache (the interpreter stores how many nodes to skip there the

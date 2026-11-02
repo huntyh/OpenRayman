@@ -125,8 +125,11 @@ namespace openrayman
 														{
 															auto rg = m_memory.read_u32(*data + std::uint32_t(i * 8));
 															auto ba = m_memory.read_u32(*data + std::uint32_t(i * 8 + 4));
-															colours[i] = {float(rg & 0xffff) / 255, float(rg >> 16) / 255,
-																float(ba & 0xffff) / 255, float(ba >> 16) / 255};
+															// 0x431400 converts the signed channels by 1/256; the material
+															// conversion at 0x42D520 doubles and clamps RGB before interpolation.
+															// The font's diffuse is 1, ambient 0, and its alpha is opaque.
+															auto channel = [](std::uint32_t n) { return std::clamp(float(std::int16_t(n)) / 128.0f, 0.0f, 1.0f); };
+															colours[i] = {channel(rg & 0xffff), channel(rg >> 16), channel(ba & 0xffff), 1.0f};
 														}
 								it->second = glyph{std::move(object), texture, std::move(colours)};
 							}

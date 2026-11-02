@@ -235,8 +235,13 @@ The dialog glyph path is distinct from the menu's slot renderer: own analysis of
 0x409500 shows that each byte selects an entry in the generated actor's font object and creates a
 glyph child using the entry's object pointer. Lowercase maps to the uppercase range; bytes above
 0x9F use a different offset. The font-object root, glyph geometry, and byte mapping have not yet
-been connected to the viewer. Its current SDL debug font, colour approximation and positioning
-are temporary; they do not establish the original appearance.
+now connected to the viewer. The template's initial object list contains the glyphs; `/O` changes
+the list offset (0x408DD0), reset to zero by 0x4085E0. The visual set supplies signed 16-bit RGBA
+per vertex: 0x431400 divides by 256, and the material conversion at 0x42D520 doubles and clamps
+before rasterization. The examined glyphs in ranges 0, 200, 400 and 600 have black ambient and unit diffuse;
+range 800 has white ambient. This is own
+analysis of the GOG executable and Fix data, 2026-11-02; matching the finished colours and positioning
+by eye against the game remains open.
 
 - Own analysis of the retail GOG install (`Rayman2.exe`, timestamp 1999-10-15 23:19:39) and of the
   game files, on 2026-10-30.

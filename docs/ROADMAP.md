@@ -120,10 +120,12 @@ Dated details of everything above, and the user's look-by-look feedback, are in
    top, and the subtitles are made to sit on them. Do the bars as the game does, on by default;
    later an option to turn them off, which then puts a darker backing behind the text (user,
    2026-11-02).
-   The revisit start should look like a finished level: no Lums, no Teensies, no final cage, the
-   kids' scene not replaying, the HUD at 5/5 and 2/2. The story bits alone don't do it (1092, the
-   kids' bit, is set and node 3 still starts the scene); the save has more (brief ready:
-   build/task_revisit_state.md).
+   The revisit start has an interim finished-Learn_10 snapshot: the Lums, Teensies, final cage and
+   kids' director are absent, with the HUD at 5/5 and 2/2; check it by eye. The level save records
+   the out-of-world bit for the type-5 actor node 71, and the general save includes the story array;
+   how the rest of the finished scene is restored remains open
+   ([formats/scripts.md](formats/scripts.md#saved-variables)). Dialog glyph colours now use the
+   executable's vertex conversion; compare Rayman, the kids and Murfy with the real game.
    The first cage: breaking it makes a golden starry burst and its Lum appears at once; ours has
    no burst and the Lum shows up with a delay, before Rayman is walked to Murfy's spot. The burst
    is node 67's break rule: particle kinds 5 (smoke puffs), 9 (flash, ours has it) and three

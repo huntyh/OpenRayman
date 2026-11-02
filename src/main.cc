@@ -1230,6 +1230,8 @@ namespace
 					a.thinkers.push_back(tree.node(n).at.address());
 			}
 			a.vm->set_actors(a.thinkers);
+			if(!a.new_game)
+				openrayman::game::apply_revisit_state(*a.vm, tree, levels[index]);
 			a.camera_super_object = 0;
 			for(const fix_actor_placement& placed : header.placements)
 			{

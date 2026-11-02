@@ -1224,6 +1224,67 @@ TEST_CASE("real data: Learn_10 portal camera lands with a clear view")
 	CHECK(saw_startup_cover);
 }
 
+TEST_CASE("real data: completed Learn_10 revisit keeps its actors and counters")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto data = game_data::locate(*dir);
+	REQUIRE(data);
+	level_files files = load_level_files(*data, "Learn_10");
+	level_header header = read_level_header(files);
+	scene tree(files.memory, header);
+	animation_bank bank = read_animation_bank(files);
+	game::live_memory memory(files.memory);
+	const auto rayman = header.placements.at(0).super_object.address();
+	game::interpreter vm(memory, rayman);
+	game::register_handlers(vm);
+	game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
+	vm.set_animations(&bank);
+	std::vector<std::uint32_t> actors;
+	for(const scene_node& node : tree.nodes())
+		if(node.type == super_object_type::actor) actors.push_back(node.at.address());
+	vm.set_actors(actors);
+	for(const auto& e : read_actors(files.memory, tree, bank).actors)
+		game::set_global_placement(memory, tree.node(e.node).at.address(), e.world);
+	for(auto bit : game::revisit_story_bits) REQUIRE(vm.set_story_bit(actors, bit));
+	// The five placed Lums, the end cage and Teensies, and the kids' director.
+	constexpr std::size_t absent[] = { 3, 11, 12, 13, 36, 53, 56, 57, 58, 59, 60, 61, 70, 71 };
+	for(auto node : absent) CHECK_FALSE(vm.removed(tree.node(node).at.address()));
+	game::apply_revisit_state(vm, tree, "Learn_10");
+	game::input keys(memory, read_input_actions(files));
+	std::size_t errors = 0;
+	for(int tick = 0; tick < 390; ++tick)
+	{
+		if(tick == 240) game::write_transform(memory, rayman, { -61.53f, 204.99f, 0.16f }, { 0, 1, 0, -1, 0, 0, 0, 0, 1 });
+		if(tick == 330) game::write_transform(memory, rayman, { 32.605f, 106.09f, 33.868f }, { 0, 1, 0, -1, 0, 0, 0, 0, 1 });
+		keys.step();
+		game::step(vm, actors, [&](std::uint32_t, const std::exception&) { ++errors; });
+		CHECK(vm.removed(tree.node(3).at.address()));
+		if(tick == 270)
+		{
+			auto at = game::global_placement(memory, rayman);
+			REQUIRE(at);
+			CHECK(at->m[0][3] == doctest::Approx(-61.53f).epsilon(0.001));
+			CHECK(at->m[1][3] == doctest::Approx(204.99f).epsilon(0.001));
+		}
+	}
+	for(auto node : absent)
+	{
+		const auto so = tree.node(node).at.address();
+		CHECK(vm.removed(so));
+		const auto standard = memory.u32(vm.actor_of(so) + 4);
+		CHECK((memory.u8(standard + 0x29) & 1) == 1);
+	}
+	CHECK(errors == 0);
+	const auto globals = tree.node(6).at.address();
+	CHECK(vm.get_variable(globals, 4).as_int() == 2);
+	CHECK(vm.get_variable(globals, 5).as_int() == 2);
+	CHECK(vm.get_variable(globals, 44).as_int() == 5);
+	CHECK(vm.get_variable(globals, 43).as_int() == 0);
+}
+
 TEST_CASE("real data: Rayman stands on Learn_10's closed tutorial trapdoor")
 {
 	auto dir = real_game_dir();

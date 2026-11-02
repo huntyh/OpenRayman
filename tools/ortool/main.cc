@@ -1502,12 +1502,13 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 			node_of[actors.back()] = n;
 		}
 	vm.set_actors(actors);
+	if(!first_visit) game::apply_revisit_state(vm, tree, name);
 	// ORTOOL_IDS=1: each actor's id, flags and type (standard game +8, +0x29, +0x14).
 	if(std::getenv("ORTOOL_IDS"))
 		for(std::uint32_t so : actors)
 			if(std::uint32_t actor = vm.actor_of(so); actor && memory.u32(actor + 4))
-				std::cout << std::format("node {:>3}: id 0x{:X}, flags 0x{:02X}, type {}\n", node_of[so], memory.u32(memory.u32(actor + 4) + 8),
-					memory.u8(memory.u32(actor + 4) + 0x29), memory.u32(memory.u32(actor + 4) + 0x14));
+				std::cout << std::format("node {:>3}: id 0x{:X}, flags 0x{:02X}, type {}, {}\n", node_of[so], memory.u32(memory.u32(actor + 4) + 8),
+					memory.u8(memory.u32(actor + 4) + 0x29), memory.u32(memory.u32(actor + 4) + 0x14), vm.removed(so) ? "removed" : "present");
 	// Native probes (the copy protection hides here): with ORTOOL_PROBES=1 also the decoded code, as
 	// hex (Ubisoft's code: keep such output in H:\r2export).
 	for(const auto& check : vm.native_checks())
