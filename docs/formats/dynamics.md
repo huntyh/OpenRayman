@@ -18,6 +18,8 @@ scripts to read on the next tick.
 | +0x3C | the actor's speed from the last tick; fields 2/3 read it |
 | +0x150 | contact block: +0 this tick's contact word, +4 the word conditions 27..32 test (1 on the ground, 0 nothing) |
 | +0x178 | per-axis speed limit (procedure 274) |
+| +0x1B4 | last carry displacement, left out of inertia unless end flag 0x10 |
+| +0x284 | supporting actor's super object, or 0 (0x43D950 / 0x43DA00) |
 
 ## The mechanics
 
@@ -115,8 +117,51 @@ Rayman 0.3 off the portal's wall in one frame with a sideways speed of -0.07.
 A wall within the radius + 0.05 sets contact bit 0x4 (condition 28) and contact slot 2 (function 190(2))
 to the push's direction and the point; Rayman's reflex macro 40 bounces his push (var87) off that normal,
 scaled by max(0, n · push direction), which is what ends the Learn_10 portal hop (seen in the running
-game with tools/r2live.py: one frame after the release var87 is zero). Ceilings and moving supports are still not handled. Rayman's mechanics has
+game with tools/r2live.py: one frame after the release var87 is zero). Ceilings and actor surfaces now use the same
+triangle search; moving supports are described below. Rayman's mechanics has
 none of the resolver bits, only 0x2, so 0x2 also counts as colliding until his resolver is read.
+
+## Standing on actors and moving supports
+
+Actor triangles join the scenery queries in `move_actor`; the highest acceptable floor across
+both wins. The live state, part animation and actor transform are read for each movement step,
+so moving or hiding an object changes its collision immediately. See
+[collision.md](collision.md#actor-surfaces) for the sources and the Learn_10 trapdoor evidence.
+
+The exe handles carrying through the scene hierarchy. At the end of full dynamics (end flag
+0x4), 0x43D820 checks the selected actor contact and its supporting normal. A support is eligible
+only when its standard-game byte +0x28 is 1 (0x413730); the rider must not itself have that value.
+0x43D950 records the support at base +0x284 and reparents the rider under it. 0x43DA00 clears it
+and returns the rider to the dynamic world. Base flag 0x40000000 forbids changing the parent.
+When a support moves, 0x43D7B0 visits its riders and 0x43DA80 updates their transforms using the
+support's change of frame. A rider stays upright unless base flag 0x1000 allows tilting.
+
+OpenRayman's actors already store world transforms, so it keeps a support placement alongside
+each rider instead of changing the scene links. Its own affine transform calculation applies the
+support's translation and turn since the rider's previous movement step to the rider's position
+and orientation, then resolves the move against scenery and actor surfaces. Landing on an
+eligible actor records the relationship; leaving the surface, disabling its geometry, removing
+it or teleporting the rider releases it. Static actors such as Learn_10 node 66 (byte +0x28 = 0)
+can still be floors, without carrying the rider sideways as they move out from under it.
+
+Carry displacement is kept at base +0x1B4, and the reported speed includes it. Inertia subtracts
+that displacement before retaining last tick's motion (0x43DDA0); our vertical gravity step also
+leaves it out, to avoid continuing a stopped platform's vertical movement. The installation flag
+0x10, which temporarily bypasses that subtraction, clears after one tick (0x4327D9's mask at
+0x4327EB). Synthetic regression coverage includes an off-centre rider, horizontal and vertical
+translation, a 90-degree turn, inertia without drift, and loss of support.
+
+Remaining differences: contact resolution still uses our disc/cylinder approximation rather
+than swept collision zones and substeps. Carrying is applied when the rider next steps, whereas
+the exe updates children when the support steps; actor order can therefore produce one tick of
+lag. Receiving spheres/boxes/capsules, scenery-only segment casts and ledge probes, explicit part
+super-object collision overrides, and real playthroughs on later levels' moving platforms remain
+to be checked. The full transform-delta carry is our implementation of the observed hierarchy
+behavior, not a reproduction of the exe's dynamics matrices.
+
+Where this came from: own analysis of Rayman2.exe at the addresses above; the support pointer,
+eligibility byte, transform updates and tick mask were checked with capstone. Learn_10 geometry,
+scripts and the run4 recording independently confirm the closed height and sideways opening.
 
 ## Holding on between pillars, and walls that can be held
 

@@ -1,4 +1,5 @@
 #include <openrayman/game/mechanics.h>
+#include <openrayman/game/animation_player.h>
 
 #include <algorithm>
 #include <cmath>
@@ -124,7 +125,7 @@ namespace openrayman::game
 		// there (shared by floor_at, ceiling_at and water_at).
 		template<typename Accept>
 		std::optional<world_collision::surface_hit> highest_surface(const std::vector<collision_triangle>& triangles,
-			const std::vector<std::uint32_t>& candidates, float x, float y, float top, float bottom, Accept accepts, bool lowest = false)
+			const std::vector<std::uint32_t>& candidates, float x, float y, float top, float bottom, Accept accepts, bool lowest = false, bool actors = false)
 		{
 			std::optional<world_collision::surface_hit> best;
 			for(std::uint32_t i : candidates)
@@ -143,7 +144,7 @@ namespace openrayman::game
 					continue;
 				float z = u * a[2] + v * b[2] + w * c[2];
 				if(z <= top && z >= bottom && (!best || (lowest ? z < best->height : z > best->height)))
-					best = world_collision::surface_hit{ z, t.material, t.normal };
+					best = world_collision::surface_hit{ z, t.material, t.normal, actors ? std::uint32_t(t.node) : 0 };
 			}
 			return best;
 		}
@@ -208,8 +209,8 @@ namespace openrayman::game
 		}
 	}
 
-	world_collision::world_collision(std::vector<collision_triangle> triangles)
-		: m_triangles(std::move(triangles))
+	world_collision::world_collision(std::vector<collision_triangle> triangles, bool actor_geometry)
+		: m_triangles(std::move(triangles)), m_actor_geometry(actor_geometry)
 	{
 		for(std::uint32_t i = 0; i < m_triangles.size(); i++)
 		{
@@ -230,7 +231,7 @@ namespace openrayman::game
 	{
 		return highest_surface(m_triangles, under(x, y), x, y, top, bottom, [](const collision_triangle& t) {
 			return t.normal[2] >= floor_normal && !(t.flags & surface::no_contact); // walls, water, 0x8000
-		});
+		}, false, m_actor_geometry);
 	}
 
 	std::optional<world_collision::surface_hit> world_collision::ceiling_at(float x, float y, float top, float bottom) const
@@ -294,6 +295,22 @@ namespace openrayman::game
 		float vdot(const vec& a, const vec& b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 		vec vcross(const vec& a, const vec& b) { return { a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0] }; }
 		float vlen(const vec& a) { return std::sqrt(vdot(a, a)); }
+
+		std::optional<affine> inverse_frame(const affine& a)
+		{
+			vec columns[3];
+			for(int c = 0; c < 3; c++) columns[c] = { a.m[0][c], a.m[1][c], a.m[2][c] };
+			const float determinant = vdot(columns[0], vcross(columns[1], columns[2]));
+			if(std::abs(determinant) < 1e-8f) return std::nullopt;
+			affine inverse;
+			for(int r = 0; r < 3; r++)
+			{
+				vec row = vmul(vcross(columns[(r + 1) % 3], columns[(r + 2) % 3]), 1 / determinant);
+				for(int c = 0; c < 3; c++) inverse.m[r][c] = row[std::size_t(c)];
+				inverse.m[r][3] = -vdot(row, { a.m[0][3], a.m[1][3], a.m[2][3] });
+			}
+			return inverse;
+		}
 
 		// The point of a triangle nearest to p (by its regions: corners, edges, face).
 		vec closest_on_triangle(const vec& p, const vec& a, const vec& b, const vec& c)
@@ -597,7 +614,149 @@ namespace openrayman::game
 		}
 	}
 
-	void move_actor(live_memory& m, std::uint32_t super_object, std::uint32_t actor, double ms, const world_collision& world)
+	std::vector<collision_triangle> actor_collision_triangles(interpreter& vm, std::uint32_t mover)
+	{
+		live_memory& m = vm.memory();
+		std::vector<collision_triangle> out;
+		auto word = [&](std::uint32_t at) { return at && m.contains(at, 4) ? m.u32(at) : 0u; };
+		auto half = [&](std::uint32_t at) { return at && m.contains(at, 2) ? m.read<std::uint16_t>(at) : std::uint16_t(0); };
+		auto byte = [&](std::uint32_t at) { return at && m.contains(at) ? m.u8(at) : std::uint8_t(0); };
+		// Decode our own world-space triangles from the live geometry. Stored normals select the
+		// front face; taking the cross product after placing the vertices handles nonuniform scale.
+		auto append = [&](std::uint32_t zone, const affine& frame, std::uint32_t owner) {
+			if(!zone || !m.contains(zone, 0x30)) return;
+			std::uint32_t vertices = word(zone), kinds = word(zone + 0x10), elements = word(zone + 0x14);
+			std::uint16_t vertex_count = half(zone + 0x2C), count = half(zone + 0x2E);
+			if(!vertices || !kinds || !elements) return;
+			for(std::uint32_t e = 0; e < count; e++)
+			{
+				if(half(kinds + e * 2) != 1) continue;
+				std::uint32_t element = word(elements + e * 4), indices = word(element + 8), normals = word(element + 0x10);
+				if(!element || !indices) continue;
+				for(std::uint32_t i = 0; i < half(element + 4); i++)
+				{
+					collision_triangle tri;
+					tri.node = owner;
+					tri.material = word(element);
+					tri.flags = material_flags(m, tri.material);
+					tri.has_material = word(tri.material + 0xC) != 0;
+					bool valid = true;
+					for(std::uint32_t k = 0; k < 3; k++)
+					{
+						std::uint32_t at = indices + i * 6 + k * 2;
+						std::uint16_t index = half(at);
+						if(!m.contains(at, 2) || index >= vertex_count || !m.contains(vertices + index * 12, 12))
+							valid = false;
+						else tri.corners[k] = frame.apply(read_vec(m, vertices + index * 12));
+					}
+					if(!valid) continue;
+					vec n = vcross(vsub(tri.corners[1], tri.corners[0]), vsub(tri.corners[2], tri.corners[0]));
+					if(normals && m.contains(normals + i * 12, 12))
+					{
+						vec direction = vsub(frame.apply(read_vec(m, normals + i * 12)), frame.apply({ 0, 0, 0 }));
+						if(vdot(n, direction) < 0) n = vmul(n, -1);
+					}
+					float length = vlen(n);
+					if(length < 1e-8f) continue;
+					tri.normal = vmul(n, 1 / length);
+					out.push_back(tri);
+				}
+			}
+		};
+		std::vector<std::uint32_t> candidates = vm.actors();
+		const auto generated = vm.generated().alive();
+		candidates.insert(candidates.end(), generated.begin(), generated.end());
+		std::uint32_t own_set = word(vm.actor_of(mover) + 0x14);
+		std::uint8_t priority = own_set && m.contains(own_set + 0x41) ? m.u8(own_set + 0x41) : 0;
+		std::vector<std::uint32_t> sectors;
+		if(auto placement = global_placement(m, mover))
+		{
+			std::uint32_t sector = vm.sector_at({ placement->m[0][3], placement->m[1][3], placement->m[2][3] });
+			if(sector)
+			{
+				sectors.push_back(sector);
+				std::uint32_t data = word(sector + 4);
+				// Collision links, distinct from the visibility links: 0x494610, sector +0x30.
+				if(!(byte(own_set + 0x42) & 0x20))
+					for(std::uint32_t link = word(data + 0x30), i = 0; link && i < word(data + 0x38); link = word(link + 4), i++)
+						sectors.push_back(word(link));
+			}
+		}
+		auto excludes = [&](std::uint32_t set, std::uint32_t other) {
+			const std::uint8_t flags = set ? byte(set + 0x42) : 0;
+			std::uint32_t standard = word(vm.actor_of(other) + 4);
+			if((flags & 2) && (word(standard + 0x24) & 8)) return true;
+			if(other == vm.main_actor()) return (flags & 8) != 0;
+			return (flags & 4) && !(byte(standard + 0x29) & 0x10);
+		};
+		for(std::uint32_t self : candidates)
+		{
+			// 0x494420 rejects self, actors outside the world, and higher-priority collision sets.
+			// Our loader doesn't set standard-game +0x29 bit 4; removed() supplies world membership.
+			if(self == mover || vm.removed(self) || (word(self + 0x30) & 1)) continue;
+			std::uint32_t actor = vm.actor_of(self), set = word(actor + 0x14), data = word(actor);
+			if(set && m.contains(set + 0x41) && m.u8(set + 0x41) > priority) continue;
+			if(excludes(own_set, self) || excludes(set, mover)) continue;
+			auto frame = global_placement(m, self);
+			if(!frame) continue;
+			if(!sectors.empty())
+			{
+				std::uint32_t sector = vm.sector_at({ frame->m[0][3], frame->m[1][3], frame->m[2][3] });
+				if(std::ranges::find(sectors, sector) == sectors.end()) continue;
+			}
+			// Kind 3 is the receiving geometry (0x40DBB0). Its selected state group and 2-bit
+			// overrides work independently of the physical parts (0x40C700, 0x417C10).
+			std::uint32_t head = set ? word(set + 0xC) : 0, group = set ? word(set + 0x28) : 0;
+			for(std::uint32_t node = word(head), index = 0; node && index < 16; node = word(node), index++)
+			{
+				std::uint32_t mode = word(set + 0x3C) >> (index * 2) & 3;
+				bool active = mode == 1;
+				if(mode == 0)
+					for(std::uint32_t entry = word(group), n = 0; entry && n < word(group + 8); entry = word(entry), n++)
+						if(half(entry + 4) == index) { active = true; break; }
+				if(active) append(word(node + 4), *frame, self);
+			}
+			// The exe keeps a super object per animated physical part (0x4943C0). We derive
+			// the same placement from the current animation and object list, including hidden parts.
+			std::uint32_t list = word(data + 0xC), entries = word(list + 4);
+			std::uint16_t objects = list ? half(list + 0xC) : 0;
+			bool has_geometry = false;
+			for(std::uint32_t i = 0; i < objects; i++)
+				if(word(word(word(entries + i * 20 + 4) + 4) + 0xC)) { has_geometry = true; break; }
+			if(!has_geometry) continue;
+			auto add_part = [&](std::uint32_t object, affine placed) {
+				if(object >= objects) return;
+				std::uint32_t entry = entries + object * 20, physical = word(entry + 4);
+				std::uint32_t geometry = word(word(physical + 4) + 0xC), scale = word(entry);
+				if(scale && m.contains(scale, 12))
+					for(int r = 0; r < 3; r++)
+						for(int c = 0; c < 3; c++) placed.m[r][c] *= m.f32(scale + std::uint32_t(c) * 4);
+				append(geometry, placed, self);
+			};
+			std::uint32_t state = word(data + 4), reference = word(state + 4);
+			const animation_bank* bank = vm.animations();
+			if(reference && bank && half(reference + 0x18) < bank->animations.size())
+			{
+				auto channels = pose(*bank, half(reference + 0x18), half(data + data_3d::frame));
+				for(const channel_pose& channel : channels)
+				{
+					if(!channel.object) continue;
+					affine local = channel.local;
+					auto parent = channel.parent;
+					for(std::size_t n = 0; parent && n < channels.size(); n++)
+					{
+						local = channels[*parent].local * local;
+						parent = channels[*parent].parent;
+					}
+					add_part(*channel.object, *frame * local);
+				}
+			}
+			else if(!reference) add_part(0, *frame);
+		}
+		return out;
+	}
+
+	void move_actor(live_memory& m, std::uint32_t super_object, std::uint32_t actor, double ms, const world_collision& world, interpreter* vm)
 	{
 		std::uint32_t dynamics = m.u32(actor + 8);
 		std::uint32_t b = dynamics && m.contains(dynamics, 4) ? m.u32(dynamics) : 0;
@@ -670,8 +829,32 @@ namespace openrayman::game
 			return;
 		}
 		bool gravity =(flags & has_gravity) && !(m.u32(b + base::end_flags) & no_gravity);
-		if(!gravity && !(flags & (has_animation_motion | uses_imposed | uses_proposed | uses_third)))
+		if(!gravity && !(flags & (has_animation_motion | uses_imposed | uses_proposed | uses_third)) && !(vm && vm->supports().contains(super_object)))
 			return;
+		auto actor_triangles = vm && (flags & collides) ? actor_collision_triangles(*vm, super_object) : std::vector<collision_triangle>{};
+		bool support_active = false;
+		if(vm && vm->supports().contains(super_object))
+			support_active = std::ranges::any_of(actor_triangles, [&](const collision_triangle& tri) {
+				return tri.node == vm->supports().at(super_object).actor && !(tri.flags & surface::no_contact);
+			});
+		const world_collision actors(std::move(actor_triangles), true);
+		const bool has_collision = !world.empty() || !actors.empty();
+		auto surface_at = [&](auto query, float x, float y, float top, float bottom, bool lowest = false) {
+			auto a = (world.*query)(x, y, top, bottom), other = (actors.*query)(x, y, top, bottom);
+			if(other && (!a || (lowest ? other->height < a->height : other->height > a->height))) a = other;
+			return a;
+		};
+		auto wall_push = [&](float x, float y, float bottom, float top, float radius) {
+			if(actors.empty()) return world.wall_push(x, y, bottom, top, radius);
+			vec start{ x, y, 0 };
+			for(int pass = 0; pass < 3; pass++)
+				for(const world_collision* geometry : { &world, &actors })
+				{
+					auto push = geometry->wall_push(x, y, bottom, top, radius);
+					x += push[0]; y += push[1];
+				}
+			return std::array<float, 2>{ x - start[0], y - start[1] };
+		};
 		float dt = float(ms / 1000);
 		vec current = read_vec(m, t + 4), target = current;
 		// Where this mechanics left the actor last tick (the exe keeps it in the dynamics' previous
@@ -682,6 +865,41 @@ namespace openrayman::game
 		// pushes him off it once he is let go.
 		vec left = read_vec(m, b + base::previous_position);
 		const bool placed = std::abs(left[0] - current[0]) > 1e-4f || std::abs(left[1] - current[1]) > 1e-4f || std::abs(left[2] - current[2]) > 1e-4f;
+		// 0x43D820/0x43D950 attach a rider to its support, inheriting its translation and turn.
+		// Our transforms are already global: apply the change since the rider's last step instead.
+		// Teleporting or removing the support breaks that relationship before it can move the rider.
+		vec carried{};
+		if(vm)
+			if(auto it = vm->supports().find(super_object); it != vm->supports().end())
+			{
+				auto support = global_placement(m, it->second.actor);
+				auto rider = global_placement(m, super_object);
+				auto inverse = inverse_frame(it->second.placement);
+				if(!placed && support_active && support && rider && inverse)
+				{
+					affine moved = *support * *inverse * *rider;
+					carried = vsub({ moved.m[0][3], moved.m[1][3], moved.m[2][3] }, current);
+					// 0x43DA80 keeps the rider upright unless base flag 0x1000 allows tilting.
+					if(!(flags & 0x1000))
+					{
+						vec y{ moved.m[0][1], moved.m[1][1], 0 };
+						if(float length = vlen(y); length > 1e-6f)
+						{
+							y = vmul(y, 1 / length);
+							const vec axes[] = { { y[1], -y[0], 0 }, y, { 0, 0, 1 } };
+							for(int c = 0; c < 3; c++)
+							{
+								float scale = vlen({ moved.m[0][c], moved.m[1][c], moved.m[2][c] });
+								for(int r = 0; r < 3; r++) moved.m[r][c] = axes[c][std::size_t(r)] * scale;
+							}
+						}
+					}
+					set_global_placement(m, super_object, moved);
+					write_vec(m, t + 4, current); // collision still measures the full move from here
+				}
+				else vm->supports().erase(it);
+			}
+		if(placed && vm && m.contains(b + 0x1B4, 12)) write_vec(m, b + 0x1B4, {});
 
 		// A script speed (units per second) sets the axes of this tick's move the script chose (one
 		// bit each, `x_bit` and the next two), replacing what gravity or an earlier speed made of
@@ -787,7 +1005,12 @@ namespace openrayman::game
 		}
 		// Gravity (0x43DF40): from last tick's vertical speed, g in units per second squared, down.
 		if(gravity)
-			target[2] = current[2] + dt * (m.f32(b + base::speed + 8) - m.f32(b + base::gravity) * dt);
+		{
+			float vertical = m.f32(b + base::speed + 8);
+			if(!(m.u32(b + base::end_flags) & 0x10) && m.contains(b + 0x1BC, 4))
+				vertical -= m.f32(b + 0x1BC) / dt;
+			target[2] = current[2] + dt * (vertical - m.f32(b + base::gravity) * dt);
+		}
 		if(flags & uses_imposed)
 			add_speed(base::imposed, 0x20000, 0x4000);
 		if(flags & uses_third)
@@ -805,6 +1028,9 @@ namespace openrayman::game
 			set_move(to_world(d));
 		}
 
+		// Carrying is external motion, applied after the actor's own speeds and limits.
+		target = vadd(target, carried);
+
 		// Holding on to walls (flag 0x40 without 0x10: 0x431AD0 picks the resolver 0x43A260; Rayman
 		// spread between two pillars, behaviour 27). The move loses its part along the wall normal
 		// held last tick (+0x1CC), then the nearest wall carrying collide flag 0x40 (not 0x8000) within
@@ -815,7 +1041,7 @@ namespace openrayman::game
 		// 0x40, such as the one joining the pillars, only block. H is 0.75 with end flag 0x10, else
 		// the move's length x tan 60 degrees, at least 0.45 (0x49C7B8, 0x49C7B0, 0x49C7A0). Ours
 		// looks with a sphere at body height instead of sweeping his zones between two positions.
-		if((flags & 0x40) && !(flags & 0x10) && !world.empty() && !placed)
+		if((flags & 0x40) && !(flags & 0x10) && has_collision && !placed)
 		{
 			vec n = read_vec(m, b + 0x1CC);
 			vec d = move();
@@ -872,20 +1098,20 @@ namespace openrayman::game
 		// doesn't hold the actor back while the climb animation carries it over the edge.
 		const bool climbing = (m.u32(b + base::end_flags) & 0x400000) != 0;
 		const float climb_height = climbing ? m.f32(b + 0x1EC) : 0.0f;
-		if((flags & collides) && !world.empty() && !placed)
+		if((flags & collides) && has_collision && !placed)
 		{
 			const float radius = body_radius(zones);
 			const float wall_bottom = climbing ? std::max(target[2] + climb_up, climb_height) : target[2] + climb_up;
 			std::array<float, 2> push{};
 			if(wall_bottom < target[2] + body_height)
-				push = world.wall_push(target[0], target[1], wall_bottom, target[2] + body_height, radius);
+				push = wall_push(target[0], target[1], wall_bottom, target[2] + body_height, radius);
 			target[0] += push[0];
 			target[1] += push[1];
 			// Touching counts from a little further out, so an actor resting against a wall (pushed out
 			// to exactly its radius last tick) still reports it.
 			std::array<float, 2> touch{};
 			if(wall_bottom < target[2] + body_height)
-				touch = world.wall_push(target[0], target[1], wall_bottom, target[2] + body_height, radius + wall_touch);
+				touch = wall_push(target[0], target[1], wall_bottom, target[2] + body_height, radius + wall_touch);
 			if(float l = std::sqrt(touch[0] * touch[0] + touch[1] * touch[1]); l > 1e-6f)
 				wall_normal = { touch[0] / l, touch[1] / l, 0.0f };
 		}
@@ -894,8 +1120,8 @@ namespace openrayman::game
 		// Ceilings stop a move up at the top of the body: the head may not pass a surface facing
 		// down (the underside of the Learn_10 bridge by the waterfall, the Globox kids' cave roof).
 		// Without this a jump rose through them until the floor search found their top.
-		if((flags & collides) && !world.empty() && !climbing && target[2] > current[2])
-			if(auto ceiling = world.ceiling_at(target[0], target[1], target[2] + head_height, current[2] + head_height - 0.05f))
+		if((flags & collides) && has_collision && !climbing && target[2] > current[2])
+			if(auto ceiling = surface_at(&world_collision::ceiling_at, target[0], target[1], target[2] + head_height, current[2] + head_height - 0.05f, true))
 				target[2] = std::max(current[2], ceiling->height - head_height);
 
 		// The floor. The exe gathers contacts with the actor's collision spheres and picks the
@@ -906,13 +1132,13 @@ namespace openrayman::game
 		bool slope_move = false;
 		vec slope_displacement{};
 		world_collision::surface_hit ground{};
-		if((flags & collides) && !world.empty() && !climbing)
+		if((flags & collides) && has_collision && !climbing)
 		{
 			bool was_grounded = has_block && (m.u32(block + 4) & on_ground);
-			float top = std::max(current[2], target[2]) + climb_up;
+			float top = std::max(current[2] + carried[2], target[2]) + climb_up;
 			// Following the floor down is for walking; a move up (a jump) leaves it (the exe only
 			// refuses moves into a surface).
-			float bottom = target[2] - (was_grounded && target[2] <= current[2] ? follow_down : 0.0f);
+			float bottom = target[2] - (was_grounded && target[2] <= current[2] + carried[2] ? follow_down : 0.0f);
 			// The actor's feet cover a small circle: the highest floor under any of nine points of it.
 			std::optional<world_collision::surface_hit> floor;
 			float floor_x = 0, floor_y = 0;
@@ -921,7 +1147,7 @@ namespace openrayman::game
 				float angle = float(k) * 0.785398f;
 				float r = k == 8 ? 0.0f : foot_radius;
 				float x = target[0] + r * std::cos(angle), y = target[1] + r * std::sin(angle);
-				if(auto f = world.floor_at(x, y, top, bottom); f && (!floor || f->height > floor->height))
+				if(auto f = surface_at(&world_collision::floor_at, x, y, top, bottom); f && (!floor || f->height > floor->height))
 				{
 					floor = f;
 					floor_x = x;
@@ -964,8 +1190,8 @@ namespace openrayman::game
 		// slot 4 - condition_32, condition_65(function_197(4), 0x4000) - for the water height
 		// (function_192(4).z) and its normal (function_190(4)), which macro 36/37 push particles along.
 		std::optional<world_collision::surface_hit> water;
-		if((flags & collides) && !world.empty())
-			water = world.water_at(target[0], target[1], target[2] + body_height, target[2]);
+		if((flags & collides) && has_collision)
+			water = surface_at(&world_collision::water_at, target[0], target[1], target[2] + body_height, target[2]);
 
 		// The speed the scripts read back (0x436A30); landing drops the vertical part (0x43B337).
 		// The exe works it out before the collision step, so being pushed out of a wall isn't speed
@@ -984,7 +1210,24 @@ namespace openrayman::game
 			for(int i = 0; i < 3; i++)
 				speed[std::size_t(i)] = slope_displacement[std::size_t(i)] / dt;
 		else if(landed)
-			speed[2] = 0;
+			speed[2] = carried[2] / dt;
+		if(vm)
+		{
+			std::uint32_t support = landed ? ground.actor : 0;
+			std::uint32_t standard = support ? m.u32(vm->actor_of(support) + 4) : 0;
+			std::uint32_t own_standard = m.u32(actor + 4);
+			const bool movable = standard && m.contains(standard + 0x28) && m.u8(standard + 0x28) == 1;
+			const bool rider_movable = own_standard && m.contains(own_standard + 0x28) && m.u8(own_standard + 0x28) == 1;
+			// 0x413730: only class-1 supports carry riders; a class-1 actor isn't itself attached.
+			if(movable && !rider_movable && (m.u32(b + base::end_flags) & 4) && !(flags & 0x40000000))
+			{
+				if(auto placement = global_placement(m, support)) vm->supports()[super_object] = { support, *placement };
+			}
+			else vm->supports().erase(super_object);
+			if(m.contains(b + 0x284, 4))
+				m.write<std::uint32_t>(b + 0x284, vm->supports().contains(super_object) ? vm->supports().at(super_object).actor : 0);
+			if(m.contains(b + 0x1B4, 12)) write_vec(m, b + 0x1B4, carried);
+		}
 		write_vec(m, b + base::speed, speed);
 		write_vec(m, t + 4, target);
 		write_vec(m, b + base::previous_position, target);
@@ -1011,7 +1254,7 @@ namespace openrayman::game
 			// Only report it while descending: a probe can reach the top while Rayman is still rising.
 			std::optional<world_collision::segment_hit> probe;
 			std::uint32_t probe_material = 0;
-			if(!landed && speed[2] < 0.0f && !world.empty())
+			if(!landed && speed[2] < 0.0f && has_collision)
 				for(const zone_sphere& z : zones)
 				{
 					if(!z.in_use || !(material_flags(m, z.material) & ledge_probe))
@@ -1033,6 +1276,7 @@ namespace openrayman::game
 				write_vec(m, entry + slot_point, landed ? point : probe ? probe->point : vec{});
 				m.write<std::uint32_t>(entry + slot_own, landed || probe ? own : 0);
 				m.write<std::uint32_t>(entry + slot_material, landed ? ground.material : probe ? probe->material : 0);
+				m.write<std::uint32_t>(entry + 0x24, landed ? ground.actor : 0);
 			}
 			// Slot 4 is the water (0x43F940: report bit 0x40 into slots_at + 4 * slot_size), with
 			// the surface's normal, the point on it above the actor and its game material; the
@@ -1055,5 +1299,8 @@ namespace openrayman::game
 		m.write<std::uint32_t>(b + base::flags, flags & kept_after_tick);
 		for(std::uint32_t at = base::imposed; at < base::speed; at += 4)
 			m.write<float>(b + at, 0.0f);
+		// 0x4327D9: the newly-installed mechanics' 0x10 lasts one tick. Thereafter inertia must
+		// leave out the previous carry displacement (0x43DDA0), rather than accelerating with it.
+		set_bit(m, b + base::end_flags, 0x10, false);
 	}
 }

@@ -1079,3 +1079,183 @@ TEST_CASE("real data: input actions follow the keys")
 	keys.step();
 	CHECK(memory.read<std::int32_t>(keys.action(13) + input_action::counter) == 1);
 }
+
+TEST_CASE("real data: Rayman stands on Learn_10's closed tutorial trapdoor")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto game = game_data::locate(*dir);
+	REQUIRE(game);
+	level_files files = load_level_files(*game, "Learn_10");
+	level_header header = read_level_header(files);
+	scene tree(files.memory, header);
+	animation_bank bank = read_animation_bank(files);
+	game::live_memory m(files.memory);
+	std::uint32_t rayman = header.placements.at(0).super_object.address();
+	game::interpreter vm(m, rayman);
+	game::register_handlers(vm);
+	game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
+	vm.set_animations(&bank);
+	game::install_level_events(m, bank);
+	std::vector<std::uint32_t> actors;
+	for(const scene_node& n : tree.nodes())
+		if(n.type == super_object_type::actor) actors.push_back(n.at.address());
+	vm.set_actors(actors);
+	for(const actor_set::entry& e : read_actors(files.memory, tree, bank).actors)
+		game::set_global_placement(m, tree.node(e.node).at.address(), e.world);
+	bool revisit = false, collect = false;
+	SUBCASE("closed trapdoor matches the recording") {}
+	SUBCASE("revisit has an open trapdoor") { revisit = true; }
+	SUBCASE("the tutorial releases the door and the Lum opens it") { collect = true; }
+	for(std::uint32_t bit : revisit ? std::span<const std::uint32_t>(game::revisit_story_bits) : std::span<const std::uint32_t>(game::first_visit_story_bits))
+		REQUIRE(vm.set_story_bit(actors, bit));
+	if(!revisit) REQUIRE(game::apply_first_visit_hand_over(m, vm, tree, "Learn_10", rayman));
+	game::input keys(m, read_input_actions(files));
+	const std::uint32_t door = tree.node(66).at.address();
+	std::uint32_t rayman_base = m.u32(m.u32(vm.actor_of(rayman) + 8));
+	std::uint32_t report = m.u32(rayman_base + 0x150);
+	std::size_t errors = 0;
+	for(int tick = 0; tick <= 420; tick++)
+	{
+		if(tick == 240)
+			game::write_transform(m, rayman, { -25, 291.4f, -9 }, { 0, 1, 0, -1, 0, 0, 0, 0, 1 });
+		if(collect && tick == 300)
+		{
+			// Node 66 watches the Lum's custom bit 28. Set exactly that signal; the door's
+			// own scripts perform the move, without changing its state or collision ourselves.
+			std::uint32_t lum = vm.get_variable(door, 1).word();
+			std::uint32_t standard = m.u32(lum + 4);
+			REQUIRE(m.contains(standard + 0x24, 4));
+			m.write<std::uint32_t>(standard + 0x24, m.u32(standard + 0x24) | (1u << 27));
+			// The tutorial freezes the door's brain during its dialogue. Its release clears
+			// custom bit 17 (run4 actor 64, clock 44225) before the collected signal is acted on.
+			standard = m.u32(vm.actor_of(door) + 4);
+			m.write<std::uint32_t>(standard + 0x24, m.u32(standard + 0x24) & ~(1u << 16));
+		}
+		keys.step();
+		game::step(vm, actors, [&](std::uint32_t, const std::exception& e) {
+			if(errors++ == 0) MESSAGE(std::format("tick {}: {}", tick, e.what()));
+		});
+		if(tick == 270 || tick == 299 || tick == 420)
+		{
+			auto placement = game::global_placement(m, rayman);
+			REQUIRE(placement);
+			const float z = placement->m[2][3];
+			INFO("tick ", tick, ", Z ", z);
+			if(!revisit && (!collect || tick < 300))
+			{
+				CHECK(z == doctest::Approx(-10.8240f).epsilon(0.00001));
+				CHECK((m.u32(report + 4) & 1) == 1);
+				CHECK(m.u32(report + 8 + 0x28 + 0x24) == door);
+			}
+			else CHECK(z < -11.0f);
+		}
+	}
+	if(collect)
+	{
+		auto at = *game::global_placement(m, door);
+		CHECK(at.m[0][3] > -20); // a sideways slide, not a lowered or switched-off floor
+		CHECK(at.m[2][3] == doctest::Approx(-10.8240f).epsilon(0.00001));
+	}
+	CHECK(errors == 0);
+}
+
+TEST_CASE("actor floors carry a rider through translation and rotation and release it")
+{
+	game::live_memory m(three_super_objects());
+	auto make_actor = [&](vec3 position) {
+		std::uint32_t so = m.allocate(0x48), actor = m.allocate(0x38), standard = m.allocate(0x34), transform = m.allocate(0x58);
+		m.write<std::uint32_t>(so, 2);
+		m.write(so + 4, actor);
+		m.write(so + 0x24, transform);
+		m.write(actor + 4, standard);
+		m.write(standard + 0xC, so);
+		game::set_global_placement(m, so, affine{});
+		m.write(transform + 4, position);
+		return so;
+	};
+	std::uint32_t rider = make_actor({ 1, 0, 2 }), platform = make_actor({ 0, 0, 0 });
+	std::uint32_t actor = m.u32(rider + 4), dynamics = m.allocate(4), base = m.allocate(0x288), report = m.allocate(0x16C);
+	m.write(actor + 8, dynamics);
+	m.write(dynamics, base);
+	m.write<std::uint32_t>(base + 8, 0x406); // collision, gravity and inertia
+	m.write<std::uint32_t>(base + 0xC, 4); // full dynamics, including support selection
+	m.write(base + 0x154, vec3{ 0.4f, 0.4f, 1 });
+	m.write<float>(base + 0x10, 25);
+	m.write(base + 0x150, report);
+	m.write(base + 0x7C, vec3{ 1, 0, 2 });
+	std::uint32_t platform_actor = m.u32(platform + 4), standard = m.u32(platform_actor + 4);
+	m.write<std::uint8_t>(standard + 0x28, 1); // an eligible moving support (0x413730)
+	std::uint32_t set = m.allocate(0x68), head = m.allocate(12), link = m.allocate(8), zone = m.allocate(0x30);
+	std::uint32_t vertices = m.allocate(48), kinds = m.allocate(2), elements = m.allocate(4), element = m.allocate(0x14), indices = m.allocate(12);
+	m.write(platform_actor + 0x14, set);
+	m.write(set + 0xC, head);
+	m.write<std::uint32_t>(set + 0x3C, 1);
+	m.write(head, link);
+	m.write(link + 4, zone);
+	m.write(zone, vertices);
+	m.write(zone + 0x10, kinds);
+	m.write(zone + 0x14, elements);
+	m.write<std::uint16_t>(zone + 0x2C, 4);
+	m.write<std::uint16_t>(zone + 0x2E, 1);
+	m.write<std::uint16_t>(kinds, 1);
+	m.write(elements, element);
+	m.write<std::uint16_t>(element + 4, 2);
+	m.write(element + 8, indices);
+	const vec3 corners[] = { { -3, -3, 0 }, { 3, -3, 0 }, { 3, 3, 0 }, { -3, 3, 0 } };
+	for(std::uint32_t i = 0; i < 4; i++) m.write(vertices + i * 12, corners[i]);
+	const std::uint16_t faces[] = { 0, 1, 2, 0, 2, 3 };
+	for(std::uint32_t i = 0; i < 6; i++) m.write(indices + i * 2, faces[i]);
+	game::interpreter vm(m, rider);
+	vm.set_actors({ platform, rider });
+	auto move = [&] { game::move_actor(m, rider, actor, 1000.0 / 60, vm.world(), &vm); };
+	for(int i = 0; i < 60; i++) move();
+	CHECK(game::global_placement(m, rider)->m[2][3] == doctest::Approx(0));
+	CHECK(m.u32(base + 0x284) == platform);
+	CHECK(m.u32(report + 8 + 0x28 + 0x24) == platform);
+	// A platform moves up and sideways, then turns 90 degrees. The off-centre rider must
+	// follow the arc and turn with it; a stationary platform must add no subsequent drift.
+	affine moved;
+	moved.m[0][3] = 4; moved.m[1][3] = 2; moved.m[2][3] = 1;
+	game::set_global_placement(m, platform, moved);
+	move();
+	auto at = *game::global_placement(m, rider);
+	CHECK(at.m[0][3] == doctest::Approx(5));
+	CHECK(at.m[1][3] == doctest::Approx(2));
+	CHECK(at.m[2][3] == doctest::Approx(1));
+	moved.m[0][0] = 0; moved.m[0][1] = -1;
+	moved.m[1][0] = 1; moved.m[1][1] = 0;
+	game::set_global_placement(m, platform, moved);
+	move();
+	for(int i = 0; i < 10; i++) move();
+	at = *game::global_placement(m, rider);
+	CHECK(at.m[0][3] == doctest::Approx(4));
+	CHECK(at.m[1][3] == doctest::Approx(3));
+	CHECK(at.m[2][3] == doctest::Approx(1));
+	CHECK(at.m[1][0] == doctest::Approx(1));
+	CHECK(game::actor_collision_triangles(vm, platform).empty()); // no self-collision
+	// The selected group enables mode 0, while priority and collision exclusions can reject it.
+	m.write<std::uint32_t>(set + 0x3C, 0);
+	CHECK(game::actor_collision_triangles(vm, rider).empty());
+	std::uint32_t group = m.allocate(12), group_link = m.allocate(8);
+	m.write(set + 0x28, group);
+	m.write(group, group_link);
+	m.write<std::uint32_t>(group + 8, 1);
+	CHECK(game::actor_collision_triangles(vm, rider).size() == 2);
+	m.write<std::uint8_t>(set + 0x41, 1);
+	CHECK(game::actor_collision_triangles(vm, rider).empty());
+	m.write<std::uint8_t>(set + 0x41, 0);
+	m.write<std::uint8_t>(set + 0x42, 8); // exclude the main actor
+	CHECK(game::actor_collision_triangles(vm, rider).empty());
+	m.write<std::uint8_t>(set + 0x42, 0);
+	// A state override disables the receiving zone: the rider must fall and lose its support.
+	m.write<std::uint32_t>(set + 0x3C, 2);
+	move();
+	CHECK(m.u32(base + 0x284) == 0);
+	CHECK(game::global_placement(m, rider)->m[2][3] < 1);
+	m.write<std::uint32_t>(set + 0x3C, 1);
+	vm.remove(platform);
+	CHECK(game::actor_collision_triangles(vm, rider).empty());
+}

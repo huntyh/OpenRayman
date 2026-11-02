@@ -537,7 +537,7 @@ namespace openrayman::game
 				if(camera.valid && self == camera.super_object)
 					move_camera(m, self, camera, vm.frame_ms(), vm.world());
 				else
-					move_actor(m, self, actor, vm.frame_ms(), vm.world());
+					move_actor(m, self, actor, vm.frame_ms(), vm.world(), &vm);
 			}
 		};
 		for(std::uint32_t self : super_objects)

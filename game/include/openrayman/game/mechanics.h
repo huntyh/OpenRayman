@@ -19,7 +19,7 @@ namespace openrayman::game
 	{
 	public:
 		world_collision() = default;
-		explicit world_collision(std::vector<collision_triangle> triangles);
+		explicit world_collision(std::vector<collision_triangle> triangles, bool actor_geometry = false);
 
 		bool empty() const { return m_triangles.empty(); }
 
@@ -30,13 +30,14 @@ namespace openrayman::game
 			float height = 0;
 			std::uint32_t material = 0;    // the triangle's game material, 0 when it has none
 			std::array<float, 3> normal{}; // its unit normal in world space, pointing up and out
+			std::uint32_t actor = 0; // owning super object for an actor surface, 0 for scenery
 		};
 
 		// The highest floor (a triangle facing up, at most 60° from flat, not water) under (x, y) with a height
 		// in [bottom, top], or nothing.
 		std::optional<surface_hit> floor_at(float x, float y, float top, float bottom) const;
 
-		// The lowest ceiling (a triangle facing down, at most 60� from flat) over (x, y) with a height in
+		// The lowest ceiling (a triangle facing down, at most 60° from flat) over (x, y) with a height in
 		// [bottom, top], or nothing.
 		std::optional<surface_hit> ceiling_at(float x, float y, float top, float bottom) const;
 
@@ -82,11 +83,22 @@ namespace openrayman::game
 
 		static constexpr float cell = 4.0f;
 		std::vector<collision_triangle> m_triangles;
+		bool m_actor_geometry = false;
 		std::map<std::pair<int, int>, std::vector<std::uint32_t>> m_cells;
 	};
 
+	class interpreter;
+	// The supporting actor's placement when the rider last moved. Kept separately from scene
+	// links because our actors store world transforms directly (the exe reparents at 0x43D950).
+	struct moving_support
+	{
+		std::uint32_t actor = 0;
+		affine placement;
+	};
+	// Live kind-3 zones and posed physical parts, excluding the mover itself (0x494420).
+	std::vector<collision_triangle> actor_collision_triangles(interpreter& vm, std::uint32_t mover);
 	// One tick of an actor's mechanics (0x431AD0, docs/formats/dynamics.md): the speeds the scripts
 	// set and gravity give a target position, the floor stops it, and the result becomes the speed
 	// the scripts read back (dynamics base +0x3C) and the contact word they test (conditions 27..32).
-	void move_actor(live_memory& memory, std::uint32_t super_object, std::uint32_t actor, double ms, const world_collision& world);
+	void move_actor(live_memory& memory, std::uint32_t super_object, std::uint32_t actor, double ms, const world_collision& world, interpreter* vm = nullptr);
 }

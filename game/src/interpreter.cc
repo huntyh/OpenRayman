@@ -98,6 +98,7 @@ namespace openrayman::game
 	void interpreter::set_actors(std::vector<std::uint32_t> actors)
 	{
 		m_actors = std::move(actors);
+		m_supports.clear();
 		m_sectors.clear();
 		std::vector<std::uint32_t> pending = m_actors;
 		std::set<std::uint32_t> seen;

@@ -84,6 +84,54 @@ the entry at that position from each kind's collection. Each entry has a next po
 pointer at +4. All four selected pointers are updated; an absent collection selects null
 (0x417B60). Own analysis of Rayman2.exe with GPT-6.1 Terra.
 
+## Actor surfaces
+
+The movement contact gatherer (0x494290 -> 0x494610) searches both scenery and actors in the
+current sector and its **collision neighbours** (sector +0x30, count +0x38; each link: sector,
+next). A collision set's +0x42 bit 0x20 restricts it to its own sector. The saved sector actor
+list is at sector +0x00; OpenRayman derives membership from live positions instead.
+
+For each other actor, 0x494420 gathers two independent sources:
+
+- Active **kind-3 zones** (actor +0x14, list +0x0C), selected by the state group and overrides
+  described above, placed with the actor's global transform.
+- Its physical parts (3D data +0x98 in the exe): 0x4943C0 resolves each part's physical object
+  and uses the fourth collide-set slot (+0x0C), with that part's current global transform.
+  Part super-object flag 0x2 excludes a part. OpenRayman reconstructs the parts from the current
+  state's animation frame, channel parents, chosen object and object-list scale. Hidden animation
+  channels supply no geometry; visible geometry and collision can be different meshes.
+
+Actor super-object flag 0x1 excludes the whole actor. The receiving actor's collision priority
+(byte +0x41 of its collision set; absent set = 0) must not exceed the mover's. The pair is also
+filtered in both directions by collision-set +0x42: bit 0x2 excludes actors with custom mask 0x8,
+0x8 excludes Rayman, and 0x4 excludes other actors unless their standard-game +0x29 has bit 0x10.
+Standard-game +0x29 bit 0x4 normally marks world membership; our loader does not set it, so the
+runtime's removal list supplies that check. Self-collision is excluded.
+
+These actor contacts enter the same floor/wall classification as scenery (0x43EEC0, 0x43F510).
+OpenRayman now includes actor **triangles** in its floor, wall, ceiling and water queries, using
+the existing disc/cylinder approximation. The ground contact slots keep the owning actor's super
+object at entry +0x24 as well as its material and world normal. Receiving spheres, boxes and
+capsules are not yet actor surfaces; segment casts and ledge probes still use scenery only.
+
+### Learn_10's tutorial trapdoor
+
+The trapdoor is **node 66** (recording actor 64), origin (-23.5028, 291.3538, -10.8240). It has no
+actor collision set; its animation 430 selects a physical part with **four collision triangles**,
+all at Z -10.8240 when closed. Rayman stands at Z -10.824 in `live/run4/rayman.txt` (L4, clocks
+44577 through 44961), matching the new floor result. Exact values are pinned in tests.
+
+The opening is a **sideways translation**, not a rotating animation or a zone being turned off.
+Node 66 watches its linked Lum's custom bit 28, then its own behaviour 3 sends local X speed 2
+until it has moved 10 units. The tutorial first releases its frozen brain by clearing custom bit
+17 (recording actor 64, clock 44225); at 44241 its X moves from -23.503 to -23.469. The collision
+moves with the actor, leaving a hole under Rayman. On a revisit, story bit 1133 causes the startup
+scripts to put the trapdoor away; it contributes no triangles to the movement search.
+
+Sources: our own reading of Rayman2.exe's functions named above (Ghidra output, with the candidate
+gates and support fields checked in capstone), the installed Learn_10 data, `ortool brain/run`,
+and the project's run4 recording. No reference implementation was copied.
+
 ## Water
 
 Water triangles (0x4000) take no part in the floor and wall resolve: the movement solvers skip them

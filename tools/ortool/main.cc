@@ -1665,6 +1665,44 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 				if(std::uint32_t p = memory.u32(mind + k * 4); p && !memory.contains(p, 4))
 					throw format_error(std::format("tick {}: node {}'s mind +0x{:X} is now 0x{:X} (last node 0x{:08X})", f, node_of[so], k * 4, p, vm.last_node()));
 		}
+		// ORTOOL_ACTOR_SURFACES=1: counts and bounds of the live actor triangles at the last tick.
+		if(std::getenv("ORTOOL_ACTOR_SURFACES") && f == frames - 1)
+		{
+			struct bounds { std::size_t count = 0; vec3 low{}, high{}; };
+			std::map<std::size_t, bounds> summary;
+			for(const auto& tri : game::actor_collision_triangles(vm, main_actor))
+			{
+				auto& box = summary[tri.node];
+				for(const auto& p : tri.corners)
+					for(std::size_t k = 0; k < 3; k++)
+					{
+						if(!box.count && &p == &tri.corners[0]) box.low[k] = box.high[k] = p[k];
+						else { box.low[k] = std::min(box.low[k], p[k]); box.high[k] = std::max(box.high[k], p[k]); }
+					}
+				box.count++;
+			}
+			if(traced)
+			{
+				std::uint32_t standard = memory.u32(traced + 4);
+				std::cout << std::format("surface owner node {}: flags 0x{:X}, custom 0x{:X}, class {}, removed {}\n", *trace,
+					memory.u32(traced_super + 0x30), standard ? memory.u32(standard + 0x24) : 0,
+					standard ? memory.u8(standard + 0x28) : 0, vm.removed(traced_super));
+			}
+			for(const auto& [owner, box] : summary)
+				std::cout << std::format("actor surfaces node {}: {} triangles, bounds {:.4f} {:.4f} {:.4f} to {:.4f} {:.4f} {:.4f}\n",
+					node_of[std::uint32_t(owner)], box.count, box.low[0], box.low[1], box.low[2], box.high[0], box.high[1], box.high[2]);
+		}
+		// ORTOOL_CONTACTS=1: the traced actor's feet, contact word and supporting actor each tick.
+		if(traced && std::getenv("ORTOOL_CONTACTS"))
+		{
+			std::uint32_t dynamics = memory.u32(traced + 8);
+			std::uint32_t base = dynamics ? memory.u32(dynamics) : 0;
+			std::uint32_t report = base ? memory.u32(base + 0x150) : 0;
+			if(auto p = game::global_placement(memory, traced_super))
+				std::cout << std::format("tick {:>4}: contacts at {:.4f} {:.4f} {:.4f}, word 0x{:X}, support 0x{:X}\n", f,
+					p->m[0][3], p->m[1][3], p->m[2][3], report ? memory.u32(report + 4) : 0,
+					base && memory.contains(base + 0x284, 4) ? memory.u32(base + 0x284) : 0);
+		}
 		if(traced)
 		{
 			auto now = state_of(traced);
