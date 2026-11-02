@@ -107,10 +107,8 @@ Dated details of everything above, and the user's look-by-look feedback, are in
 
 **Open** (agreed order with the user, 2026-10-30; state 2026-11-02)
 
-1. **3c leftovers.** Done: the slippery slope's slide feels like the game's (user, 2026-11-02;
-   about 10.7 vs the recorded 10.3 u/s², the slow first step is the game's too) and the faint
-   lines around Rayman were his shadow's edge texels (1ff8529, to check). Left: the slope
-   contact still differs from the exe in two details ([formats/dynamics.md](formats/dynamics.md)).
+1. **3c leftovers.** The slope contact still differs from the exe in two details; our slide
+   accelerates about 10.7 u/s² where the recorded game's does 10.3 ([formats/dynamics.md](formats/dynamics.md)).
 2. **Dialogs and the HUD.** Left: the exact glyph size and left padding of the dialog text; the
    HUD's counters sit a little too far left and up and need the menu font (its colour is a little
    off too). Cutscenes: the game narrows the picture with black bars that slide in from the top
@@ -118,45 +116,35 @@ Dated details of everything above, and the user's look-by-look feedback, are in
    Do the bars as the game does, on by default; later an option to turn them off, which then puts
    a darker backing behind the text (user, 2026-11-02). Not drawn by the scene scripts; the kids'
    director sets the camera actor's custom bit 30 (and its var6 := 65000) for the scene's length,
-   so the engine probably draws them while that is set; procedure 502 is unexplored
-   (build/helpers/black_bars_report.md). Revisit start: an interim finished-level snapshot until
-   saves are read ([formats/saves.md](formats/saves.md)).
+   so the engine probably draws them while that is set (build/helpers/black_bars_report.md).
+   Revisit start: an interim finished-level snapshot until saves are read
+   ([formats/saves.md](formats/saves.md)).
    Font wishes for later: fixing the original's text that runs off the screen (the "Yahoo!" for
    all Lums, the menu's overwrite-save message).
 3. **Sound leftovers.** The transition fades between themes; how loud a sound is by distance
    (our stand-in: full within 8 units, silent at 30); where the game's DLL applies its music and
    effect levels.
-4. **The game's camera**: the arrival pan. Without `--start new` (arriving from the Hall of
-   Doors) the camera starts behind a wall, out of bounds, and can't get through to Rayman (user,
-   2026-11-02). Still to check against the game: the player may turn the camera (Q/W) only where
-   the level allows it, level presets often overrule it, and a camera icon with a red X shows
-   when turning is refused. The kids' cave loop is fixed (user, 2026-11-02). Later levels: in
-   Rodeo_10 the camera stays on top of a narrow hole Rayman drops into
+4. **The game's camera.** The player may turn it (Q/W) only where the level allows it, level
+   presets often overrule it, and a camera icon with a red X shows when turning is refused (the
+   user saw it in the real game's Ly_10): the icon is not drawn yet. Later levels: in Rodeo_10
+   the camera stays on top of a narrow hole Rayman drops into
    (`--level Rodeo_10 --camera 14.1,10.4,-4.9,49.8,-42.2`); our obstacle search is a stand-in
    for the exe's orbit search (0x486880), which is the likely next step.
-5. **The end-of-level cutscene** plays through and looks right (user, 2026-11-02: "Stop!" plays
-   once, the loops no longer jerk, the Teensies appear with each camera cut). Left: Rayman's pupils
-   show through his closed eyelids.
+5. **The end-of-level cutscene**: Rayman's pupils show through his closed eyelids.
 6. **Other machines**: the user will try a Linux laptop with a Fermi-era Quadro 2000M (NVIDIA
    390xx driver from the AUR, so real hardware acceleration).
-7. **Performance**, measured with the profiler (F8): about 960 draw calls a frame for 6,500
-   triangles (fine on a desktop, too many for phones: batch them), and a script spike of up to
-   6 ms once a second (a source of stutter: find the actor). In the Globox kids' scene (debug
-   build) the scripts took 14 ms a frame with about 90 actors thinking; `ORTOOL_COST=1 ortool run`
-   ranks the actors by script time (near the kids: the camera, node 5, about a fifth, the rest
-   spread out), so the interpreter itself is the cost, not one actor. The release build plays
-   the same scene at about 740 fps (scripts 0.1 ms a frame, user), so this only matters for the
-   debug build and slow machines.
+7. **Performance**: measured with the profiler (F8 shows the build type too; `OPENRAYMAN_PROFILE`,
+   `ORTOOL_COST=1`). Judge it in the release build.
 8. **Unported from the exe** (state 2026-11-02; each is a stand-in or missing today):
    - The camera's orbit search around obstacles (0x486880, steps decided by 0x486710, transitions
      0x487520/0x487730) and its offset rays and dynamic collisions (0x485FD0); ours is an interim
-     search. Likely cause of Rodeo_10's stuck camera and the arrival pan. Also the cutscene camera
-     modes (cam+0x60: 1 scripted keyframes, 4 snap, 5 target switch) and the rest of the global
-     tuning block 0x4FF62C ([formats/camera.md](formats/camera.md)).
+     search. Likely cause of Rodeo_10's stuck camera. Also the cutscene camera modes (cam+0x60: 1
+     scripted keyframes, 4 snap, 5 target switch) and the rest of the global tuning block
+     0x4FF62C ([formats/camera.md](formats/camera.md)).
    - Script handlers Learn_10 still calls (`ortool run` lists them): procedures 66 (every tick on
      the revisit start; address not found yet), 11/12 (0x472450), 146/150 (0x472600), 80
      (0x48B380), 237, 307 (0x46BFE0), 313..315, 347, 418, 420 (0x471A90); functions 76 and 210.
-   - The cutscene black bars (engine side, see item 2) and procedure 502.
+   - The cutscene black bars (engine side, see item 2).
    - Particle kinds not traced yet (an unknown kind does nothing), the per-particle draw value at
      pool +0x38 (0x460A10), and the dimming 0x460670 applies to screen images (0x4A07D4).
    - Animation morphs (the butterfly) and the scripts' fog override (procedures 42..47).

@@ -3,6 +3,25 @@
 The dated investigation notes from `ROADMAP.md`, kept here so the roadmap stays short. Newest
 first. The format docs under `formats/` are the permanent home of the findings themselves.
 
+## 2026-11-02 (late night): ticked off
+
+- The slippery slope (Ly_10) feels like the game's (user); Codex measured 10.3 u/s² down the
+  fall line in the recording and 10.7 in ours; the slow first step onto the slide is the game's
+  too. The two contact details that still differ are in formats/dynamics.md.
+- The faint crosshair lines around Rayman are gone (user): his shadow's edge texels were
+  stretched along his axes outside the blob (1ff8529).
+- The arrival pan works (user): starting without `--start new` no longer leaves the camera
+  behind a wall. The kids' cave loop is fixed (5f5545e).
+- The end scene: "Stop!" plays once and the occasional vibration couldn't be reproduced (user).
+- Procedure 502 (0x47F560) only sets a byte (0x500FAC) that pauses some actors' frames
+  (0x40A5C0, 0x44B2E0); it is not the black bars.
+- Performance (moved from the roadmap): about 960 draw calls a frame for 6,500 triangles (fine on
+  a desktop, too many for phones: batch them), and a script spike of up to 6 ms once a second.
+  In the Globox kids' scene (debug build) the scripts took 14 ms a frame with about 90 actors
+  thinking; `ORTOOL_COST=1 ortool run` ranks the actors by script time (the camera, node 5,
+  about a fifth, the rest spread out), so the interpreter itself is the cost. The release build
+  plays the same scene at about 740 fps (scripts 0.1 ms a frame, user).
+
 ## 2026-11-02 (night): dialogs, HUD, scenes
 
 - Dialog colours confirmed (user: "look amazing", no aliasing): the glyphs' vertex colours are
