@@ -19,7 +19,7 @@ first. The format docs under `formats/` are the permanent home of the findings t
   stand-in (node 41) on and off.
 - End scene: the loop seam overshoot is fixed (parts pulling apart once per loop); the user still
   sees the Teensies vibrate now and then. Dialog cues after an event are read at once (0x475680),
-  so the Teensies should appear with the camera cut (not yet confirmed).
+  so the Teensies appear with the camera cut (user confirmed).
 - Black bars slide in from the top and bottom as a scene starts (user). DeepSeek: no script draws
   them; the camera actor's custom bit 30 marks the scene's length.
 - In the kids' cave, running towards the camera made it circle round to Rayman's back as long as

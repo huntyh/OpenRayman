@@ -137,8 +137,8 @@ Dated details of everything above, and the user's look-by-look feedback, are in
    His pupils still show a little when he closes his eyes. In some looping animations the
    Teensies and Rayman jerk every few seconds, as if yanked on strings, parts pulling apart for a
    moment (Rayman standing and listening, for one). Mostly fixed (our loop seam blend overshot,
-   72da1ff; smoother, user); the Teensies still vibrate now and then. The Teensies appearing
-   0.2 s after each camera cut should be fixed (dialog cues, 28daef4): to check.
+   72da1ff; smoother, user); the Teensies still vibrate now and then. The Teensies now appear
+   with each camera cut (dialog cues, 28daef4; user).
 6. **Other machines**: the user will try a Linux laptop with a Fermi-era Quadro 2000M (NVIDIA
    390xx driver from the AUR, so real hardware acceleration).
 7. **Performance**, measured with the profiler (F8): about 960 draw calls a frame for 6,500
