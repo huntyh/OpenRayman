@@ -131,6 +131,10 @@ namespace openrayman
 				// follows the mip level in use (rounded up, as trilinear filtering blends two levels).
 				vec2 uv = v_uv;
 				vec2 uv_dx = dFdx(v_uv), uv_dy = dFdy(v_uv);
+				// 2: nothing outside the bounds shows (the shadow blob), instead of clamping to its edge
+				// texels, which stretched the blob's middle row and column out along the actor's axes.
+				if(u_edge_clamp > 1.5 && (any(lessThan(v_uv, v_uv_bounds.xy)) || any(greaterThan(v_uv, v_uv_bounds.zw))))
+					discard;
 				if(u_edge_clamp > 0.5)
 				{
 					vec2 size = vec2(textureSize(u_texture, 0));
@@ -1052,7 +1056,7 @@ namespace openrayman
 				const glm::vec2 c(at);
 				const float reach = std::max(s.size.x, s.size.y);
 				// u 0..2 and v -1..1 across the blob, its centre (u 1, v 0) in the middle, mirrored
-				// outwards; the bounds keep everything outside it on the texture's clear edge.
+				// outwards; outside the bounds nothing is drawn.
 				const glm::vec4 bounds{ 0, -1, 2, 1 };
 				auto uv = [&](const glm::vec3& p) {
 					glm::vec2 d = glm::vec2(p) - c;
@@ -1082,7 +1086,7 @@ namespace openrayman
 				glUniform1i(m_u_lighting, 3);
 				glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(identity));
 				glUniform2f(m_u_uv_offset, 0, 0);
-				glUniform1f(m_u_edge_clamp, 1.0f);
+				glUniform1f(m_u_edge_clamp, 2.0f);
 				glEnable(GL_POLYGON_OFFSET_FILL);
 				glPolygonOffset(-1, -1);
 				glBindVertexArray(m_sprite_vao);
