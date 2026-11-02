@@ -5,19 +5,46 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 
 namespace openrayman
 {
-	dialog_renderer::dialog_renderer(const memory_image& memory, std::span<const std::unique_ptr<cnt_archive>> archives)
+	dialog_renderer::dialog_renderer(const memory_image& memory, std::span<const std::unique_ptr<cnt_archive>> archives, gl::api api)
 		: m_memory(memory), m_archives(archives)
 	{
+		m_program = gl::create_program(api, R"(
+			layout(location=0) in vec2 position;
+			layout(location=1) in vec4 colour;
+			layout(location=2) in vec2 uv;
+			out vec4 v_colour; out vec2 v_uv;
+			void main() { gl_Position = vec4(position.x / 320.0 - 1.0, 1.0 - position.y / 240.0, 0, 1); v_colour = clamp(colour, 0.0, 1.0); v_uv = uv; }
+		)", R"(
+			in vec4 v_colour; in vec2 v_uv; out vec4 colour;
+			uniform sampler2D image;
+			void main() { colour = texture(image, v_uv) * v_colour; }
+		)");
+		glGenVertexArrays(1, &m_vao); glGenBuffers(1, &m_vbo);
+		glBindVertexArray(m_vao); glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+		glEnableVertexAttribArray(0); glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(SDL_Vertex), reinterpret_cast<void*>(offsetof(SDL_Vertex, position)));
+		glEnableVertexAttribArray(1); glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(SDL_Vertex), reinterpret_cast<void*>(offsetof(SDL_Vertex, color)));
+		glEnableVertexAttribArray(2); glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(SDL_Vertex), reinterpret_cast<void*>(offsetof(SDL_Vertex, tex_coord)));
+		const std::uint8_t white[] = {255,255,255,255};
+		m_white = gl::create_texture(1, 1, white);
 	}
 
 	dialog_renderer::~dialog_renderer()
 	{
-		for(auto [path, texture] : m_textures) if(texture) SDL_DestroyTexture(texture);
-		if(m_renderer) SDL_DestroyRenderer(m_renderer);
-		if(m_surface) SDL_DestroySurface(m_surface);
+		for(auto [path, texture] : m_textures) if(texture) glDeleteTextures(1, &texture);
+		glDeleteTextures(1, &m_white); glDeleteBuffers(1, &m_vbo);
+		glDeleteVertexArrays(1, &m_vao); glDeleteProgram(m_program);
+	}
+
+	void dialog_renderer::append(GLuint texture, bool additive, std::span<const SDL_Vertex> vertices)
+	{
+		if(m_batches.empty() || m_batches.back().texture != texture || m_batches.back().additive != additive)
+			m_batches.push_back({texture, additive, {}});
+		auto& out = m_batches.back().vertices;
+		out.insert(out.end(), vertices.begin(), vertices.end());
 	}
 
 	std::optional<memory_location> dialog_renderer::location(std::uint32_t address) const
@@ -44,10 +71,10 @@ namespace openrayman
 		return it->second;
 	}
 
-	SDL_Texture* dialog_renderer::texture_for(const texture_info& info)
+	GLuint dialog_renderer::texture_for(const texture_info& info)
 	{
 		std::string path = info.cnt_path();
-		auto [it, inserted] = m_textures.try_emplace(path, nullptr);
+		auto [it, inserted] = m_textures.try_emplace(path, 0);
 		if(!inserted) return it->second;
 		for(const auto& archive : m_archives)
 			if(const auto* entry = archive->find(path))
@@ -58,13 +85,11 @@ namespace openrayman
 					if(info.flags & texture_flag::color_key)
 						for(std::size_t i = 0; i < image.rgba.size(); i += 4)
 							if(image.rgba[i] < 8 && image.rgba[i + 1] < 8 && image.rgba[i + 2] < 8) image.rgba[i + 3] = 0;
-					it->second = SDL_CreateTexture(m_renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, int(image.width), int(image.height));
-					if(it->second)
-					{
-						SDL_UpdateTexture(it->second, nullptr, image.rgba.data(), int(image.width * 4));
-						SDL_SetTextureBlendMode(it->second, info.flags & texture_flag::additive ? SDL_BLENDMODE_ADD : SDL_BLENDMODE_BLEND);
-						SDL_SetTextureScaleMode(it->second, SDL_SCALEMODE_LINEAR);
-					}
+					it->second = gl::create_texture(image.width, image.height, image.rgba);
+					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 				}
 				catch(const std::exception& e) { SDL_Log("Dialog texture %s: %s", path.c_str(), e.what()); }
 				break;
@@ -85,7 +110,7 @@ namespace openrayman
 					{
 						auto object = read_geometric_object(m_memory, *at);
 						if(!object.elements.empty() && object.elements[0].material && object.elements[0].material->texture)
-							if(auto* texture = texture_for(*object.elements[0].material->texture))
+							if(auto texture = texture_for(*object.elements[0].material->texture))
 							{
 								std::vector<SDL_FColor> colours(object.vertices.size(), {1, 1, 1, 1});
 								// The visual set's colour blocks carry four u16 RGBA channels per
@@ -111,34 +136,23 @@ namespace openrayman
 		return it->second ? &*it->second : nullptr;
 	}
 
-	SDL_Surface* dialog_renderer::draw(std::span<const game::dialog_text> dialogs,
+	void dialog_renderer::draw(std::span<const game::dialog_text> dialogs,
 		std::span<const game::particles::screen_rectangle> boxes,
 		std::span<const game::particles::screen_image> images,
 		const glm::mat4& view_projection, const glm::mat4& projection, int width, int height, double time)
 	{
-		if(width <= 0 || height <= 0) return nullptr;
-		if(!m_surface || m_surface->w != width || m_surface->h != height)
-		{
-			for(auto [path, texture] : m_textures) if(texture) SDL_DestroyTexture(texture);
-			m_textures.clear();
-			for(auto& [address, font] : m_fonts) font.glyphs.clear();
-			if(m_renderer) SDL_DestroyRenderer(m_renderer);
-			if(m_surface) SDL_DestroySurface(m_surface);
-			m_surface = SDL_CreateSurface(width, height, SDL_PIXELFORMAT_ABGR8888);
-			m_renderer = m_surface ? SDL_CreateSoftwareRenderer(m_surface) : nullptr;
-			if(m_renderer) SDL_SetRenderScale(m_renderer, width / 640.0f, height / 480.0f);
-		}
-		if(!m_renderer) return nullptr;
-		SDL_SetRenderDrawBlendMode(m_renderer, SDL_BLENDMODE_NONE);
-		SDL_SetRenderDrawColor(m_renderer, 0, 0, 0, 0);
-		SDL_RenderClear(m_renderer);
-		SDL_SetRenderDrawBlendMode(m_renderer, SDL_BLENDMODE_BLEND);
+		if(width <= 0 || height <= 0) return;
+		m_batches.clear();
+		auto quad = [this](GLuint texture, bool additive, float x, float y, float w, float h, SDL_FColor colour, float u0, float u1) {
+			SDL_Vertex v[] = {{{x,y},colour,{u0,0}}, {{x+w,y},colour,{u1,0}}, {{x+w,y+h},colour,{u1,1}},
+				{{x,y},colour,{u0,0}}, {{x+w,y+h},colour,{u1,1}}, {{x,y+h},colour,{u0,1}}};
+			append(texture, additive, v);
+		};
 		for(const auto& box : boxes)
 		{
 			SDL_FRect r{box.first[0] * 6.4f, box.first[1] * 4.8f,
 				(box.second[0] - box.first[0]) * 6.4f, (box.second[1] - box.first[1]) * 4.8f};
-			SDL_SetRenderDrawColor(m_renderer, 0, 0, 0, Uint8(std::clamp(box.alpha, 0.0f, 255.0f)));
-			SDL_RenderFillRect(m_renderer, &r);
+			quad(m_white, false, r.x, r.y, r.w, r.h, {0,0,0,std::clamp(box.alpha / 255.0f, 0.0f, 1.0f)}, 0, 1);
 		}
 		for(const auto& image : images)
 			try
@@ -162,20 +176,18 @@ namespace openrayman
 									at -= std::max(0.0f, f.duration);
 								}
 							}
-							if(auto* texture = texture_for(*frame))
+							if(auto texture = texture_for(*frame))
 							{
-								SDL_SetTextureAlphaModFloat(texture, std::clamp(image.second[2] / 255.0f, 0.0f, 1.0f));
 								SDL_FRect r{image.first[0] * 6.4f, image.first[1] * 4.8f,
 									(image.second[0] - image.first[0]) * 6.4f, (image.second[1] - image.first[1]) * 4.8f};
+								SDL_FColor colour{1,1,1,std::clamp(image.second[2] / 255.0f, 0.0f, 1.0f)};
+								bool additive = (frame->flags & texture_flag::additive) != 0;
 								if(frame->tiling & texture_tiling::mirror_u)
 								{
-									SDL_FRect half{r.x, r.y, r.w * 0.5f, r.h};
-									SDL_RenderTexture(m_renderer, texture, nullptr, &half);
-									half.x += half.w;
-									SDL_RenderTextureRotated(m_renderer, texture, nullptr, &half, 0, nullptr, SDL_FLIP_HORIZONTAL);
+									quad(texture, additive, r.x, r.y, r.w * 0.5f, r.h, colour, 0, 1);
+									quad(texture, additive, r.x + r.w * 0.5f, r.y, r.w * 0.5f, r.h, colour, 1, 0);
 								}
-								else SDL_RenderTexture(m_renderer, texture, nullptr, &r);
-								SDL_SetTextureAlphaModFloat(texture, 1);
+								else quad(texture, additive, r.x, r.y, r.w, r.h, colour, 0, 1);
 							}
 						}
 					}
@@ -212,14 +224,7 @@ namespace openrayman
 				if(item.index >= 0 && std::size_t(item.index) < font.objects.size() &&
 					!font.objects[std::size_t(item.index)].physical_object) continue;
 				const auto* g = glyph_for(font, item.index);
-				if(!g)
-				{
-					// Missing or invalid glyph data: preserve a readable stand-in.
-					char fallback[] = {char(item.byte), 0};
-					SDL_SetRenderDrawColor(m_renderer, 255, 255, 255, 255);
-					SDL_RenderDebugText(m_renderer, x + item.x * unit, y + item.y * unit, fallback);
-					continue;
-				}
+				if(!g) continue; // missing glyph data: nothing to draw
 				for(const auto& element : g->object.elements)
 				{
 					std::vector<SDL_Vertex> vertices;
@@ -231,11 +236,19 @@ namespace openrayman
 							vertices.push_back({{x + (item.x + item.advance * 0.5f + p[0] * item.scale) * unit,
 								y + (item.y - p[2] * item.scale) * unit}, g->colours[element.triangles[t][c]], {uv[0], 1 - uv[1]}});
 						}
-					if(!vertices.empty()) SDL_RenderGeometry(m_renderer, g->texture, vertices.data(), int(vertices.size()), nullptr, 0);
+					if(!vertices.empty()) append(g->texture, element.material && element.material->texture && (element.material->texture->flags & texture_flag::additive), vertices);
 				}
 			}
 		}
-		SDL_RenderPresent(m_renderer);
-		return m_surface;
+		glDisable(GL_DEPTH_TEST); glEnable(GL_BLEND); glDisable(GL_CULL_FACE);
+		glUseProgram(m_program); glUniform1i(glGetUniformLocation(m_program, "image"), 0);
+		glActiveTexture(GL_TEXTURE0); glBindVertexArray(m_vao); glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+		for(const auto& batch : m_batches)
+		{
+			glBlendFunc(GL_SRC_ALPHA, batch.additive ? GL_ONE : GL_ONE_MINUS_SRC_ALPHA);
+			glBindTexture(GL_TEXTURE_2D, batch.texture);
+			glBufferData(GL_ARRAY_BUFFER, batch.vertices.size() * sizeof(SDL_Vertex), batch.vertices.data(), GL_STREAM_DRAW);
+			glDrawArrays(GL_TRIANGLES, 0, GLsizei(batch.vertices.size()));
+		}
 	}
 }

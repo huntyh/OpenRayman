@@ -1336,7 +1336,7 @@ namespace
 				run_scripts(a, double(2 - a.tick) / 60.0);
 			update_actors(a);
 			a.dialog_memory = std::make_unique<memory_image>(std::move(files.memory));
-			a.dialog_overlay = std::make_unique<dialog_renderer>(*a.dialog_memory, a.archives);
+			a.dialog_overlay = std::make_unique<dialog_renderer>(*a.dialog_memory, a.archives, a.api);
 			SDL_Log("%s: %zu meshes, %zu triangles, %zu textures (%zu missing), %llu ms", levels[index].c_str(),
 				a.level_stats.meshes, a.level_stats.triangles, a.level_stats.textures, a.level_stats.missing_textures,
 				static_cast<unsigned long long>(SDL_GetTicks() - start));
@@ -1547,21 +1547,7 @@ namespace
 				const auto& boxes = a.vm->particles().screen_rectangles();
 				const auto& images = a.vm->particles().screen_images();
 				if(!dialogs.empty() || !boxes.empty() || !images.empty())
-					if(SDL_Surface* surface = a.dialog_overlay->draw(dialogs, boxes, images, projection * view, projection, w, h, a.animation_time))
-					{
-						GLuint overlay = gl::create_texture(w, h, std::span(static_cast<const std::uint8_t*>(surface->pixels), std::size_t(w) * h * 4));
-						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-						glDisable(GL_DEPTH_TEST);
-						glEnable(GL_BLEND);
-						glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-						glUseProgram(a.text_program);
-						glUniform4f(glGetUniformLocation(a.text_program, "u_rect"), -1, -1, 1, 1);
-						glActiveTexture(GL_TEXTURE0);
-						glBindTexture(GL_TEXTURE_2D, overlay);
-						glBindVertexArray(a.vao);
-						glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-						glDeleteTextures(1, &overlay);
-					}
+					a.dialog_overlay->draw(dialogs, boxes, images, projection * view, projection, w, h, a.animation_time);
 			}
 		}
 		else if(a.texture && w > 0 && h > 0)
