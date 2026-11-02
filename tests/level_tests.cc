@@ -1080,6 +1080,61 @@ TEST_CASE("real data: input actions follow the keys")
 	CHECK(memory.read<std::int32_t>(keys.action(13) + input_action::counter) == 1);
 }
 
+TEST_CASE("real data: Learn_10 portal camera lands with a clear view")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto data = game_data::locate(*dir);
+	REQUIRE(data);
+	level_files files = load_level_files(*data, "Learn_10");
+	level_header header = read_level_header(files);
+	scene tree(files.memory, header);
+	animation_bank bank = read_animation_bank(files);
+	game::live_memory m(files.memory);
+	std::uint32_t rayman = header.placements.at(0).super_object.address();
+	game::interpreter vm(m, rayman);
+	game::register_handlers(vm);
+	game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
+	vm.set_animations(&bank);
+	game::install_level_events(m, bank);
+	std::vector<std::uint32_t> actors;
+	for(const scene_node& n : tree.nodes())
+		if(n.type == super_object_type::actor) actors.push_back(n.at.address());
+	vm.set_actors(actors);
+	for(const actor_set::entry& e : read_actors(files.memory, tree, bank).actors)
+	{
+		auto so = tree.node(e.node).at.address();
+		auto placed = game::global_placement(m, so);
+		if(!placed) continue;
+		float difference = 0;
+		for(int r = 0; r < 3; r++)
+			for(int c = 0; c < 4; c++)
+				difference = std::max(difference, std::abs(placed->m[r][c] - e.world.m[r][c]));
+		if(difference > 1e-3f) game::set_global_placement(m, so, e.world);
+	}
+	for(std::uint32_t bit : game::revisit_story_bits) REQUIRE(vm.set_story_bit(actors, bit));
+	game::input keys(m, read_input_actions(files));
+	for(int tick = 0; tick < 120; tick++)
+	{
+		keys.step();
+		game::step(vm, actors);
+		if(tick == 1 || tick == 119)
+		{
+			auto view = game::global_placement(m, vm.camera_motion().super_object);
+			REQUIRE(view);
+			std::array<float, 3> eye{ view->m[0][3], view->m[1][3], view->m[2][3] };
+			auto aim = vm.camera_motion().look_at;
+			float distance = 0;
+			for(int i = 0; i < 3; i++) distance += (eye[i] - aim[i]) * (eye[i] - aim[i]);
+			INFO("tick ", tick, " eye ", eye[0], ",", eye[1], ",", eye[2], " aim ", aim[0], ",", aim[1], ",", aim[2]);
+			CHECK(distance < 144.0f);
+			CHECK_FALSE(vm.world().first_hit(aim, eye).has_value());
+		}
+	}
+}
+
 TEST_CASE("real data: Rayman stands on Learn_10's closed tutorial trapdoor")
 {
 	auto dir = real_game_dir();

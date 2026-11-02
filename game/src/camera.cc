@@ -498,6 +498,38 @@ namespace openrayman::game
 		// target isn't read yet.
 		constexpr float teleported = 10;
 		bool cut = state.valid && target_transform && length(sub(aim, state.look_at)) > teleported;
+		// A cut need not travel from the old position. If its destination is hidden from the
+		// target, search around the target for a clear landing. This is our approximation; the
+		// executable's startup reset (0x485810) and obstacle transitions have different modes.
+		if(cut && !(flags_72 & 0x3000) && !vm.world().empty() && vm.world().first_hit(aim, want))
+		{
+			float radius = camera_radius(m, super_object);
+			vec3 offset = sub(want, aim);
+			for(float scale : { 1.0f, 0.75f, 0.5f })
+			{
+				std::vector<vec3> candidates;
+				for(int step = 0; step < 16; step++)
+				{
+					float angle = float(step) * pi / 8.0f;
+					float cs = std::cos(angle), sn = std::sin(angle);
+					candidates.push_back(add(aim, mul(vec3{ offset[0] * cs - offset[1] * sn,
+						offset[0] * sn + offset[1] * cs, offset[2] }, scale)));
+				}
+				std::ranges::sort(candidates, [&](const vec3& a, const vec3& b) {
+					return length(sub(a, want)) < length(sub(b, want));
+				});
+				bool found = false;
+				for(const vec3& candidate : candidates)
+					if(!vm.world().first_hit(aim, candidate) &&
+						(radius <= 0 || length(sub(vm.world().slide_sphere(candidate, candidate, radius), candidate)) < 0.01f))
+					{
+						want = candidate;
+						found = true;
+						break;
+					}
+				if(found) break;
+			}
+		}
 		// Until the original's candidate scoring and transition modes are fully understood, use a
 		// conservative search: when the target is hidden, pick a reachable candidate with a clear
 		// view. Keep the waypoint across ticks so the camera can actually go around a corner.
@@ -606,7 +638,7 @@ namespace openrayman::game
 		state.aim_arrive = m.f32(block + camera_field::aim_arrive);
 		if(cut)
 		{
-			state.flags |= snap_position;
+			state.flags |= snap_position | keep_orientation;
 			state.aim = off;
 			state.previous_move = {};
 			state.previous_aim = {};

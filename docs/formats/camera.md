@@ -255,6 +255,13 @@ user's 2026-10-30 live and OpenRayman traces.
 - **The cutscene modes** (cam+0x60: mode 1 scripted keyframes, mode 4 snap, mode 5 target switch)
   and the global tuning block 0x4FF62C.. beyond what procedures 491..493 store.
 
+The portal startup exposed a limitation of our teleport cut: its destination is calculated from
+the old camera direction, and may lie beyond a wall even though it is near the target. When that
+destination is occluded, our cut now searches rotated positions at the same and shorter distances,
+checking line of sight and the camera sphere. This is an approximation, not the original arrival
+pan. Own analysis of 0x485810 confirms the startup reset enters mode 4; 0x487730 handles a separate
+obstacle transition. The available recordings do not show a return from the Hall of Doors.
+
 ## Camera collision (0x434660)
 
 After each tick's movement the exe moves the camera's collision sphere from where it was to where
