@@ -226,6 +226,7 @@ namespace
 		float speed = 15.0f;                     // units per second
 		bool looking = false;
 		Uint64 last_frame = 0;
+		bool silent_run = false; // the --time catch-up at load: its sounds aren't played
 	};
 
 	fs::path settings_file()
@@ -721,7 +722,7 @@ namespace
 			});
 			// Screenshots and the --time run at load stay silent.
 			for(const auto& request : a.vm->take_sounds())
-				if(a.sounds && !a.screenshot && a.last_frame != 0)
+				if(a.sounds && !a.screenshot && !a.silent_run)
 				{
 					// Procedure 115 and animations sound from their actor; 117..119 have no emitter
 					// (0x4691E0 passes -1; 0x4520A0 centres them).
@@ -734,7 +735,7 @@ namespace
 					else
 						a.sounds->request(request.event, request.source, 1.0f, 0.0f, request.selector);
 				}
-			if(!a.screenshot && a.last_frame != 0)
+			if(!a.screenshot && !a.silent_run)
 				play_sector_sounds(a);
 			if(a.camera_log && a.playing && a.camera_super_object)
 			{
@@ -1329,7 +1330,9 @@ namespace
 			}
 			a.chose_view = true;
 			// --time: let the scripts run up to then, so screenshots show what they picked.
+			a.silent_run = true;
 			run_scripts(a, a.animation_time);
+			a.silent_run = false;
 			// The startup script requests a cut on its first tick; the camera lands on
 			// the second. Run both before presenting the saved, out-of-bounds view.
 			if(a.playing && a.tick < 2 && a.camera_super_object)
