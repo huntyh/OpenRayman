@@ -160,7 +160,7 @@ The table above is the confirmed set; the other bits are still unknown.
 
 Surfaces facing down (normal Z at most -0.5) are solid from below: the Learn_10 bridge by the
 waterfall is a slab 0.6 thick whose underside (z -6.8, normal straight down) stops a jump from
-under it. OpenRayman stops a move up where the top of the body (1.8 above the feet) would pass the
+under it. OpenRayman stops a move up where the top of Rayman's ears (2.2 above the feet) would pass the
 lowest such surface (`world_collision::ceiling_at`). This is a stand-in for the exe's sphere
 contacts, which meet a ceiling like any other face. `ORTOOL_NEAR=x,y,r ortool collide <game>
 <level>` lists the collision triangles around a point.

@@ -65,7 +65,7 @@ as those arrive:
 - Messages to the engine and the scripts' fog override (procedures 42..47) are read but have no
   effect yet.
 - Physics is partial (docs/formats/dynamics.md): an actor is a small disc that finds the floor
-  straight below it, not the game's collision spheres. Walls now stop it, as a cylinder up to
+  straight below it, not the game's collision spheres. Walls now stop it, as a cylinder from 0.5 up to
   1.8 above its feet, the radius of its first kind-1 zone (Rayman's 0.8); ceilings stop a jump
   where the top of his head (2.2 above his feet) would pass a downward-facing surface; slopes
   slide downhill but with the wrong acceleration.

@@ -112,9 +112,10 @@ Dated details of everything above, and the user's look-by-look feedback, are in
    far left and up, and need the menu font (its colour is a little off too). In the Globox kids'
    scene the kids' yellow and red are about right (same small adjustments as Murfy's), but
    Rayman's lines come out blue where the game's are white-ish.
-   Rayman's health bar is missing from the HUD (user, 2026-11-02). Lead, unverified: node 44
-   draws with kinds 50/125 from a material chain ending at the `jauge_in2_horizont` texture, and
-   kind 120 (not handled yet) writes a bar table at 0x4E0F20.
+   Rayman's health bar is missing from the HUD (user, 2026-11-02). Node 44 draws it with particle
+   kind 120 (0x4648B0 → 0x460530, slots at 0x4E0F20, drawn by 0x460670/0x429670): a bar at
+   12..12 + 0.46 × max hit points by 8.5..11.5 percent of the screen, filled to the percent of
+   hit points, texture `jauge_in_horizont`; we don't handle kind 120 yet (DeepSeek, 2026-11-02).
    Cutscenes: the game narrows the picture with black bars, taller at the bottom than at the
    top, and the subtitles are made to sit on them. Do the bars as the game does, on by default;
    later an option to turn them off, which then puts a darker backing behind the text (user,
@@ -125,8 +126,9 @@ Dated details of everything above, and the user's look-by-look feedback, are in
    build/task_revisit_state.md).
    The first cage: breaking it makes a golden starry burst and its Lum appears at once; ours has
    no burst and the Lum shows up with a delay, before Rayman is walked to Murfy's spot. The burst
-   is particle kind 5 (puffs) and three kind 45 calls (golden sparkles) in the cage's script
-   (node 53's, the same model); we have neither kind yet.
+   is node 67's break rule: particle kinds 5 (smoke puffs), 9 (flash, ours has it) and three
+   kind 45 calls (nine golden sparks each). The game's Lum also waits 500 ms (node 69 waits after
+   bit 840), hidden behind the burst (DeepSeek's reading, 2026-11-02).
    Font wishes for later: fixing the original's text that runs off the screen (the "Yahoo!" for
    all Lums, the menu's overwrite-save message).
 3. **Sound leftovers.** The transition fades between themes; how loud a sound is by distance

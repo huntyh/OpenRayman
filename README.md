@@ -131,7 +131,7 @@ In a level:
 | L | Switch between the game's lighting and fog and a plain light |
 | F6 / F7 | Darker / brighter, like the game's luminosity setting |
 | F5 / F4 | Put the actor you're looking at into its next / previous state (Shift: its whole family), to preview animations the game's scripts would pick |
-| G | Turn the scripts on and off (they are off while flying) |
+| G | Turn the level's scripts on and off |
 | T | Switch to the texture browser and back |
 | Tab | Play: the keyboard goes to the game (arrows, A jump, Space shoot, Shift walk, Q/W camera, Ctrl recentre) until Tab again |
 

@@ -181,8 +181,14 @@ The scripts use maximum hit points as a mailbox: `var0 := function_46(me)` then
 `procedure_6(me, 0)` reads a number another actor left there and clears it (node 45's end scene
 steps through its states this way, nodes 2 and 39 the same).
 Procedure 318 (0x46DEA0) sets or clears standard game +0x24 bit 0x100 on the selected actor.
-Procedure 85 (0x467970 → 0x4061B0) tears down animation parts and associated sound state; it is
-not yet implemented.
+**Switching actors on and off.** Own analysis of `Rayman2.exe` (2026-11-02): standard game +0x29
+bit 1 means "active"; the frame loop (0x40AB90) runs only active actors. Procedure 84 (0x467970 →
+0x405FA0) moves the actor into the dynamic world and sets bits 1 and 2. Procedure 85 (→ 0x4061B0)
+tears down its animation links and sounds and, if it is in the world (bit 0 clear) and active,
+clears bits 0..2. The Globox kids' director switches its stand-in Rayman (node 41) off at the
+start and at the hand-back. Procedure 139 on a placed actor (0x406220) sets bit 0 and, unless
+type 5, bit 1, then for type 1 resets it (0x405E50 mode 4, whose 0x4132A0 puts it back in the
+world) unless its id matches one of the level's always actors (0x40BC80, list at 0x4A6B1C).
 
 **Fields** (type 9, table 0x4A6598, 12-byte entries: kind, get, set): 0 position (super object
 +0x24, the global transform: position at +4), 1 a direction, 2 and 3 speed (vector, length), 4 to 6
