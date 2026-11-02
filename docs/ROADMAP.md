@@ -116,7 +116,10 @@ Dated details of everything above, and the user's look-by-look feedback, are in
    Do the bars as the game does, on by default; later an option to turn them off, which then puts
    a darker backing behind the text (user, 2026-11-02). Not drawn by the scene scripts; the kids'
    director sets the camera actor's custom bit 30 (and its var6 := 65000) for the scene's length,
-   so the engine probably draws them while that is set (build/helpers/black_bars_report.md).
+   but nothing in the exe reads either (both are markers for other scripts). The exe's own
+   letterbox is procedures 313/314 (0x46BD40 -> 0x420660: a smaller viewport plus black polygons
+   around it), which no Learn_10 script calls. Next: watch the display record 0x5004D4 live during
+   a kids' scene (see ROADMAP_LOG, 2026-11-02 late night).
    Revisit start: an interim finished-level snapshot until saves are read
    ([formats/saves.md](formats/saves.md)).
    Font wishes for later: fixing the original's text that runs off the screen (the "Yahoo!" for

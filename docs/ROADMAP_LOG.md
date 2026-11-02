@@ -3,6 +3,20 @@
 The dated investigation notes from `ROADMAP.md`, kept here so the roadmap stays short. Newest
 first. The format docs under `formats/` are the permanent home of the findings themselves.
 
+## 2026-11-02 (late night): the cutscene bars, round two
+
+DeepSeek (read-only, build/helpers/black_bars_report2.md), checked by us: no exe code reads the
+camera actor's custom bit 30 or its var6 (every 0x20000000 test is on render objects or particle
+kinds; var6 is an owner token the camera controllers compare among themselves, 65000 = a scene
+owns the camera). The engine's letterbox is procedures 313 (size in percent, display record
+0x5004D4 +0x30/+0x34) and 314 (bands per 1000, +0x48..+0x54): 0x420660 shrinks the viewport
+(+0x38..+0x44) and paints the margins with the driver's black-polygon call. The Menu's node 3
+animates 314 for its own effect; `ortool brain Learn_10` has no call to 313..317, so the Learn_10
+bars come from elsewhere. Cheapest next step: add the record's fields to `r2live.py --camera` and
+watch them during the kids' scene; if they stay put, read the kind-120 rectangles (0x4E0F20) and
+the screen sprites (0x4E1638). The report's Learn_10 line numbers for 314 were wrong (they are
+the Menu's).
+
 ## 2026-11-02 (late night): ticked off
 
 - The slippery slope (Ly_10) feels like the game's (user); Codex measured 10.3 u/s² down the
