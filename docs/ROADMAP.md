@@ -92,35 +92,37 @@ once it plays right (they have issues of their own, found on a first look).
   intro hands him over (`first_visit.h`; the intro itself is Phase 4), the tutorial cage hangs
   until the game's CD check passes as on the GOG release, Murfy appears and whispers, the cage
   breaks, its Lum flies its loops and collecting it opens the trapdoor.
+- ✅ **Standing on actors** ([formats/collision.md](formats/collision.md)): actors' collision
+  zones and animated parts count as floor, wall and ceiling, so the tutorial's closed trapdoor
+  holds Rayman, and moving supports carry him. Ceilings (user retested 2026-11-02): the bridge,
+  the ears and the Globox kids' cave roof all stop him.
 
 Dated details of everything above, and the user's look-by-look feedback, are in
 [ROADMAP_LOG.md](ROADMAP_LOG.md).
 
 **Open** (agreed order with the user, 2026-10-30; state 2026-11-02)
 
-1. **Standing on actors.** Nothing lets Rayman stand on an actor, so the tutorial's closed
-   trapdoor and every moving platform let him fall through; next: actors' collision shapes as
-   floor.
-2. **3c leftovers.** The ceilings: the bridge no longer lets him through, the ears (head height 2.2) and the Globox kids'
-   cave roof (`--camera -66.7,198.4,1.2,279.7,24.1`) await the user's test. The slippery slope's
-   acceleration is off (the real slide accelerates about 11 u/s² down the fall line). Faint
-   crosshair-like lines around Rayman from afar.
-3. **Dialogs.** Function 158 runs and its events match a recorded playthrough; the text is drawn
-   with a stand-in font in the wrong place (Murfy's lands in the world). Next: function 158's
-   placement and the game's own glyphs; procedure 393. Font wishes for later: smooth edges, and
-   fixing the original's text that runs off the screen (the "Yahoo!" for all Lums, the menu's
-   overwrite-save message).
-4. **Sound leftovers.** The transition fades between themes; how loud a sound is by distance
+1. **3c leftovers.** The slippery slope's acceleration is off (the real slide accelerates about
+   11 u/s² down the fall line). Faint crosshair-like lines around Rayman from afar.
+2. **Dialogs.** Function 158 runs and its events match a recorded playthrough; the text is drawn
+   with a stand-in font somewhere far off in the world instead of on screen (user, 2026-11-02).
+   Next: function 158's placement and the game's own glyphs; procedure 393. Font wishes for
+   later: smooth edges, and fixing the original's text that runs off the screen (the "Yahoo!" for
+   all Lums, the menu's overwrite-save message).
+3. **Sound leftovers.** The transition fades between themes; how loud a sound is by distance
    (our stand-in: full within 8 units, silent at 30); where the game's DLL applies its music and
    effect levels.
-5. **The game's camera**, still to check against the game: the arrival pan. In the game the
-   player may turn the camera (Q/W) only where the level allows it, level presets often
-   overrule it, and a camera icon with a red X shows when turning is refused.
-6. **The end-of-level cutscene** plays through (user, 2026-11-02), but when Rayman shouts "Stop!"
+4. **The game's camera**: the arrival pan. Without `--start new` (arriving from the Hall of
+   Doors) the camera starts behind a wall, out of bounds, and can't get through to Rayman (user,
+   2026-11-02). Still to check against the game: the player may turn the camera (Q/W) only where
+   the level allows it, level presets often overrule it, and a camera icon with a red X shows
+   when turning is refused.
+5. **The end-of-level cutscene** plays through (user, 2026-11-02), but when Rayman shouts "Stop!"
    at the arguing Teensies and spreads his hands, that animation loops instead of playing once.
    His pupils still show a little when he closes his eyes.
-7. **Other machines**: the user will try a Linux laptop with a Fermi-era Quadro 2000M.
-8. **Performance**, measured with the profiler (F8): about 960 draw calls a frame for 6,500
+6. **Other machines**: the user will try a Linux laptop with a Fermi-era Quadro 2000M (NVIDIA
+   390xx driver from the AUR, so real hardware acceleration).
+7. **Performance**, measured with the profiler (F8): about 960 draw calls a frame for 6,500
    triangles (fine on a desktop, too many for phones: batch them), and a script spike of up to
    6 ms once a second (a source of stutter: find the actor).
 

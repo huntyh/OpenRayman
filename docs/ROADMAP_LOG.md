@@ -3,6 +3,15 @@
 The dated investigation notes from `ROADMAP.md`, kept here so the roadmap stays short. Newest
 first. The format docs under `formats/` are the permanent home of the findings themselves.
 
+## 2026-11-02 (evening): the user's retests
+
+- Ceilings hold (user retested): the bridge, the ears and the Globox kids' cave roof. Standing on
+  actors moves to Done.
+- Dialogs: the text still lands somewhere far off in the world; placement and font stay open.
+- Arrival pan: started without `--start new`, the camera begins behind a wall, out of bounds,
+  and can't get through to Rayman.
+- Next machine: the Fermi laptop (Quadro 2000M) on Linux with the AUR 390xx driver.
+
 ## 2026-11-02 (afternoon): standing on actors, and a profiler
 
 - Rayman stands on actors (GPT-6.1 Sol's job, reviewed): the Learn_10 trapdoor (node 66) holds
