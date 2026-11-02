@@ -24,6 +24,9 @@
 #                  as `ortool sound` takes it), channel, the actor it sounds from
 #   music.txt      the music theme playing, its segment index and the one prepared next
 #                  (0x4B95B8..), segment resource ids (bank:index)
+#   audio.txt      how loud the sound output is every 50 ms (RMS and peak, dBFS; r2audio.py, needs
+#                  `pip install soundcard`): set against sound.txt and music.txt, it gives the game's
+#                  mix. Mute other programs while recording
 #
 # Select topics with --only story,camera (default: all). The super object order of the dynamic
 # world matches the level file, so actor indexes are the `node` numbers of `ortool brain` minus the
@@ -39,7 +42,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import r2live as live  # noqa: E402
 
-TOPICS = ("session", "story", "rayman", "actors", "camera", "generated", "text", "sound", "music")
+TOPICS = ("session", "story", "rayman", "actors", "camera", "generated", "text", "sound", "music", "audio")
 
 LEVEL_NAME = 0x500381     # the level being played or loaded (0x404DA0), a character array
 PENDING_LEVEL = 0x50039F  # the next level asked for (0x4054D0), empty when none
@@ -447,6 +450,14 @@ def main():
 	r = recorder(m, args.folder, topics)
 	r.say("session", f"recording {', '.join(topics)} from {args.process} (pid {pid})")
 	print(f"recording into {args.folder}; Ctrl+C stops", flush=True)
+	meter = None
+	if "audio" in topics:
+		try:
+			import r2audio
+			meter = r2audio.loudness_meter(r2audio.loudness_log(lambda line: r.say("audio", line)))
+			meter.start()
+		except ImportError:
+			r.say("session", "no audio levels: pip install soundcard")
 	last_clock = None
 	try:
 		while True:
@@ -459,6 +470,8 @@ def main():
 	except KeyboardInterrupt:
 		pass
 	finally:
+		if meter:
+			meter.stop()
 		r.say("session", "stopped")
 		r.close()
 

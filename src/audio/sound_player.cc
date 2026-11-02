@@ -21,10 +21,17 @@ namespace openrayman
 			SDL_ResumeAudioStreamDevice(m_stream);
 		else
 			SDL_Log("No sound device: %s", SDL_GetError());
+		m_loader = std::thread([this] { load_themes(); });
 	}
 
 	sound_player::~sound_player()
 	{
+		{
+			std::lock_guard lock(m_job_mutex);
+			m_quit = true;
+		}
+		m_job_ready.notify_one();
+		m_loader.join();
 		if(m_stream)
 			SDL_DestroyAudioStream(m_stream);
 	}
@@ -60,6 +67,11 @@ namespace openrayman
 		{
 			if(m_theme.event == event->target) { m_music_index = -1; m_pending_theme.reset(); }
 			else if(m_pending_theme && m_pending_theme->event == event->target) m_pending_theme.reset();
+			if(m_loading_theme && m_loading_event == event->target)
+			{
+				++m_theme_serial; // the theme still being decoded is dropped too
+				m_loading_theme = 0;
+			}
 			std::erase_if(m_voices, [event](const voice& v) { return v.event == event->target; });
 			return;
 		}
@@ -174,55 +186,103 @@ namespace openrayman
 	}
 
 
-	// Segment data is decoded before playback, so the audio callback never waits on disk.
-	sound_player::music_segment sound_player::load_music_segment(std::uint32_t id, unsigned depth)
+	// Which file a theme entry plays: an external sample, or the first of a weighted set. Runs under
+	// the lock (the banks are shared); the decoding itself is left to the loader thread.
+	std::optional<sound_player::segment_ref> sound_player::segment_of(std::uint32_t id, unsigned depth)
 	{
-		music_segment result;
-		if(depth >= 16) return result;
+		if(depth >= 16) return std::nullopt;
 		auto key = bnm_id::of(id);
 		const auto* b = bank(key.bank);
 		const auto* resource = b ? b->resource(key.index) : nullptr;
-		if(!resource) return result;
+		if(!resource) return std::nullopt;
 		if(resource->type == bnm_resource_type::group10)
 		{
 			auto entries = b->entries(*resource);
-			if(!entries.empty()) return load_music_segment(entries.front()[0], depth + 1);
+			return entries.empty() ? std::nullopt : segment_of(entries.front()[0], depth + 1);
 		}
-		if(resource->type != bnm_resource_type::sample || !bnm_bank::is_external(*resource)) return result;
+		if(resource->type != bnm_resource_type::sample || !bnm_bank::is_external(*resource)) return std::nullopt;
+		return segment_ref{ resource->name, static_cast<float>(std::min(resource->volume, 127u)) / 127.0f };
+	}
+
+	// Loader thread only: decodes a segment once and keeps it, so asking for a theme again (or one
+	// sharing segments, as Learn_10's themes share bank 239's) costs nothing.
+	std::shared_ptr<const sound_player::music_segment> sound_player::load_music_segment(const std::optional<segment_ref>& ref)
+	{
+		if(!ref) return nullptr;
+		auto lower = [](std::string value) { std::ranges::transform(value, value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }); return value; };
+		std::string key = lower(ref->name);
+		if(auto found = m_segment_cache.find(key); found != m_segment_cache.end()) return found->second;
+		auto result = std::make_shared<music_segment>();
 		try
 		{
-			auto lower = [](std::string value) { std::ranges::transform(value, value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }); return value; };
 			for(const auto& path : m_game.music_files())
-				if(lower(path.filename().string()) == lower(resource->name))
+				if(lower(path.filename().string()) == key)
 				{
 					apm_decoder decoder(read_file(path));
-					result.channels = decoder.channels();
-					result.rate = decoder.sample_rate();
-					result.samples = decoder.decode_all();
-					result.name = resource->name;
-					result.volume = static_cast<float>(std::min(resource->volume, 127u)) / 127.0f;
+					result->channels = decoder.channels();
+					result->rate = decoder.sample_rate();
+					result->samples = decoder.decode_all();
+					result->name = ref->name;
+					result->volume = ref->volume;
 					break;
 				}
 		}
-		catch(const std::exception& e) { SDL_Log("Cannot load music %s: %s", resource->name.c_str(), e.what()); }
+		catch(const std::exception& e) { SDL_Log("Cannot load music %s: %s", ref->name.c_str(), e.what()); }
+		m_segment_cache.emplace(key, result);
 		return result;
+	}
+
+	// Decoding a whole theme takes a moment, so it never happens under the lock the audio callback
+	// needs: the request is handed to this thread, and the theme joins the music once decoded.
+	void sound_player::load_themes()
+	{
+		for(;;)
+		{
+			theme_job job;
+			{
+				std::unique_lock lock(m_job_mutex);
+				m_job_ready.wait(lock, [this] { return m_job || m_quit; });
+				if(m_quit) return;
+				job = std::move(*m_job);
+				m_job.reset();
+			}
+			for(const auto& ref : job.segments) job.next.segments.push_back(load_music_segment(ref));
+			job.next.tail = load_music_segment(job.tail);
+			std::lock_guard lock(m_mutex);
+			if(job.serial == m_theme_serial)
+			{
+				m_loading_theme = 0;
+				install_theme(std::move(job.next));
+			}
+		}
 	}
 
 	void sound_player::request_theme(std::uint32_t id, std::uint32_t event, float volume)
 	{
-		if(m_music_index >= 0 && m_theme.id == id && !m_pending_theme) return;
+		if(m_loading_theme == id || (m_music_index >= 0 && m_theme.id == id && !m_pending_theme)) return;
 		auto key = bnm_id::of(id);
 		const auto* b = bank(key.bank);
 		const auto* resource = b ? b->resource(key.index) : nullptr;
 		if(!resource) return;
-		theme next;
-		next.id = id; next.event = event; next.volume = volume;
-		next.restart = resource->group10_count; next.cycles = resource->group8_count;
-		next.entries = b->entries(*resource);
-		if(next.entries.empty()) return;
-		auto tail = b->theme_tail(*resource);
-		for(const auto& entry : next.entries) next.segments.push_back(load_music_segment(entry[0]));
-		if(tail) next.tail = load_music_segment(tail);
+		theme_job job;
+		job.next.id = id; job.next.event = event; job.next.volume = volume;
+		job.next.restart = resource->group10_count; job.next.cycles = resource->group8_count;
+		job.next.entries = b->entries(*resource);
+		if(job.next.entries.empty()) return;
+		for(const auto& entry : job.next.entries) job.segments.push_back(segment_of(entry[0]));
+		if(auto tail = b->theme_tail(*resource)) job.tail = segment_of(tail);
+		job.serial = ++m_theme_serial;
+		m_loading_theme = id;
+		m_loading_event = event;
+		{
+			std::lock_guard lock(m_job_mutex);
+			m_job = std::move(job);
+		}
+		m_job_ready.notify_one();
+	}
+
+	void sound_player::install_theme(theme next)
+	{
 		if(m_music_index < 0) start_theme(std::move(next));
 		else
 		{
@@ -231,13 +291,12 @@ namespace openrayman
 			auto mode = m_music_tail ? 1u : m_theme.entries[m_music_index][4];
 			m_pending_theme = std::make_unique<theme>(std::move(next));
 			if(mode == 0) next_music_segment();
-			else if(mode == 2 && !m_theme.tail.samples.empty()) m_music_tail = false;
 		}
 	}
 
-	void sound_player::log_music(const music_segment& segment, int index)
+	void sound_player::log_music(const std::shared_ptr<const music_segment>& segment, int index)
 	{
-		if(m_music_log) SDL_Log("Music %u:%u segment %d %s %.3fs", m_theme.id >> 16, m_theme.id & 0xffff, index, segment.name.c_str(), static_cast<double>(m_music_frames) / 22050.0);
+		if(m_music_log) SDL_Log("Music %u:%u segment %d %s %.3fs", m_theme.id >> 16, m_theme.id & 0xffff, index, segment ? segment->name.c_str() : "(missing)", static_cast<double>(m_music_frames) / 22050.0);
 	}
 
 	void sound_player::start_theme(theme next)
@@ -253,7 +312,7 @@ namespace openrayman
 		m_music_position = 0;
 		if(m_pending_theme)
 		{
-			if(!m_music_tail && m_music_index >= 0 && m_theme.entries[m_music_index][4] == 2 && !m_theme.tail.samples.empty())
+			if(!m_music_tail && m_music_index >= 0 && m_theme.entries[m_music_index][4] == 2 && m_theme.tail)
 			{
 				m_music_tail = true; log_music(m_theme.tail, -1); return;
 			}
@@ -274,7 +333,7 @@ namespace openrayman
 			{
 				if(m_theme.cycles && ++m_cycles >= m_theme.cycles)
 				{
-					if(m_theme.tail.samples.empty()) { m_music_index = -1; return; }
+					if(!m_theme.tail) { m_music_index = -1; return; }
 					m_music_tail = true; log_music(m_theme.tail, -1); return;
 				}
 				m_music_index = static_cast<int>(std::min<std::size_t>(m_theme.restart, m_theme.entries.size() - 1));
@@ -311,12 +370,15 @@ namespace openrayman
 		m_voices.clear();
 		m_music_index = -1;
 		m_pending_theme.reset();
+		++m_theme_serial;
+		m_loading_theme = 0;
 	}
 
 	void sound_player::stop_source(std::uint32_t source)
 	{
 		std::lock_guard lock(m_mutex);
-		std::erase_if(m_voices, [&](const voice& v) { return v.source == source; });
+		// Only looping voices: a one-shot finishes, as a Lum's collect sound must while the Lum hides.
+		std::erase_if(m_voices, [&](const voice& v) { return v.source == source && v.loop; });
 	}
 
 	void sound_player::set_paused(bool paused)
@@ -343,11 +405,14 @@ namespace openrayman
 			float mix[2]{};
 			if(player.m_music_index >= 0)
 			{
-				auto* segment = player.m_music_tail ? &player.m_theme.tail : &player.m_theme.segments[player.m_music_index];
-				if(!segment->channels || player.m_music_position >= segment->samples.size() / segment->channels)
+				auto current = [&]() -> const music_segment* {
+					return player.m_music_tail ? player.m_theme.tail.get() : player.m_theme.segments[player.m_music_index].get();
+				};
+				const music_segment* segment = current();
+				if(!segment || !segment->channels || player.m_music_position >= segment->samples.size() / segment->channels)
 				{
 					player.next_music_segment();
-					segment = player.m_music_index < 0 ? nullptr : (player.m_music_tail ? &player.m_theme.tail : &player.m_theme.segments[player.m_music_index]);
+					segment = player.m_music_index < 0 ? nullptr : current();
 				}
 				if(segment && segment->channels && !segment->samples.empty())
 				{

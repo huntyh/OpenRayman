@@ -465,7 +465,14 @@ first visit of Learn_10 starts the 9:5 theme at the hand-over. `OPENRAYMAN_MUSIC
 segment: the first 12 segments of 9:5 switch within 0.02 s of the recorded game's (FO02 at 0,
 FO03 at 4.78 s, ..., FO13 at 36.01 s against 36.02 s).
 
-Open: a theme is decoded whole when it is asked for, under the mixer's lock, so a theme change can
-stall the audio for a moment; the transition DLL's fade; group selection; the intro and cutscene
-themes (see above). These rules come from our reading of 0x459460, 0x4595D0, 0x459670 and 0x459800
+A theme is decoded on a loader thread when it is asked for and joins the music once ready, so the
+mixer never waits on it (decoding under the mixer's lock stuttered the Globox kids' scene); decoded
+segments are kept, since themes share many. A stop for that theme drops a load still under way.
+
+Loudness: `tools/r2audio.py` measures the sound output (Windows loopback, RMS and peak every 50 ms)
+for both the real game (r2record's `audio` topic) and ours. Learn_10's woods theme alone measures
+about -26 dBFS RMS in ours (2026-11-02); the game's level is still to be recorded, and the mix is
+left as it is until then.
+
+Open: the transition DLL's fade; group selection; the intro's theme (comes with the intro). These rules come from our reading of 0x459460, 0x4595D0, 0x459670 and 0x459800
 and the run4 recording.
