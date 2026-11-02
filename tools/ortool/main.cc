@@ -1718,6 +1718,20 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 					f, so, p->m[0][3], p->m[1][3], p->m[2][3], speed.component(0), speed.component(1), speed.component(2),
 					node_of.contains(target_so) ? std::to_string(node_of[target_so]) : std::string("none"), sector);
 			}
+		// ORTOOL_TARGETS=1: after the last tick, the actors a shot may home in on (function 113 with
+		// the shot's mask 32: custom bit 0x20 in standard game +0x24, and +0x29 bit 0 clear).
+		if(std::getenv("ORTOOL_TARGETS") && f == frames - 1)
+			for(std::uint32_t so : actors)
+			{
+				std::uint32_t actor = vm.actor_of(so);
+				std::uint32_t standard = actor && memory.contains(actor + 4, 4) ? memory.u32(actor + 4) : 0;
+				if(!standard || !memory.contains(standard + 0x24, 8) || !(memory.u32(standard + 0x24) & 0x20))
+					continue;
+				auto p = game::global_placement(memory, so);
+				std::cout << std::format("target node {:>3}: custom 0x{:08X}{}{} at {}\n", node_of[so], memory.u32(standard + 0x24),
+					memory.u8(standard + 0x29) & 1 ? " (excluded by +0x29)" : "", vm.removed(so) ? " (removed)" : "",
+					p ? std::format("{:.1f} {:.1f} {:.1f}", p->m[0][3], p->m[1][3], p->m[2][3]) : std::string("?"));
+			}
 		if(camera_trace && camera_object)
 		{
 			auto at3 = [&](std::uint32_t at) {
