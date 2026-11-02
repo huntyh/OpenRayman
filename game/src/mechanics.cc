@@ -623,7 +623,7 @@ namespace openrayman::game
 		auto byte = [&](std::uint32_t at) { return at && m.contains(at) ? m.u8(at) : std::uint8_t(0); };
 		// Decode our own world-space triangles from the live geometry. Stored normals select the
 		// front face; taking the cross product after placing the vertices handles nonuniform scale.
-		auto append = [&](std::uint32_t zone, const affine& frame, std::uint32_t owner) {
+		auto append = [&](std::vector<collision_triangle>& to, std::uint32_t zone, const affine& frame, std::uint32_t owner) {
 			if(!zone || !m.contains(zone, 0x30)) return;
 			std::uint32_t vertices = word(zone), kinds = word(zone + 0x10), elements = word(zone + 0x14);
 			std::uint16_t vertex_count = half(zone + 0x2C), count = half(zone + 0x2E);
@@ -659,7 +659,7 @@ namespace openrayman::game
 					float length = vlen(n);
 					if(length < 1e-8f) continue;
 					tri.normal = vmul(n, 1 / length);
-					out.push_back(tri);
+					to.push_back(tri);
 				}
 			}
 		};
@@ -689,41 +689,43 @@ namespace openrayman::game
 			if(other == vm.main_actor()) return (flags & 8) != 0;
 			return (flags & 4) && !(byte(standard + 0x29) & 0x10);
 		};
-		for(std::uint32_t self : candidates)
-		{
-			// 0x494420 rejects self, actors outside the world, and higher-priority collision sets.
-			// Our loader doesn't set standard-game +0x29 bit 4; removed() supplies world membership.
-			if(self == mover || vm.removed(self) || (word(self + 0x30) & 1)) continue;
-			std::uint32_t actor = vm.actor_of(self), set = word(actor + 0x14), data = word(actor);
-			if(set && m.contains(set + 0x41) && m.u8(set + 0x41) > priority) continue;
-			if(excludes(own_set, self) || excludes(set, mover)) continue;
-			auto frame = global_placement(m, self);
-			if(!frame) continue;
-			if(!sectors.empty())
-			{
-				std::uint32_t sector = vm.sector_at({ frame->m[0][3], frame->m[1][3], frame->m[2][3] });
-				if(std::ranges::find(sectors, sector) == sectors.end()) continue;
-			}
+		// An actor's surfaces are rebuilt only when what places or picks them changed.
+		auto surfaces_of = [&](std::uint32_t self, std::uint32_t set, std::uint32_t data, const affine& frame) -> const actor_surfaces& {
+			actor_surfaces key;
+			key.placement = frame;
+			key.state = word(data + 4);
+			key.frame = half(data + data_3d::frame);
+			key.objects = word(data + 0xC);
+			key.zones = set ? word(set + 0xC) : 0;
+			key.group = set ? word(set + 0x28) : 0;
+			key.modes = set ? word(set + 0x3C) : 0;
+			actor_surfaces& cached = vm.surface_cache().actors[self];
+			if(!cached.triangles.empty() || cached.sector)
+				if(cached.placement == key.placement && cached.state == key.state && cached.frame == key.frame && cached.objects == key.objects
+					&& cached.zones == key.zones && cached.group == key.group && cached.modes == key.modes)
+					return cached;
+			cached = std::move(key);
+			cached.sector = vm.sector_at({ frame.m[0][3], frame.m[1][3], frame.m[2][3] });
+			std::vector<collision_triangle>& to = cached.triangles;
 			// Kind 3 is the receiving geometry (0x40DBB0). Its selected state group and 2-bit
 			// overrides work independently of the physical parts (0x40C700, 0x417C10).
-			std::uint32_t head = set ? word(set + 0xC) : 0, group = set ? word(set + 0x28) : 0;
+			std::uint32_t head = cached.zones, group = cached.group;
 			for(std::uint32_t node = word(head), index = 0; node && index < 16; node = word(node), index++)
 			{
-				std::uint32_t mode = word(set + 0x3C) >> (index * 2) & 3;
+				std::uint32_t mode = cached.modes >> (index * 2) & 3;
 				bool active = mode == 1;
 				if(mode == 0)
 					for(std::uint32_t entry = word(group), n = 0; entry && n < word(group + 8); entry = word(entry), n++)
 						if(half(entry + 4) == index) { active = true; break; }
-				if(active) append(word(node + 4), *frame, self);
+				if(active) append(to, word(node + 4), frame, self);
 			}
 			// The exe keeps a super object per animated physical part (0x4943C0). We derive
 			// the same placement from the current animation and object list, including hidden parts.
-			std::uint32_t list = word(data + 0xC), entries = word(list + 4);
+			std::uint32_t list = cached.objects, entries = word(list + 4);
 			std::uint16_t objects = list ? half(list + 0xC) : 0;
 			bool has_geometry = false;
 			for(std::uint32_t i = 0; i < objects; i++)
 				if(word(word(word(entries + i * 20 + 4) + 4) + 0xC)) { has_geometry = true; break; }
-			if(!has_geometry) continue;
 			auto add_part = [&](std::uint32_t object, affine placed) {
 				if(object >= objects) return;
 				std::uint32_t entry = entries + object * 20, physical = word(entry + 4);
@@ -731,13 +733,14 @@ namespace openrayman::game
 				if(scale && m.contains(scale, 12))
 					for(int r = 0; r < 3; r++)
 						for(int c = 0; c < 3; c++) placed.m[r][c] *= m.f32(scale + std::uint32_t(c) * 4);
-				append(geometry, placed, self);
+				append(to, geometry, placed, self);
 			};
-			std::uint32_t state = word(data + 4), reference = word(state + 4);
+			std::uint32_t reference = word(cached.state + 4);
 			const animation_bank* bank = vm.animations();
-			if(reference && bank && half(reference + 0x18) < bank->animations.size())
+			if(!has_geometry) {}
+			else if(reference && bank && half(reference + 0x18) < bank->animations.size())
 			{
-				auto channels = pose(*bank, half(reference + 0x18), half(data + data_3d::frame));
+				auto channels = pose(*bank, half(reference + 0x18), cached.frame);
 				for(const channel_pose& channel : channels)
 				{
 					if(!channel.object) continue;
@@ -748,10 +751,58 @@ namespace openrayman::game
 						local = channels[*parent].local * local;
 						parent = channels[*parent].parent;
 					}
-					add_part(*channel.object, *frame * local);
+					add_part(*channel.object, frame * local);
 				}
 			}
-			else if(!reference) add_part(0, *frame);
+			else if(!reference) add_part(0, frame);
+			cached.low = cached.high = to.empty() ? vec3{} : to.front().corners[0];
+			for(const collision_triangle& t : to)
+				for(const vec3& c : t.corners)
+					for(std::size_t i = 0; i < 3; i++)
+					{
+						cached.low[i] = std::min(cached.low[i], c[i]);
+						cached.high[i] = std::max(cached.high[i], c[i]);
+					}
+			return cached;
+		};
+		std::optional<vec3> mover_at;
+		if(auto placement = global_placement(m, mover))
+			mover_at = vec3{ placement->m[0][3], placement->m[1][3], placement->m[2][3] };
+		actor_surface_cache& cache = vm.surface_cache();
+		if(cache.clock != vm.clock())
+		{
+			cache.clock = vm.clock();
+			cache.owners.clear();
+			for(std::uint32_t self : candidates)
+			{
+				if(vm.removed(self)) continue;
+				std::uint32_t actor = vm.actor_of(self);
+				if(auto frame = global_placement(m, self))
+					if(!surfaces_of(self, word(actor + 0x14), word(actor), *frame).triangles.empty())
+						cache.owners.push_back(self);
+			}
+		}
+		for(std::uint32_t self : cache.owners)
+		{
+			// 0x494420 rejects self, actors outside the world, and higher-priority collision sets.
+			// Our loader doesn't set standard-game +0x29 bit 4; removed() supplies world membership.
+			if(self == mover || vm.removed(self) || (word(self + 0x30) & 1)) continue;
+			std::uint32_t actor = vm.actor_of(self), set = word(actor + 0x14), data = word(actor);
+			if(set && m.contains(set + 0x41) && m.u8(set + 0x41) > priority) continue;
+			if(excludes(own_set, self) || excludes(set, mover)) continue;
+			auto frame = global_placement(m, self);
+			if(!frame) continue;
+			const actor_surfaces& surfaces = surfaces_of(self, set, data, *frame);
+			if(surfaces.triangles.empty()) continue;
+			if(mover_at)
+			{
+				bool near = true;
+				for(std::size_t i = 0; i < 3; i++)
+					near = near && (*mover_at)[i] >= surfaces.low[i] - actor_surface_reach && (*mover_at)[i] <= surfaces.high[i] + actor_surface_reach;
+				if(!near) continue;
+			}
+			if(!sectors.empty() && std::ranges::find(sectors, surfaces.sector) == sectors.end()) continue;
+			out.insert(out.end(), surfaces.triangles.begin(), surfaces.triangles.end());
 		}
 		return out;
 	}

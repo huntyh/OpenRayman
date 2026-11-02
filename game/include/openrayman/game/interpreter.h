@@ -168,6 +168,7 @@ namespace openrayman::game
 		void set_world(world_collision world) { m_world = std::move(world); }
 		const world_collision& world() const { return m_world; }
 		std::map<std::uint32_t, moving_support>& supports() { return m_supports; }
+		actor_surface_cache& surface_cache() { return m_surface_cache; }
 		// The level's animations, for the motion their frames carry (kept by the caller).
 		void set_animations(const animation_bank* bank) { m_animations = bank; }
 		const animation_bank* animations() const { return m_animations; }
@@ -369,6 +370,7 @@ namespace openrayman::game
 		game::screen_text m_screen_text;
 		world_collision m_world;
 		std::map<std::uint32_t, moving_support> m_supports;
+		actor_surface_cache m_surface_cache;
 		const animation_bank* m_animations = nullptr;
 		camera_globals m_camera;
 		camera_state m_camera_motion;

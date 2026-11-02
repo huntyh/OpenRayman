@@ -95,7 +95,29 @@ namespace openrayman::game
 		std::uint32_t actor = 0;
 		affine placement;
 	};
-	// Live kind-3 zones and posed physical parts, excluding the mover itself (0x494420).
+	// One actor's surfaces in world space, kept until it moves, changes state or frame, or switches
+	// zones: every mover that collides asks for them each tick, and posing them each time halved
+	// the frame rate.
+	struct actor_surfaces
+	{
+		affine placement;
+		std::uint32_t state = 0, objects = 0, zones = 0, group = 0, modes = 0;
+		std::uint16_t frame = 0;
+		std::uint32_t sector = 0;
+		std::vector<collision_triangle> triangles;
+		vec3 low{}, high{}; // the triangles' bounds
+	};
+	// Each actor's surfaces, and which actors have any: looked for once per tick, since only a few
+	// (cages, the trapdoor) do, then only those are checked for each mover.
+	struct actor_surface_cache
+	{
+		std::map<std::uint32_t, actor_surfaces> actors;
+		std::vector<std::uint32_t> owners;
+		std::optional<std::uint32_t> clock; // the tick owners was found in
+	};
+	// Live kind-3 zones and posed physical parts, excluding the mover itself (0x494420). Actors
+	// whose surfaces are further than `reach` from the mover are left out.
+	constexpr float actor_surface_reach = 10.0f;
 	std::vector<collision_triangle> actor_collision_triangles(interpreter& vm, std::uint32_t mover);
 	// One tick of an actor's mechanics (0x431AD0, docs/formats/dynamics.md): the speeds the scripts
 	// set and gravity give a target position, the floor stops it, and the result becomes the speed
