@@ -86,6 +86,18 @@ is set, else its own) as a queued move (0x432D30), which clears the speed unless
   291/292 write the per-axis factors (`dynamics_triple` in `handlers.cc`). Source: own analysis of Rayman2.exe
   and the live log.
 
+  In the recorded Ly_10 slide the ground has collide flag 1 and Rayman's base has flag 0x80,
+  so the actor's coefficient overrides the material default. In a teleported reproduction our
+  actor's coefficient is 0.98. The executable sets end flag 0x20000 from the ground coefficient
+  independently of updating +0x174: 0x432828 updates +0x174 from the first contact only when end
+  flag 0x2 is set, whereas our approximation assigns it from the ground. Explicit response data
+  is selected when the game material's +4 pointer is nonzero (0x42DE30); its values in the
+  executable's contact record are at +0x58 and +0x5C (0x4360B0/0x436130). These differences and
+  the contact geometry still need to be resolved. A teleported test accelerates near the recorded
+  rate but has a different sideways velocity and starting posture, so it does not reproduce the
+  reported slowdown conclusively. Source: own executable analysis and the Ly_10 live trace;
+  measurements are in `build/slope_accel_notes.md`.
+
 - Procedure 297 (climbing over a ledge, 0x46C710 case 0x129) sets end flag 0x400000, flags 0x182,
   +0x1C = 1, +0x20 = 0 and the height +0x1EC; 298 (0x46CE00 case 0x12A) clears 0x400000 only. With
   0x400000 the exe's collision (0x43EEC0 → 0x4377F0) leaves out floor contacts and contacts below
