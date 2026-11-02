@@ -132,13 +132,9 @@ Dated details of everything above, and the user's look-by-look feedback, are in
    Rodeo_10 the camera stays on top of a narrow hole Rayman drops into
    (`--level Rodeo_10 --camera 14.1,10.4,-4.9,49.8,-42.2`); our obstacle search is a stand-in
    for the exe's orbit search (0x486880), which is the likely next step.
-5. **The end-of-level cutscene** plays through (user, 2026-11-02), but when Rayman shouts "Stop!"
-   at the arguing Teensies and spreads his hands, that animation loops instead of playing once.
-   His pupils still show a little when he closes his eyes. In some looping animations the
-   Teensies and Rayman jerk every few seconds, as if yanked on strings, parts pulling apart for a
-   moment (Rayman standing and listening, for one). Mostly fixed (our loop seam blend overshot,
-   72da1ff; smoother, user); the Teensies still vibrate now and then. The Teensies now appear
-   with each camera cut (dialog cues, 28daef4; user).
+5. **The end-of-level cutscene** plays through and looks right (user, 2026-11-02: "Stop!" plays
+   once, the loops no longer jerk, the Teensies appear with each camera cut). Left: Rayman's pupils
+   show through his closed eyelids.
 6. **Other machines**: the user will try a Linux laptop with a Fermi-era Quadro 2000M (NVIDIA
    390xx driver from the AUR, so real hardware acceleration).
 7. **Performance**, measured with the profiler (F8): about 960 draw calls a frame for 6,500
