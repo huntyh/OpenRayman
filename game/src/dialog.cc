@@ -203,10 +203,19 @@ namespace openrayman::game
 			e.visible.line_height = state.line_height;
 			e.visible.default_scale = state.default_scale;
 			if(e.cursor >= text->size()) { out = value::integer(e.event); return c.args; }
-			if(c.vm.clock() - e.last < std::uint32_t(std::max(0, timing.as_int()))) return c.args;
-			e.last = c.vm.clock();
-			if(timing.as_int() != e.delay)
-				c.vm.assign(c.self, timing_node, value::integer(e.delay));
+			// Inside the delay the cursor waits, except right after an event: then the next control is
+			// read at once without restarting the delay (0x475680), so back-to-back cues (a camera cut,
+			// then the actors it shows) land on consecutive frames, not a delay apart.
+			if(c.vm.clock() - e.last < std::uint32_t(std::max(0, timing.as_int())))
+			{
+				if(!e.event) return c.args;
+			}
+			else
+			{
+				e.last = c.vm.clock();
+				if(timing.as_int() != e.delay)
+					c.vm.assign(c.self, timing_node, value::integer(e.delay));
+			}
 			e.event = 0;
 			bool timed_control = false;
 			do
