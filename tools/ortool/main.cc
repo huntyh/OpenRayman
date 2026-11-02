@@ -1638,6 +1638,20 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 		{
 			throw format_error(std::format("tick {}, outside the actors' scripts (last node 0x{:08X}): {}", f, vm.last_node(), e.what()));
 		}
+		// ORTOOL_VARS=node:i,j,...: those designer variables of the node after the first tick.
+		if(const char* vars = std::getenv("ORTOOL_VARS"); vars && f == 1)
+		{
+			int node = std::atoi(vars);
+			for(const char* p = std::strchr(vars, ':'); p && *p; p = std::strchr(p, ','))
+			{
+				int index = std::atoi(++p);
+				std::uint32_t so = 0;
+				for(const auto& [s, n] : node_of)
+					if(int(n) == node) so = s;
+				auto v = vm.get_variable(so, std::uint32_t(index));
+				std::cout << std::format("node {} var{}: type {} word {} ({:.3f})\n", node, index, int(v.type), std::int32_t(v.word()), v.as_float());
+			}
+		}
 		// The sounds the scripts and animations asked for this tick (ORTOOL_SOUNDS=1 lists them).
 		for(const auto& sound : vm.take_sounds())
 			if(std::getenv("ORTOOL_SOUNDS"))
