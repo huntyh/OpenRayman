@@ -4,6 +4,21 @@
 
 using openrayman::game::particles;
 
+TEST_CASE("particles: screen rectangle lasts one tick and keeps its coordinates and opacity")
+{
+	particles p;
+	p.start(110, {14, 80.6f, 0}, {94, 92.4f, 0}, 0x1234, 180, 1);
+	p.update(1, 0.016);
+	REQUIRE(p.screen_rectangles().size() == 1);
+	CHECK(p.screen_rectangles()[0].first[0] == doctest::Approx(14));
+	CHECK(p.screen_rectangles()[0].second[1] == doctest::Approx(92.4));
+	CHECK(p.screen_rectangles()[0].alpha == doctest::Approx(180));
+	CHECK(p.all().empty());
+	p.update(1.016, 0.016);
+	CHECK(p.screen_rectangles().empty());
+}
+
+
 TEST_CASE("particles: rising specks come at most every 0.05 s and fade out in about 2.2 s")
 {
 	particles p;

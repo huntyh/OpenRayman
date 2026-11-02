@@ -32,6 +32,14 @@ namespace openrayman::game
 
 	void particles::start(int kind, const vec3& point, const vec3& vector, std::uint32_t material, float number, double now)
 	{
+		if(kind == 110)
+		{
+			// 0x4648B0 makes type 0x11; 0x460A10 / 0x429820 draw a black
+			// percent-of-viewport rectangle once, at the opacity supplied by the script.
+			if(material)
+				m_screen_rectangles.push_back({point, vector, std::clamp(number, 0.0f, 255.0f), now});
+			return;
+		}
 		if(kind == 7)
 		{
 			// 0x46348E: a ripple lying on the water, growing and fading; one every 0.2 s at most.
@@ -258,6 +266,7 @@ namespace openrayman::game
 
 	void particles::update(double now, double seconds)
 	{
+		std::erase_if(m_screen_rectangles, [now](const screen_rectangle& r) { return r.born < now; });
 		const float dt = float(seconds);
 		for(particle& p : m_particles)
 		{

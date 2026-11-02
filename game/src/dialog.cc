@@ -13,6 +13,54 @@
 
 namespace openrayman::game
 {
+	std::optional<int> dialog_glyph_index(std::uint8_t byte, int offset)
+	{
+		if(byte < 0x20) return std::nullopt;
+		int base = byte - ((byte >= 0x61 && byte <= 0x7a) || byte > 0x9f ? 0x40 : 0x20);
+		return base + offset;
+	}
+
+	dialog_layout layout_dialog(const dialog_text& dialog)
+	{
+		dialog_layout result;
+		float x = 0, y = 0, height = dialog.line_height, width = 0, scale = dialog.default_scale;
+		int offset = 0, count = 0;
+		const auto& text = dialog.prepared;
+		for(std::size_t i = 0; i < text.size();)
+		{
+			if(text[i] == '/')
+			{
+				auto end = text.find(':', i + 1);
+				if(end == std::string::npos || i + 1 >= text.size()) break;
+				char code = char(std::tolower(static_cast<unsigned char>(text[i + 1])));
+				int n = std::atoi(text.c_str() + i + 2);
+				switch(code)
+				{
+				case 'h': height = n * 0.001f; break;
+				case 'w': width = n * 0.001f; break;
+				case 'z': scale = n * 0.001f; break;
+				case 'o': offset = n; break;
+				case 'c': result.centred = true; break;
+				case 'l': result.width = std::max(result.width, x); x = 0; y += height; break;
+				}
+				i = end + 1;
+				continue;
+			}
+			auto byte = static_cast<std::uint8_t>(text[i++]);
+			auto base = dialog_glyph_index(byte);
+			float size = scale != 0 ? scale : dialog.scales.empty() ? 1.0f : dialog.scales[std::size_t(count) % dialog.scales.size()];
+			if(base)
+			{
+				float advance = width != 0 ? width : dialog.widths[std::size_t(*base)];
+				result.glyphs.push_back({*base + offset, byte, x, y, size, advance * size, count < dialog.revealed});
+				x += advance * size;
+			}
+			++count;
+		}
+		result.width = std::max(result.width, x);
+		return result;
+	}
+
 	namespace
 	{
 		struct entry
@@ -21,14 +69,18 @@ namespace openrayman::game
 			std::size_t cursor = 0;
 			std::uint32_t last = 0;
 			int delay = 0, event = 0;
-			int colour = 0;
 		};
 		struct dialog_state
 		{
+			dialog_state() { widths.fill(1.0f); }
 			dialog_resolver resolver;
 			std::map<std::int32_t, std::string> changed;
 			std::map<std::uint32_t, entry> actors;
-			bool screen = false;
+			// Initial value of the placement byte at 0x4A40B4 in Rayman2.exe.
+			bool screen = true;
+			std::array<float, 256> widths;
+			std::vector<float> scales;
+			float line_height = 2, default_scale = 0;
 		};
 		std::map<interpreter*, std::weak_ptr<dialog_state>> systems;
 
@@ -99,6 +151,27 @@ namespace openrayman::game
 			out = value::integer(0);
 			auto text = resolve(c.vm, state, source);
 			if(!text) return c.args;
+			// 0x475680: these special strings configure global tables and create no actor.
+			if(text->size() >= 3 && (*text)[0] == '/' && (*text)[1] == '-')
+			{
+				char kind = char(std::tolower(static_cast<unsigned char>((*text)[2])));
+				if(kind == 'w' || kind == 'z')
+				{
+					std::vector<float> values;
+					const char* p = text->c_str() + 3;
+					while(*p)
+					{
+						char* end = nullptr;
+						long n = std::strtol(p, &end, 10);
+						if(end == p) { ++p; continue; }
+						values.push_back(float(n) * 0.001f);
+						p = end;
+					}
+					if(kind == 'w') for(std::size_t i = 0; i < values.size() && i < state.widths.size(); ++i) state.widths[i] = values[i];
+					else state.scales = std::move(values);
+					return c.args;
+				}
+			}
 			std::uint32_t so = actor.type == value_type::super_object ? actor.word() : c.vm.super_object_of(actor.word());
 			if(!so || c.vm.removed(so))
 			{
@@ -111,6 +184,11 @@ namespace openrayman::game
 				auto& e = state.actors[so];
 				e = {};
 				e.visible.creator = c.self;
+				e.visible.template_actor = template_actor;
+				e.visible.widths = state.widths;
+				e.visible.scales = state.scales;
+				e.visible.line_height = state.line_height;
+				e.visible.default_scale = state.default_scale;
 				e.visible.screen = state.screen;
 				e.visible.x = pos.component(0); e.visible.y = pos.component(1); e.visible.z = pos.component(2);
 				e.delay = std::max(0, timing.as_int());
@@ -119,6 +197,11 @@ namespace openrayman::game
 			auto it = state.actors.find(so);
 			if(it == state.actors.end()) return c.args;
 			auto& e = it->second;
+			e.visible.prepared = *text;
+			e.visible.widths = state.widths;
+			e.visible.scales = state.scales;
+			e.visible.line_height = state.line_height;
+			e.visible.default_scale = state.default_scale;
 			if(e.cursor >= text->size()) { out = value::integer(e.event); return c.args; }
 			if(c.vm.clock() - e.last < std::uint32_t(std::max(0, timing.as_int()))) return c.args;
 			e.last = c.vm.clock();
@@ -150,13 +233,10 @@ namespace openrayman::game
 						timed_control = true;
 						break;
 					}
-					if(code == 'l') { e.visible.text.push_back('\n'); e.visible.colours.push_back(e.colour); }
-					if(code == 'c') e.visible.centred = true;
-					if(code == 'o') e.colour = n;
+					if(code == 'l') e.visible.text.push_back('\n');
 				}
 				if(e.event || timed_control || e.cursor >= text->size() || (*text)[e.cursor] == '/') break;
 				e.visible.text.push_back((*text)[e.cursor++]);
-				e.visible.colours.push_back(e.colour);
 				++e.visible.revealed;
 			} while(e.delay == 0);
 			out = value::integer(e.event);
@@ -171,6 +251,16 @@ namespace openrayman::game
 		vm.on_function(158, [state](call& c, value& out) { return dialog(c, out, *state); });
 		// 443 (0x470270) selects placement for subsequent function 158 calls.
 		vm.on_procedure(443, [state](call& c) { value v; argument(c, v); state->screen = v.as_int() != 0; return c.args; });
+		// 352 (0x46FD70 / 0x408590): reset the glyph widths and select default
+		// line height and size. Negative height or size leaves that default alone.
+		vm.on_procedure(352, [state](call& c) {
+			value width, height, scale;
+			argument(c, width); argument(c, height); argument(c, scale);
+			state->widths.fill(width.as_float());
+			if(height.as_float() >= 0) state->line_height = height.as_float();
+			if(scale.as_float() >= 0) state->default_scale = scale.as_float();
+			return c.args;
+		});
 		vm.on_procedure(430, [state](call& c) { return concatenate(c, *state); });
 		vm.on_procedure(243, [state](call& c) { return format_integer(c, *state); });
 	}
@@ -225,11 +315,9 @@ namespace openrayman::game
 		for(auto actor = state->actors.begin(); actor != state->actors.end();)
 		{
 			if(vm.removed(actor->first)) { actor = state->actors.erase(actor); continue; }
-			// Scene directors run cue strings through function 158 too (Learn_10 node 3's
-			// "/E105:/E100:..." timing lists): only events, never shown in the game. Until we know
-			// what keeps them off screen there, text without a single letter isn't drawn.
+			// Cue strings can contain only controls; they have no characters to draw.
 			const std::string& text = actor->second.visible.text;
-			if(std::ranges::any_of(text, [](char ch) { return std::isalpha(static_cast<unsigned char>(ch)) != 0; }))
+			if(!text.empty())
 				result.push_back(actor->second.visible);
 			++actor;
 		}

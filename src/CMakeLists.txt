@@ -5,6 +5,7 @@ add_executable(openrayman WIN32
 	audio/music_player.cc
 	audio/sound_player.cc
 	renderer/gl.cc
+	renderer/dialog_renderer.cc
 	renderer/level_renderer.cc
 )
 target_include_directories(openrayman PRIVATE .)

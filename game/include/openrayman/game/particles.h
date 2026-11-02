@@ -43,6 +43,12 @@ namespace openrayman::game
 			// once from its birth and is gone when it ends (0x424C00 with 0x4A7278 set).
 			float animation = 0;
 		};
+		struct screen_rectangle
+		{
+			vec3 first{}, second{}; // viewport percentages
+			float alpha = 0;
+			double born = 0;
+		};
 
 		// Procedure 503's arguments: effect kind, a point, a vector, a game material, a number.
 		// `animation` gives how long a game material's animated texture runs (0 for a still one).
@@ -52,6 +58,7 @@ namespace openrayman::game
 		void update(double now, double seconds);
 
 		const std::vector<particle>& all() const { return m_particles; }
+		const std::vector<screen_rectangle>& screen_rectangles() const { return m_screen_rectangles; }
 		// Where a particle shows now (type 11 circles around its position).
 		vec3 shown_at(const particle& p, double now) const;
 
@@ -63,6 +70,7 @@ namespace openrayman::game
 		float random(float from, float to);
 
 		std::vector<particle> m_particles;
+		std::vector<screen_rectangle> m_screen_rectangles;
 		double m_rising_clock = 0; // effect 28 starts at most one particle every 0.05 s
 		double m_ripple_clock = 0; // effect 7 starts at most one ripple every 0.2 s (0x4B9B0C)
 		std::uint32_t m_ripple_material = 0; // effect 7's material, which falling drops become (0x4B9AD8)

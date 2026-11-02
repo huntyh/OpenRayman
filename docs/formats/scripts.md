@@ -274,7 +274,13 @@ Doors). They are actor 6's variable 42, a type-21 bit array, numbered as functio
 | 960, 961, 989 | the Hall of Doors: arriving, Murfy's tutorial | — |
 
 1027, 1028, 1059 and 1060 survive starting a new game (options or the save slot, not the story).
-Our starts set 1089 and 1091 for a first visit and 1133 for a revisit (`first_visit.h`).
+Our starts set 1089 and 1091 for a first visit and 1089, 1091 and 1133 for a revisit
+(`first_visit.h`). The recorded completed game retains the first two bits when 1133 is set.
+Node 4's startup behaviour draws a full-screen kind-110 rectangle at constant alpha 249 and
+switches to behaviour 4. That behaviour keeps drawing it while the camera is in its intro
+behaviour and bit 1091 is clear; otherwise it switches to behaviour 1. The portal shortcut used
+to set only 1133, leaving this intro cover stuck on screen. Where this came from: own analysis of
+node 4's script and the `run4` story recording.
 
 **Scene directors.** Six Learn_10 actors (nodes 3, 38, 46, 56, 57, 58) share one model, 0d/01
 +0x11BEC: a director that hands a scene from Rayman to a stand-in. Its var2 is the actor whose
@@ -365,8 +371,7 @@ tables. It stores changed ID strings separately and exposes revealed text. Parse
 sets the glyph index offset used by 0x409720; its relationship to highlighting remains to be
 confirmed. Procedure 443 (0x470270) sets the global placement mode used when function 158 creates
 an actor: zero selects world placement, nonzero selects the screen branch. The viewer now preserves
-that mode and uses a provisional overlay; its placement and font are not yet faithful. The parser
-and timing are preliminary: substitutions are not implemented. The first-visit 3000-tick ortool run
+that mode. The parser and timing are preliminary: substitutions are not implemented. The first-visit 3000-tick ortool run
 did not reach Murfy's conversation, so it does not establish that he waits for Space. Set
 `ORTOOL_TEXT=1` to print dialog event, clock, creator, ID and cursor for further comparison.
 Own comparison against `run4/text.txt`: in Jail_10, ID 1 events 10, 11, 3 occur at cursors
@@ -374,6 +379,27 @@ Own comparison against `run4/text.txt`: in Jail_10, ID 1 events 10, 11, 3 occur 
 14273 ms at those cursors. The full Learn_10 comparison and interactive Murfy check remain open.
 The recorded dump's mutable ID 286 differs from its initial Fix contents, consistent with the
 script writing that destination; the table tests therefore use unchanged IDs instead.
+
+The placement byte initially contains 1, so new dialogs default to screen placement until
+procedure 443 changes it. The glyph mapper at 0x409720 rejects bytes below 0x20; lowercase ASCII
+and bytes above 0x9f subtract 0x40, and other printable bytes subtract 0x20, before adding the
+current `/O` object-list offset. In Learn_10, Murfy's template's initial object list has 0x372
+entries; the mapped index for `A` identifies a textured four-vertex, two-triangle object. The
+viewer caches those objects and textures by template and draws their own triangles and UVs; it
+measures the complete block before centring, even while characters are still being revealed.
+Procedure 352 (0x46FD70, setter 0x408590) resets the width table and sets default line height
+and glyph scale. In the Learn_10 first visit it supplies 0.38, 0.45 and 1.0. The `/-W` and `/-Z`
+strings configure the width table and scale sequence without creating a dialog. The screen-space
+glyph magnification is provisional and needs comparison with the original, as do world-space text
+and other resolutions. Where this came from: own analysis of the executable and loaded game data.
+
+Kind 110 (0x4648B0) makes a type-0x11 particle whose two vectors are opposite screen corners;
+0x460A10 draws it once through 0x429820 and 0x429670 as a black rectangle, with the supplied
+opacity. The coordinates are percentages of the viewport. The alpha setter at 0x42A300 divides
+the value by 255 and clamps it: 249 is nearly opaque. The draw path checks that the supplied game
+material exists, but 0x429820 uses its own black material; the supplied material does not choose
+the rectangle's colour or opacity. Scripts renew it while it is visible.
+Where this came from: own analysis of the executable; no reference implementation was used.
 
 Procedure 393 (0x470F20, shared with 392 and 394) evaluates one argument and calls 0x416D70
 on the object at the calling actor's +0x1C. It writes mode 1 to +0x38, the low byte of the

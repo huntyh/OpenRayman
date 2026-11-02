@@ -1030,6 +1030,65 @@ TEST_CASE("real data: English dialog table")
 	CHECK_FALSE(resolve(666).has_value());
 }
 
+TEST_CASE("dialog glyph byte mapping")
+{
+	CHECK_FALSE(game::dialog_glyph_index(0x1f).has_value());
+	CHECK(game::dialog_glyph_index('A') == 33);
+	CHECK(game::dialog_glyph_index('a') == 33);
+	CHECK(game::dialog_glyph_index(0x9f) == 127);
+	CHECK(game::dialog_glyph_index(0xa0) == 96);
+	CHECK(game::dialog_glyph_index('A', 800) == 833);
+}
+
+TEST_CASE("dialog layout measures the whole block and reveals only its prefix")
+{
+	game::dialog_text text;
+	text.widths.fill(1);
+	text.line_height = 0.5f;
+	text.prepared = "/C:/W500:/Z2000:AB/H250:/L:/O800:CDE/E9:";
+	text.revealed = 2;
+	auto layout = game::layout_dialog(text);
+	CHECK(layout.centred);
+	REQUIRE(layout.glyphs.size() == 5);
+	CHECK(layout.width == doctest::Approx(3));
+	CHECK(layout.glyphs[1].x == doctest::Approx(1));
+	CHECK(layout.glyphs[2].x == doctest::Approx(0));
+	CHECK(layout.glyphs[2].y == doctest::Approx(0.25));
+	CHECK(layout.glyphs[2].index == 835);
+	CHECK(layout.glyphs[0].revealed);
+	CHECK(layout.glyphs[1].revealed);
+	CHECK_FALSE(layout.glyphs[2].revealed);
+}
+
+TEST_CASE("real data: dialog template glyph objects")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto game = game_data::locate(*dir);
+	REQUIRE(game.has_value());
+	auto files = load_level_files(*game, "Learn_10");
+	auto block = files.memory.find({4, 0});
+	REQUIRE(block != nullptr);
+	auto data = files.memory.follow({block, 0x15ca8});
+	REQUIRE(data.has_value());
+	auto list = files.memory.follow(*data + 0x10);
+	REQUIRE(list.has_value());
+	auto objects = read_object_list(files.memory, *list);
+	CHECK(objects.size() == 0x372);
+	auto index = game::dialog_glyph_index('A');
+	REQUIRE(index.has_value());
+	REQUIRE(objects.size() > std::size_t(*index));
+	REQUIRE(objects[*index].physical_object.has_value());
+	auto geometry = physical_object_geometry(files.memory, *objects[*index].physical_object);
+	REQUIRE(geometry.has_value());
+	auto glyph = read_geometric_object(files.memory, *geometry);
+	CHECK(glyph.vertices.size() == 4);
+	REQUIRE(glyph.elements.size() == 1);
+	CHECK(glyph.elements[0].triangles.size() == 2);
+	REQUIRE(glyph.elements[0].material.has_value());
+	CHECK(glyph.elements[0].material->texture.has_value());
+}
+
 TEST_CASE("real data: input actions follow the keys")
 {
 	auto dir = real_game_dir();
@@ -1116,10 +1175,23 @@ TEST_CASE("real data: Learn_10 portal camera lands with a clear view")
 	}
 	for(std::uint32_t bit : game::revisit_story_bits) REQUIRE(vm.set_story_bit(actors, bit));
 	game::input keys(m, read_input_actions(files));
+	bool saw_startup_cover = false;
 	for(int tick = 0; tick < 120; tick++)
 	{
 		keys.step();
 		game::step(vm, actors);
+		if(tick < 3)
+			for(const auto& rectangle : vm.particles().screen_rectangles())
+				saw_startup_cover |= rectangle.first[0] <= 0 && rectangle.first[1] <= 0 &&
+					rectangle.second[0] >= 100 && rectangle.second[1] >= 100 && rectangle.alpha > 200;
+		if(tick >= 3)
+			for(const auto& rectangle : vm.particles().screen_rectangles())
+			{
+				bool covers_screen = rectangle.first[0] <= 0 && rectangle.first[1] <= 0 &&
+					rectangle.second[0] >= 100 && rectangle.second[1] >= 100;
+				INFO("tick ", tick, " full-screen alpha ", rectangle.alpha);
+				CHECK_FALSE((covers_screen && rectangle.alpha > 32));
+			}
 		if(tick == 1 || tick == 119)
 		{
 			auto view = game::global_placement(m, vm.camera_motion().super_object);
@@ -1133,6 +1205,7 @@ TEST_CASE("real data: Learn_10 portal camera lands with a clear view")
 			CHECK_FALSE(vm.world().first_hit(aim, eye).has_value());
 		}
 	}
+	CHECK(saw_startup_cover);
 }
 
 TEST_CASE("real data: Rayman stands on Learn_10's closed tutorial trapdoor")

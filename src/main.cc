@@ -12,6 +12,7 @@
 #include <camera.h>
 #include <info.h>
 #include <renderer/gl.h>
+#include <renderer/dialog_renderer.h>
 #include <renderer/level_renderer.h>
 
 #include <openrayman/actor.h>
@@ -85,7 +86,7 @@ namespace
 		}
 	)";
 
-	// Temporary SDL debug font overlay until the Fix glyph objects are decoded.
+	// Transparent overlays made by the profiler and dialog renderer.
 	const char* text_fragment_shader = R"(
 		in vec2 v_uv;
 		out vec4 o_color;
@@ -164,6 +165,8 @@ namespace
 		enum class view { level, textures };
 		view mode = view::level;
 		std::unique_ptr<level_renderer> level;
+		std::unique_ptr<memory_image> dialog_memory;
+		std::unique_ptr<dialog_renderer> dialog_overlay;
 		std::size_t level_index = 0;
 		std::string start_level = "Learn_10"; // --level <name>
 		level_renderer::statistics level_stats;
@@ -1023,6 +1026,8 @@ namespace
 		a.actor_note.clear();
 		try
 		{
+			a.dialog_overlay.reset();
+			a.dialog_memory.reset();
 			Uint64 start = SDL_GetTicks();
 			level_files files = load_level_files(*a.game, levels[index]);
 			level_header header = read_level_header(files);
@@ -1189,7 +1194,7 @@ namespace
 			if(a.sounds)
 				a.sounds->stop_all();
 			a.sound_sources.clear();
-			// The story so far (first_visit.h): a revisit has Learn_10 finished (story bit 1133); a new
+			// The story so far (first_visit.h): a revisit includes the completed intro and Learn_10; a new
 			// game has the pirate ship and the intro behind it.
 			// Further bits stand in for a save game until saves are read (Phase 4): 1095 gives
 			// Rayman the silver (blue) shot, 1143 the golden one that charges.
@@ -1326,6 +1331,8 @@ namespace
 			// --time: let the scripts run up to then, so screenshots show what they picked.
 			run_scripts(a, a.animation_time);
 			update_actors(a);
+			a.dialog_memory = std::make_unique<memory_image>(std::move(files.memory));
+			a.dialog_overlay = std::make_unique<dialog_renderer>(*a.dialog_memory, a.archives);
 			SDL_Log("%s: %zu meshes, %zu triangles, %zu textures (%zu missing), %llu ms", levels[index].c_str(),
 				a.level_stats.meshes, a.level_stats.triangles, a.level_stats.textures, a.level_stats.missing_textures,
 				static_cast<unsigned long long>(SDL_GetTicks() - start));
@@ -1380,7 +1387,7 @@ namespace
 			a.music_index.reset();
 			if(a.music)
 				a.music->stop();
-			save_folder(folder);
+			if(!a.screenshot) save_folder(folder);
 			show_texture(a, 0);
 
 			const auto& levels = a.game->game_dsb().levels;
@@ -1512,54 +1519,17 @@ namespace
 				game::profiler::scope timed(game::profiler::zone::visibility);
 				update_visibility(a, projection * view);
 			}
-			if(a.vm)
+			if(a.vm && a.dialog_overlay)
 			{
 				auto dialogs = game::visible_dialogs(*a.vm);
-				if(!dialogs.empty())
-				{
-					// Fixed-resolution software surface keeps this provisional font independent of GL.
-					constexpr int tw = 640, th = 360;
-					SDL_Surface* surface = SDL_CreateSurface(tw, th, SDL_PIXELFORMAT_ABGR8888);
-					SDL_Renderer* text = surface ? SDL_CreateSoftwareRenderer(surface) : nullptr;
-					if(text)
+				const auto& boxes = a.vm->particles().screen_rectangles();
+				if(!dialogs.empty() || !boxes.empty())
+					if(SDL_Surface* surface = a.dialog_overlay->draw(dialogs, boxes, projection * view, projection))
 					{
-						SDL_SetRenderDrawColor(text, 0, 0, 0, 0);
-						SDL_RenderClear(text);
-						for(const auto& dialog : dialogs)
-						{
-							float x, y;
-							if(dialog.screen) { x = dialog.x * tw / 1000.0f; y = dialog.y * th / 1000.0f; }
-							else
-							{
-								glm::vec4 p = projection * view * glm::vec4(dialog.x, dialog.y, dialog.z, 1);
-								if(p.w <= 0) continue;
-								x = (p.x / p.w + 1) * tw * 0.5f;
-								y = (1 - p.y / p.w) * th * 0.5f;
-							}
-							std::size_t start = 0;
-							while(start < dialog.text.size())
-							{
-								auto end = dialog.text.find('\n', start);
-								if(end == std::string::npos) end = dialog.text.size();
-								float left = x - (dialog.centred ? float(end - start) * 4 : 0);
-								for(std::size_t i = start; i < end; ++i)
-								{
-									int colour = i < dialog.colours.size() ? dialog.colours[i] : 0;
-									if(colour == 200) SDL_SetRenderDrawColor(text, 250, 70, 70, 255);
-									else if(colour == 400) SDL_SetRenderDrawColor(text, 255, 255, 120, 255);
-									else SDL_SetRenderDrawColor(text, 110, 190, 255, 255);
-									char glyph[] = { dialog.text[i], 0 };
-									SDL_RenderDebugText(text, left + float(i - start) * 8, y, glyph);
-								}
-								y += 10;
-								start = end + 1;
-							}
-						}
-						SDL_RenderPresent(text);
-						GLuint overlay = gl::create_texture(tw, th, std::span(static_cast<const std::uint8_t*>(surface->pixels), tw * th * 4));
+						GLuint overlay = gl::create_texture(640, 480, std::span(static_cast<const std::uint8_t*>(surface->pixels), 640 * 480 * 4));
 						glDisable(GL_DEPTH_TEST);
 						glEnable(GL_BLEND);
-						glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+						glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 						glUseProgram(a.text_program);
 						glUniform4f(glGetUniformLocation(a.text_program, "u_rect"), -1, -1, 1, 1);
 						glActiveTexture(GL_TEXTURE0);
@@ -1567,10 +1537,7 @@ namespace
 						glBindVertexArray(a.vao);
 						glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 						glDeleteTextures(1, &overlay);
-						SDL_DestroyRenderer(text);
 					}
-					if(surface) SDL_DestroySurface(surface);
-				}
 			}
 		}
 		else if(a.texture && w > 0 && h > 0)
