@@ -112,6 +112,7 @@ Dated details of everything above, and the user's look-by-look feedback, are in
    far left and up, and need the menu font (its colour is a little off too). In the Globox kids'
    scene the kids' yellow and red are about right (same small adjustments as Murfy's), but
    Rayman's lines come out blue where the game's are white-ish.
+   Rayman's health bar is missing from the HUD (user, 2026-11-02).
    Cutscenes: the game narrows the picture with black bars, taller at the bottom than at the
    top, and the subtitles are made to sit on them. Do the bars as the game does, on by default;
    later an option to turn them off, which then puts a darker backing behind the text (user,
