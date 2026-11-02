@@ -136,8 +136,9 @@ Dated details of everything above, and the user's look-by-look feedback, are in
    at the arguing Teensies and spreads his hands, that animation loops instead of playing once.
    His pupils still show a little when he closes his eyes. In some looping animations the
    Teensies and Rayman jerk every few seconds, as if yanked on strings, parts pulling apart for a
-   moment (Rayman standing and listening, for one). Likely a general animation bug (a loop's wrap
-   or a keyframe blend), so fixing it may fix other animations too (user, 2026-11-02).
+   moment (Rayman standing and listening, for one). Mostly fixed (our loop seam blend overshot,
+   72da1ff; smoother, user); the Teensies still vibrate now and then. The Teensies appearing
+   0.2 s after each camera cut should be fixed (dialog cues, 28daef4): to check.
 6. **Other machines**: the user will try a Linux laptop with a Fermi-era Quadro 2000M (NVIDIA
    390xx driver from the AUR, so real hardware acceleration).
 7. **Performance**, measured with the profiler (F8): about 960 draw calls a frame for 6,500
@@ -148,6 +149,20 @@ Dated details of everything above, and the user's look-by-look feedback, are in
    spread out), so the interpreter itself is the cost, not one actor. The release build plays
    the same scene at about 740 fps (scripts 0.1 ms a frame, user), so this only matters for the
    debug build and slow machines.
+8. **Unported from the exe** (state 2026-11-02; each is a stand-in or missing today):
+   - The camera's orbit search around obstacles (0x486880, steps decided by 0x486710, transitions
+     0x487520/0x487730) and its offset rays and dynamic collisions (0x485FD0); ours is an interim
+     search. Likely cause of Rodeo_10's stuck camera and the arrival pan. Also the cutscene camera
+     modes (cam+0x60: 1 scripted keyframes, 4 snap, 5 target switch) and the rest of the global
+     tuning block 0x4FF62C ([formats/camera.md](formats/camera.md)).
+   - Script handlers Learn_10 still calls (`ortool run` lists them): procedures 66 (every tick on
+     the revisit start; address not found yet), 11/12 (0x472450), 146/150 (0x472600), 80
+     (0x48B380), 237, 307 (0x46BFE0), 313..315, 347, 418, 420 (0x471A90); functions 76 and 210.
+   - The cutscene black bars (engine side, see item 2) and procedure 502.
+   - Particle kinds not traced yet (an unknown kind does nothing), the per-particle draw value at
+     pool +0x38 (0x460A10), and the dimming 0x460670 applies to screen images (0x4A07D4).
+   - Animation morphs (the butterfly) and the scripts' fog override (procedures 42..47).
+   - Reading real saves ([formats/saves.md](formats/saves.md)) instead of the revisit snapshot.
 
 **Later in Phase 3 / Phase 4**
 
