@@ -1193,6 +1193,15 @@ namespace openrayman::game
 		// 0x418340: the saved transform.
 		if(auto start = m_start_placements.find(self); start != m_start_placements.end())
 			set_global_placement(m_memory, self, start->second);
+		// 0x4132A0, the standard game's part: the custom bits come back from their initial copy
+		// (+0x2C into +0x24), and, unless custom bit 31 is set, byte +0x21 from +0x30. Murfy's
+		// scene changes his custom bits, so without this he stayed out waving after an F1 replay.
+		if(std::uint32_t standard = m_memory.u32(actor + 4); standard && m_memory.contains(standard, 0x34))
+		{
+			m_memory.write<std::uint32_t>(standard + 0x24, m_memory.u32(standard + 0x2C));
+			if(!(m_memory.u32(standard + 0x24) & 0x80000000))
+				m_memory.write<std::uint8_t>(standard + 0x21, m_memory.u8(standard + 0x30));
+		}
 		std::uint32_t data = m_memory.u32(actor + actor_field::data_3d);
 		if(data && m_memory.contains(data, 0x14))
 		{

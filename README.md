@@ -191,14 +191,22 @@ pin in `tests/CMakeLists.txt`.
 
 ## How this is made
 
-This continuation of OpenRayman is written by AI. The code, the reverse engineering of the file
-formats and the documentation are done by Claude, an AI model by Anthropic, working in Claude Code,
-with a smaller local model drafting some routine pieces (always reviewed before use).
+This continuation of OpenRayman is written by AI. Claude, an AI model by Anthropic working in
+Claude Code, leads the code, the reverse engineering of the file formats and the documentation, and
+reviews everything that goes in. It hands bounded jobs to a few helpers:
+
+- **GPT** (OpenAI, through Codex): tracing the executable and implementing features from those
+  findings (standing on actors, the dialogs and their glyphs, the arrival camera, ...)
+- **DeepSeek** (through Reasonix): smaller exact investigations of the executable's handlers
+- **Qwen**, running locally: routine pieces such as boilerplate and test scaffolds
+
+Their results are always checked against the game data and the executable before use.
 **huntyh** runs the project: deciding what to build, testing every step against the real game and
 reporting what looks wrong, and keeping the project's rules.
 
-Every commit made this way says so in its message ("Co-Authored-By: Claude"), so the history shows
-exactly which work came from where.
+Every commit made this way says so in its message ("Co-Authored-By: Claude", plus the helper when
+one did the work, e.g. "Co-Authored-By: GPT-6.1 Terra"), so the history shows exactly which work
+came from where.
 
 ## Contributing
 
@@ -236,6 +244,8 @@ documented this game over two decades. Thank you.
 
 - **huntyh**: project lead, testing and bug reports (Teensies aren't upside-down anymore)
 - **Claude** (Anthropic): code, format research and documentation, see [How this is made](#how-this-is-made).
+- **GPT** (OpenAI), **DeepSeek** and **Qwen**: helpers for executable tracing, features and
+  routine pieces, see [How this is made](#how-this-is-made).
 
 ### Rayman 2 research
 

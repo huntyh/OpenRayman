@@ -1340,18 +1340,31 @@ TEST_CASE("real data: Murfy's tablet tip comes back each time Rayman returns")
 	const auto start = game::global_placement(m, tip);
 	REQUIRE(start);
 	std::uint32_t showing = 0, previous = m.u32(normal + 8);
+	const std::uint32_t standard = m.u32(vm.actor_of(tip) + 4);
+	std::uint32_t waiting = 0;
+	bool back = false;
+	const std::uint32_t custom = m.u32(standard + 0x24);
 	int shown = 0;
-	for(int tick = 0; tick <= 760; tick++)
+	bool replay = false;
+	SUBCASE("walking away and back") {}
+	// Holding F1 on the tablet replays Murfy's whole scene; Space pages through it. Afterwards
+	// the reset puts his custom bits back (0x4132A0), or he stays out waving (user, 2026-11-02).
+	SUBCASE("F1 replays the scene") { replay = true; }
+	for(int tick = 0; tick <= (replay ? 1400 : 760); tick++)
 	{
-		if(tick == 260 || tick == 700)
+		if(tick == 260 || (!replay && tick == 700))
 			game::write_transform(m, rayman, { 7.4f, 311.9f, -6.9f }, { 0, 1, 0, -1, 0, 0, 0, 0, 1 });
-		if(tick == 520)
+		if(!replay && tick == 520)
 			game::write_transform(m, rayman, { 30, 295, -7 }, { 0, 1, 0, -1, 0, 0, 0, 0, 1 });
+		keys.set_key(0x3B, replay && tick >= 300 && tick < 420); // F1
+		keys.set_key(0x39, replay && tick >= 700 && (tick - 700) % 40 < 4); // Space
 		keys.step();
 		game::step(vm, actors);
 		std::uint32_t now = m.u32(normal + 8);
+		if(tick == 1) waiting = now;
+		if(tick > 1000 && now == waiting) back = true;
 		if(tick == 270) showing = now;
-		if(tick == 535) // reset: back where the level put it
+		if(!replay && tick == 535) // reset: back where the level put it
 		{
 			auto back = game::global_placement(m, tip);
 			REQUIRE(back);
@@ -1362,7 +1375,12 @@ TEST_CASE("real data: Murfy's tablet tip comes back each time Rayman returns")
 		previous = now;
 	}
 	CHECK_FALSE(vm.removed(tip));
-	CHECK(shown == 1); // the second visit (the first set `showing`)
+	if(replay)
+	{
+		CHECK(m.u32(standard + 0x24) == custom);
+		CHECK(back); // reset after the scene, waiting by the tablet again
+	}
+	else CHECK(shown == 1); // the second visit (the first set `showing`)
 }
 
 TEST_CASE("actor floors carry a rider through translation and rotation and release it")

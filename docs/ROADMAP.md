@@ -105,12 +105,11 @@ Dated details of everything above, and the user's look-by-look feedback, are in
 1. **3c leftovers.** The slippery slope's acceleration is off (the real slide accelerates about
    11 u/s² down the fall line). Faint crosshair-like lines around Rayman from afar.
 2. **Dialogs and the HUD.** Dialogs are on screen in the game's own glyphs with Murfy's box and
-   portrait, drawn with OpenGL (2026-11-02); the tablet tips come back each visit. Left: the text
-   colour (the game's is about #FFFF88 mid-letter, white at the top; the red #DC717C), the exact
-   glyph size and left padding; holding F1 on the tablet replays Murfy's scene but, played live,
-   ends stuck in his goodbye wave (a headless replay finishes, so it's something live). The HUD
-   shows its counters, Lum and cage, but the icons are too big with the wrong aspect, the Lum has
-   a seam down the middle, and the counters need the menu font and the game's position.
+   portrait, drawn with OpenGL (2026-11-02); the tablet tips come back each visit, and F1 there
+   replays Murfy's scene. Left: the text colour, a little off (user's measurements of the game:
+   yellow #FFFF5D at the bottom to #F6F6E8 at the top, red #A11838 to #F6CCB5), the exact glyph
+   size and left padding. The HUD's icons look right now (user); its counters sit a little too
+   far left and up, and need the menu font.
    Font wishes for later: fixing the original's text that runs off the screen (the "Yahoo!" for
    all Lums, the menu's overwrite-save message).
 3. **Sound leftovers.** The transition fades between themes; how loud a sound is by distance
