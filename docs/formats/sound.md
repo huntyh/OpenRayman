@@ -473,7 +473,11 @@ Loudness: `tools/r2audio.py` measures the sound output (Windows loopback, RMS an
 for both the real game (r2record's `audio` topic) and ours. Lined up on the same segments, the real
 game's woods theme (volume options at maximum, run5) measured 6.4 dB below ours at the samples' full
 level, so the music now plays at 0.48 of it; ours then measures 0.8 dB from the game's. The
-effects are next: the same route played in both (run6 for the game).
+effects, from run6 (sound.txt tells which effect made each loudness peak): Rayman's jump take-off
+(DECOL) peaked 8.5 dB under its sample's peak, the landing roll (ROULSOL) 8.3, the ricochet 6.0,
+the splash (GERBE) 11.9, so effects play at 0.38 (-8.4 dB). Ours had peaked at -0.1 dBFS over the
+same route, the game at -6.9. Where the game's DLL applies these levels is not read; both stand in
+for it, measured with the volume options at maximum.
 
 Open: the transition DLL's fade; group selection; the intro's theme (comes with the intro). These rules come from our reading of 0x459460, 0x4595D0, 0x459670 and 0x459800
 and the run4 recording.

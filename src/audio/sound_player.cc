@@ -397,6 +397,9 @@ namespace openrayman
 	// segments lined up, 2026-11-02, the game's volume options at maximum), so it is the game's own
 	// mix, not a setting; with it ours measures within 0.8 dB. Where the DLL applies it is not read.
 	constexpr float music_gain = 0.48f;
+	// The effects likewise, about 8.4 dB below their samples: Rayman's jump take-off, landing roll,
+	// ricochet and splash peaked 6 to 12 dB under their samples' peaks in a recorded run (run6).
+	constexpr float effects_gain = 0.38f;
 
 	void SDLCALL sound_player::feed(void* self, SDL_AudioStream* stream, int additional, int)
 	{
@@ -452,7 +455,7 @@ namespace openrayman
 					unsigned input = v.channels == 1 ? 0 : channel;
 					float sample = v.samples[a * v.channels + input] * (1 - fraction) + v.samples[b * v.channels + input] * fraction;
 					float balance = channel == 0 ? 1 - std::max(0.0f, v.pan) : 1 + std::min(0.0f, v.pan);
-					mix[channel] += sample * v.volume * v.gain * balance;
+					mix[channel] += sample * v.volume * v.gain * balance * effects_gain;
 				}
 				v.position += v.step;
 			}
