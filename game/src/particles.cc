@@ -32,6 +32,18 @@ namespace openrayman::game
 
 	void particles::start(int kind, const vec3& point, const vec3& vector, std::uint32_t material, float number, double now)
 	{
+		if(kind == 125)
+		{
+			// 0x4605A0 stores the two percent corners, material and vector.z opacity
+			// in a screen-image slot; 0x460600 draws it while its opacity is positive.
+			int slot = int(number);
+			if(slot >= 0 && slot < 36)
+			{
+				std::erase_if(m_screen_images, [slot](const screen_image& image) { return image.slot == slot; });
+				if(material && vector[2] > 0) m_screen_images.push_back({point, vector, material, slot, now});
+			}
+			return;
+		}
 		if(kind == 110)
 		{
 			// 0x4648B0 makes type 0x11; 0x460A10 / 0x429820 draw a black

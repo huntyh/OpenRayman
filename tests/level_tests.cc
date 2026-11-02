@@ -1087,6 +1087,22 @@ TEST_CASE("real data: dialog template glyph objects")
 	CHECK(glyph.elements[0].triangles.size() == 2);
 	REQUIRE(glyph.elements[0].material.has_value());
 	CHECK(glyph.elements[0].material->texture.has_value());
+	// Murfy's /O400 selects a painted A. Its colon entry is intentionally empty.
+	REQUIRE(objects.size() > 433);
+	CHECK_FALSE(objects[426].physical_object.has_value());
+	REQUIRE(objects[433].physical_object.has_value());
+	auto visual = files.memory.follow(*objects[433].physical_object);
+	REQUIRE(visual);
+	auto blocks = files.memory.follow(*visual + 0x10);
+	REQUIRE(blocks);
+	auto first = files.memory.follow(*blocks);
+	REQUIRE(first);
+	auto colours = files.memory.follow(*first + 4);
+	REQUIRE(colours);
+	CHECK(files.memory.read_u32(*colours) == 4);
+	auto colour_data = files.memory.follow(*colours + 4);
+	REQUIRE(colour_data);
+	CHECK(files.memory.read_u32(*colour_data) == 0x00BB00FF);
 }
 
 TEST_CASE("real data: input actions follow the keys")

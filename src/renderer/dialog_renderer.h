@@ -29,9 +29,10 @@ namespace openrayman
 		dialog_renderer& operator=(const dialog_renderer&) = delete;
 		SDL_Surface* draw(std::span<const game::dialog_text> dialogs,
 			std::span<const game::particles::screen_rectangle> boxes,
+			std::span<const game::particles::screen_image> images,
 			const glm::mat4& view_projection, const glm::mat4& projection);
 	private:
-		struct glyph { geometric_object object; SDL_Texture* texture = nullptr; };
+		struct glyph { geometric_object object; SDL_Texture* texture = nullptr; std::vector<SDL_FColor> colours; };
 		struct font { std::vector<actor_object> objects; std::map<int, std::optional<glyph>> glyphs; };
 		std::optional<memory_location> location(std::uint32_t address) const;
 		font& font_for(std::uint32_t actor);

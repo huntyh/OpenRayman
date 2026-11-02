@@ -390,8 +390,22 @@ measures the complete block before centring, even while characters are still bei
 Procedure 352 (0x46FD70, setter 0x408590) resets the width table and sets default line height
 and glyph scale. In the Learn_10 first visit it supplies 0.38, 0.45 and 1.0. The `/-W` and `/-Z`
 strings configure the width table and scale sequence without creating a dialog. The screen-space
-glyph magnification is provisional and needs comparison with the original, as do world-space text
-and other resolutions. Where this came from: own analysis of the executable and loaded game data.
+glyph magnification remains provisional: it was enlarged by 25% after comparison with the user's
+captures; the precise screen projection still needs confirmation, as do world-space text and other
+resolutions. Where this came from: own analysis of the executable and loaded game data.
+
+The physical object's visual set points at a chain of colour blocks: visual set +0x10 -> block
+list, list +0 -> first block, first block +4 -> per-vertex colour block. The latter has a u32 count
+at +0 and a pointer at +4 to four u16 RGBA channels per vertex. Murfy's `/O400` A has four colours:
+the lower pair is orange and the upper pair pale, producing the yellow gradient on the glyph's
+white texture. Other offsets select other painted objects. A null physical object means no glyph:
+the final colon in Murfy's page strings maps to a null entry and is invisible. Where this came from:
+own analysis of the loaded Fix objects and comparison with the user's original-game captures.
+
+Murfy's portrait is not a generated actor: his macro calls particle kind 125 with slot 5, viewport
+corners (4, 80) and (14, 95), a material pointing to the Murfy icon texture, and opacity in the
+second vector's Z component. 0x4605A0 writes the slot and 0x460600 draws nonzero slots; a later
+zero-opacity write clears it. Where this came from: own analysis of Murfy's script and the executable.
 
 Kind 110 (0x4648B0) makes a type-0x11 particle whose two vectors are opposite screen corners;
 0x460A10 draws it once through 0x429820 and 0x429670 as a black rectangle, with the supplied

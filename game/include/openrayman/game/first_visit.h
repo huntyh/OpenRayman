@@ -40,10 +40,14 @@ namespace openrayman::game
 	// The story bits a start stands in for (a new game logged with `r2live.py --story-only`,
 	// 2026-11-01). A new game sets 1089 at the end of the pirate ship level and 1091 at Learn_10's
 	// hand-over, at the spot above (node 4 runs an intro effect until it is set). Finishing Learn_10
-	// (jumping into the exit gate) sets 1133. A completed level also retains 1089 and 1091:
-	// otherwise its director keeps the intro's full-screen cover up on a revisit.
+	// (jumping into the exit gate) sets 1133. A revisit has every bit that playthrough set in
+	// Learn_10 (840 and 841, 1092, 1175 to 1177, 1396 to 1400 on the way): without 1089 and 1091
+	// its director keeps the intro's full-screen cover up, and without the others the tutorial
+	// cage hangs over the open trapdoor again (user, 2026-11-02).
 	inline constexpr std::uint32_t first_visit_story_bits[] = { 1089, 1091 };
-	inline constexpr std::uint32_t revisit_story_bits[] = { 1089, 1091, 1133 };
+	inline constexpr std::uint32_t revisit_story_bits[] = {
+		840, 841, 1089, 1091, 1092, 1133, 1175, 1176, 1177, 1396, 1397, 1398, 1399, 1400,
+	};
 
 	// Writes a super object's transform: position, then its X, Y and Z axes (twice: rotation and the
 	// combined matrix).

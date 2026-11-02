@@ -18,6 +18,20 @@ TEST_CASE("particles: screen rectangle lasts one tick and keeps its coordinates 
 	CHECK(p.screen_rectangles().empty());
 }
 
+TEST_CASE("particles: screen images use the script slot and opacity")
+{
+	particles p;
+	p.start(125, {4, 80, 0}, {14, 95, 192}, 0x1234, 5, 1);
+	p.update(1, 0.016);
+	REQUIRE(p.screen_images().size() == 1);
+	CHECK(p.screen_images()[0].slot == 5);
+	CHECK(p.screen_images()[0].second[2] == doctest::Approx(192));
+	p.update(2, 0.016);
+	CHECK(p.screen_images().size() == 1);
+	p.start(125, {4, 80, 0}, {14, 95, 0}, 0x1234, 5, 1);
+	CHECK(p.screen_images().empty());
+}
+
 
 TEST_CASE("particles: rising specks come at most every 0.05 s and fade out in about 2.2 s")
 {

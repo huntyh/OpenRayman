@@ -88,7 +88,25 @@ namespace openrayman
 						auto object = read_geometric_object(m_memory, *at);
 						if(!object.elements.empty() && object.elements[0].material && object.elements[0].material->texture)
 							if(auto* texture = texture_for(*object.elements[0].material->texture))
-								it->second = glyph{std::move(object), texture};
+							{
+								std::vector<SDL_FColor> colours(object.vertices.size(), {1, 1, 1, 1});
+								// The visual set's colour blocks carry four u16 RGBA channels per
+								// vertex. /O selects objects with different painted gradients.
+								if(auto visual = m_memory.follow(*physical))
+									if(auto blocks = m_memory.follow(*visual + 0x10))
+										if(auto first = m_memory.follow(*blocks))
+											if(auto vertex_block = m_memory.follow(*first + 4))
+												if(auto data = m_memory.follow(*vertex_block + 4))
+													if(m_memory.read_u32(*vertex_block) == colours.size())
+														for(std::size_t i = 0; i < colours.size(); ++i)
+														{
+															auto rg = m_memory.read_u32(*data + std::uint32_t(i * 8));
+															auto ba = m_memory.read_u32(*data + std::uint32_t(i * 8 + 4));
+															colours[i] = {float(rg & 0xffff) / 255, float(rg >> 16) / 255,
+																float(ba & 0xffff) / 255, float(ba >> 16) / 255};
+														}
+								it->second = glyph{std::move(object), texture, std::move(colours)};
+							}
 					}
 			}
 			catch(const std::exception& e) { SDL_Log("Dialog glyph %d: %s", index, e.what()); }
@@ -97,6 +115,7 @@ namespace openrayman
 
 	SDL_Surface* dialog_renderer::draw(std::span<const game::dialog_text> dialogs,
 		std::span<const game::particles::screen_rectangle> boxes,
+		std::span<const game::particles::screen_image> images,
 		const glm::mat4& view_projection, const glm::mat4& projection)
 	{
 		if(!m_renderer) return nullptr;
@@ -111,6 +130,25 @@ namespace openrayman
 			SDL_SetRenderDrawColor(m_renderer, 0, 0, 0, Uint8(std::clamp(box.alpha, 0.0f, 255.0f)));
 			SDL_RenderFillRect(m_renderer, &r);
 		}
+		for(const auto& image : images)
+			try
+			{
+				if(auto material = location(image.material))
+					if(auto visual = m_memory.follow(*material))
+					{
+						auto info = read_visual_material(m_memory, *visual);
+						if(info.texture)
+							if(auto* texture = texture_for(*info.texture))
+							{
+								SDL_SetTextureAlphaModFloat(texture, std::clamp(image.second[2] / 255.0f, 0.0f, 1.0f));
+								SDL_FRect r{image.first[0] * 6.4f, image.first[1] * 4.8f,
+									(image.second[0] - image.first[0]) * 6.4f, (image.second[1] - image.first[1]) * 4.8f};
+								SDL_RenderTexture(m_renderer, texture, nullptr, &r);
+								SDL_SetTextureAlphaModFloat(texture, 1);
+							}
+					}
+			}
+			catch(const std::exception& e) { SDL_Log("Screen image: %s", e.what()); }
 		for(const auto& dialog : dialogs)
 		{
 			float x, y, unit;
@@ -121,7 +159,7 @@ namespace openrayman
 				// 0x422940 uses reciprocal screen depth. The final glyph magnification is
 				// provisional pending a matched capture from the original renderer.
 				float depth = std::abs(std::trunc(dialog.z)) * 0.001f;
-				unit = 120.0f * projection[1][1] * depth / (0.1f * (1.0f + depth));
+				unit = 150.0f * projection[1][1] * depth / (0.1f * (1.0f + depth));
 			}
 			else
 			{
@@ -136,6 +174,10 @@ namespace openrayman
 			for(const auto& item : layout.glyphs)
 			{
 				if(!item.revealed) continue;
+				// A null physical object is an intentional blank (including the trailing
+				// colon in Murfy's source strings), not a failed glyph load.
+				if(item.index >= 0 && std::size_t(item.index) < font.objects.size() &&
+					!font.objects[std::size_t(item.index)].physical_object) continue;
 				const auto* g = glyph_for(font, item.index);
 				if(!g)
 				{
@@ -154,7 +196,7 @@ namespace openrayman
 							const auto& p = g->object.vertices[element.triangles[t][c]];
 							const auto& uv = element.uvs[element.uv_triangles[t][c]];
 							vertices.push_back({{x + (item.x + item.advance * 0.5f + p[0] * item.scale) * unit,
-								y + (item.y - p[2] * item.scale) * unit}, {1, 1, 1, 1}, {uv[0], 1 - uv[1]}});
+								y + (item.y - p[2] * item.scale) * unit}, g->colours[element.triangles[t][c]], {uv[0], 1 - uv[1]}});
 						}
 					if(!vertices.empty()) SDL_RenderGeometry(m_renderer, g->texture, vertices.data(), int(vertices.size()), nullptr, 0);
 				}

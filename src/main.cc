@@ -1330,6 +1330,10 @@ namespace
 			a.chose_view = true;
 			// --time: let the scripts run up to then, so screenshots show what they picked.
 			run_scripts(a, a.animation_time);
+			// The startup script requests a cut on its first tick; the camera lands on
+			// the second. Run both before presenting the saved, out-of-bounds view.
+			if(a.playing && a.tick < 2 && a.camera_super_object)
+				run_scripts(a, double(2 - a.tick) / 60.0);
 			update_actors(a);
 			a.dialog_memory = std::make_unique<memory_image>(std::move(files.memory));
 			a.dialog_overlay = std::make_unique<dialog_renderer>(*a.dialog_memory, a.archives);
@@ -1523,10 +1527,12 @@ namespace
 			{
 				auto dialogs = game::visible_dialogs(*a.vm);
 				const auto& boxes = a.vm->particles().screen_rectangles();
-				if(!dialogs.empty() || !boxes.empty())
-					if(SDL_Surface* surface = a.dialog_overlay->draw(dialogs, boxes, projection * view, projection))
+				const auto& images = a.vm->particles().screen_images();
+				if(!dialogs.empty() || !boxes.empty() || !images.empty())
+					if(SDL_Surface* surface = a.dialog_overlay->draw(dialogs, boxes, images, projection * view, projection))
 					{
 						GLuint overlay = gl::create_texture(640, 480, std::span(static_cast<const std::uint8_t*>(surface->pixels), 640 * 480 * 4));
+						glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 						glDisable(GL_DEPTH_TEST);
 						glEnable(GL_BLEND);
 						glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
