@@ -22,9 +22,11 @@ first. The format docs under `formats/` are the permanent home of the findings t
   so the Teensies should appear with the camera cut (not yet confirmed).
 - Black bars slide in from the top and bottom as a scene starts (user). DeepSeek: no script draws
   them; the camera actor's custom bit 30 marks the scene's length.
-- New: in the kids' cave, running towards the camera makes it circle round to Rayman's back as
-  long as he moves (`--camera -67.6,206.3,3.1,-74.8,-10.5`); Codex is porting the rest of the
-  swing-round (0x486400's candidate test, the retry, the blocked state).
+- In the kids' cave, running towards the camera made it circle round to Rayman's back as long as
+  he moved (`--camera -67.6,206.3,3.1,-74.8,-10.5`). Cause: our interim obstacle search started
+  with a clear view and parked the camera on his path; procedure 499 then held it above him.
+  Fixed (5f5545e, Codex); the user says it feels a lot better. Rodeo_10: the camera stays on top
+  of a narrow hole Rayman drops into.
 
 ## 2026-11-02 (evening): the user's retests
 

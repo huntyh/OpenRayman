@@ -128,7 +128,10 @@ Dated details of everything above, and the user's look-by-look feedback, are in
    Doors) the camera starts behind a wall, out of bounds, and can't get through to Rayman (user,
    2026-11-02). Still to check against the game: the player may turn the camera (Q/W) only where
    the level allows it, level presets often overrule it, and a camera icon with a red X shows
-   when turning is refused.
+   when turning is refused. The kids' cave loop is fixed (user, 2026-11-02). Later levels: in
+   Rodeo_10 the camera stays on top of a narrow hole Rayman drops into
+   (`--level Rodeo_10 --camera 14.1,10.4,-4.9,49.8,-42.2`); our obstacle search is a stand-in
+   for the exe's orbit search (0x486880), which is the likely next step.
 5. **The end-of-level cutscene** plays through (user, 2026-11-02), but when Rayman shouts "Stop!"
    at the arguing Teensies and spreads his hands, that animation loops instead of playing once.
    His pupils still show a little when he closes his eyes. In some looping animations the
