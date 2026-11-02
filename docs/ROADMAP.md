@@ -107,8 +107,10 @@ Dated details of everything above, and the user's look-by-look feedback, are in
 
 **Open** (agreed order with the user, 2026-10-30; state 2026-11-02)
 
-1. **3c leftovers.** The slippery slope's acceleration is off (the real slide accelerates about
-   11 u/s² down the fall line). Faint crosshair-like lines around Rayman from afar.
+1. **3c leftovers.** Done: the slippery slope's slide feels like the game's (user, 2026-11-02;
+   about 10.7 vs the recorded 10.3 u/s², the slow first step is the game's too) and the faint
+   lines around Rayman were his shadow's edge texels (1ff8529, to check). Left: the slope
+   contact still differs from the exe in two details ([formats/dynamics.md](formats/dynamics.md)).
 2. **Dialogs and the HUD.** Left: the exact glyph size and left padding of the dialog text; the
    HUD's counters sit a little too far left and up and need the menu font (its colour is a little
    off too). Cutscenes: the game narrows the picture with black bars that slide in from the top
