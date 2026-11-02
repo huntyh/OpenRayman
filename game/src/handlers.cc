@@ -1894,6 +1894,7 @@ namespace openrayman::game
 			if(!m.u8(cam + camera_field::snap))
 			{
 				write3(m, cam + 0x34, position_of(c.vm, self));
+				c.vm.camera_motion().focus_pending = true;
 				set_camera_flags(c.vm, cam, 0x72, 1, 1, 0x2000);
 				return c.args;
 			}
@@ -1953,9 +1954,13 @@ namespace openrayman::game
 			if(block)
 				m.write<std::uint16_t>(block + 0x72, std::uint16_t((saved | 1) & ~0x1000u));
 			camera_state before = c.vm.camera_motion();
+			std::uint8_t saved_swing = m.u8(cam + 0x76);
+			float saved_gap = m.f32(cam + 0x5C);
 			solve_camera(c.vm, self);
 			out = value_of(c.vm.camera_motion().off);
 			c.vm.camera_motion() = before;
+			m.write<std::uint8_t>(cam + 0x76, saved_swing);
+			m.write<float>(cam + 0x5C, saved_gap);
 			if(block)
 				m.write<std::uint16_t>(block + 0x72, saved);
 			return c.args;

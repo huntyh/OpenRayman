@@ -340,11 +340,25 @@ namespace openrayman::game
 		std::uint32_t target = target_super_object(vm, block);
 		std::uint32_t target_transform = global_transform(m, target);
 		camera_state& state = vm.camera_motion();
+		state.trace = {};
+		state.trace.focus = state.focus_pending;
+		state.focus_pending = false;
+		for(unsigned i = 0; i < 8; ++i) state.trace.block[i] = m.f32(block + 0x18 + i * 4);
+		state.trace.flags70 = m.read<std::uint16_t>(block + 0x70);
+		state.trace.flags72 = flags_72;
+		state.trace.mode = m.read<std::int32_t>(cam + 0x60);
+		auto word = [&](std::uint32_t at) { return m.contains(at, 4) ? m.u32(at) : 0u; };
+		std::uint32_t dynamics = word(actor + 8), camera_base = dynamics ? word(dynamics) : 0;
+		std::uint32_t camera_report = camera_base ? word(camera_base + 0x150) : 0;
+		state.trace.report = camera_report && m.contains(camera_report + 0x168, 1) ? m.u8(camera_report + 0x168) : 0;
+		std::memcpy(&state.trace.global_flags, &vm.camera().values[0xB0], 4);
 		if(target != state.tracked_target && m.contains(cam, 0x158))
 		{
 			for(std::uint32_t i = 0; i < 8; i++)
 				m.write<float>(cam + 0x138 + i * 4, 0);
 			state.tracked_target = target;
+			state.swing = 0;
+			state.swing_gap = 0;
 		}
 		vec3 tracked_speed{};
 		vec3 tracked_position{};
@@ -454,37 +468,69 @@ namespace openrayman::game
 				return w;
 			};
 			direction dir = camera_direction(m, cam, block, target_transform, d, flags_72);
+			state.trace.yaw = dir.yaw;
+			state.trace.gap = dir.gap;
 			back = dir.back;
 			want = wanted_along(back);
 
-			// Swinging round (0x485760 -> 0x4855D0 -> 0x4853C0): when the yaw the block asks for is
-			// pi/8 or more away (context +0x74 set by 0x484390), the exe solves again with the window
-			// centred on the measured yaw moved pi/8 that way (+0x78) and, if the camera could stand
-			// there (0x486400, its collision test, left out), takes that wanted position instead. So
-			// the camera chases a point a little round the circle and keeps its distance, rather than
-			// cutting across towards the far point (holding Q/W puts that 90 degrees round, every frame).
-			// It keeps the way it chose (+0x76) until the yaw is within pi/8 again, and only turns the
-			// other way if the gap changes sign away from the back of the circle. Not while the
-			// block's +0x72 bit 4 is set.
-			camera_state& swing = vm.camera_motion();
-			constexpr float eighth = pi / 8;
-			if(std::fabs(dir.gap) >= eighth && !(flags_72 & 0x4))
+			// 0x485760 / 0x4855D0: keep a chosen direction, or latch blocked until
+			// the yaw gap becomes small or the block disables swinging.
+			const float eighth = setting(0xA4);
+			if(!(m.u8(cam + 0x74) & 2) && (std::fabs(dir.gap) < eighth || (flags_72 & 0x4)))
+				state.swing = 0;
+			else if(!(m.u8(cam + 0x74) & 2) && state.swing != -2)
 			{
-				if(swing.swing_gap * dir.gap < 0 && std::fabs(dir.gap) < pi - eighth)
-					swing.swing = 0;
-				if(swing.swing == 0)
-					swing.swing_gap = dir.gap;
-				float stepped = wrap_two_pi(dir.yaw + (dir.gap > 0 ? eighth : -eighth));
-				// 0x485580: the other way round, two eighths back.
-				if((swing.swing < 0 && dir.gap > 0) || (swing.swing > 0 && dir.gap < 0))
-					stepped = wrap_two_pi(stepped + (dir.gap > 0 ? -2 * eighth : 2 * eighth));
-				if(swing.swing == 0)
-					swing.swing = dir.gap > 0 ? 1 : -1;
-				back = camera_direction(m, cam, block, target_transform, d, flags_72, stepped).back;
-				want = wanted_along(back);
+				if((state.trace.report & 1) && !(state.trace.global_flags & 1))
+					state.swing = -2;
+				else
+				{
+					if(state.swing_gap * dir.gap < 0 && std::fabs(dir.gap) < pi - eighth)
+						state.swing = 0;
+					if(state.swing == 0) state.swing_gap = dir.gap;
+					vec3 anchor = add(read3(m, target_transform + 4), rotate(m, target_transform, read3(m, block + camera_field::vector_b)));
+					auto try_step = [&](int sign) {
+						float angle = wrap_two_pi(dir.yaw + sign * eighth);
+						vec3 candidate_back = camera_direction(m, cam, block, target_transform, d, flags_72, angle).back;
+						vec3 candidate = wanted_along(candidate_back);
+						bool rejected = length(sub(candidate, anchor)) < m.f32(block + 0x20) + setting(0x6C);
+						// 0x4853C0 requests these casts only in mode 1 with cam+0x75 bit 2.
+						// 0x485FD0 samples rays around the segment. Our world has static level
+						// triangles but not the executable's dynamic collision objects.
+						if(!rejected && state.trace.mode == 1 && (m.u8(cam + 0x75) & 4) && !(flags_72 & 0x10))
+						{
+							auto obstructed = [&](vec3 from, vec3 to, float start_radius, float end_radius, unsigned count) {
+								vec3 axis = normalised(sub(to, from));
+								vec3 radial = cross(axis, vec3{ 0, 0, 1 });
+								if(length(radial) < 1e-6f) radial = cross(axis, vec3{ 1, 0, 0 });
+								radial = normalised(radial);
+								for(unsigned i = 0; i < count; ++i)
+								{
+									vec3 v = rotate_about(radial, axis, two_pi * float(i) / float(count));
+									if(vm.world().first_hit(add(from, mul(v, start_radius * start_radius)), add(to, mul(v, start_radius * end_radius)))) return true;
+								}
+								return false;
+							};
+							auto count = [&](std::size_t offset) { std::uint16_t n; std::memcpy(&n, &vm.camera().values[offset], 2); return unsigned(n); };
+							if(!(flags_72 & 8) && obstructed(anchor, candidate, setting(0x3C), setting(0x40), count(0x76))) rejected = true;
+							if(obstructed(position, candidate, setting(0x34), setting(0x38), count(0x74))) rejected = true;
+						}
+						int n = state.trace.candidates++;
+						state.trace.candidate[n] = candidate;
+						state.trace.rejected[n] = rejected;
+						if(!rejected) { back = candidate_back; want = candidate; }
+						return !rejected;
+					};
+					int sign = state.swing == 0 ? (dir.gap > 0 ? 1 : -1) : state.swing;
+					if(try_step(sign))
+					{
+						if(state.swing == 0) state.swing = sign;
+					}
+					else if(state.swing == 0 && std::fabs(dir.gap) >= pi - eighth && try_step(-sign))
+						state.swing = -sign;
+					else
+						state.swing = -2;
+				}
 			}
-			else
-				swing.swing = 0;
 		}
 		if(!target_transform)
 		{
@@ -530,6 +576,12 @@ namespace openrayman::game
 				if(found) break;
 			}
 		}
+		if(state.trace_collisions && target_transform && !vm.world().empty())
+		{
+			vec3 anchor = add(read3(m, target_transform + 4), rotate(m, target_transform, read3(m, block + camera_field::vector_b)));
+			state.trace.view_blocked = vm.world().first_hit(anchor, position).has_value();
+			state.trace.wanted_blocked = vm.world().first_hit(anchor, want).has_value();
+		}
 		// Until the original's candidate scoring and transition modes are fully understood, use a
 		// conservative search: when the target is hidden, pick a reachable candidate with a clear
 		// view. Keep the waypoint across ticks so the camera can actually go around a corner.
@@ -550,7 +602,16 @@ namespace openrayman::game
 				else
 				{
 					state.obstacle_retry = 3;
-					state.obstacle_waypoint = camera_obstacle_waypoint(vm.world(), aim, position, want, camera_radius(m, super_object));
+					// 0x4870C0 only enters its search after the view and the wanted position
+					// both fail obstruction tests. These centre-line static-world tests are
+					// an approximation of its offset rays and dynamic collision objects.
+					vec3 anchor = add(read3(m, target_transform + 4), rotate(m, target_transform, read3(m, block + camera_field::vector_b)));
+					bool static_tests = !(flags_72 & 0x10);
+					bool view_blocked = static_tests && vm.world().first_hit(anchor, position).has_value();
+					bool wanted_blocked = length(sub(want, anchor)) < m.f32(block + 0x20) + setting(0x6C) ||
+						(static_tests && (vm.world().first_hit(anchor, want).has_value() || vm.world().first_hit(position, want).has_value()));
+					if(!(flags_72 & 8) && view_blocked && wanted_blocked)
+						state.obstacle_waypoint = camera_obstacle_waypoint(vm.world(), aim, position, want, camera_radius(m, super_object));
 					state.obstacle_target = aim;
 				}
 			}
@@ -558,6 +619,12 @@ namespace openrayman::game
 				want = *state.obstacle_waypoint;
 		}
 		state.super_object = super_object;
+		state.trace.waypoint = state.obstacle_waypoint.has_value();
+		m.write<std::uint8_t>(cam + 0x76, static_cast<std::uint8_t>(state.swing));
+		m.write<float>(cam + 0x5C, state.swing_gap);
+		state.trace.swing = state.swing;
+		state.trace.swing_gap = state.swing_gap;
+		state.trace.wanted = want;
 		state.move = sub(want, position);
 		state.look_at = aim;
 		state.off = off;
@@ -735,6 +802,11 @@ namespace openrayman::game
 		//    it and slides along the level's surfaces, unless the block's +0x70 bit 0x40 turns it off.
 		//    The turn carry becomes the angle the camera really swung round the look-at point. A
 		//    snap (a fresh camera or a cut) is put in place, not moved there (the exe resets it, 0x413E30).
+		auto word = [&](std::uint32_t at) { return m.contains(at, 4) ? m.u32(at) : 0u; };
+		std::uint32_t actor = word(super_object + 4), dynamics = actor ? word(actor + 8) : 0;
+		std::uint32_t base = dynamics ? word(dynamics) : 0, report = base ? word(base + 0x150) : 0;
+		bool have_report = report && m.contains(report + 0x168, 1);
+		if(have_report) m.write<std::uint8_t>(report + 0x168, m.u8(report + 0x168) & 0xFE);
 		if(!(state.flags & 0x40) && !(state.flags & snap_position) && !world.empty())
 		{
 			if(float radius = camera_radius(m, super_object); radius > 0)
@@ -742,6 +814,7 @@ namespace openrayman::game
 				vec3 moved = world.slide_sphere(position, pos, radius);
 				if(moved != pos)
 				{
+					if(have_report) m.write<std::uint8_t>(report + 0x168, m.u8(report + 0x168) | 1);
 					pos = moved;
 					vec3 from = normalised(sub(state.look_at, position)), to = normalised(sub(state.look_at, pos));
 					state.carry_angle = std::acos(std::clamp(dot(from, to), -1.0f, 1.0f));

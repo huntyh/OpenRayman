@@ -1543,6 +1543,7 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 				break;
 			}
 		}
+	vm.camera_motion().trace_collisions = camera_trace;
 	if(camera_trace)
 		std::cout << std::format("camera trace: super object 0x{:X}, camera object 0x{:X}\n", camera_super, camera_object);
 	// With a node: what its brain is, every change of its state, behaviour and reflex by tick, and
@@ -1847,6 +1848,13 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 				}
 			}
 			const game::camera_state& state = vm.camera_motion();
+			const auto& t = state.trace;
+			std::cout << std::format("solve tick {}: block18..34 {:.3f} {:.3f} {:.3f} {:.3f} {:.3f} {:.3f} {:.3f} {:.3f} f70 {:X} f72 {:X} mode {} swing {:02X} savedgap {:.4f} yaw {:.4f} gap {:.4f} report {:02X} globals {:X} waypoint {} focus {} view_blocked {} wanted_blocked {} wanted {}",
+				f, t.block[0], t.block[1], t.block[2], t.block[3], t.block[4], t.block[5], t.block[6], t.block[7],
+				unsigned(t.flags70), unsigned(t.flags72), t.mode, unsigned(t.swing & 255), t.swing_gap, t.yaw, t.gap, t.report, t.global_flags, t.waypoint, t.focus, t.view_blocked, t.wanted_blocked, vec(t.wanted));
+			for(int i = 0; i < t.candidates; ++i)
+				std::cout << std::format(" candidate{} {} reject {}", i, vec(t.candidate[i]), t.rejected[i]);
+			std::cout << "\n";
 			std::cout << std::format(
 				"cam tick {:>4}: block {} tgt 0x{:X} f70 0x{:X} f72 0x{:X} A {} B {} cam28 {} cam40 {} cam4C {}"
 				" | look {} off {} aim {} back {} move {}"

@@ -114,8 +114,20 @@ target (+0x68):
      0xFE blocked; +0x5C the gap it chose on) until the gap is under pi/8 again; a gap that changes
      sign away from the back of the circle (under pi − pi/8) lets it choose again, and when the
      stepped angle is the wrong way for the kept choice, 0x485580 steps the other way. Not while
-     the block's +0x72 bit 4 is set. We leave out the collision test (every candidate passes), the
-     "try the other way" when it fails, and the cam+0x168 / option-bit-1 block.
+     the block's +0x72 bit 4 is set. 0x486400 rejects a candidate strictly closer to the current
+     target anchor than block +0x20 plus the global tolerance (0x4FF698, normally 0.05). On a
+     rejected first step, 0x4855D0 tries the opposite direction only when no direction has been
+     chosen and the gap is at least pi minus the step; otherwise it latches 0xFE and retains the
+     normal wanted position. The latch resets when the gap is smaller than the step or +0x72 bit
+     4 is set. The step is global 0x4FF6D0 (normally pi/8).
+
+     0x4855D0 also latches blocked without trying a step when bit 0 of the camera mechanics report
+     (+0x168, reached through the solve context's first pointer) is set and global 0x4FF6DC bit 0
+     is clear. 0x434660 clears that report bit each movement and sets it on collision. Our sphere
+     slide reports a collision when its returned position differs from the proposed position.
+     0x4853C0 requests obstruction checks only in mode 1 with camera +0x75 bit 2: mask 3, or 2
+     when block +0x72 bit 3 is set. 0x485FD0 samples offset rays from anchor and camera position;
+     our approximation tests the static triangle world, not dynamic objects or sector selection.
 4. **What the mechanics gets**: the movement (wanted − current position), the look-at, the offset
    point, the back direction, the +0x70 option word and the nine speeds and eases from +0x38..+0x58
    (the ramps are clamped to at least 0.001).
@@ -176,15 +188,22 @@ builds candidates (0x486880), sorts them by a score, and tests them with 0x48671
 An accepted candidate enters a separate transition mode through 0x487520, which resets the swing
 direction and records both the current position and the candidate. The obstruction check can sample
 several offset paths around the line (0x485FD0); it is not simply the camera sphere's wall slide.
-OpenRayman now has an interim search: when the target-to-camera segment meets level geometry or
-the camera is within 1.25 times its collision radius of a surface, or its proposed follow path would
-come within that clearance of a surface,
-it tries candidate positions in 16 directions at three distances, preferring its current distance
+OpenRayman now has an interim search. It starts only when the static centre line from target to
+camera is blocked and the wanted position fails a distance or static line test; block +0x72 bit 3
+also disables it. These are approximations of the executable's offset-ray tests and gates, and can
+miss obstructions near the line or dynamic objects. Once triggered, it tries candidate positions in
+16 directions at three distances, preferring its current distance
 from the target before falling back to shorter distances, and choosing the candidate closest to the
 desired follow position at each distance with a clear line to the target and a collision-free sphere movement
 from the camera. It first prefers candidates with the same wider clearance, falling back to the
 physical collision radius if the view is blocked and no wider candidate fits. This clearance is an
 OpenRayman tuning choice prompted by the user's corner feedback, not a measured executable value.
+Previously, the interim search could start on clearance alone even with an unobstructed view: in a
+Learn_10 cave replay it picked a waypoint close to Rayman's path and the script's procedure 499
+then held the camera nearly above him. Holding Down made him circle under it. With the obstruction
+gates he reaches y=189.75 at tick 3300 rather than circling near y=193.2. This is one replay, not a
+proof of the original's search or a fix for every wall; the tighter gate needs a visual recheck of
+the corridor that used the earlier proactive search.
 It keeps that waypoint across ticks and retries every four ticks when it finds no
 candidate; it discards the waypoint when the target moves two units, or the camera comes within
 0.5 units. This is our own approximation, not a reconstruction of the original's candidate scoring
@@ -250,8 +269,6 @@ user's 2026-10-30 live and OpenRayman traces.
 ## What our engine leaves out
 - **The original's orbit search around obstacles** (0x486880, with 0x486710 deciding whether a step
   may run): our interim candidate search does not yet reproduce its scoring or transitions.
-- **The collision test of a swing-round step** (0x486400) and the "try the other way" that follows
-  a blocked one: every step passes.
 - **The cutscene modes** (cam+0x60: mode 1 scripted keyframes, mode 4 snap, mode 5 target switch)
   and the global tuning block 0x4FF62C.. beyond what procedures 491..493 store.
 
@@ -307,6 +324,8 @@ addresses are the ones above:
   (472..480), 0x47E830 (481..490), 0x47EA70 (491), 0x47EBD0 (492, 493), 0x47EC20 (495..497),
   0x47EDD0 (499), 0x47EF20 (500), 0x467CF0 (159), 0x488CB0 (function 310), 0x479BE0 (functions
   186..188), 0x4785B0 (functions 190, 191), 0x489D60 (conditions 10..14);
+- swing validation and collision report: 0x485760, 0x4855D0, 0x4853C0, 0x486400, 0x485FD0,
+  0x474270 and 0x434660 (own executable analysis; the static-ray approximation is ours);
 - the solve: 0x485810, with 0x483F90 (aim and wanted position), 0x4840A0 (offset point), 0x484540
   (look-at), 0x4847D0 (distance clamp), 0x484390 and 0x484470 (the pi/8 turn), 0x4858F6 (the reset
   branch and mode 4);

@@ -18,6 +18,20 @@ namespace openrayman::game
 	// are in the comments. See docs/formats/camera.md.
 	struct camera_state
 	{
+		struct solve_trace
+		{
+			std::array<float, 8> block{};
+			std::uint16_t flags70 = 0, flags72 = 0;
+			int mode = 0, swing = 0, candidates = 0;
+			unsigned report = 0, global_flags = 0;
+			bool waypoint = false, focus = false, view_blocked = false, wanted_blocked = false;
+			float swing_gap = 0, yaw = 0, gap = 0;
+			std::array<std::array<float, 3>, 2> candidate{};
+			std::array<int, 2> rejected{};
+			std::array<float, 3> wanted{};
+		} trace;
+		bool focus_pending = false, trace_collisions = false;
+
 		// What the solve found.
 		std::uint32_t super_object = 0; // the camera actor's super object, once a solve has run
 		std::uint32_t tracked_target = 0; // reset the sampled target history when the target changes

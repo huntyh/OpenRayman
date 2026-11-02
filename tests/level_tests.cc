@@ -10,6 +10,7 @@
 #include <openrayman/game/interpreter.h>
 #include <openrayman/game/input.h>
 #include <openrayman/game/live_memory.h>
+#include <openrayman/game/sound_slots.h>
 #include <openrayman/game/first_visit.h>
 #include <openrayman/cnt_archive.h>
 #include <openrayman/error.h>
@@ -1222,6 +1223,145 @@ TEST_CASE("real data: Learn_10 portal camera lands with a clear view")
 		}
 	}
 	CHECK(saw_startup_cover);
+
+	// Exercise the executable's swing decisions on the real camera object and block. Keep the
+	// geometry empty so this isolates the settle-distance check and the report gate.
+	vm.set_world(game::world_collision{});
+	auto camera_so = vm.camera_motion().super_object;
+	auto camera_actor = m.u32(camera_so + 4);
+	auto camera_object = m.u32(camera_actor + 0x10);
+	auto block = m.u32(camera_object + 4);
+	m.write<std::uint8_t>(camera_object + 0x74, 0);
+	affine target_pose{}, camera_pose{};
+	for(int i = 0; i < 3; ++i) { target_pose.m[i][i] = 1; camera_pose.m[i][i] = 1; }
+	camera_pose.m[1][3] = 8;
+	game::set_global_placement(m, rayman, target_pose);
+	game::set_global_placement(m, camera_so, camera_pose);
+	for(unsigned at = 0; at < 0x18; at += 4) m.write<float>(block + at, 0);
+	m.write<float>(block + 0x18, 8); m.write<float>(block + 0x1C, 8);
+	m.write<float>(block + 0x20, 8);
+	m.write<float>(block + 0x28, 3.14159265f); m.write<float>(block + 0x2C, 0);
+	m.write<float>(block + 0x30, 0); m.write<float>(block + 0x34, 0);
+	m.write<float>(block + 0x60, -100); m.write<float>(block + 0x64, 100);
+	m.write<std::uint32_t>(block + 0x68, rayman);
+	m.write<std::uint16_t>(block + 0x72, 2);
+	auto& camera = vm.camera_motion();
+	camera.tracked_target = rayman;
+	camera.swing = 0;
+	game::solve_camera(vm, camera_so);
+	CHECK(camera.trace.candidates == 2);
+	CHECK(camera.trace.rejected[0] == 1);
+	CHECK(camera.trace.rejected[1] == 1);
+	CHECK(camera.swing == -2);
+	// The blocked latch persists until the window gap is small.
+	m.write<float>(block + 0x20, 3);
+	game::solve_camera(vm, camera_so);
+	CHECK(camera.trace.candidates == 0);
+	CHECK(camera.swing == -2);
+	m.write<float>(block + 0x28, 0);
+	game::solve_camera(vm, camera_so);
+	CHECK(camera.swing == 0);
+	m.write<float>(block + 0x28, 3.14159265f);
+	game::solve_camera(vm, camera_so);
+	CHECK(camera.trace.candidates == 1);
+	CHECK(camera.trace.rejected[0] == 0);
+	CHECK(camera.swing != 0);
+
+	// A collision report blocks a new swing unless global option bit 0 allows it.
+	auto dynamics = m.u32(camera_actor + 8);
+	auto base = m.u32(dynamics);
+	auto report = m.u32(base + 0x150);
+	REQUIRE(m.contains(report + 0x168, 1));
+	m.write<std::uint8_t>(report + 0x168, 1);
+	camera.swing = 0;
+	game::solve_camera(vm, camera_so);
+	CHECK(camera.swing == -2);
+	CHECK(camera.trace.candidates == 0);
+	camera.swing = 0;
+	vm.camera().values[0xB0] |= 1;
+	game::solve_camera(vm, camera_so);
+	CHECK(camera.trace.candidates == 1);
+	CHECK(camera.swing != -2);
+
+	// Procedure 497's fixed reference, used for Q/W in open space, still permits a swing.
+	m.write<std::uint8_t>(report + 0x168, 0);
+	m.write<std::uint16_t>(block + 0x72, 0x4002);
+	m.write<float>(block + 0x28, 0);
+	for(unsigned i = 0; i < 3; ++i) {
+		m.write<float>(camera_object + 0x40 + i * 4, i == 0 ? 1.0f : 0.0f);
+		m.write<float>(camera_object + 0x4C + i * 4, i == 2 ? 1.0f : 0.0f);
+	}
+	camera.swing = 0;
+	game::solve_camera(vm, camera_so);
+	CHECK(camera.trace.candidates == 1);
+	CHECK(camera.trace.rejected[0] == 0);
+	CHECK(camera.swing != 0);
+}
+
+TEST_CASE("real data: Learn_10 cave follow does not circle at the first clearance waypoint")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto data = game_data::locate(*dir);
+	REQUIRE(data);
+	level_files files = load_level_files(*data, "Learn_10");
+	level_header header = read_level_header(files);
+	scene tree(files.memory, header);
+	animation_bank bank = read_animation_bank(files);
+	game::live_memory memory(files.memory);
+	const auto rayman = header.placements.at(0).super_object.address();
+	game::interpreter vm(memory, rayman);
+	game::register_handlers(vm);
+	game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
+	vm.set_animations(&bank);
+	game::install_level_events(memory, bank);
+	game::apply_sound_slots(memory, *data, "Learn_10");
+	std::vector<std::uint32_t> actors, fix;
+	for(const auto& placed : header.placements) fix.push_back(placed.super_object.address());
+	for(const auto& node : tree.nodes())
+		if(node.type == super_object_type::actor) actors.push_back(node.at.address());
+	vm.set_actors(actors);
+	for(auto bit : game::revisit_story_bits) vm.set_story_bit(fix, bit);
+	for(const auto& entry : read_actors(files.memory, tree, bank).actors)
+	{
+		auto so = tree.node(entry.node).at.address();
+		auto placed = game::global_placement(memory, so);
+		if(!placed) continue;
+		float difference = 0;
+		for(int r = 0; r < 3; ++r)
+			for(int c = 0; c < 4; ++c)
+				difference = std::max(difference, std::abs(placed->m[r][c] - entry.world.m[r][c]));
+		if(difference > 1e-3f) game::set_global_placement(memory, so, entry.world);
+	}
+	game::apply_revisit_state(vm, tree, "Learn_10");
+	game::input keys(memory, read_input_actions(files));
+	for(int tick = 0; tick <= 3300; ++tick)
+	{
+		if(tick == 300 || tick == 3100)
+		{
+			auto transform = memory.u32(rayman + 0x24);
+			const std::array<float, 3> pos = tick == 300 ? vec3{ -62, 204, 0.5f } : vec3{ -65, 204, 0 };
+			const float angle = tick == 300 ? 0.0f : 90.0f * 0.01745329f;
+			float fx = std::cos(angle), fy = std::sin(angle);
+			const float axes[] = { -fy, fx, 0, -fx, -fy, 0, 0, 0, 1 };
+			for(unsigned i = 0; i < 3; ++i) memory.write<float>(transform + 4 + i * 4, pos[i]);
+			for(unsigned i = 0; i < 9; ++i) {
+				memory.write<float>(transform + 0x10 + i * 4, axes[i]);
+				memory.write<float>(transform + 0x34 + i * 4, axes[i]);
+			}
+		}
+		keys.set_key(0x39, tick >= 400 && tick < 3004 && (tick - 400) % 60 < 3);
+		keys.set_key(0xD0, tick >= 3200);
+		keys.step();
+		game::step(vm, actors);
+	}
+	auto position = game::global_placement(memory, rayman);
+	REQUIRE(position);
+	// Before the obstruction gate, he was circling at y=193.2 under a fixed camera.
+	CHECK(position->m[1][3] < 191.0f);
+	CHECK_FALSE(vm.camera_motion().trace.focus);
 }
 
 TEST_CASE("real data: completed Learn_10 revisit keeps its actors and counters")
