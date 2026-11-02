@@ -109,8 +109,9 @@ Dated details of everything above, and the user's look-by-look feedback, are in
    replays Murfy's scene. Left: the text colour, a little off (user's measurements of the game:
    yellow #FFFF5D at the bottom to #F6F6E8 at the top, red #A11838 to #F6CCB5), the exact glyph
    size and left padding. The HUD's icons look right now (user); its counters sit a little too
-   far left and up, and need the menu font. In the Globox kids' scene Rayman's lines come out
-   blue (white-ish in the game) and the kids' should be Murfy's yellow with red highlights.
+   far left and up, and need the menu font (its colour is a little off too). In the Globox kids'
+   scene the kids' yellow and red are about right (same small adjustments as Murfy's), but
+   Rayman's lines come out blue where the game's are white-ish.
    Cutscenes: the game narrows the picture with black bars, taller at the bottom than at the
    top, and the subtitles are made to sit on them. Do the bars as the game does, on by default;
    later an option to turn them off, which then puts a darker backing behind the text (user,
@@ -144,7 +145,9 @@ Dated details of everything above, and the user's look-by-look feedback, are in
    6 ms once a second (a source of stutter: find the actor). In the Globox kids' scene (debug
    build) the scripts took 14 ms a frame with about 90 actors thinking; `ORTOOL_COST=1 ortool run`
    ranks the actors by script time (near the kids: the camera, node 5, about a fifth, the rest
-   spread out), so the interpreter itself is the cost, not one actor.
+   spread out), so the interpreter itself is the cost, not one actor. The release build plays
+   the same scene at about 740 fps (scripts 0.1 ms a frame, user), so this only matters for the
+   debug build and slow machines.
 
 **Later in Phase 3 / Phase 4**
 
