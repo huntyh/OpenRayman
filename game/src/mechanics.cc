@@ -1,5 +1,6 @@
 #include <openrayman/game/mechanics.h>
 #include <openrayman/game/animation_player.h>
+#include <openrayman/game/profiler.h>
 
 #include <algorithm>
 #include <cmath>
@@ -616,6 +617,8 @@ namespace openrayman::game
 
 	std::vector<collision_triangle> actor_collision_triangles(interpreter& vm, std::uint32_t mover)
 	{
+		profiler::scope timed(profiler::zone::actor_floor);
+		profiler::add(profiler::counter::collision_gathers);
 		live_memory& m = vm.memory();
 		std::vector<collision_triangle> out;
 		auto word = [&](std::uint32_t at) { return at && m.contains(at, 4) ? m.u32(at) : 0u; };

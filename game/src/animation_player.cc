@@ -1,4 +1,5 @@
 #include <openrayman/game/animation_player.h>
+#include <openrayman/game/profiler.h>
 #include <openrayman/animation.h>
 #include <openrayman/error.h>
 
@@ -452,6 +453,7 @@ namespace openrayman::game
 
 	void step(interpreter& vm, std::span<const std::uint32_t> super_objects, const step_error& on_error)
 	{
+		profiler::add(profiler::counter::ticks);
 		vm.next_tick();
 		live_memory& m = vm.memory();
 		// Cameras (actors with a camera object, actor +0x10) think after everyone else, so what
@@ -462,6 +464,8 @@ namespace openrayman::game
 			return actor && m.contains(actor + 0x10, 4) && m.u32(actor + 0x10) != 0;
 		};
 		auto think = [&](std::uint32_t self) {
+			profiler::scope timed(profiler::zone::brains);
+			profiler::add(profiler::counter::actors);
 			if(!on_error)
 			{
 				vm.think(self);
@@ -524,6 +528,7 @@ namespace openrayman::game
 					}
 					return std::array<float, 3>{ world.m[0][3], world.m[1][3], world.m[2][3] };
 				};
+				profiler::scope timed(profiler::zone::animation);
 				std::uint32_t state_before = m.u32(data + data_3d::current_state);
 				int before = m.read<std::uint16_t>(data + data_3d::frame);
 				play_animation(m, data, vm.frame_ms(), part_at, actor, [&](std::uint32_t event) { vm.play_sound(event, self, 0, vm.ground_sound_type(self)); });
@@ -535,9 +540,15 @@ namespace openrayman::game
 				// The game camera is moved by its own mechanics (0x4359D0), not the actors' physics.
 				camera_state& camera = vm.camera_motion();
 				if(camera.valid && self == camera.super_object)
+				{
+					profiler::scope timed(profiler::zone::camera);
 					move_camera(m, self, camera, vm.frame_ms(), vm.world());
+				}
 				else
+				{
+					profiler::scope timed(profiler::zone::mechanics);
 					move_actor(m, self, actor, vm.frame_ms(), vm.world(), &vm);
+				}
 			}
 		};
 		for(std::uint32_t self : super_objects)
@@ -584,6 +595,7 @@ namespace openrayman::game
 				vm.generated().release(self);
 			}
 		}
+		profiler::scope timed(profiler::zone::particles);
 		vm.particles().update(vm.clock() / 1000.0, vm.frame_ms() / 1000.0);
 	}
 }

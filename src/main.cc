@@ -22,6 +22,7 @@
 #include <openrayman/game/interpreter.h>
 #include <openrayman/game/input.h>
 #include <openrayman/game/live_memory.h>
+#include <openrayman/game/profiler.h>
 #include <openrayman/game/sound_slots.h>
 #include <openrayman/animation.h>
 #include <openrayman/brain.h>
@@ -37,6 +38,7 @@
 #include <openrayman/scene.h>
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cctype>
 #include <cmath>
@@ -106,6 +108,26 @@ namespace
 		GLuint text_program = 0;
 		GLuint vao = 0;
 		GLint u_rect = -1;
+
+		// Vsync (--vsync, F9): on waits for the monitor but shows a late frame at once instead of a
+		// whole refresh later (adaptive, where the driver offers it; plain vsync where not), strict
+		// always waits, off never does. --fps-limit caps the frame rate (0: no cap); with adaptive sync
+		// monitors a cap a little under the refresh rate keeps the monitor following every frame.
+		enum class vsync_mode { on, strict, off };
+		vsync_mode vsync = vsync_mode::on;
+		int fps_limit = 0;
+		Uint64 next_frame_ns = 0;
+		// The profiler (game/profiler.h): F8 shows its last report, drawn into a texture,
+		// OPENRAYMAN_PROFILE=<file.csv> logs one row a second. The GPU's time comes from timer
+		// queries (desktop OpenGL only), read a few frames later so asking never stalls.
+		bool show_profile = false;
+		std::ofstream profile_log;
+		GLuint profile_texture = 0;
+		int profile_width = 0, profile_height = 0;
+		std::array<GLuint, 4> gpu_queries{};
+		int gpu_query_next = 0, gpu_queries_pending = 0;
+		bool gpu_timing = false;
+		Uint64 frame_started_ns = 0;
 
 		std::optional<game_data> game;
 		std::vector<std::unique_ptr<cnt_archive>> archives;
@@ -231,6 +253,155 @@ namespace
 	{
 		SDL_Log("%s", message.c_str());
 		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "OpenRayman", message.c_str(), a.window);
+	}
+
+	const char* vsync_name(app::vsync_mode mode)
+	{
+		return mode == app::vsync_mode::on ? "on" : mode == app::vsync_mode::strict ? "strict" : "off";
+	}
+
+	// Swap interval -1 is adaptive vsync; drivers without it refuse, and plain vsync stands in.
+	void apply_vsync(app& a)
+	{
+		bool set = a.vsync == app::vsync_mode::on && SDL_GL_SetSwapInterval(-1);
+		if(!set)
+			SDL_GL_SetSwapInterval(a.vsync == app::vsync_mode::off ? 0 : 1);
+		int interval = 0;
+		SDL_GL_GetSwapInterval(&interval);
+		SDL_Log("Vsync %s (swap interval %d%s)", vsync_name(a.vsync), interval,
+			a.vsync == app::vsync_mode::on && interval == 1 ? ", the driver has no adaptive vsync" : "");
+	}
+
+	// The GPU's time for the level: start a timer query on a free slot, after collecting the ones
+	// that have finished.
+	void begin_gpu_timer(app& a)
+	{
+		if(!game::profiler::enabled() || a.api != gl::api::desktop_gl33)
+			return;
+		if(!a.gpu_queries[0])
+			glGenQueries(GLsizei(a.gpu_queries.size()), a.gpu_queries.data());
+		const int slots = int(a.gpu_queries.size());
+		while(a.gpu_queries_pending > 0)
+		{
+			GLuint query = a.gpu_queries[std::size_t((a.gpu_query_next - a.gpu_queries_pending + slots) % slots)];
+			GLint ready = 0;
+			glGetQueryObjectiv(query, GL_QUERY_RESULT_AVAILABLE, &ready);
+			if(!ready)
+				break;
+			GLuint64 ns = 0;
+			glGetQueryObjectui64v(query, GL_QUERY_RESULT, &ns);
+			game::profiler::add(game::profiler::zone::gpu, std::chrono::nanoseconds(ns));
+			a.gpu_queries_pending--;
+		}
+		if(a.gpu_queries_pending == slots)
+			return; // all still running: this frame goes untimed
+		glBeginQuery(GL_TIME_ELAPSED, a.gpu_queries[std::size_t(a.gpu_query_next)]);
+		a.gpu_timing = true;
+	}
+
+	void end_gpu_timer(app& a)
+	{
+		if(!a.gpu_timing)
+			return;
+		glEndQuery(GL_TIME_ELAPSED);
+		a.gpu_query_next = (a.gpu_query_next + 1) % int(a.gpu_queries.size());
+		a.gpu_queries_pending++;
+		a.gpu_timing = false;
+	}
+
+	// A profiler report as lines of text: the frame, each zone's average and worst frame in
+	// milliseconds, then the counters per frame.
+	std::vector<std::string> profile_lines(const app& a, const game::profiler::report& r)
+	{
+		using game::profiler::zone;
+		using game::profiler::counter;
+		auto at = [&](zone z) { return std::size_t(z); };
+		std::vector<std::string> lines;
+		lines.push_back(std::format("{:.0f} fps  {:.2f} ms  worst {:.2f}", r.frames / r.seconds, r.average_ms[at(zone::frame)], r.worst_ms[at(zone::frame)]));
+		lines.push_back(std::format("vsync {}  cap {}", vsync_name(a.vsync), a.fps_limit ? std::to_string(a.fps_limit) : "off"));
+		lines.push_back("");
+		lines.push_back("              avg   worst");
+		for(std::size_t i = 1; i < std::size_t(zone::count); i++)
+		{
+			zone z = zone(i);
+			// Parts of the scripts' ticks are indented under them.
+			bool part = z >= zone::brains && z <= zone::particles;
+			std::string label = (part ? (z == zone::actor_floor ? "    " : "  ") : "") + std::string(game::profiler::name(z));
+			lines.push_back(std::format("{:<12}{:>6.2f}{:>8.2f}", label, r.average_ms[i], r.worst_ms[i]));
+		}
+		lines.push_back("");
+		for(std::size_t i = 0; i < std::size_t(counter::count); i++)
+			lines.push_back(std::format("{:<18}{:>8.1f}", game::profiler::name(counter(i)), r.per_frame[i]));
+		return lines;
+	}
+
+	// The report as a texture, 8-pixel glyphs on a dark backing, drawn each frame until the next.
+	void update_profile_texture(app& a, const std::vector<std::string>& lines)
+	{
+		std::size_t longest = 0;
+		for(const std::string& line : lines)
+			longest = std::max(longest, line.size());
+		const int w = int(longest) * 8 + 8, h = int(lines.size()) * 10 + 6;
+		SDL_Surface* surface = SDL_CreateSurface(w, h, SDL_PIXELFORMAT_ABGR8888);
+		SDL_Renderer* text = surface ? SDL_CreateSoftwareRenderer(surface) : nullptr;
+		if(text)
+		{
+			SDL_SetRenderDrawColor(text, 0, 0, 0, 170);
+			SDL_RenderClear(text);
+			SDL_SetRenderDrawColor(text, 230, 230, 230, 255);
+			for(std::size_t i = 0; i < lines.size(); i++)
+				SDL_RenderDebugText(text, 4, 4 + float(i) * 10, lines[i].c_str());
+			SDL_RenderPresent(text);
+			if(a.profile_texture)
+				glDeleteTextures(1, &a.profile_texture);
+			a.profile_texture = gl::create_texture(std::uint32_t(w), std::uint32_t(h),
+				std::span(static_cast<const std::uint8_t*>(surface->pixels), std::size_t(w) * std::size_t(h) * 4));
+			a.profile_width = w;
+			a.profile_height = h;
+			SDL_DestroyRenderer(text);
+		}
+		if(surface)
+			SDL_DestroySurface(surface);
+	}
+
+	void draw_profile(app& a, int w, int h)
+	{
+		if(!a.show_profile || !a.profile_texture || w <= 0 || h <= 0)
+			return;
+		// Whole pixels, twice the size on big windows; top left.
+		const float scale = h >= 1000 ? 2.0f : 1.0f;
+		const float right = -1 + 2 * a.profile_width * scale / w, bottom = 1 - 2 * a.profile_height * scale / h;
+		glDisable(GL_DEPTH_TEST);
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glUseProgram(a.text_program);
+		glUniform4f(glGetUniformLocation(a.text_program, "u_rect"), -1, bottom, right, 1);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, a.profile_texture);
+		glBindVertexArray(a.vao);
+		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	}
+
+	// Once a second: the overlay's text and the log's row.
+	void take_profile(app& a)
+	{
+		auto report = game::profiler::take_report();
+		if(!report)
+			return;
+		if(a.show_profile)
+			update_profile_texture(a, profile_lines(a, *report));
+		if(a.profile_log)
+		{
+			using game::profiler::zone;
+			using game::profiler::counter;
+			a.profile_log << std::format("{:.3f},{},{}", report->seconds, report->frames, vsync_name(a.vsync));
+			for(std::size_t i = 0; i < std::size_t(zone::count); i++)
+				a.profile_log << std::format(",{:.3f},{:.3f}", report->average_ms[i], report->worst_ms[i]);
+			for(std::size_t i = 0; i < std::size_t(counter::count); i++)
+				a.profile_log << std::format(",{:.1f}", report->per_frame[i]);
+			a.profile_log << "\n";
+			a.profile_log.flush();
+		}
 	}
 
 	std::string format_time(double seconds)
@@ -1330,9 +1501,17 @@ namespace
 			glm::mat4 projection = a.playing && a.live && a.camera_super_object
 				? glm::perspective(0.9f, aspect, 0.1f, 2000.0f) : a.camera.projection(aspect);
 			glm::mat4 view = glm::lookAt(eye, eye + forward, up);
-			a.level->draw(view, projection);
+			{
+				game::profiler::scope timed(game::profiler::zone::draw);
+				begin_gpu_timer(a);
+				a.level->draw(view, projection);
+				end_gpu_timer(a);
+			}
 			if(a.scripts)
+			{
+				game::profiler::scope timed(game::profiler::zone::visibility);
 				update_visibility(a, projection * view);
+			}
 			if(a.vm)
 			{
 				auto dialogs = game::visible_dialogs(*a.vm);
@@ -1420,6 +1599,8 @@ namespace
 			SDL_DestroySurface(surface);
 		}
 
+		draw_profile(a, w, h);
+		game::profiler::scope timed(game::profiler::zone::swap);
 		SDL_GL_SwapWindow(a.window);
 	}
 
@@ -1460,7 +1641,6 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 				+ std::string(SDL_GetError())).c_str(), nullptr);
 		return SDL_APP_FAILURE;
 	}
-	SDL_GL_SetSwapInterval(1);
 	SDL_Log("OpenGL: %s / %s", glGetString(GL_VERSION), glGetString(GL_RENDERER));
 
 	try
@@ -1505,6 +1685,13 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 			else
 				a->camera_log << "tick,player_x,player_y,player_z,camera_x,camera_y,camera_z,distance,speed\n";
 		}
+		else if(arg == "--vsync") // on (default: adaptive where offered), strict or off; F9 cycles
+		{
+			std::string mode = argv[n + 1];
+			a->vsync = mode == "off" ? app::vsync_mode::off : mode == "strict" ? app::vsync_mode::strict : app::vsync_mode::on;
+		}
+		else if(arg == "--fps-limit") // frames per second, 0 for none
+			a->fps_limit = std::max(0, int(std::strtol(argv[n + 1], nullptr, 10)));
 		else if(arg == "--screenshot")
 			a->screenshot = fs::path(reinterpret_cast<const char8_t*>(argv[n + 1]));
 		else if(arg == "--texture")
@@ -1589,6 +1776,28 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 			}
 		}
 	}
+	apply_vsync(*a);
+	if(const char* log = std::getenv("OPENRAYMAN_PROFILE"))
+	{
+		a->profile_log.open(fs::path(reinterpret_cast<const char8_t*>(log)));
+		if(!a->profile_log)
+			SDL_Log("Could not open the profile log: %s", log);
+		else
+		{
+			using game::profiler::zone;
+			using game::profiler::counter;
+			a->profile_log << "seconds,frames,vsync";
+			for(std::size_t i = 0; i < std::size_t(zone::count); i++)
+			{
+				std::string z(game::profiler::name(zone(i)));
+				a->profile_log << "," << z << " ms," << z << " worst ms";
+			}
+			for(std::size_t i = 0; i < std::size_t(counter::count); i++)
+				a->profile_log << "," << game::profiler::name(counter(i)) << " per frame";
+			a->profile_log << "\n";
+			game::profiler::set_enabled(true);
+		}
+	}
 	if(!folder)
 		folder = load_saved_folder();
 
@@ -1626,6 +1835,20 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 			break;
 
 		case SDL_EVENT_KEY_DOWN:
+			if(event->key.key == SDLK_F8 && !event->key.repeat)
+			{
+				a.show_profile = !a.show_profile;
+				game::profiler::set_enabled(a.show_profile || a.profile_log.is_open());
+				if(a.show_profile)
+					update_profile_texture(a, { "profiling..." });
+				return SDL_APP_CONTINUE;
+			}
+			if(event->key.key == SDLK_F9 && !event->key.repeat)
+			{
+				a.vsync = a.vsync == app::vsync_mode::on ? app::vsync_mode::strict : a.vsync == app::vsync_mode::strict ? app::vsync_mode::off : app::vsync_mode::on;
+				apply_vsync(a);
+				return SDL_APP_CONTINUE;
+			}
 			if(a.mode == app::view::level && event->key.key == SDLK_TAB && !event->key.repeat)
 			{
 				a.playing = !a.playing && a.input;
@@ -1773,8 +1996,16 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 	if(picked)
 		open_game(a, *picked);
 
-	Uint64 now = SDL_GetTicks();
-	float dt = a.last_frame ? std::min((now - a.last_frame) / 1000.0f, 0.1f) : 0.0f;
+	// Frame times in nanoseconds: at 280 fps a frame is 3.6 ms, which whole milliseconds would
+	// round to 3 or 4 and make the camera and animations step unevenly.
+	const Uint64 now_ns = SDL_GetTicksNS();
+	if(a.frame_started_ns)
+		game::profiler::add(game::profiler::zone::frame, std::chrono::nanoseconds(now_ns - a.frame_started_ns));
+	a.frame_started_ns = now_ns;
+	game::profiler::end_frame();
+	take_profile(a);
+	Uint64 now = now_ns / 1000000;
+	float dt = a.last_frame ? std::min(float(now_ns - a.last_frame) / 1e9f, 0.1f) : 0.0f;
 	// OPENRAYMAN_FRAMES=1 logs the average frame time every two seconds (performance checks).
 	static const bool log_frames = std::getenv("OPENRAYMAN_FRAMES") != nullptr;
 	static Uint64 frames_since = now;
@@ -1785,7 +2016,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 		frames_since = now;
 		frames = 0;
 	}
-	a.last_frame = now;
+	a.last_frame = now_ns;
 	if(a.mode == app::view::level)
 	{
 		// WASD to move, Space/E up, Ctrl/Q down, Shift for faster.
@@ -1804,8 +2035,10 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 		if(a.animating && !a.screenshot)
 		{
 			a.animation_time += dt;
+			game::profiler::scope timed(game::profiler::zone::scripts);
 			run_scripts(a, dt);
 		}
+		game::profiler::scope timed(game::profiler::zone::posing);
 		update_actors(a);
 	}
 
@@ -1817,6 +2050,18 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 	}
 
 	draw(a);
+	// The frame-rate cap: wait out the rest of this frame's share. Falling more than a frame
+	// behind starts the count again rather than hurrying to catch up.
+	if(a.fps_limit > 0 && !a.screenshot)
+	{
+		const Uint64 period = 1000000000ull / Uint64(a.fps_limit), after = SDL_GetTicksNS();
+		a.next_frame_ns = a.next_frame_ns && after < a.next_frame_ns + period ? a.next_frame_ns + period : after;
+		if(after < a.next_frame_ns)
+		{
+			game::profiler::scope timed(game::profiler::zone::limiter);
+			SDL_DelayPrecise(a.next_frame_ns - after);
+		}
+	}
 	return a.screenshot ? SDL_APP_SUCCESS : SDL_APP_CONTINUE;
 }
 

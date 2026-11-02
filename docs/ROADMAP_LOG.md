@@ -3,6 +3,25 @@
 The dated investigation notes from `ROADMAP.md`, kept here so the roadmap stays short. Newest
 first. The format docs under `formats/` are the permanent home of the findings themselves.
 
+## 2026-11-02 (afternoon): standing on actors, and a profiler
+
+- Rayman stands on actors (GPT-6.1 Sol's job, reviewed): the Learn_10 trapdoor (node 66) holds
+  him at Z -10.824 as in the recorded game and slides away once the Lum is collected; moving
+  supports carry their riders. It cost frame rate (user: 160 fps to 80-100 in the debug build):
+  every colliding actor re-posed every actor each tick. Cached and limited to the few actors with
+  surfaces, it is back to its old cost (user: 130 fps in the same place).
+- The user found the release build far smoother (about 275 fps, held at the monitor's 280 Hz by
+  vsync). A profiler now shows where frames go (F8, `OPENRAYMAN_PROFILE=<file.csv>`), and vsync
+  is a setting (F9, `--vsync on|strict|off`, "on" adaptive where the driver allows) with an
+  optional cap (`--fps-limit`). Frame times are measured in nanoseconds now: whole milliseconds
+  made each frame 3 or 4 ms at 280 fps, an uneven step.
+- First numbers, Learn_10 start, vsync off, release: about 550 fps (1.8 ms a frame). Drawing on
+  the CPU takes 1.1 ms for about 960 draw calls of only 6,500 triangles; the GPU needs 0.35 ms;
+  the scripts 0.2 ms on average but up to 6 ms in one frame a second. In the debug build the
+  scripts take 12 of 18 ms.
+- The condor's bobbing is parked (user: fine as it is); the first-visit checks are closed: node 71's
+  short walk is right, and the condor stays on every visit in the game too.
+
 ## 2026-11-02 (midday): the sound mix, and what the user confirmed
 
 - Confirmed in play by the user: shot homing; the Globox kids' theme; the big-nosed flier falls

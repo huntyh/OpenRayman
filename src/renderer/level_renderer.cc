@@ -1,4 +1,5 @@
 #include <renderer/level_renderer.h>
+#include <openrayman/game/profiler.h>
 
 #include <openrayman/gf_texture.h>
 
@@ -17,6 +18,14 @@ namespace openrayman
 {
 	namespace
 	{
+		// Every draw goes through here, so the profiler can count calls and triangles.
+		void draw_triangles(GLint first, GLsizei vertices)
+		{
+			glDrawArrays(GL_TRIANGLES, first, vertices);
+			game::profiler::add(game::profiler::counter::draw_calls);
+			game::profiler::add(game::profiler::counter::triangles, std::uint64_t(vertices / 3));
+		}
+
 		const char* vertex_shader = R"(
 			layout(location = 0) in vec3 a_position;
 			layout(location = 1) in vec2 a_uv;
@@ -949,7 +958,7 @@ namespace openrayman
 				glBindVertexArray(m_vao);
 				glBindTexture(GL_TEXTURE_2D, texture_at(b.animation, b.texture));
 				glUniform2f(m_u_uv_offset, float(std::fmod(double(b.scroll.x) * m_time, 4.0)), float(std::fmod(double(b.scroll.y) * m_time, 4.0)));
-				glDrawArrays(GL_TRIANGLES, b.first, b.count);
+				draw_triangles(b.first, b.count);
 				glEnable(GL_DEPTH_TEST);
 				glDepthMask(GL_TRUE);
 				glUniform4fv(m_u_fog, 1, glm::value_ptr(fog_was));
@@ -986,7 +995,7 @@ namespace openrayman
 				glUniform2f(m_u_uv_offset, offset.x, offset.y);
 				glUniform4fv(m_u_material_ambient, 1, glm::value_ptr(b.ambient));
 				glUniform4fv(m_u_material_diffuse, 1, glm::value_ptr(b.diffuse));
-				glDrawArrays(GL_TRIANGLES, b.first, b.count);
+				draw_triangles(b.first, b.count);
 			}
 		};
 		// Solid surfaces first, the level's and the actors'.
@@ -1080,7 +1089,7 @@ namespace openrayman
 				glBindBuffer(GL_ARRAY_BUFFER, m_sprite_vbo);
 				glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(quads.size() * sizeof(vertex)), quads.data(), GL_STREAM_DRAW);
 				glBindTexture(GL_TEXTURE_2D, m_shadow_texture);
-				glDrawArrays(GL_TRIANGLES, 0, GLsizei(quads.size()));
+				draw_triangles(0, GLsizei(quads.size()));
 				glDisable(GL_POLYGON_OFFSET_FILL);
 				glUniform1f(m_u_edge_clamp, m_edge_clamp ? 1.0f : 0.0f);
 				glBindVertexArray(m_vao);
@@ -1206,7 +1215,7 @@ namespace openrayman
 				else
 					glUniform4fv(m_u_fog, 1, glm::value_ptr(fog_was));
 				glBindTexture(GL_TEXTURE_2D, sprites[first].texture);
-				glDrawArrays(GL_TRIANGLES, GLint(first * 6), GLsizei((last - first) * 6));
+				draw_triangles(GLint(first * 6), GLsizei((last - first) * 6));
 				first = last;
 			}
 			glUniform4fv(m_u_fog, 1, glm::value_ptr(fog_was));
@@ -1255,7 +1264,7 @@ namespace openrayman
 				glUniform4fv(m_u_material_diffuse, 1, glm::value_ptr(tint));
 				const float age = farthest_first[i]->age;
 				glBindTexture(GL_TEXTURE_2D, age >= 0 ? texture_once(m.animation, m.texture, age) : texture_at(m.animation, m.texture));
-				glDrawArrays(GL_TRIANGLES, GLint(i * 6), 6);
+				draw_triangles(GLint(i * 6), 6);
 			}
 		}
 
@@ -1285,7 +1294,7 @@ namespace openrayman
 			glDepthMask(GL_FALSE);
 			glEnable(GL_POLYGON_OFFSET_FILL);
 			glPolygonOffset(-1, -2);
-			glDrawArrays(GL_TRIANGLES, 0, GLsizei(faces.size()));
+			draw_triangles(0, GLsizei(faces.size()));
 			glDisable(GL_POLYGON_OFFSET_FILL);
 			glDepthMask(GL_TRUE);
 		}

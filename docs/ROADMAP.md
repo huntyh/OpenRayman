@@ -120,6 +120,9 @@ Dated details of everything above, and the user's look-by-look feedback, are in
    at the arguing Teensies and spreads his hands, that animation loops instead of playing once.
    His pupils still show a little when he closes his eyes.
 7. **Other machines**: the user will try a Linux laptop with a Fermi-era Quadro 2000M.
+8. **Performance**, measured with the profiler (F8): about 960 draw calls a frame for 6,500
+   triangles (fine on a desktop, too many for phones: batch them), and a script spike of up to
+   6 ms once a second (a source of stutter: find the actor).
 
 **Later in Phase 3 / Phase 4**
 

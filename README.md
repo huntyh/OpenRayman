@@ -140,6 +140,15 @@ Anywhere: M / N for the next / previous music track, Space to pause it (in the t
 O to choose a different game folder, F11 for fullscreen, Esc to quit. The window title shows where
 you are.
 
+Performance: F8 shows where each frame's time goes (scripts, movement, drawing, the GPU, waiting
+for the monitor) and how many draw calls and triangles it took, updated every second;
+`OPENRAYMAN_PROFILE=<file.csv>` logs the same once a second. F9 cycles vsync: on (waits for the
+monitor, but shows a late frame at once instead of a whole refresh later, where the driver
+supports it), strict (always waits) and off. `--vsync on|strict|off` and `--fps-limit <n>` set
+them at start; with an adaptive-sync (FreeSync, G-Sync) monitor, a cap a few frames under the
+refresh rate is the smoothest. Use the release build (`.\build.ps1 -Release`) for judging speed:
+the debug build is several times slower.
+
 ### ortool
 
 `ortool` is a command line tool for checking the game data:
