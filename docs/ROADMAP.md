@@ -115,7 +115,7 @@ Dated details of everything above, and the user's look-by-look feedback, are in
    Rayman's health bar is missing from the HUD (user, 2026-11-02). Node 44 draws it with particle
    kind 120 (0x4648B0 → 0x460530, slots at 0x4E0F20, drawn by 0x460670/0x429670): a bar at
    12..12 + 0.46 × max hit points by 8.5..11.5 percent of the screen, filled to the percent of
-   hit points, texture `jauge_in_horizont`; we don't handle kind 120 yet (DeepSeek, 2026-11-02).
+   hit points, texture `jauge_in_horizont`. Kinds 50 and 120 are in now (2026-11-02), to check by eye.
    Cutscenes: the game narrows the picture with black bars, taller at the bottom than at the
    top, and the subtitles are made to sit on them. Do the bars as the game does, on by default;
    later an option to turn them off, which then puts a darker backing behind the text (user,
@@ -127,7 +127,7 @@ Dated details of everything above, and the user's look-by-look feedback, are in
    The first cage: breaking it makes a golden starry burst and its Lum appears at once; ours has
    no burst and the Lum shows up with a delay, before Rayman is walked to Murfy's spot. The burst
    is node 67's break rule: particle kinds 5 (smoke puffs), 9 (flash, ours has it) and three
-   kind 45 calls (nine golden sparks each). The game's Lum also waits 500 ms (node 69 waits after
+   kind 45 calls (nine golden sparks each), all in now (2026-11-02), to check by eye. The game's Lum also waits 500 ms (node 69 waits after
    bit 840), hidden behind the burst (DeepSeek's reading, 2026-11-02).
    Font wishes for later: fixing the original's text that runs off the screen (the "Yahoo!" for
    all Lums, the menu's overwrite-save message).

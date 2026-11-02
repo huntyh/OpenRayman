@@ -60,8 +60,8 @@ as those arrive:
   viewer down; segment casts try only the triangles in the collision grid cells under the segment.
 - Input: the keyboard only (no gamepad yet), and cheat codes (typed key sequences) don't fire.
   Tab switches the keyboard between the viewer's fly camera and the game.
-- Some particle effects are not read yet (e.g. kinds 5 and 45, the golden burst of a breaking
-  cage); an unknown kind is started but does nothing (docs/formats/particles.md).
+- Some particle effects are not read yet (the kinds the exe's table names but we haven't traced);
+  an unknown kind is started but does nothing (docs/formats/particles.md).
 - Messages to the engine and the scripts' fog override (procedures 42..47) are read but have no
   effect yet.
 - Physics is partial (docs/formats/dynamics.md): an actor is a small disc that finds the floor

@@ -44,6 +44,25 @@ namespace openrayman::game
 			}
 			return;
 		}
+		if(kind == 50)
+		{
+			// 0x463390 case 0x32: keeps the point, vector and number for other effects and makes
+			// the material the track of the bars that follow (0x4B9ADC).
+			m_bar_track = material;
+			return;
+		}
+		if(kind == 120)
+		{
+			// 0x4648B0 -> 0x460530: gauge slot `number` (eight of them): corners from the point and
+			// vector's x and y, the fill percent from point.z, the opacity from vector.z.
+			int slot = int(number);
+			if(slot >= 0 && slot < 8)
+			{
+				std::erase_if(m_screen_bars, [slot](const screen_bar& bar) { return bar.slot == slot; });
+				m_screen_bars.push_back({point, vector, point[2], int(vector[2]), material, m_bar_track, slot});
+			}
+			return;
+		}
 		if(kind == 110)
 		{
 			// 0x4648B0 makes type 0x11; 0x460A10 / 0x429820 draw a black
@@ -109,6 +128,41 @@ namespace openrayman::game
 			{
 				vec3 v = { random(-2, 2), random(-2, 2), random(-0.2f, 6.0f) };
 				add(0x3001, point, v, number, random(0.19f, 0.35f), material, now);
+			}
+			return;
+		}
+		if(kind == 5)
+		{
+			// 0x461B10: four smoke puffs 0.6 above the point, each from its own offset and drifting
+			// its own way (type 3), growing at 1.3 and fading at 100 a second (0x1103). A breaking
+			// cage makes one. Each also gets a random 0.7..2 at +0x38 that only the draw reads (not
+			// used here).
+			struct puff { vec3 offset, motion; float size, height; };
+			static constexpr puff puffs[] = {
+				{ { 0, 0.5f, 1.4f }, { 1.0f, 0.56f, -0.53f }, 0.8f, 0.8f },
+				{ { 0, -0.5f, 2.1f }, { -0.5f, -0.98f, 0.23f }, 0.5f, 0.6f },
+				{ { 0, 0.5f, 0.1f }, { 0.5f, 0.16f, 0.13f }, 0.3f, 0.3f },
+				{ { 0, -0.5f, 0.6f }, { 1.0f, -0.29f, -0.63f }, 1.0f, 1.0f },
+			};
+			for(const puff& f : puffs)
+			{
+				std::size_t before = m_particles.size();
+				add(0x1103, { point[0] + f.offset[0], point[1] + f.offset[1], point[2] + f.offset[2] }, f.motion, number, f.size, material, now);
+				if(m_particles.size() > before)
+					m_particles.back().height = f.height;
+			}
+			return;
+		}
+		if(kind == 45)
+		{
+			// 0x463390 case 0x2D: nine sparks from the point that fall (type 1), shrink at 0.5 and
+			// fade at 160 a second (0x2501), living `number` seconds; each flies up to 2 × number a
+			// second sideways and -0.2 to 6 × number up, 0.16 to 0.8 × number big. A breaking cage
+			// makes three, one per sparkle material: its golden burst.
+			for(int i = 0; i < 9; i++)
+			{
+				vec3 v = { random(-2 * number, 2 * number), random(-2 * number, 2 * number), random(-0.2f * number, 6 * number) };
+				add(0x2501, point, v, number, random(0.16f * number, 0.8f * number), material, now);
 			}
 			return;
 		}
@@ -217,6 +271,35 @@ namespace openrayman::game
 		p.since = p.born = now;
 		p.animation = m_animation_length ? m_animation_length(material) : 0.0f;
 		m_particles.push_back(p);
+	}
+
+	std::vector<particles::screen_image> particles::screen_bar_images() const
+	{
+		std::vector<screen_image> out;
+		for(const screen_bar& bar : m_screen_bars)
+		{
+			if(bar.alpha <= 0)
+				continue;
+			float x0 = bar.first[0], y0 = bar.first[1], x1 = bar.second[0], y1 = bar.second[1];
+			float a = float(bar.alpha);
+			auto image = [&](float ax, float ay, float bx, float by, std::uint32_t material) {
+				if(material) out.push_back({ vec3{ ax, ay, 0 }, vec3{ bx, by, a }, material, bar.slot, 0 });
+			};
+			if(x1 - x0 <= y1 - y0)
+			{
+				// Taller than wide: fills up from the bottom.
+				float top = y1 - (y1 - y0) * bar.fill * 0.01f;
+				image(x0, top, x1, y1, bar.material);
+				if(bar.fill < 100) image(x0, y0, x1, top, bar.track);
+			}
+			else
+			{
+				float right = x0 + (x1 - x0) * bar.fill * 0.01f;
+				image(x0, y0, right, y1, bar.material);
+				if(bar.fill < 100) image(right, y0, x1, y1, bar.track);
+			}
+		}
+		return out;
 	}
 
 	void particles::step(particle& p, double now, float dt)

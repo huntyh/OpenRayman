@@ -1553,7 +1553,9 @@ namespace
 								dialogs.push_back(std::move(text));
 							}
 				const auto& boxes = a.vm->particles().screen_rectangles();
-				const auto& images = a.vm->particles().screen_images();
+				// The gauges (kind 120) are painted before the images (0x460670, then 0x460600).
+				std::vector<game::particles::screen_image> images = a.vm->particles().screen_bar_images();
+				images.insert(images.end(), a.vm->particles().screen_images().begin(), a.vm->particles().screen_images().end());
 				if(!dialogs.empty() || !boxes.empty() || !images.empty())
 					a.dialog_overlay->draw(dialogs, boxes, images, projection * view, projection, w, h, a.animation_time);
 			}

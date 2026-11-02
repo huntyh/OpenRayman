@@ -2,6 +2,8 @@
 
 #include <doctest/doctest.h>
 
+#include <cmath>
+
 using openrayman::game::particles;
 
 TEST_CASE("particles: screen rectangle lasts one tick and keeps its coordinates and opacity")
@@ -32,6 +34,48 @@ TEST_CASE("particles: screen images use the script slot and opacity")
 	CHECK(p.screen_images().empty());
 }
 
+
+TEST_CASE("particles: a gauge fills from its left with kind 50's track behind the rest")
+{
+	// Node 44's health bar: track material from kind 50, then the bar in slot 0, 60 percent full.
+	particles p;
+	p.start(50, {0, 0, 0}, {0, 0, 0}, 0xAAAA, 0, 1);
+	p.start(120, {12, 8.5f, 60}, {16.6f, 11.5f, 200}, 0xBBBB, 0, 1);
+	auto images = p.screen_bar_images();
+	REQUIRE(images.size() == 2);
+	CHECK(images[0].material == 0xBBBB);
+	CHECK(images[0].first[0] == doctest::Approx(12));
+	CHECK(images[0].second[0] == doctest::Approx(12 + 4.6f * 0.6f));
+	CHECK(images[0].second[2] == doctest::Approx(200));
+	CHECK(images[1].material == 0xAAAA);
+	CHECK(images[1].second[0] == doctest::Approx(16.6f));
+	// Full: no track; the same slot replaces the bar; opacity 0 hides it.
+	p.start(120, {12, 8.5f, 100}, {16.6f, 11.5f, 200}, 0xBBBB, 0, 1);
+	CHECK(p.screen_bar_images().size() == 1);
+	p.start(120, {12, 8.5f, 100}, {16.6f, 11.5f, 0}, 0xBBBB, 0, 1);
+	CHECK(p.screen_bar_images().empty());
+}
+
+TEST_CASE("particles: a breaking cage's golden sparks and smoke")
+{
+	particles p;
+	p.start(45, {0, 0, 0}, {0, 0, 0}, 0x1234, 2, 1);
+	REQUIRE(p.all().size() == 9);
+	for(const auto& spark : p.all())
+	{
+		CHECK(spark.flags == 0x2501);
+		CHECK(std::abs(spark.motion[0]) <= 4);
+		CHECK(spark.motion[2] >= -0.4f);
+		CHECK(spark.motion[2] <= 12);
+		CHECK(spark.size >= 0.32f);
+		CHECK(spark.size <= 1.6f);
+	}
+	p.start(5, {0, 0, 0}, {0, 0, 0}, 0x1234, 1, 1);
+	REQUIRE(p.all().size() == 13);
+	CHECK(p.all()[9].flags == 0x1103);
+	CHECK(p.all()[9].position[2] == doctest::Approx(1.4f));
+	CHECK(p.all()[10].height == doctest::Approx(0.6f));
+}
 
 TEST_CASE("particles: rising specks come at most every 0.05 s and fade out in about 2.2 s")
 {

@@ -39,6 +39,36 @@ axis, 0.10 to 0.15 in size, that glides into the point (each axis closes 6.5 tim
 second, snapping within 0.1) and vanishes when it gets there. Node 3 of Learn_10 calls it every 4
 frames at a waypoint.
 
+**Kind 120, gauges** (0x4648B0 → 0x460530, eight slots of 0x20 bytes at 0x4E0F20, painted by
+0x460670 through 0x429670 before the kind-125 images). Slot = the number; corners = point and
+vector x, y in screen percent; fill percent = point.z; opacity = vector.z (an integer, 0 hides).
+Wider than tall, the bar material fills from the first corner to x0 + (x1 − x0) × fill / 100;
+taller, it fills up from the bottom. Below 100 the rest is painted with the track material, the
+one the last **kind 50** named (0x463390 case 0x32 keeps it at 0x4B9ADC, with the point, vector
+and number for other effects). Learn_10's node 44 draws Rayman's health bar in slot 0 (macro 2:
+kind 50 with 05/01 +0x625E60, then kind 120 from (12, 8.5, percent) to (12 + 0.46 × maximum hit
+points, 11.5, opacity) with 05/01 +0x625FD4, `jauge_in_horizont`); the opacity rises to 200 and
+blinks while the shown value lags the real one or Rayman has under 5 hit points. Where this came
+from: a DeepSeek reading of node 44's scripts and the exe, checked by us against the decompiled
+0x460530, 0x460670 and 0x463390 and the constant 0x49CA18 (0.01).
+
+**A breaking cage's burst** (Learn_10 node 67's break rule, the same in every cage of that model):
+kinds 5, 9 and three times 45, at the cage's origin minus (0, 0, 1).
+
+- **Kind 5, smoke** (0x461B10): four puffs, flags 0x1103 (drift, grow 1.3, fade 100), 0.6 above
+  the point and offset by (0, ±0.5, 0.8 / 1.5 / −0.5 / 0); speeds (1, 0.56, −0.53),
+  (−0.5, −0.98, 0.23), (0.5, 0.16, 0.13), (1, −0.29, −0.63); sizes 0.8, 0.5 × 0.6, 0.3, 1.0.
+  Each also stores a random 0.7..2.0 at pool +0x38 that only the draw (0x460A10) reads; not used
+  by us yet.
+- **Kind 45, golden sparks** (0x463390 case 0x2D): nine sparks, flags 0x2501 (fall, shrink 0.5,
+  fade 160), each axis' speed random within ±2n sideways and −0.2n..6n up, size 0.16n..0.8n,
+  living n seconds (n = the number, 2 for the cage). The third material is the animated golden
+  sparkle, so those end with their animation.
+
+The game's Lum appears 500 ms after the cage sets bit 840 (node 69 waits, then shows node 70), so
+the burst covers that wait. Where this came from: a DeepSeek reading of the scripts and the exe,
+checked by us against the decompiled 0x461B10 and 0x463390 and the float constants in the exe.
+
 **The water effects** (Rayman's macros 36, 37 and 47). They use a flag word (pool +0): the low
 byte is the type (0 stays put, 1 falls at 7 units/s² and moves, 3 moves), bits 0xF00 how fast
 it grows (0x100 1.3, 0x200 3.7, 0x300 6.5 units a second), bits 0xF000 how fast it fades (0x1000
