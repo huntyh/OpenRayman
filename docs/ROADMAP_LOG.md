@@ -3,6 +3,26 @@
 The dated investigation notes from `ROADMAP.md`, kept here so the roadmap stays short. Newest
 first. The format docs under `formats/` are the permanent home of the findings themselves.
 
+## 2026-11-02 (midday): the sound mix, and what the user confirmed
+
+- Confirmed in play by the user: shot homing; the Globox kids' theme; the big-nosed flier falls
+  silent when it puts itself away; the 3 fps drop near the Globox kids is gone (the camera's
+  obstacle search no longer runs at a distance, segment casts use the collision grid); the
+  bridge ceiling stops Rayman. The mix "way better" after the measured levels below.
+- Lum pickups were silent: stopping every voice of a hidden actor (for the flier) also cut the
+  Lum's pickup sound, played in the frame it hides. Now only looping voices stop.
+- Themes decode on a loader thread with a segment cache: decoding under the mixer's lock stalled
+  the audio when the kids' scene asked for its theme. (A first version dropped every theme on any
+  stop event, so no music played; fixed the same hour.)
+- `tools/r2audio.py` measures the sound output (Windows loopback, every 50 ms), alone or as
+  r2record's `audio` topic. Against run5 (music only) and run6 (a run through the woods), game
+  volume options at maximum: our music was 6.4 dB too loud (now 0.48, within 0.8 dB), and
+  Rayman's take-off, landing roll, ricochet and splash peak 6-12 dB under their samples in the
+  game (effects now 0.38). Ours had peaked at -0.1 dBFS over the same route, the game at -6.9.
+- Who asks for Learn_10's themes: a sector list (the woods' theme, at the hand-over), node 45 the
+  level director (the intro's theme at level start, the Teensie theme when the last cage breaks),
+  node 39 a Globox kid (the kids' theme), node 41 (bank 239's theme 30 s later).
+
 ## 2026-11-02 (morning): shot homing, third try
 
 - GPT-6.1 Sol (task with the right shoot key, Space, and the user's test spot at the last cage)

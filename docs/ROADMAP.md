@@ -81,67 +81,48 @@ once it plays right (they have issues of their own, found on a first look).
   long-idle animations (the "basketball" one), and the game camera following him: scripts
   fill the parameter blocks, the solve and mechanics move it, Q/W turning swings round in pi/8
   steps like the exe, camera collision, and an interim obstacle search the user is happy with
-  ([formats/camera.md](formats/camera.md)). Look-by-look details in
-  [ROADMAP_LOG.md](ROADMAP_LOG.md).
-- ✅ **3d sound, format and reader**: [formats/sound.md](formats/sound.md) (validated on all
-  405 banks) and the `bnm_bank` reader in `libopenrayman` (`ortool bank` / `ortool sound`). Two
-  findings shape the implementation: an **event** is what the data names (`(bank << 16) |
-  index`), event type 1 plays its resource and **event type 2 stops** the voices an event
-  started (1472 of the 11880 level `.snd` pairs are stops); a **type-11 resource is a music
-  theme** — an ordered list of external `.apm` segments (147 in 85 banks, 1425 `.snd` pairs
-  across 58 levels), so the adaptive sequencing is not a separate format.
+  ([formats/camera.md](formats/camera.md)).
+- ✅ **3d sound**: the BNM format and reader ([formats/sound.md](formats/sound.md), all 405 banks;
+  `ortool bank` / `ortool sound`), effects and voices from the scripts and animations, and the
+  music: themes play segment by segment on the recorded game's beat, started by sectors as Rayman
+  walks in (the woods' theme at the hand-over) and by scripts (the Globox kids' scene, the Teensie
+  end scene). Music and effects sit at the game's own levels, measured from recordings of the real
+  game with `tools/r2audio.py` (user, 2026-11-02: "way better").
 - ✅ **First-visit start**: `--start new` works (user 2026-11-01): Rayman starts where the
-  intro hands him over (the intro's director, node 38, is ended at the hand-over, since the
-  intro itself is Phase 4 — `first_visit.h`), the tutorial cage hangs from its chain (it waits
-  for the game's CD check, node 82, which we answer as the GOG release does; every level's CD
-  checks, 65 actors in 25 levels, get the passing answer), Murfy appears and whispers, the
-  cage breaks, its Lum flies loops like the game's and collecting it opens the trapdoor.
-  Without `--camera` the game starts playing, seen through the game's camera.
+  intro hands him over (`first_visit.h`; the intro itself is Phase 4), the tutorial cage hangs
+  until the game's CD check passes as on the GOG release, Murfy appears and whispers, the cage
+  breaks, its Lum flies its loops and collecting it opens the trapdoor.
 
-**Open** (agreed order with the user, 2026-10-30; state 2026-11-01)
+Dated details of everything above, and the user's look-by-look feedback, are in
+[ROADMAP_LOG.md](ROADMAP_LOG.md).
 
-1. **3c leftovers.** Shot homing is in (functions 113 and 154): a shot aims at the best target in
-   front of it at launch and after each bounce; in ortool an off-centre shot at the last cage
-   hits it; the user confirmed it in play (2026-11-02). The tunnel
-   clip after the Globox kids is still open. The ceilings that let him jump through (the bridge
-   at `--camera 40.8,305.1,-8.3,5.2,14.2` and the Globox kids' cave roof at `--camera
-   -66.7,198.4,1.2,279.7,24.1`) have a fix in since 800c6c2, awaiting the user's test. The
-   slippery slope slides downhill now but its acceleration is still off (the real slide
-   accelerates about 11 u/s² down the fall line, a 2026-10-31 recording). Faint crosshair-like
-   lines are seen around Rayman from afar. Nothing lets him stand on an actor, so the
-   tutorial's closed trapdoor and every moving platform let him fall through; next: actors'
-   collision shapes as floor. The river condor snaps upwards a little on each wing flap
-   (`--camera -65.1,289.0,-18.7,-28.6,-15.6`). The first-visit start has its own open checks: the
-   condor should leave once Rayman exits the cave, and node 71 (the tutorial's stand-in) walks a bit and
-   stops. (The Globox kids cheering from the start was `--story-bits 1095`: their script picks
-   that pose for the silver shot; without it they idle, and their scene should make them cheer,
-   then cry once Rayman says Globox is missing, story bit 1092.)
-2. **Dialogs.** Function 158 runs: the string table comes from Fix, and the events match a
-   recorded playthrough, and the Globox kids' scene now plays like the game's (user,
-   2026-11-02). Left: the text is drawn with a stand-in font in the wrong place (Murfy's lands in
-   the world); next are function 158's placement and the game's own glyphs; procedure 393.
-   Font wishes for later: smooth edges, and fixing the original's text that runs off the screen
-   (the "Yahoo!" for all Lums, the menu's overwrite-save message).
-3. **Music.** Learn_10's woods theme plays (user, 2026-11-02): sectors start sounds when Rayman
-   walks in, and the hand-over moves him into the woods' sector; its segments switch on the
-   recorded game's beat ([formats/sound.md](formats/sound.md#sector-sounds)). The Globox kids'
-   scene asks for its own theme and, about 30 s later, the next one (scripts, already played;
-   awaiting the user's ears), and so is the Teensie end scene's (279:0, asked by the level director,
-   node 45, when the last cage breaks). The intro's theme comes with the intro (Phase 4). Left: the
-   transition fades, and decoding a theme without a brief audio stall when it is asked for.
-4. **The game's camera**, still to check against the game: the arrival pan. In the game the
+**Open** (agreed order with the user, 2026-10-30; state 2026-11-02)
+
+1. **Standing on actors.** Nothing lets Rayman stand on an actor, so the tutorial's closed
+   trapdoor and every moving platform let him fall through; next: actors' collision shapes as
+   floor.
+2. **3c leftovers.** The tunnel clip after the Globox kids. The river condor snaps upwards a
+   little on each wing flap (`--camera -65.1,289.0,-18.7,-28.6,-15.6`, still seen 2026-11-02). The
+   ceilings: the bridge no longer lets him through, the ears (head height 2.2) and the Globox kids'
+   cave roof (`--camera -66.7,198.4,1.2,279.7,24.1`) await the user's test. The slippery slope's
+   acceleration is off (the real slide accelerates about 11 u/s² down the fall line). Faint
+   crosshair-like lines around Rayman from afar. First-visit checks: the condor should leave once
+   Rayman exits the cave; node 71 (the tutorial's stand-in) walks a bit and stops.
+3. **Dialogs.** Function 158 runs and its events match a recorded playthrough; the text is drawn
+   with a stand-in font in the wrong place (Murfy's lands in the world). Next: function 158's
+   placement and the game's own glyphs; procedure 393. Font wishes for later: smooth edges, and
+   fixing the original's text that runs off the screen (the "Yahoo!" for all Lums, the menu's
+   overwrite-save message).
+4. **Sound leftovers.** The transition fades between themes; how loud a sound is by distance
+   (our stand-in: full within 8 units, silent at 30); where the game's DLL applies its music and
+   effect levels.
+5. **The game's camera**, still to check against the game: the arrival pan. In the game the
    player may turn the camera (Q/W) only where the level allows it, level presets often
    overrule it, and a camera icon with a red X shows when turning is refused.
-5. **The end-of-level cutscene**: breaking the last cage plays the Teensie and Rayman scene
-   through to the end (user, 2026-11-02). When Rayman shouts "Stop!" at the arguing Teensies and
-   spreads his hands, that animation loops (repeats the hand spreading) instead of playing once. Also: his pupils still
-   show a little when he closes his eyes.
-6. **Performance checks**: the 3 fps drop at `--camera -69.3,207.6,2.0,297.6,-0.4` has a fix in
-   (the camera's obstacle search no longer runs at a distance, and the segment casts use the
-   collision grid — 155 ms to 6 ms a frame); the user should confirm it runs smoothly. The
-   big-nosed flier's buzz is still louder than in the game's and goes on after it flies up and
-   vanishes; the game is silent there. The user will also try a Linux laptop with a Fermi-era
-   Quadro 2000M.
+6. **The end-of-level cutscene** plays through (user, 2026-11-02), but when Rayman shouts "Stop!"
+   at the arguing Teensies and spreads his hands, that animation loops instead of playing once.
+   His pupils still show a little when he closes his eyes.
+7. **Other machines**: the user will try a Linux laptop with a Fermi-era Quadro 2000M.
 
 **Later in Phase 3 / Phase 4**
 
