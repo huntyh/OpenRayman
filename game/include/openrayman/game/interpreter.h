@@ -226,6 +226,10 @@ namespace openrayman::game
 		generated_actors& generated() { return m_generated; }
 		const generated_actors& generated() const { return m_generated; }
 		void restore(std::uint32_t super_object) { m_removed.erase(super_object); }
+		// Puts a placed actor back as the level started it (the exe's mode-4 reset, 0x405E50 with
+		// 4): its first placement, both intelligences in their initial behaviours, the designer
+		// variables that reset at this level, and its initial state and object list.
+		void reset_actor(std::uint32_t super_object);
 		// The actor ("perso") of a super object, and back.
 		std::uint32_t actor_of(std::uint32_t super_object) const;
 		std::uint32_t super_object_of(std::uint32_t actor) const;
@@ -362,6 +366,7 @@ namespace openrayman::game
 		std::vector<std::uint32_t> m_actors;
 		std::vector<std::uint32_t> m_sectors;
 		std::set<std::uint32_t> m_removed;
+		std::map<std::uint32_t, affine> m_start_placements; // where each actor first thought
 		generated_actors m_generated;
 		std::vector<sound_request> m_sounds;
 		std::uint64_t m_ticks = 0;

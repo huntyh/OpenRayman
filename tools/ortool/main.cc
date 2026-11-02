@@ -1594,18 +1594,21 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	// ORTOOL_PLACE=x,y,z,yaw@tick puts the main actor there at that tick, facing yaw degrees (0 = +X;
 	// his -Y axis is his front), to test something far from his start, e.g. shooting at the hanging
 	// cage: ORTOOL_PLACE=-27,291.5,-7.3,0@240.
-	std::optional<std::array<float, 4>> place_at;
-	int place_tick = -1;
+	// Several placements separate with ';' (walk away and come back: ...@260;30,295,-7,0@500).
+	std::map<int, std::array<float, 4>> places;
 	if(const char* place = std::getenv("ORTOOL_PLACE"))
-	{
-		std::array<float, 4> v{};
-		if(std::sscanf(place, "%f,%f,%f,%f@%d", &v[0], &v[1], &v[2], &v[3], &place_tick) == 5)
-			place_at = v;
-	}
+		for(const char* p = place; p && *p; p = std::strchr(p, ';') ? std::strchr(p, ';') + 1 : nullptr)
+		{
+			std::array<float, 4> v{};
+			int tick = -1;
+			if(std::sscanf(p, "%f,%f,%f,%f@%d", &v[0], &v[1], &v[2], &v[3], &tick) == 5)
+				places[tick] = v;
+		}
 	for(int f = 0; f < frames; f++)
 	{
-		if(place_at && f == place_tick)
+		if(auto placed = places.find(f); placed != places.end())
 		{
+			const auto* place_at = &placed->second;
 			std::uint32_t t = memory.u32(main_actor + 0x24);
 			for(std::uint32_t k = 0; k < 3; k++)
 				memory.write<float>(t + 4 + k * 4, (*place_at)[k]);

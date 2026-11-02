@@ -634,9 +634,20 @@ namespace openrayman::game
 			std::uint32_t target = c.vm.super_object_of(actor_value(c.vm, who));
 			if(!target)
 				return c.args;
-			c.vm.remove(target);
-			// A generated actor's slot is free again (0x4062A0 -> 0x40C0C0).
-			c.vm.generated().release(target);
+			// 0x4062A0: a placed actor (standard game +0x08 below 0x10000) of standard type 1
+			// (+0x14) is reset to how the level started it (0x406220 -> 0x405E50, mode 4) and waits
+			// there again: Murfy's tablet tips (Learn_10 node 42) come back each time Rayman returns,
+			// as the recorded game shows. Other placed actors stay out, and a generated actor's slot
+			// is free again (0x40C0C0).
+			std::uint32_t actor = c.vm.actor_of(target);
+			std::uint32_t standard = actor ? c.vm.memory().u32(actor + 4) : 0;
+			if(standard && c.vm.memory().u32(standard + 0x08) < 0x10000 && c.vm.memory().u32(standard + 0x14) == 1)
+				c.vm.reset_actor(target);
+			else
+			{
+				c.vm.remove(target);
+				c.vm.generated().release(target);
+			}
 			if(target == c.self)
 				c.vm.signal(3);
 			return c.args;

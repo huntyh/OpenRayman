@@ -1306,6 +1306,65 @@ TEST_CASE("real data: Rayman stands on Learn_10's closed tutorial trapdoor")
 	CHECK(errors == 0);
 }
 
+TEST_CASE("real data: Murfy's tablet tip comes back each time Rayman returns")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto game = game_data::locate(*dir);
+	REQUIRE(game);
+	level_files files = load_level_files(*game, "Learn_10");
+	level_header header = read_level_header(files);
+	scene tree(files.memory, header);
+	animation_bank bank = read_animation_bank(files);
+	game::live_memory m(files.memory);
+	std::uint32_t rayman = header.placements.at(0).super_object.address();
+	game::interpreter vm(m, rayman);
+	game::register_handlers(vm);
+	game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
+	vm.set_animations(&bank);
+	game::install_level_events(m, bank);
+	std::vector<std::uint32_t> actors;
+	for(const scene_node& n : tree.nodes())
+		if(n.type == super_object_type::actor) actors.push_back(n.at.address());
+	vm.set_actors(actors);
+	for(const actor_set::entry& e : read_actors(files.memory, tree, bank).actors)
+		game::set_global_placement(m, tree.node(e.node).at.address(), e.world);
+	for(std::uint32_t bit : game::revisit_story_bits) REQUIRE(vm.set_story_bit(actors, bit));
+	game::input keys(m, read_input_actions(files));
+	// Node 42 shows the tip when Rayman stands by the tablet, fades it when he leaves, and
+	// procedure 139 resets it (0x4062A0, standard type 1) to wait for him again.
+	const std::uint32_t tip = tree.node(42).at.address();
+	const std::uint32_t normal = m.u32(m.u32(m.u32(vm.actor_of(tip) + 0x0C)) + 4);
+	const auto start = game::global_placement(m, tip);
+	REQUIRE(start);
+	std::uint32_t showing = 0, previous = m.u32(normal + 8);
+	int shown = 0;
+	for(int tick = 0; tick <= 760; tick++)
+	{
+		if(tick == 260 || tick == 700)
+			game::write_transform(m, rayman, { 7.4f, 311.9f, -6.9f }, { 0, 1, 0, -1, 0, 0, 0, 0, 1 });
+		if(tick == 520)
+			game::write_transform(m, rayman, { 30, 295, -7 }, { 0, 1, 0, -1, 0, 0, 0, 0, 1 });
+		keys.step();
+		game::step(vm, actors);
+		std::uint32_t now = m.u32(normal + 8);
+		if(tick == 270) showing = now;
+		if(tick == 535) // reset: back where the level put it
+		{
+			auto back = game::global_placement(m, tip);
+			REQUIRE(back);
+			CHECK(back->m[0][3] == doctest::Approx(start->m[0][3]));
+			CHECK(back->m[1][3] == doctest::Approx(start->m[1][3]));
+		}
+		if(now != previous && showing && now == showing) shown++;
+		previous = now;
+	}
+	CHECK_FALSE(vm.removed(tip));
+	CHECK(shown == 1); // the second visit (the first set `showing`)
+}
+
 TEST_CASE("actor floors carry a rider through translation and rotation and release it")
 {
 	game::live_memory m(three_super_objects());

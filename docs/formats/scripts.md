@@ -448,3 +448,17 @@ variables.
 - Raymap was consulted for orientation (that actors have a brain, mind, AI model, behaviours, macros
   and designer variables); every offset and meaning above was confirmed in the exe and the data, and
   the names are our own.
+
+**Taking an actor out: procedure 139** (0x467850 → 0x4062A0). Own analysis of the decompile
+(0x4062A0, 0x406220, 0x405E50, 0x466CC0/0x481060, 0x466950, 0x418340), checked against the
+`run4` recording. A generated actor (standard game +0x08 at or above 0x10000) frees its slot
+(0x40C0C0). A placed actor leaves the world and is marked inactive (standard +0x29 bit 0x1),
+and when its standard type (+0x14) is 1 it is reset as the level started it (0x405E50, mode 4):
+its saved transform, both intelligences back to their initial behaviour (intelligence +0x14),
+the designer variables whose reset level (declaration entry +0xC) is 4 or more from the initial
+buffer (type 10: first byte cleared, second restored), and its 3D data's initial state and object
+list. Learn_10's tablet tip (node 42, recorded actor 40) is such an actor: after each tip, and
+after Murfy's first full scene, it is back at (7.414, 311.965, -6.993) in behaviour 0 and then
+waits (behaviour 5) for Rayman to come near again. We keep type-1 actors in the world after the
+reset; what re-activates them in the exe isn't traced yet. Only that one actor took this path in
+our Learn_10 runs; the others procedure 139 removes are of type 0, 2, 3 or 5 and stay out.

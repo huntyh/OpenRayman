@@ -1185,11 +1185,82 @@ namespace openrayman::game
 		return !((bits & 0x400000) && (flags & 0x80));
 	}
 
+	void interpreter::reset_actor(std::uint32_t self)
+	{
+		std::uint32_t actor = actor_of(self);
+		if(!actor)
+			return;
+		// 0x418340: the saved transform.
+		if(auto start = m_start_placements.find(self); start != m_start_placements.end())
+			set_global_placement(m_memory, self, start->second);
+		std::uint32_t data = m_memory.u32(actor + actor_field::data_3d);
+		if(data && m_memory.contains(data, 0x14))
+		{
+			m_memory.write<std::uint32_t>(data + 0x0C, m_memory.u32(data + 0x10));
+			if(std::uint32_t initial = m_memory.u32(data))
+				change_state(m_memory, data, initial, true, m_clock, true, actor);
+		}
+		std::uint32_t brain = m_memory.u32(actor + actor_field::brain);
+		std::uint32_t mind = brain && m_memory.contains(brain, 4) ? m_memory.u32(brain) : 0;
+		if(!mind)
+			return;
+		// 0x466CC0 -> 0x481060: each intelligence back to its initial behaviour (+0x14), with no
+		// previous one and no actions in progress.
+		for(std::uint32_t field : { mind_field::normal, mind_field::reflex })
+		{
+			std::uint32_t intelligence = m_memory.u32(mind + field);
+			if(!intelligence || !m_memory.contains(intelligence, 0x18))
+				continue;
+			std::uint32_t behaviour = m_memory.u32(intelligence + 0x14);
+			m_memory.write<std::uint32_t>(intelligence + intelligence_field::behaviour, behaviour);
+			m_memory.write<std::uint32_t>(intelligence + intelligence_field::previous, behaviour);
+			clear_actions(intelligence);
+			std::uint32_t schedule = behaviour ? m_memory.u32(behaviour + behaviour_field::schedule) : 0;
+			m_memory.write<std::uint32_t>(intelligence + intelligence_field::schedule_at, schedule ? m_memory.u32(schedule) : 0);
+		}
+		// 0x466950 with level 4: a variable whose reset level (declaration +0xC) is 4 or more gets
+		// its initial value back; type 10 clears its first byte and takes the second.
+		std::uint32_t variables = m_memory.u32(mind + mind_field::variables);
+		std::uint32_t declaration = variables ? m_memory.u32(m_memory.u32(variables)) : 0;
+		std::uint32_t initial = variables ? m_memory.u32(variables + 4) : 0;
+		if(!declaration || !initial)
+			return;
+		std::uint32_t current = m_memory.u32(variables + variables_current);
+		std::uint32_t info = m_memory.u32(declaration + declaration_info);
+		for(std::uint32_t index = 0; index < m_memory.u8(declaration + declaration_count); index++)
+		{
+			std::uint32_t entry = info + index * variable_info_size;
+			std::uint32_t offset = m_memory.u32(entry), type = m_memory.u32(entry + 4);
+			if(type == 10)
+			{
+				m_memory.write<std::uint8_t>(current + offset, 0);
+				m_memory.write<std::uint8_t>(current + offset + 1, m_memory.u8(initial + offset + 1));
+				continue;
+			}
+			if(m_memory.u32(entry + 0x0C) < 4)
+				continue;
+			try
+			{
+				write_variable({ current + offset, type }, read_variable({ initial + offset, type }));
+			}
+			catch(const std::exception&)
+			{
+				// Arrays and other kinds read_variable doesn't know: copy their header-sized block.
+				std::uint32_t size = 8 + 4 * std::uint32_t(m_memory.u8(initial + offset + 4));
+				for(std::uint32_t i = 0; i < size; i++)
+					m_memory.write<std::uint8_t>(current + offset + i, m_memory.u8(initial + offset + i));
+			}
+		}
+	}
+
 	void interpreter::think(std::uint32_t self)
 	{
 		std::uint32_t actor = actor_of(self);
 		if(!actor || removed(self) || !brain_runs(self))
 			return;
+		if(!m_start_placements.contains(self))
+			if(auto placed = global_placement(m_memory, self))
+				m_start_placements.emplace(self, *placed);
 		std::uint32_t data = m_memory.u32(actor + actor_field::data_3d);
 		// 0x418880, 0x4188C0: the game thinks on every (period + 1)th frame (procedure 341).
 		bool game_thinks = true;
