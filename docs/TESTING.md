@@ -180,6 +180,20 @@ Fixes that landed since the last look, each at its own spot:
       Rayman's letters should look white-ish, the kids' letters yellow with red highlights, and
       Murfy's yellow and red should match. Check the colour across both top and bottom of letters.
 
+## The main menu (Phase 4)
+
+Start `openrayman --game "F:\Games\Rayman 2" --level Menu` (release build), press Tab so the
+keys go to the game, and compare with the GOG game side by side:
+
+- [ ] The language prompt types in letter by letter; English is highlighted. Colours (blue
+      entries, yellow cursor entry swaying up and down) and positions look like the game's.
+- [ ] Enter on English: the main menu (New Game, Load, Delete, Options, Site Rayman2, Exit).
+      Up/Down move the yellow entry; Load and Delete are not greyed (two save slots installed).
+- [ ] Enter on New Game: the name screen with `AAA` and the arrow hint; arrows change letters.
+- [ ] Enter on the name: Jail_10 loads and the intro starts ("A planet of anguish and pain…").
+      Our New Game doesn't write a save yet, so the GOG save folder stays untouched.
+- [ ] Esc / Backspace go back a screen as in the game.
+
 ## Known limitations
 
 Don't report these as bugs, they're the next steps:
