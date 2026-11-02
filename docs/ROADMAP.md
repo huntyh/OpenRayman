@@ -101,9 +101,7 @@ Dated details of everything above, and the user's look-by-look feedback, are in
 1. **Standing on actors.** Nothing lets Rayman stand on an actor, so the tutorial's closed
    trapdoor and every moving platform let him fall through; next: actors' collision shapes as
    floor.
-2. **3c leftovers.** The river condor moves up and down with each wing flap, where the game's
-   glides as if on rails (`--camera -65.1,289.0,-18.7,-28.6,-15.6`, still seen 2026-11-02). The
-   ceilings: the bridge no longer lets him through, the ears (head height 2.2) and the Globox kids'
+2. **3c leftovers.** The ceilings: the bridge no longer lets him through, the ears (head height 2.2) and the Globox kids'
    cave roof (`--camera -66.7,198.4,1.2,279.7,24.1`) await the user's test. The slippery slope's
    acceleration is off (the real slide accelerates about 11 u/s² down the fall line). Faint
    crosshair-like lines around Rayman from afar.
@@ -124,6 +122,11 @@ Dated details of everything above, and the user's look-by-look feedback, are in
 7. **Other machines**: the user will try a Linux laptop with a Fermi-era Quadro 2000M.
 
 **Later in Phase 3 / Phase 4**
+
+- Parked (user, 2026-11-02, fine as it is): the river condor (node 7) bobs with each wing flap
+  where the game's glides as if on rails (`--camera -65.1,289.0,-18.7,-28.6,-15.6`). Its path is
+  smooth every 30 ticks; its flap animation (309) lifts the root about 0.06 up and down. Worth a
+  per-tick trace if other flying actors bob too, since then the mechanics would be the cause.
 
 - An optional modern camera, turned freely with the right stick like in today's platformers,
   next to the game's own guided camera. It will see what the guided camera never shows, which
