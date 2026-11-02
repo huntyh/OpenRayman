@@ -67,6 +67,27 @@ namespace openrayman
 		header.dynamic_world = stream.required_pointer();
 		header.inactive_dynamic_world = stream.required_pointer();
 		header.father_sector = stream.required_pointer();
+
+		// Then (0x403730) one more pointer, 0x1C bytes, and the always list's first and last
+		// element. Elements link back through +4; each holds its actor at +0x10.
+		try
+		{
+			stream.pointer();
+			stream.skip_to(stream.position() + 0x1C);
+			stream.pointer();
+			auto element = stream.pointer();
+			for(int guard = 0; element && guard < 10000; guard++)
+			{
+				if(auto actor = memory.follow(*element + 0x10))
+					header.always_actors.push_back(*actor);
+				element = memory.follow(*element + 4);
+			}
+			std::reverse(header.always_actors.begin(), header.always_actors.end());
+		}
+		catch(const format_error&)
+		{
+			header.always_actors.clear();
+		}
 		return header;
 	}
 }

@@ -30,7 +30,7 @@ ortool_check(help
 	6da899f9609cffd1e8f26cfc98b7634ad004fc3ce10ce46e92912a9c23d30aab
 	help)
 ortool_check(level_learn_10
-	743b90c253503738472e50d824739146264cad8afae6aca4ed26cfb26a28f7f8
+	489746cf2620b2de2776894f6ba725e6d3edce4258767693b1a9a0b64ec9539d
 	level <game> Learn_10)
 ortool_check(scene_learn_10
 	3fe286e1d8312574c6873d4cfbb6cac2a79abcbd65485434cba37ce83effa1c9

@@ -422,6 +422,13 @@ static int cmd_level(const fs::path& folder, const std::string& name)
 				for(const fix_actor_placement& p : header.placements)
 					std::cout << std::format("    actor at {} +0x{:X}: position {} {} {}\n", p.actor.block->id.to_string(), p.actor.offset,
 						p.matrix.position[0], p.matrix.position[1], p.matrix.position[2]);
+				std::cout << std::format("  {} always actors\n", header.always_actors.size());
+				for(const memory_location& a : header.always_actors)
+				{
+					auto standard = image.follow(a + 4);
+					std::cout << std::format("    always actor at {} +0x{:X}: id 0x{:X}\n", a.block->id.to_string(), a.offset,
+						standard ? image.read_u32(*standard + 8) : 0);
+				}
 				for(const texture_info& t : level_textures)
 					std::cout << std::format("  texture {:>4}  {} +0x{:06X}  {:>4}x{:<4}  {:08X} {:02X}  {}\n", t.slot, t.at.block->id.to_string(), t.at.offset, t.width, t.height, t.flags, t.tiling, t.name);
 				for(const texture_info& t : fix_textures)
@@ -1495,6 +1502,12 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 			node_of[actors.back()] = n;
 		}
 	vm.set_actors(actors);
+	// ORTOOL_IDS=1: each actor's id and type (standard game +8, +0x14).
+	if(std::getenv("ORTOOL_IDS"))
+		for(std::uint32_t so : actors)
+			if(std::uint32_t actor = vm.actor_of(so); actor && memory.u32(actor + 4))
+				std::cout << std::format("node {:>3}: id 0x{:X}, type {}\n", node_of[so], memory.u32(memory.u32(actor + 4) + 8),
+					memory.u32(memory.u32(actor + 4) + 0x14));
 	// Native probes (the copy protection hides here): with ORTOOL_PROBES=1 also the decoded code, as
 	// hex (Ubisoft's code: keep such output in H:\r2export).
 	for(const auto& check : vm.native_checks())

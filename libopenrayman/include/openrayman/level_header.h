@@ -47,6 +47,11 @@ namespace openrayman
 		memory_location inactive_dynamic_world;
 		memory_location father_sector;          // the level geometry, as a tree of sectors
 
+		// The level's "always" actors (Rayman2.exe keeps the list at 0x4A6B1C): a placed actor
+		// with one of their ids (standard game +8) stays out of the world when scripts remove it
+		// (0x40BC80). Empty if the list couldn't be read.
+		std::vector<memory_location> always_actors;
+
 		// The placement for a Fix super object, or nullptr.
 		const fix_actor_placement* placement_of(const memory_location& super_object) const;
 	};
