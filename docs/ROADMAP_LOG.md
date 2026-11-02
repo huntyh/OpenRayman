@@ -10,6 +10,10 @@ first. The format docs under `formats/` are the permanent home of the findings t
   through; the 3 fps drop near the Globox kids is gone (the camera's
   obstacle search no longer runs at a distance, segment casts use the collision grid); the
   bridge ceiling stops Rayman. The mix "way better" after the measured levels below.
+- First-visit checks closed (user): node 71's short walk is right, it is Rayman stepping forward
+  after the cage over the trapdoor breaks, before Murfy explains the Lum. The river condor is
+  there on every visit in the game too (also coming back from the Hall of Doors), so it should
+  not leave; only its flight is wrong: ours bobs with each wing flap, the game's glides smoothly.
 - Lum pickups were silent: stopping every voice of a hidden actor (for the flier) also cut the
   Lum's pickup sound, played in the frame it hides. Now only looping voices stop.
 - Themes decode on a loader thread with a segment cache: decoding under the mixer's lock stalled
