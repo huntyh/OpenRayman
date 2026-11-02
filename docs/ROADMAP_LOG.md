@@ -6,7 +6,8 @@ first. The format docs under `formats/` are the permanent home of the findings t
 ## 2026-11-02 (midday): the sound mix, and what the user confirmed
 
 - Confirmed in play by the user: shot homing; the Globox kids' theme; the big-nosed flier falls
-  silent when it puts itself away; the 3 fps drop near the Globox kids is gone (the camera's
+  silent when it puts itself away; the tunnel after the Globox kids no longer lets Rayman clip
+  through; the 3 fps drop near the Globox kids is gone (the camera's
   obstacle search no longer runs at a distance, segment casts use the collision grid); the
   bridge ceiling stops Rayman. The mix "way better" after the measured levels below.
 - Lum pickups were silent: stopping every voice of a hidden actor (for the flier) also cut the

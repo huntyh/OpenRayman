@@ -101,7 +101,7 @@ Dated details of everything above, and the user's look-by-look feedback, are in
 1. **Standing on actors.** Nothing lets Rayman stand on an actor, so the tutorial's closed
    trapdoor and every moving platform let him fall through; next: actors' collision shapes as
    floor.
-2. **3c leftovers.** The tunnel clip after the Globox kids. The river condor snaps upwards a
+2. **3c leftovers.** The river condor snaps upwards a
    little on each wing flap (`--camera -65.1,289.0,-18.7,-28.6,-15.6`, still seen 2026-11-02). The
    ceilings: the bridge no longer lets him through, the ears (head height 2.2) and the Globox kids'
    cave roof (`--camera -66.7,198.4,1.2,279.7,24.1`) await the user's test. The slippery slope's
