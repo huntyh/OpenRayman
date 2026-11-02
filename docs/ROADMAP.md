@@ -49,8 +49,7 @@ yet: everything that moves on its own moves, but nothing reacts to Rayman.
   Phase 3
 - ✅ **2c the game's light and sky**: the game's own lighting exactly as `Rayman2.exe` does it,
   fog by depth like the Glide fog table, water and glass, the sky, shadows under characters
-- Moved to 3/Later: the fireflies (emitter actors whose scripts spawn particles while the game
-  runs), a modern lighting mode with HDR (designed together, both change how the lights are used)
+- Moved on: the fireflies (done in 3b), a modern lighting mode with HDR (Later)
 
 Phase 2 ended when Learn_10 side by side with the real game looked the same, apart from the parts
 that need gameplay (2026-10-26).
@@ -78,7 +77,7 @@ once it plays right (they have issues of their own, found on a first look).
   inertia, ledge grab and the climb, the portal hop (dropping under it as in the game) and
   its pull with the spark particles, the shallow-water depth cast with splashes and ripples,
   Rayman's shot as a generated actor (its flight, hit on actors, fade and slot freeing
-  ([formats/generated.md](formats/generated.md)); homing in, awaiting the user's test), the
+  ([formats/generated.md](formats/generated.md)); homing (user confirmed 2026-11-02)), the
   long-idle animations (the "basketball" one), and the game camera following him: scripts
   fill the parameter blocks, the solve and mechanics move it, Q/W turning swings round in pi/8
   steps like the exe, camera collision, and an interim obstacle search the user is happy with
@@ -103,7 +102,7 @@ once it plays right (they have issues of their own, found on a first look).
 
 1. **3c leftovers.** Shot homing is in (functions 113 and 154): a shot aims at the best target in
    front of it at launch and after each bounce; in ortool an off-centre shot at the last cage
-   hits it. The user should try shots past the cages in play. The tunnel
+   hits it; the user confirmed it in play (2026-11-02). The tunnel
    clip after the Globox kids is still open. The ceilings that let him jump through (the bridge
    at `--camera 40.8,305.1,-8.3,5.2,14.2` and the Globox kids' cave roof at `--camera
    -66.7,198.4,1.2,279.7,24.1`) have a fix in since 800c6c2, awaiting the user's test. The
@@ -127,7 +126,8 @@ once it plays right (they have issues of their own, found on a first look).
    walks in, and the hand-over moves him into the woods' sector; its segments switch on the
    recorded game's beat ([formats/sound.md](formats/sound.md#sector-sounds)). The Globox kids'
    scene asks for its own theme and, about 30 s later, the next one (scripts, already played;
-   awaiting the user's ears). The intro's theme comes with the intro (Phase 4). Left: the
+   awaiting the user's ears), and so is the Teensie end scene's (279:0, asked by the level director,
+   node 45, when the last cage breaks). The intro's theme comes with the intro (Phase 4). Left: the
    transition fades, and decoding a theme without a brief audio stall when it is asked for.
 4. **The game's camera**, still to check against the game: the arrival pan. In the game the
    player may turn the camera (Q/W) only where the level allows it, level presets often
@@ -178,11 +178,16 @@ Everything the PC game has, working before we port it anywhere:
 - A modern renderer: Vulkan or Direct3D 12, keeping OpenGL (3.3 / ES 3.0) for older devices. The
   current OpenGL renderer is the first step and the fallback
 - A modern lighting mode that keeps the art direction, and HDR, designed together (both change how
-  the lights are used)
+  the lights are used). Two separate things to research first: rendering in high dynamic range
+  (lighting in floating point, then tone mapping down to the screen) and HDR output (HDR10 / scRGB
+  to an HDR display, which needs the swap chain and the OS to cooperate)
 - Controller support with the right button icons
 - Sharper logos: the Ubisoft logo and the tiled Rayman 2 logo look rough in the original; upscale
   them, or use a better texture if the data has one (optional, the user's wish)
-- Antialiasing (MSAA, with alpha to coverage for cut-out textures)
+- Antialiasing: MSAA, with alpha to coverage for cut-out textures, first; SMAA as a cheap
+  post-process option. TAA only if it can be done without ghosting (the user's condition); it
+  needs motion vectors for every moving thing (skinned actors, scrolling and animated textures,
+  sprites), and the game's many see-through and additive surfaces are where TAA usually smears
 - Smoother cut-out textures: colour-keyed and alpha-tested textures have jagged, "cut out with
   scissors" edges (Globox's eyes); smoothing their edges, as we did for the leaves in 2c
 - Richer water while running (optional, off by default): the game only leaves ripples when Rayman
