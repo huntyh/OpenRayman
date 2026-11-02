@@ -18,7 +18,8 @@ first. The format docs under `formats/` are the permanent home of the findings t
 - First numbers, Learn_10 start, vsync off, release: about 550 fps (1.8 ms a frame). Drawing on
   the CPU takes 1.1 ms for about 960 draw calls of only 6,500 triangles; the GPU needs 0.35 ms;
   the scripts 0.2 ms on average but up to 6 ms in one frame a second. In the debug build the
-  scripts take 12 of 18 ms.
+  scripts take 12 of 18 ms. On the user's machine (5800X3D, RTX 3090) the release build runs
+  at about 840 fps with vsync off.
 - The condor's bobbing is parked (user: fine as it is); the first-visit checks are closed: node 71's
   short walk is right, and the condor stays on every visit in the game too.
 
