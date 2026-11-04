@@ -790,6 +790,39 @@ TEST_CASE("real data: Learn_10's scripts run")
 	CHECK(errors == 0);
 }
 
+TEST_CASE("real data: cutscene bars follow the controller script")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto game = game_data::locate(*dir);
+	REQUIRE(game.has_value());
+	auto files = load_level_files(*game, "Learn_10");
+	auto header = read_level_header(files);
+	scene tree(files.memory, header);
+	game::live_memory memory(files.memory);
+	game::interpreter vm(memory, header.placements.at(0).super_object.address());
+	game::register_handlers(vm);
+	std::vector<std::uint32_t> actors;
+	for(const auto& n : tree.nodes())
+		if(n.type == super_object_type::actor) actors.push_back(n.at.address());
+	auto controller = tree.nodes().at(6).at.address();
+	auto tick = [&] { game::step(vm, actors, [&](std::uint32_t, const std::exception& e) { FAIL(e.what()); }); };
+	tick(); tick();
+	vm.set_variable(controller, 58, game::value::integer(1));
+	tick();
+	CHECK(vm.get_variable(controller, 60).as_float() == doctest::Approx(vm.frame_ms() * 0.4f));
+	for(int i = 0; i < 40; ++i) tick();
+	CHECK(vm.get_variable(controller, 60).as_float() == doctest::Approx(195));
+	CHECK(vm.world_view_bounds().top == 45);
+	CHECK(vm.world_view_bounds().bottom == 805);
+	CHECK(vm.get_variable(controller, 58).as_int() == 0);
+	vm.set_variable(controller, 59, game::value::integer(1));
+	for(int i = 0; i < 40; ++i) tick();
+	CHECK(vm.get_variable(controller, 60).as_float() == doctest::Approx(0));
+	CHECK(vm.world_view_bounds().top == 0);
+	CHECK(vm.world_view_bounds().bottom == 1000);
+}
+
 TEST_CASE("homing ranks live actors only in the current and linked sectors")
 {
 	game::live_memory m(three_super_objects());

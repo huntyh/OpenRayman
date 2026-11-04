@@ -143,7 +143,8 @@ namespace openrayman
 	void dialog_renderer::draw(std::span<const game::dialog_text> dialogs,
 		std::span<const game::particles::screen_rectangle> boxes,
 		std::span<const game::particles::screen_image> images,
-		const glm::mat4& view_projection, const glm::mat4& projection, int width, int height, double time)
+		const glm::mat4& view_projection, const glm::mat4& projection, int width, int height, double time,
+		const game::interpreter::view_bounds& bounds, bool show_bars)
 	{
 		if(width <= 0 || height <= 0) return;
 		m_batches.clear();
@@ -152,6 +153,13 @@ namespace openrayman
 				{{x,y},colour,{u0,0}}, {{x+w,y+h},colour,{u1,1}}, {{x,y+h},colour,{u0,1}}};
 			append(texture, additive, v);
 		};
+		if(show_bars)
+		{
+			float top = std::clamp(bounds.top, 0, 1000) * 0.48f;
+			float bottom = std::clamp(bounds.bottom, 0, 1000) * 0.48f;
+			quad(m_white, false, 0, 0, 640, top, {0,0,0,1}, 0, 1);
+			quad(m_white, false, 0, bottom, 640, 480 - bottom, {0,0,0,1}, 0, 1);
+		}
 		for(const auto& box : boxes)
 		{
 			SDL_FRect r{box.first[0] * 6.4f, box.first[1] * 4.8f,
@@ -217,7 +225,10 @@ namespace openrayman
 					else if(item.screen_colour == 200) tint = {250/255.0f, 70/255.0f, 70/255.0f, tint[3]};
 					else if(item.screen_colour == 400) tint = {1, 1, 120/255.0f, tint[3]};
 					float offset = float(game::screen_slot_punctuation_offset(item.byte, glyph_height));
-					float x0 = (left + item.x) * 0.64f, x1 = x0 + item.advance * 0.64f;
+					// Keep the slot layer in a centred 4:3 area at wide window sizes.
+					float slot_width = std::min(1.0f, (4.0f / 3.0f) * height / width);
+					float x0 = 320.0f + ((left + item.x) * 0.64f - 320.0f) * slot_width;
+					float x1 = x0 + item.advance * 0.64f * slot_width;
 					float y0 = (std::trunc(dialog.y) + item.y + offset - dialog.pulse) * 0.48f;
 					float y1 = (std::trunc(dialog.y) + item.y + offset + glyph_height + dialog.pulse) * 0.48f;
 					// 0x429670 passes white at the upper corners and the slot colour

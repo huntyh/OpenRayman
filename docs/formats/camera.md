@@ -342,3 +342,16 @@ controllers (nodes 33, 34, 35, 64, 65 and 77).
 
 The numbers in the field table are the default block of the camera actor in Learn_10
 (Fix block 04/00, offset 0x13558, 0x7C bytes).
+
+## Cutscene view boundaries
+
+Fix actor 6 animates the black bars in its scripts. Variables 58 and 57 request the small
+and large openings; 59 withdraws them and takes precedence. Variable 60 moves at 0.4 per
+script millisecond to 195 or 325.417. Procedure 314 (handler 0x46BD40, view update 0x404E70)
+sets view 1's top, left, bottom and right in thousandths: top is trunc(amount * 0.23076923),
+bottom is 1000 - trunc(amount). Small bars end at 45 and 805. OpenRayman paints opaque
+rectangles over the world and before screen overlays, controlled by a default-on renderer bool.
+It currently stores only view 1 and draws the top and bottom boundaries.
+
+Provenance: own reading of the Learn_10 actor 6 scripts, Rayman2.exe at 0x46BD40 and
+0x404E70, and the user's live intro and Globox recordings of the world view at 0x500458.

@@ -341,3 +341,12 @@ by eye against the game remains open.
 - The menu's own strings and the actor names: the decoded `Menu.sna` (block `0d/01`, base
   0x7920020) read with the project's own mask decoder.
 - Nothing here was taken from Raymap, Rayman2Lib or any other project; no game data is included.
+
+### View aspect
+
+Own analysis of 0x465DD0 and 0x4660B0 confirms the metrics above. The latter multiplies
+both coordinates by 0.1 (0x49CA04); 0x429670 then multiplies X and Y by 0.01 of the
+view width and height respectively. Thus both slot axes are thousandths of the view.
+OpenRayman keeps the screen-slot layer in a centred 4:3 area in wider windows, while the
+3D view still fills the window. At 4:3 its glyph dimensions retain the executable's ratio.
+The reported difference at 4:3 remains to be checked with a matched capture.

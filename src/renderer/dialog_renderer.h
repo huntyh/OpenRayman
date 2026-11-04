@@ -7,6 +7,7 @@
 #include <openrayman/actor.h>
 #include <openrayman/cnt_archive.h>
 #include <openrayman/game/dialog.h>
+#include <openrayman/game/interpreter.h>
 #include <openrayman/game/particles.h>
 #include <openrayman/geometry.h>
 #include <glm/glm.hpp>
@@ -30,7 +31,8 @@ namespace openrayman
 		void draw(std::span<const game::dialog_text> dialogs,
 			std::span<const game::particles::screen_rectangle> boxes,
 			std::span<const game::particles::screen_image> images,
-			const glm::mat4& view_projection, const glm::mat4& projection, int width, int height, double time);
+			const glm::mat4& view_projection, const glm::mat4& projection, int width, int height, double time,
+			const game::interpreter::view_bounds& bounds, bool show_bars);
 	private:
 		struct glyph { geometric_object object; GLuint texture = 0; std::vector<SDL_FColor> colours; };
 		struct font { std::vector<actor_object> objects; std::map<int, std::optional<glyph>> glyphs; };

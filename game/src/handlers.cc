@@ -3535,6 +3535,17 @@ namespace openrayman::game
 			return result;
 		}
 
+		// 314 (0x46BD40 -> 0x404E70): set a view's top, left, bottom, right bounds.
+		std::uint32_t set_view_bounds(call& c)
+		{
+			value view, top, left, bottom, right;
+			next_arg(c, view); next_arg(c, top); next_arg(c, left);
+			next_arg(c, bottom); next_arg(c, right);
+			if(view.as_int() == 1)
+				c.vm.world_view_bounds() = {top.as_int(), left.as_int(), bottom.as_int(), right.as_int()};
+			return c.args;
+		}
+
 		// 505 (0x465A50): set a slot up: slot, position, text, alpha. The position is a vector used
 		// for X, Y and size. The exe zeroes the wobble and flags here.
 		std::uint32_t text_slot_set(call& c)
@@ -4671,6 +4682,7 @@ namespace openrayman::game
 			if(i != 255)
 				vm.on_procedure(i, dynamics_flag);
 		vm.on_procedure(312, super_object_flag);
+		vm.on_procedure(314, set_view_bounds);
 		for(std::uint32_t i = 321; i <= 332; i++)
 			vm.on_procedure(i, zone_mode);
 		vm.on_procedure(341, brain_period);

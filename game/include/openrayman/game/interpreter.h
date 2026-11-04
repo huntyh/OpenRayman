@@ -166,6 +166,10 @@ namespace openrayman::game
 		// The on-screen text the scripts fill (procedures 505..507), still to be drawn.
 		game::screen_text& screen_text() { return m_screen_text; }
 		const game::screen_text& screen_text() const { return m_screen_text; }
+		// World view boundaries in thousandths, as set by procedure 314 (0x46BD40).
+		struct view_bounds { int top = 0, left = 0, bottom = 1000, right = 1000; };
+		view_bounds& world_view_bounds() { return m_world_view_bounds; }
+		const view_bounds& world_view_bounds() const { return m_world_view_bounds; }
 		// What actors stand on and bump into.
 		void set_world(world_collision world) { m_world = std::move(world); }
 		const world_collision& world() const { return m_world; }
@@ -390,6 +394,7 @@ namespace openrayman::game
 		std::uint32_t m_frame_ms = 16;
 		game::particles m_particles;
 		game::screen_text m_screen_text;
+		view_bounds m_world_view_bounds;
 		world_collision m_world;
 		std::map<std::uint32_t, moving_support> m_supports;
 		actor_surface_cache m_surface_cache;

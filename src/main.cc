@@ -226,6 +226,7 @@ namespace
 		std::string actor_note;           // the state last picked with F4/F5, shown in the title
 		std::vector<std::pair<std::size_t, std::size_t>> start_states; // --actor-state <node>:<state>
 		std::vector<std::pair<std::size_t, std::size_t>> start_behaviours; // --behaviour <node>:<index>
+		bool show_cutscene_bars = true; // renderer option, reserved for a future user setting
 		bool show_collision = false; // C, --collision on
 		float speed = 15.0f;                     // units per second
 		bool looking = false;
@@ -1622,8 +1623,9 @@ namespace
 				// The gauges (kind 120) are painted before the images (0x460670, then 0x460600).
 				std::vector<game::particles::screen_image> images = a.vm->particles().screen_bar_images();
 				images.insert(images.end(), a.vm->particles().screen_images().begin(), a.vm->particles().screen_images().end());
-				if(!dialogs.empty() || !boxes.empty() || !images.empty())
-					a.dialog_overlay->draw(dialogs, boxes, images, projection * view, projection, w, h, a.animation_time);
+				if(!dialogs.empty() || !boxes.empty() || !images.empty() ||
+					(a.show_cutscene_bars && (a.vm->world_view_bounds().top > 0 || a.vm->world_view_bounds().bottom < 1000)))
+					a.dialog_overlay->draw(dialogs, boxes, images, projection * view, projection, w, h, a.animation_time, a.vm->world_view_bounds(), a.show_cutscene_bars);
 			}
 		}
 		else if(a.texture && w > 0 && h > 0)
