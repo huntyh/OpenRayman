@@ -28,6 +28,8 @@ import time
 MAIN_ACTOR = 0x500578
 CLOCK = 0x5003EC
 FIX_CAMERA = 0x4B7308  # second Fix entry: camera actor (0x403730)
+SCREEN_RECTS = 0x4E0F20  # screen rectangles, 0x20 each, written by 0x460530 (kind 120)
+SCREEN_SPRITES = 0x4E1638  # screen sprites (0x466530); layout unknown, logged raw
 DISPLAY = 0x5004D4  # the display record: viewport and letterbox (docs/ROADMAP_LOG 2026-11-02)
 FIX_ACTORS = 0x4B7300  # u32 count, then the Fix actors (0x403730)
 PROJECTION = 0x4A723C  # current renderer projection record (0x4228D0)
@@ -213,7 +215,7 @@ def generated_actors(m):
 	return s
 
 
-def snapshot(m, variables, contacts=False, zones=False, camera=False, generated=False, parts=False):
+def snapshot(m, variables, contacts=False, zones=False, camera=False, generated=False, parts=False, screen=False):
 	s = {}
 	super_object = m.u32(MAIN_ACTOR)
 	actor = m.u32(super_object + 4) if super_object else 0
@@ -244,6 +246,14 @@ def snapshot(m, variables, contacts=False, zones=False, camera=False, generated=
 		# The display record (0x419A30 passes it to the renderer). Procedures 313/314 write the
 		# letterbox size at +0x30/+0x34 and bands at +0x48..+0x54; 0x420660 turns them into the
 		# viewport at +0x38..+0x44. Raw words, to see which ones move as a cutscene's bars come in.
+		if screen:
+			# Two corners (floats), two more words, a float and the last word, per rectangle slot.
+			for i in range(16):
+				words = [m.u32(SCREEN_RECTS + i * 0x20 + k * 4) for k in range(8)]
+				if any(words):
+					corners = m.f32s(SCREEN_RECTS + i * 0x20, 4)
+					s[f"rect{i}"] = fmt(corners) + " " + " ".join(f"{w:X}" for w in words[4:])
+			s["screen_sprites"] = " ".join(f"{m.u32(SCREEN_SPRITES + k * 4):X}" for k in range(64))
 		s["display"] = " ".join(str(m.u32(DISPLAY + offset)) for offset in range(0x30, 0x58, 4))
 	data = m.u32(actor)
 	if data:
@@ -405,6 +415,7 @@ def main():
 	parser.add_argument("--quiet", default="at,axes,speed,slot0,slot1,slot2,slot3,slot4,slot5", help="fields printed only with another change")
 	parser.add_argument("--contacts", action="store_true", help="also the contact report: word and slots with both materials' flags")
 	parser.add_argument("--zones", action="store_true", help="also which of Rayman's kind-1 collision zones are switched on")
+	parser.add_argument("--screen", action="store_true", help="with --camera: the screen rectangles and screen sprites (the cutscene bars hunt)")
 	parser.add_argument("--camera", action="store_true", help="also camera position, distance, mode and renderer projection")
 	parser.add_argument("--story", action="store_true", help="also the story bits as they turn on or off (numbered as function 248 counts them)")
 	parser.add_argument("--story-only", action="store_true", help="log only the story bits, each change with the clock and Rayman's position (for a whole playthrough)")
@@ -445,7 +456,7 @@ def main():
 			if clock == last_clock:
 				time.sleep(0.0005)
 				continue
-			now = snapshot(m, variables, args.contacts, args.zones, args.camera, args.generated, args.parts)
+			now = snapshot(m, variables, args.contacts, args.zones, args.camera, args.generated, args.parts, args.screen)
 			# Average world-space movement between observed game frames, in units per game second.
 			# If frames are missed this is their net displacement, not the exact path travelled.
 			if args.camera and last_clock is not None and clock > last_clock and "camera_at" in now and "camera_at" in last:
