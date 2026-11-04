@@ -15,7 +15,7 @@ TEST_CASE("screen objects unproject the viewport centre in camera space")
 	camera.m[2][3] = 5;
 	auto centre = game::screen_object_position(camera, { 500, 500, 1000 });
 	CHECK(centre[0] == doctest::Approx(3));
-	CHECK(centre[1] == doctest::Approx(3.8));
+	CHECK(centre[1] == doctest::Approx(3.7)); // 0.2 from 0x422940, times our 1.5 screen-pass distance
 	CHECK(centre[2] == doctest::Approx(5));
 }
 

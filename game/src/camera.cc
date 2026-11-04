@@ -24,6 +24,14 @@ namespace openrayman::game
 		float half_height = (z == 0 ? 0.1f : 0.1f / z) * std::tan(0.45f);
 		float x = (float(screen[0]) * 0.002f - 1.0f) * half_height * (4.0f / 3.0f);
 		float y = (1.0f - float(screen[1]) * 0.002f) * half_height;
+		// Ours: the exe draws these in a separate screen pass whose projection isn't traced yet;
+		// side by side with the game (user 2026-11-04, the menu butterfly at New Game) ours came
+		// out about 1.5 times too big, so the point sits 1.5 times further away along the same
+		// ray (same place on screen, two thirds the size).
+		constexpr float screen_pass_distance = 1.5f;
+		distance *= screen_pass_distance;
+		x *= screen_pass_distance;
+		y *= screen_pass_distance;
 		std::array<float, 3> result{};
 		for(int i = 0; i < 3; ++i)
 			result[i] = camera.m[i][3] - camera.m[i][0] * x - camera.m[i][1] * distance + camera.m[i][2] * y;
