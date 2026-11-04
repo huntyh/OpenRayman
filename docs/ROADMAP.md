@@ -107,6 +107,9 @@ Dated details of everything above, and the user's look-by-look feedback, are in
 
 **Open** (agreed order with the user, 2026-10-30; state 2026-11-02)
 
+From 2026-11-04 the open items are tracked on the maintainers' own task board; the lists below
+are a snapshot of that day.
+
 1. **3c leftovers.** The slope contact still differs from the exe in two details; our slide
    accelerates about 10.7 u/s² where the recorded game's does 10.3 ([formats/dynamics.md](formats/dynamics.md)).
 2. **Dialogs and the HUD.** Left: the exact glyph size and left padding of the dialog text; the
