@@ -17,6 +17,7 @@ of them off may come later.
 | Texture filtering | Plain bilinear | Anisotropic filtering where the GPU has it | 2c |
 | Colour depth | Textures drawn in 16-bit colour (the usual setting, `GLI_Mode ... x 16` in ubi.ini): banding and blocky gradients | The textures' full 24/32-bit colour from the files (the water looks much better for it, user 2026-11-02) | 2a |
 | Soft-edged effects | The Voodoo renderer (GliVd1vf.dll) alpha-tests cut-outs at 192 of 255, so soft edges like the water splash's come out hard and pixelated | Real alpha blending: effect textures marked `_aaa` always blend with their own alpha | 3c |
+| The Menu's Teensy rock | The big green rock the left Teensy stands on (Menu level) has its texture smeared into long streaks, stretched as if towards infinity | The rock's texture shows normally (user 2026-11-04, side by side; cause in the game not traced, we just draw the level's texture coordinates) | 4 |
 | Looping animations | A loop whose last pose doesn't match its first jumps when it restarts (the swinging cages, 2 degrees on three channels) | A state that loops onto itself glides into its first pose over its last 4 frames (at most a quarter of the loop). Everything else plays as the game does | 3b |
 
 ## The scripts
