@@ -300,6 +300,12 @@ documented this game over two decades. Thank you.
 The 2016 version also used gl3w, nlohmann json, lodepng, mingw-std-threads and FLAC; thanks to their
 authors as well. They're no longer part of the project.
 
+### Tools
+
+- [Vikunja](https://vikunja.io) ([source](https://github.com/go-vikunja/vikunja)) by kolaente and
+  contributors (AGPL-3.0): the self-hosted task board, with its built-in MCP server, where we and
+  our AI helpers keep track of the open work.
+
 ### And
 
 - **Ubisoft Montpellier** and everyone who made Rayman 2, a game worth preserving.
