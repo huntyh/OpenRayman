@@ -24,7 +24,7 @@ namespace openrayman::game
 	{
 		dialog_layout result;
 		float x = 0, y = 0, height = dialog.line_height, width = 0, scale = dialog.default_scale;
-		int offset = 0, count = 0;
+		int offset = 0, count = 0, screen_colour = -1;
 		const auto& text = dialog.prepared;
 		for(std::size_t i = 0; i < text.size();)
 		{
@@ -39,7 +39,13 @@ namespace openrayman::game
 				case 'h': height = n * 0.001f; break;
 				case 'w': width = n * 0.001f; break;
 				case 'z': scale = n * 0.001f; break;
-				case 'o': offset = n; break;
+				case 'o':
+					if(dialog.screen && dialog.tint)
+					{
+						if(n == 0 || n == 200 || n == 400 || n == 600) screen_colour = n;
+					}
+					else offset = n;
+					break;
 				case 'c': result.centred = true; break;
 				case 'l': result.width = std::max(result.width, x); x = 0; y += height; break;
 				}
@@ -52,7 +58,7 @@ namespace openrayman::game
 			if(base)
 			{
 				float advance = width != 0 ? width : dialog.widths[std::size_t(*base)];
-				result.glyphs.push_back({*base + offset, byte, x, y, size, advance * size, count < dialog.revealed});
+				result.glyphs.push_back({*base + offset, byte, x, y, size, advance * size, count < dialog.revealed, screen_colour});
 				x += advance * size;
 			}
 			++count;

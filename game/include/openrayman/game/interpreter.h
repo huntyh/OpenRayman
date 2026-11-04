@@ -215,6 +215,7 @@ namespace openrayman::game
 		std::array<std::uint8_t, 4> menu_request{};
 		// Procedures 86/87 (0x4054D0): the level the scripts asked to go to, for the engine to load
 		// after the tick; `level_request_flag` is true for 86 (what the exe does with it isn't read).
+		bool quit_requested = false; // procedure 101: host closes after the current tick
 		std::string level_request;
 		bool level_request_flag = false;
 		// Function 252: the language index (the low byte of 0x500FA8, from ubi.ini at start-up).

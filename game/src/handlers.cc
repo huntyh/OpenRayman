@@ -4381,6 +4381,13 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 101 (0x468AB0): request engine shutdown (state 2), then stop the script.
+		std::uint32_t quit_game(call& c)
+		{
+			c.vm.quit_requested = true;
+			return c.args;
+		}
+
 		// 343..345 (0x46BB10): the bytes at 0x500FA4. 343 (value, value) sets the first two unless
 		// the fourth is set; 344 (variable, variable) writes them into two of the actor's variables
 		// (with the fourth set it clears each and gives 0); 345 (value) sets the third. The menu's
@@ -4692,6 +4699,7 @@ namespace openrayman::game
 		for(std::uint32_t i : { 343, 344, 345 })
 			vm.on_procedure(i, menu_request);
 		vm.on_function(252, language);
+		vm.on_procedure(101, quit_game);
 		vm.on_procedure(86, change_level);
 		vm.on_procedure(87, change_level);
 		vm.on_function(265, save_slot_count);

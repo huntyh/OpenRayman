@@ -231,6 +231,14 @@ namespace openrayman
 					!font.objects[std::size_t(item.index)].physical_object) continue;
 				const auto* g = glyph_for(font, item.index);
 				if(!g) continue; // missing glyph data: nothing to draw
+				auto glyph_tint = tint;
+				if(glyph_tint && item.screen_colour >= 0)
+				{
+					float alpha = glyph_tint->a;
+					if(item.screen_colour == 0 || item.screen_colour == 600) glyph_tint = SDL_FColor{110 / 255.0f, 190 / 255.0f, 1, alpha};
+					else if(item.screen_colour == 200) glyph_tint = SDL_FColor{250 / 255.0f, 70 / 255.0f, 70 / 255.0f, alpha};
+					else if(item.screen_colour == 400) glyph_tint = SDL_FColor{1, 1, 120 / 255.0f, alpha};
+				}
 				for(const auto& element : g->object.elements)
 				{
 					std::vector<SDL_Vertex> vertices;
@@ -240,7 +248,7 @@ namespace openrayman
 							const auto& p = g->object.vertices[element.triangles[t][c]];
 							const auto& uv = element.uvs[element.uv_triangles[t][c]];
 							vertices.push_back({{x + (item.x + item.advance * 0.5f + p[0] * item.scale) * unit,
-								y + (item.y - p[2] * item.scale) * unit}, tint ? *tint : g->colours[element.triangles[t][c]], {uv[0], 1 - uv[1]}});
+								y + (item.y - p[2] * item.scale) * unit}, glyph_tint ? *glyph_tint : g->colours[element.triangles[t][c]], {uv[0], 1 - uv[1]}});
 						}
 					if(!vertices.empty()) append(g->texture, element.material && element.material->texture && (element.material->texture->flags & texture_flag::additive), vertices);
 				}

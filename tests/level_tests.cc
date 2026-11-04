@@ -1109,6 +1109,24 @@ TEST_CASE("dialog layout measures the whole block and reveals only its prefix")
 	CHECK_FALSE(layout.glyphs[2].revealed);
 }
 
+TEST_CASE("screen text inline colours retain the glyph and change the tint")
+{
+	game::dialog_text text;
+	text.screen = true;
+	text.tint = std::array<float, 4>{1, 1, 1, 1};
+	text.widths.fill(1);
+	text.prepared = "A/O200:B/O400:C/O999:D/O600:E";
+	text.revealed = 5;
+	auto layout = game::layout_dialog(text);
+	REQUIRE(layout.glyphs.size() == 5);
+	CHECK(layout.glyphs[0].screen_colour == -1);
+	CHECK(layout.glyphs[1].screen_colour == 200);
+	CHECK(layout.glyphs[2].screen_colour == 400);
+	CHECK(layout.glyphs[3].screen_colour == 400);
+	CHECK(layout.glyphs[4].screen_colour == 600);
+	CHECK(layout.glyphs[1].index == *game::dialog_glyph_index('B'));
+}
+
 TEST_CASE("real data: dialog template glyph objects")
 {
 	auto dir = real_game_dir();

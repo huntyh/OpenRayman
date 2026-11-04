@@ -755,7 +755,7 @@ namespace
 				SDL_Log("Script error, actor 0x%08X: %s", self, e.what());
 			});
 			// A level change waits for the frame to finish (change_requested_level).
-			if(!a.vm->level_request.empty())
+			if(a.vm->quit_requested || !a.vm->level_request.empty())
 			{
 				a.script_clock = 0;
 				break;
@@ -2088,6 +2088,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 			game::profiler::scope timed(game::profiler::zone::scripts);
 			run_scripts(a, dt);
 		}
+		if(a.vm && a.vm->quit_requested) return SDL_APP_SUCCESS;
 		change_requested_level(a);
 		game::profiler::scope timed(game::profiler::zone::posing);
 		update_actors(a);

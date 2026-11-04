@@ -45,6 +45,7 @@ namespace openrayman::game
 		std::uint8_t byte = 0;
 		float x = 0, y = 0, scale = 1, advance = 1;
 		bool revealed = false;
+		int screen_colour = -1; // inline /O code, or slot default
 	};
 	struct dialog_layout
 	{

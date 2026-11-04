@@ -280,6 +280,22 @@ loads the requested level after the tick and carries the Fix story-bit array ove
 loaded in the game; the Menu level itself starts with Fix's own bits (no save loaded), not with
 our revisit bits.
 
+### Exit game (2026-11-04)
+
+Node 6 behaviour 11 handles the main menu. Entry 5 sets var55 to 6 and switches to behaviour 9
+and reflex 3. Reflex 3 composes slot 9 from text IDs 0x18D and 0x193 (initial choice) or
+0x192 (other choice); directional input toggles var41. These strings contain `/O` colour codes,
+so the two choices are coloured within the same slot. The screen renderer must apply those codes
+as flat colours to subsequent glyphs, independently of the slot's starting tint. The default is No;
+selecting Yes and confirming calls procedure 101. No returns to the main menu.
+
+Procedure 101 (handler 0x468AB0) requests engine state 2 through 0x404BF0 and sets script state 3
+through 0x4808E0. OpenRayman raises a quit request and closes through SDL after the current tick.
+An `ortool run` from language selection through Yes reached no missing node 6 handlers on the
+exit path itself; procedure 242 (0x469960, language selection) remains missing earlier in the boot
+path. Other actors also reach missing handlers. These findings come from our own analysis of the GOG
+executable's handlers and 0x4660B0, and the Menu scripts and an input replay, 2026-11-04.
+
 ## Where this came from
 
 The dialog glyph path is distinct from the menu's slot renderer: own analysis of 0x409720 and
