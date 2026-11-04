@@ -432,6 +432,25 @@ plays; the rest walks the entries' weights (second word). Rayman's panting set h
 about one time in five), his jump voices 29788 (about half the jumps). The game also avoids repeating
 the last pick; we don't yet. Traced with GPT-6.1 Terra, 2026-10-31.
 
+### Level startup music (2026-11-04)
+
+The Menu music does not come from an actor or a script handler. The last two u32 words of its
+GPT are an enable flag and a sound event ID. Own analysis of the GOG executable: 0x403730 reads
+the flag's low byte into 0x4A6ACC, resolves the next word as an event into 0x5013CC, and in
+engine states 3 and 5 plays it directly through 0x452D20. In state 7, 0x403150 plays the stored
+event via 0x40A5B0 and the same sound entry point. The event has no actor emitter. The exact
+engine-state transitions and other state-specific behavior remain to be traced.
+
+Menu's words are 1 and 0x01160000: bank 278 event 0, which plays theme resource 278:0, the
+ten external segments MM01.apm through MM10.apm. Mapmonde has the same pair; Learn_10 has
+1 and 0x00090009 (theme 9:12). The real game's Menu recording in
+`H:/r2export/live/run1/music.txt` confirms theme 278:0. `Menu.dsb` loads bank 278; the event is
+directly in GPT and has no Menu.snd slot. `ortool run Menu 600` reaches no music script request.
+Procedure 117 (handler 0x4691E0) can start other levels' themes from scripts; Learn_10 also
+uses the sector transition described below. OpenRayman now starts the enabled GPT event on
+level load, through the existing theme player. Its simplified startup path does not yet model
+all of the original engine states.
+
 ### Sector sounds
 
 Who asks for a theme: in Learn_10 not a script but a **sector**. A sector's data holds a list of

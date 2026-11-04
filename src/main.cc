@@ -1237,6 +1237,8 @@ namespace
 			openrayman::game::apply_sound_slots(*a.live, *a.game, levels[index]);
 			if(a.sounds)
 				a.sounds->stop_all();
+			if(a.sounds && !a.screenshot && header.startup_sound)
+				a.sounds->request(*header.startup_sound, 0, 1.0f, 0.0f, -1);
 			a.sound_sources.clear();
 			// The story so far (first_visit.h): a revisit includes the completed intro and Learn_10; a new
 			// game has the pirate ship and the intro behind it.

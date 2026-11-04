@@ -48,6 +48,10 @@ After more header fields (including the 70 level names) comes the animation bank
 without pointers in Learn_10, then its events (a few hundred pointers into `04/01`) and morph data.
 See [animation.md](animation.md).
 
+The final two u32 words are the startup sound enable flag (its low byte is used) and event ID.
+Menu's are 1 and 0x01160000. Own analysis of the GOG executable, 0x403730, and the level GPTs,
+2026-11-04; playback and the real-game recording are described in [sound.md](sound.md#level-startup-music-2026-11-04).
+
 ## Super objects
 
 The nodes of the scene tree. Each one carries an engine object (an actor, a sector, geometry, ...)

@@ -36,6 +36,15 @@ namespace openrayman
 		const memory_image& memory = files.memory;
 		pointer_stream stream(files.level_gpt, files.level_gpt_table, memory, level_view);
 		level_header header;
+		// 0x403730 reads these after the animation and font data, at the end of the GPT.
+		if(files.level_gpt.size() < 8)
+			throw format_error("level GPT is too short for its startup sound");
+		binary_reader tail(files.level_gpt);
+		tail.seek(tail.size() - 8);
+		const bool has_startup_sound = (tail.u32() & 0xff) != 0;
+		const std::uint32_t startup_sound = tail.u32();
+		if(has_startup_sound)
+			header.startup_sound = startup_sound;
 
 		std::uint32_t actors = stream.u32();
 		if(actors > 1000)

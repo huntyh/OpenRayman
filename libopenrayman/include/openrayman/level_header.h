@@ -52,6 +52,9 @@ namespace openrayman
 		// (0x40BC80). Empty if the list couldn't be read.
 		std::vector<memory_location> always_actors;
 
+		// The level's default sound event, when enabled by the final GPT flag (0x403730).
+		std::optional<std::uint32_t> startup_sound;
+
 		// The placement for a Fix super object, or nullptr.
 		const fix_actor_placement* placement_of(const memory_location& super_object) const;
 	};

@@ -38,6 +38,21 @@
 
 using namespace openrayman;
 
+TEST_CASE("real data: level startup music events")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto game = game_data::locate(*dir);
+	REQUIRE(game);
+	for(const auto& [level, event] : { std::pair{"Menu", 0x01160000u},
+		std::pair{"Mapmonde", 0x01160000u}, std::pair{"Learn_10", 0x00090009u} })
+	{
+		auto header = read_level_header(load_level_files(*game, level));
+		REQUIRE(header.startup_sound);
+		CHECK(*header.startup_sound == event);
+	}
+}
+
 TEST_CASE("real data: Menu Teensy hat morph records")
 {
 	auto dir = real_game_dir();
