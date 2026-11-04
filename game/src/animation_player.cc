@@ -582,6 +582,18 @@ namespace openrayman::game
 				think(self);
 				advance(self);
 			}
+		// The exe retains these objects in its screen pass even after their scripts stop
+		// updating their coordinates. Reproject after the camera has moved this tick.
+		if(auto camera = global_placement(m, vm.camera_motion().super_object))
+			for(const auto& [self, screen] : vm.screen_objects())
+				if(!vm.removed(self))
+					if(auto placed = global_placement(m, self))
+					{
+						auto point = screen_object_position(*camera, screen);
+						for(int i = 0; i < 3; ++i)
+							placed->m[i][3] = point[i];
+						set_global_placement(m, self, *placed);
+					}
 		// The pool's sweep (0x40C2F0, from 0x40ADEF): a generated actor whose custom bits carry
 		// 0x20000 goes once its animation has played out with nothing after it (0x410310: 3D data
 		// +0x8E, and no other state waiting). Rayman's shot ends this way after its fading state.

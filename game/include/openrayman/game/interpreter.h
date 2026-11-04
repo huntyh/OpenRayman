@@ -240,7 +240,7 @@ namespace openrayman::game
 		};
 		const std::vector<native_check>& native_checks() const { return m_native_checks; }
 		// Actors taken out of the world (procedure 139): they stop thinking and aren't drawn.
-		void remove(std::uint32_t super_object) { m_removed.insert(super_object); }
+		void remove(std::uint32_t super_object) { m_removed.insert(super_object); m_screen_objects.erase(super_object); }
 		bool removed(std::uint32_t super_object) const { return m_removed.contains(super_object); }
 		// Actors the scripts created (function 66): a generated actor reuses a freed slot's super
 		// object, which then is back in the world.
@@ -293,6 +293,8 @@ namespace openrayman::game
 		// The game camera: what its scripts' last solve asked for, and what the mechanics that moves
 		// its super object carries from tick to tick (procedure 444, 0x4359D0; see camera.h).
 		camera_state& camera_motion() { return m_camera_motion; }
+		// Procedure 409's persistent screen objects, in thousandths of the viewport.
+		std::map<std::uint32_t, std::array<int, 3>>& screen_objects() { return m_screen_objects; }
 
 		// Handlers that don't exist yet, by kind and index, and how often scripts reached them.
 		// The key is the kind's name (a string literal) and the index.
@@ -401,5 +403,6 @@ namespace openrayman::game
 		const animation_bank* m_animations = nullptr;
 		camera_globals m_camera;
 		camera_state m_camera_motion;
+		std::map<std::uint32_t, std::array<int, 3>> m_screen_objects;
 	};
 }

@@ -3466,6 +3466,19 @@ namespace openrayman::game
 			return after_loop(m, start);
 		}
 
+		// 409 (0x4710C0, case 0x199): register the actor in the persistent screen-object pass.
+		std::uint32_t place_screen_object(call& c)
+		{
+			value x, y, depth;
+			next_arg(c, x);
+			next_arg(c, y);
+			next_arg(c, depth);
+			std::uint32_t self = c.vm.target(c.self, true);
+			if(self)
+				c.vm.screen_objects()[self] = { x.as_int(), y.as_int(), depth.as_int() };
+			return c.args;
+		}
+
 		// 200 (0x46BF20): move an actor (the first argument, not the usual target) to a position.
 		std::uint32_t teleport(call& c)
 		{
@@ -4701,6 +4714,7 @@ namespace openrayman::game
 		for(std::uint32_t i : { 396, 397, 398 })
 			vm.on_procedure(i, capabilities);
 		vm.on_procedure(200, teleport);
+		vm.on_procedure(409, place_screen_object);
 		vm.on_procedure(433, face_horizontal);
 		vm.on_procedure(171, orient_from_vectors);
 		vm.on_procedure(503, start_effect);

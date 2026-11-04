@@ -304,8 +304,25 @@ not yet persist the selection. It also does not yet carry the selection into a n
 
 The Menu scripts for node 7 select from eight waypoint references according to node 6's behaviour,
 then use function 18 and procedure 200 to place node 7. Its initial waypoint also depends on story
-bit 1006. This is based on our own reading of the level scripts; the butterfly's identity and
-movement path still need to be established.
+bit 1006. This is based on our own reading of the level scripts.
+
+### The butterfly cursor
+
+Own analysis of the Menu scripts and GOG executable: node 6 creates the butterfly from the actor
+template at `04/01 +0x14` and gives it a reference back to node 6. The butterfly reads the screen
+target from that controller's variables 53 and 54. It eases its own coordinates towards the target
+with random offsets and calls procedure 409; when it reaches the target it switches animation and
+stops calling the procedure until the target moves again. Node 32 is a different, waypoint-flying
+actor.
+
+Procedure 409 (0x4710C0, case 0x199) takes three integers, scales them by 0.001 and unprojects
+them through 0x422940. It registers the actor in the screen-object list (0x45B9B0), which is drawn
+in a separate pass (0x45CC80); the list persists after the last call. OpenRayman retains the screen
+coordinates and updates the actor's world position after the camera moves, preserving its own
+rotation and scale. It uses the viewer's 0.9-radian vertical field of view and 0.1 near plane,
+with a centred 4:3 mapping consistent with the menu text at wide aspect ratios. The original
+viewport scaling and separate draw pass have not been fully reproduced; the placement and size
+still need comparison with the real game, especially at other aspect ratios.
 
 ### Exit game (2026-11-04)
 

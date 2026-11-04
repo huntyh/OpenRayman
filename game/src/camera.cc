@@ -13,6 +13,23 @@
 
 namespace openrayman::game
 {
+	std::array<float, 3> screen_object_position(const affine& camera, const std::array<int, 3>& screen)
+	{
+		// 0x422940: depth is reciprocal projection depth, in thousandths; 0 is the
+		// special near-plane case. The renderer uses a 0.9 rad vertical FOV and 0.1 near plane.
+		float z = float(screen[2]) * 0.001f;
+		float distance = z == 0 ? 0.0f : 0.1f * (z + 1.0f) / z;
+		// 0x422940 divides the lateral coordinates by depth independently of
+		// the forward coordinate; at zero it skips that division.
+		float half_height = (z == 0 ? 0.1f : 0.1f / z) * std::tan(0.45f);
+		float x = (float(screen[0]) * 0.002f - 1.0f) * half_height * (4.0f / 3.0f);
+		float y = (1.0f - float(screen[1]) * 0.002f) * half_height;
+		std::array<float, 3> result{};
+		for(int i = 0; i < 3; ++i)
+			result[i] = camera.m[i][3] - camera.m[i][0] * x - camera.m[i][1] * distance + camera.m[i][2] * y;
+		return result;
+	}
+
 	namespace
 	{
 		namespace camera_field

@@ -11,6 +11,9 @@ namespace openrayman::game
 {
 	class interpreter;
 
+	// Unproject the screen-object coordinates using the renderer's 4:3 projection.
+	std::array<float, 3> screen_object_position(const affine& camera, const std::array<int, 3>& screen);
+
 	// Where the game camera wants to be, as its scripts' procedure 444 solves it each frame (0x485810
 	// with the stages 0x483F90, 0x4840A0 and 0x4847D0), and what the mechanics that moves the camera
 	// super object carries from one tick to the next (0x4359D0, the state it keeps in [[actor+8]+4]).

@@ -7,6 +7,18 @@
 
 using namespace openrayman;
 
+TEST_CASE("screen objects unproject the viewport centre in camera space")
+{
+	affine camera;
+	camera.m[0][3] = 3;
+	camera.m[1][3] = 4;
+	camera.m[2][3] = 5;
+	auto centre = game::screen_object_position(camera, { 500, 500, 1000 });
+	CHECK(centre[0] == doctest::Approx(3));
+	CHECK(centre[1] == doctest::Approx(3.8));
+	CHECK(centre[2] == doctest::Approx(5));
+}
+
 TEST_CASE("camera collision preserves small movements near a wall")
 {
 	collision_triangle wall;
