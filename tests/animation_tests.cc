@@ -113,6 +113,80 @@ TEST_CASE("pose: morphs match channel and whole frame")
 	CHECK_FALSE(parts[0].morph_mesh);
 }
 
+TEST_CASE("pose: parent changes hold local keys, including loop blends")
+{
+	auto bank = two_keyframe_bank();
+	bank.animations[0].channels = 3;
+	bank.channels[0].id = 12;
+	// Parent ids deliberately differ from their channel indices.
+	for(std::int16_t id : { 21, 37 })
+	{
+		auto parent = bank.channels[0];
+		parent.id = id;
+		parent.frame_keys = static_cast<std::uint32_t>(bank.frame_keys.size());
+		bank.frame_keys.insert(bank.frame_keys.end(), 4, 2);
+		bank.channels.push_back(parent);
+	}
+	bank.keyframes.push_back(bank.keyframes[0]);
+	bank.keyframes[2].flags = 0x80;
+	bank.hierarchies = { { 12, 21 }, { 12, 37 } };
+	for(std::size_t f = 0; f < bank.frames.size(); f++)
+	{
+		bank.frames[f].hierarchy_count = 1;
+		bank.frames[f].hierarchy_start = f < 2 ? 0 : 1;
+	}
+	bank.vectors.push_back({ 2, 3, 4 });
+	bank.keyframes[1].scale_vector = 3;
+	bank.keyframes[0].ease = 1;
+	bank.keyframes[1].ease = 8192;
+	const auto first = pose(bank, 0, 0)[0];
+	const auto last = pose(bank, 0, 2)[0];
+	auto check_local = [](const affine& actual, const affine& expected) {
+		for(int r = 0; r < 3; r++)
+			for(int c = 0; c < 4; c++)
+				CHECK(actual.m[r][c] == doctest::Approx(expected.m[r][c]));
+	};
+
+	SUBCASE("head to hand: position, rotation and scale switch with the parent")
+	{
+		for(double frame : { 0.5, 1.0, 1.5, 1.99 })
+		{
+			const auto held = pose(bank, 0, frame)[0];
+			CHECK(held.parent == std::optional<std::size_t>(1));
+			check_local(held.local, first.local);
+		}
+		CHECK(last.parent == std::optional<std::size_t>(2));
+		CHECK(last.local.m[0][3] == doctest::Approx(4.0f));
+		CHECK(last.local.uniform_scale() > first.local.uniform_scale());
+		CHECK(std::abs(last.local.m[1][0]) > 1.0f);
+	}
+	SUBCASE("root to parent also holds")
+	{
+		bank.frames[0].hierarchy_count = bank.frames[1].hierarchy_count = 0;
+		const auto held = pose(bank, 0, 1.5)[0];
+		CHECK_FALSE(held.parent);
+		check_local(held.local, first.local);
+	}
+	SUBCASE("different hierarchy records with the same parent still interpolate and ease")
+	{
+		bank.hierarchies[1][1] = 21;
+		CHECK(pose(bank, 0, 1)[0].local.m[0][3] == doctest::Approx(1.0f));
+	}
+	SUBCASE("0x200 cannot blend back into another parent's space")
+	{
+		bank.keyframes[1].flags |= 0x200;
+		check_local(pose(bank, 0, 3.5)[0].local, last.local);
+	}
+	SUBCASE("seam glide cannot blend back into another parent's space")
+	{
+		check_local(pose(bank, 0, 3.5, 2)[0].local, last.local);
+		bank.keyframes[1].flags |= 0x200;
+		check_local(pose(bank, 0, 3.5, 2)[0].local, last.local);
+		CHECK(pose(bank, 0, 4, 2)[0].parent == first.parent);
+		check_local(pose(bank, 0, 4, 2)[0].local, first.local);
+	}
+}
+
 TEST_CASE("pose: blends between keyframes, holds after the last, loops back when flagged, eases")
 {
 	animation_bank bank = two_keyframe_bank();

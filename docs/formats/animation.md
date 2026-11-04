@@ -79,8 +79,10 @@ object between the frame's own choice and the target (0x443990, only if their ge
 The target byte indexes the actor's object list directly, rather than the animation's choice table.
 OpenRayman reads the records and applies the match for the whole frame; below 100 it blends
 positions and normals of compatible triangle meshes, retaining the source material and topology.
-Unsupported or incompatible meshes fall back to the source. The menu Teensy's hat (Menu, node 29,
-animation 316, channel 12) morphs object 11 towards 16 at 42 on frames 48 and 49.
+Unsupported or incompatible meshes fall back to the source. The Globox child's flag (Menu, node 29,
+animation 316, channel 12) morphs object 11 towards 16 at 42 on frames 48 and 49. This is not the
+Teensy's hat: the real Teensies are nodes 27/28, with the hat on channel 3 in animation 304.
+Identification: own analysis via the Codex helper, re-checked with `ortool pose`, `mesh` and `anim`.
 
 ## Posing a frame
 

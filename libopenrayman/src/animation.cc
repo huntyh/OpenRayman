@@ -263,10 +263,22 @@ namespace openrayman
 			frame = frame < 0 ? frame + a.frames : 0;
 		const std::uint32_t whole = std::min(std::uint32_t(frame), std::uint32_t(a.frames - 1));
 		const animation_frame& f = at(bank.frames, std::size_t(a.start_frames) + whole, "frame");
+		// Local keys belong to the parent space of their frame, not the next attachment.
+		auto parent_at = [&](const animation_frame& frame, std::int16_t id) {
+			std::optional<std::int16_t> parent;
+			for(std::size_t h = 0; h < frame.hierarchy_count; h++)
+			{
+				const auto& link = at(bank.hierarchies, std::size_t(frame.hierarchy_start) + h, "hierarchy");
+				if(link[0] == id)
+					parent = link[1];
+			}
+			return parent;
+		};
 
 		for(std::size_t c = 0; c < a.channels; c++)
 		{
 			const animation_channel& channel = at(bank.channels, std::size_t(a.start_channels) + c, "channel");
+			const auto parent = parent_at(f, channel.id);
 			// Each frame names the keyframe at or before it. Unless that's the channel's last one,
 			// the next keyframe in the array follows it in time, so blend towards it (true for every
 			// keyframe of every level; after the last keyframe the channel holds still).
@@ -286,6 +298,12 @@ namespace openrayman
 					double span = double(a.frames) + next->frame - key.frame;
 					t = span > 0 ? std::clamp(float((frame - key.frame) / span), 0.0f, 1.0f) : 0.0f;
 				}
+			}
+			if(next && parent != parent_at(at(bank.frames, std::size_t(a.start_frames) + next->frame, "frame"), channel.id))
+			{
+				// Hold the outgoing key until its matching hierarchy switches too (Menu's hat).
+				next = nullptr;
+				t = 0;
 			}
 			if(next && key.ease)
 			{
@@ -336,7 +354,7 @@ namespace openrayman
 			// Gliding into the loop's first frame over the last `seam` frames (at most a quarter of it).
 			const double window = std::min(seam, a.frames / 4.0);
 			double into = window > 0 ? (frame - (double(a.frames) - window)) / window : 0;
-			if(into > 0)
+			if(into > 0 && parent == parent_at(at(bank.frames, a.start_frames, "frame"), channel.id))
 			{
 				float s = float(std::min(into, 1.0));
 				s = s * s * (3 - 2 * s);

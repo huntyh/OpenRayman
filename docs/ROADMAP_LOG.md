@@ -3,6 +3,21 @@
 The dated investigation notes from `ROADMAP.md`, kept here so the roadmap stays short. Newest
 first. The format docs under `formats/` are the permanent home of the findings themselves.
 
+## 2026-11-04: the hat flip was interpolation across a parent change
+
+Correction to the earlier hat investigations: the real Menu Teensies are nodes 27/28; their hat
+is channel 3, object 3 in animation 304. It changes parent from head channel 2 to hand channel 9
+at frame 7 and back at 70. Node 29 / animation 316 channel 12 is a Globox child's flag; its morphs
+are now read, but do not affect the hat. Own analysis via the Codex helper
+(`build/helpers/teensy_hat_report2.md`), re-checked with `ortool pose`, `states`, `mesh` and `anim`.
+
+Fractional frames 6 and 69 blended the next key's local transform in the outgoing parent's space,
+briefly inverting the hat. `pose()` now holds the current local key when the next key's parent
+differs, switching the transform with the hierarchy. The same parent check guards the loop-seam
+glide and the 0x200 blend back to the first key. Other interpolation and easing stay in place.
+Synthetic regression tests cover both attachment changes and the loop wrap; visual confirmation
+in the menu remains for the user.
+
 ## 2026-11-04 (evening): the user's look at the morphs build
 
 Fixed (user): the menu whale's tail fin is smooth, the river condor glides, Murfy hovers
