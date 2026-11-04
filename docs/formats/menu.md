@@ -98,7 +98,7 @@ Fields, from the setter code (0x465A50, 0x465AA0, 0x465BE0):
 | +0x08 | screen Y (`param_2[2]`) |
 | +0x0C | size / scale, a float (`param_2[3]`) |
 | +0x10 | alpha, 0..255; the drawing pass halves it while a word is flashing |
-| +0x12 | wobble phase: non-zero makes the text sway on a sine |
+| +0x12 | pulse flag: non-zero expands and contracts each glyph on a sine |
 | +0x13 | flag byte: 0x01 alpha ramping in, 0x02 ramping out, 0x04 flash the current word, 0x08 shake, 0x10 colour mode set; the setters clear single bits with 0xEF / 0xF7 / 0xFB |
 | +0x14 | the word index being flashed, compared with the running word counter |
 | +0x18 | colour mode: 0 default, 1..2 red, 3 yellow |
@@ -148,8 +148,7 @@ The text is a plain byte string plus **inline control codes**, all introduced by
 | `/O:<colour>:` | colour code: 0 and 600 are the default blue (0x6E, 0xBE, 0xFF), 200 is red (0xFA, 0x46, 0x46), 400 is yellow (0xFF, 0xFF, 0x78) |
 | `/c:` | toggles a colour/state flag |
 
-Between codes, each character advances the pen by its glyph width; `.`, `,` and `'` get extra
-kerning. A space moves the pen back and starts a new word (the word counter is what `/L` and the
+Between codes, each character advances by a slot-size-dependent fixed width. Spaces advance by 60% of that width; punctuation is vertically offset as described below. A space moves the pen back and starts a new word (the word counter is what `/L` and the
 flash effect use).
 
 The glyph comes from `0x424E90(character)`: a font object's pointer at 0x4A727C holds an array of
@@ -254,15 +253,31 @@ skipping of greyed entries all run from the level's own scripts.
 
 ### How an entry looks (0x4660B0)
 
-Each glyph is drawn as its font object's texture times one flat colour, not with the painted
-gradient a dialog glyph has: colour mode 0/1 (or flag 0x10 clear) blue (0x6E, 0xBE, 0xFF), 2 red
-(0xFA, 0x46, 0x46), 3 yellow (0xFF, 0xFF, 0x78), the same three as the `/O` codes 0/600, 200, 400,
-with the slot's alpha. Node 6 marks the cursor's entry mode 3 and the current one (the language
-in use) mode 2, and sets the greyed entries' alpha to 90 (its var1). Field 1 (+0x12) sways the
-whole string: it is lifted by sin(5 t) × 7 slot units, t the particle clock in seconds (constants
-0x49CA90, 0x49C9E4). Flag 0x04 does the same to one character only (the +0x14 index counts the
-glyphs and spaces from 1) at half alpha; we don't draw that one yet. Flag 0x08 draws a box behind
-the text (0x465E30 measures it, 0x429820 draws it), not a shake as noted above.
+The slot path draws a textured screen-space rectangle per glyph. Own analysis of the GOG
+executable, 2026-11-04: 0x429670 supplies white at both upper corners and the slot colour at
+both lower corners, with the slot alpha throughout, to `GLI_DRV_vSendSpriteToClipWithCol`.
+The texture and interpolated colour produce the gradient. Colour mode 0/1 (or flag 0x10 clear)
+is blue (110, 190, 255), 2 red (250, 70, 70), and 3 yellow (255, 255, 120); `/O` overrides it.
+
+Disassembly of 0x465DD0 shows a single width for the slot, not per-character widths: with
+`d = size - 15`, the advance and quad width are trunc(32 + 2d), height trunc(38 + 2.5d),
+and line height trunc(46 + 4d). 0x465D60 measures spaces at trunc(0.6 * advance).
+At 0x4660B0 a period is shifted down by height / 4, a comma by height / 2, and an apostrophe
+up by height / 4 (integer shifts); their horizontal advance remains unchanged. The coordinates
+are scaled by 0.1 into the driver's percent-of-viewport space, so they do not depend on camera
+depth. The font textures themselves have differing contents, but there is no per-glyph advance
+in this screen-slot path.
+
+A nonzero +0x12 expands the top and bottom edges by `sin(5t) * 7` slot units, rather than
+lifting the whole string. Flag 0x04 applies the same effect to one character at half alpha;
+our renderer does not yet implement that flag. Flag 0x08 draws a box behind the text
+(0x465E30 measures it, 0x429820 draws it). Node 6 uses alpha 90 for greyed entries.
+
+### Conversation continue arrow
+
+Its placement remains unresolved. The screen-image pass at 0x460600 forwards the corners
+stored by 0x4605A0 to 0x429670; this alone does not identify the arrow or explain its inset.
+No arrow-position adjustment has been made. Own analysis of the GOG executable, 2026-11-04.
 
 ### New Game
 
@@ -286,7 +301,7 @@ Node 6 behaviour 11 handles the main menu. Entry 5 sets var55 to 6 and switches 
 and reflex 3. Reflex 3 composes slot 9 from text IDs 0x18D and 0x193 (initial choice) or
 0x192 (other choice); directional input toggles var41. These strings contain `/O` colour codes,
 so the two choices are coloured within the same slot. The screen renderer must apply those codes
-as flat colours to subsequent glyphs, independently of the slot's starting tint. The default is No;
+as gradient endpoint colours to subsequent glyphs, independently of the slot's starting tint. The default is No;
 selecting Yes and confirming calls procedure 101. No returns to the main menu.
 
 Procedure 101 (handler 0x468AB0) requests engine state 2 through 0x404BF0 and sets script state 3

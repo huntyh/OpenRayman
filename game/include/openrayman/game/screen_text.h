@@ -7,6 +7,11 @@
 
 namespace openrayman::game
 {
+	struct screen_text_metrics { int advance, height, line_height, space; };
+	// Slot dimensions and punctuation positioning from 0x465DD0 / 0x4660B0.
+	screen_text_metrics screen_slot_metrics(float size);
+	int screen_slot_punctuation_offset(unsigned char byte, int height);
+
 	// The game's on-screen text: 50 slots filled by procedures 505..507 and drawn every frame by
 	// the exe's text pass (0x465C10). The renderer draws these from the state scripts build.
 	// Table 0x4E1080, slot size 0x1C, and the
@@ -24,7 +29,7 @@ namespace openrayman::game
 			float y = 0;               // +0x08
 			float size = 0;            // +0x0C
 			std::uint8_t alpha = 0;    // +0x10
-			std::uint8_t wobble = 0;   // +0x12: non-zero makes the text sway
+			std::uint8_t wobble = 0;   // +0x12: non-zero pulses glyph height
 			std::uint8_t flags = 0;    // +0x13
 			std::uint8_t word = 0;     // +0x14: the word index being flashed
 			std::uint8_t colour = 0;   // +0x18: 0 default, 1..2 red, 3 yellow

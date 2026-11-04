@@ -2,6 +2,7 @@
 // GNU General Public License, version 3. See LICENSE_openrayman for the full license.
 #include <renderer/dialog_renderer.h>
 #include <openrayman/gf_texture.h>
+#include <openrayman/game/screen_text.h>
 
 #include <algorithm>
 #include <cmath>
@@ -198,11 +199,41 @@ namespace openrayman
 			catch(const std::exception& e) { SDL_Log("Screen image: %s", e.what()); }
 		for(const auto& dialog : dialogs)
 		{
+			if(dialog.tint)
+			{
+				// 0x465DD0 / 0x4660B0: screen slots draw texture quads in
+				// thousandths of the viewport, independent of camera depth.
+				auto layout = game::layout_dialog(dialog);
+				auto& font = font_for(dialog.template_actor);
+				float left = layout.centred ? (1000.0f - layout.width) * 0.5f : std::trunc(dialog.x);
+				int glyph_height = game::screen_slot_metrics(dialog.z).height;
+				for(const auto& item : layout.glyphs)
+				{
+					if(!item.revealed || item.byte == ' ') continue;
+					const auto* g = glyph_for(font, item.index);
+					if(!g) continue;
+					auto tint = *dialog.tint;
+					if(item.screen_colour == 0 || item.screen_colour == 600) tint = {110/255.0f, 190/255.0f, 1, tint[3]};
+					else if(item.screen_colour == 200) tint = {250/255.0f, 70/255.0f, 70/255.0f, tint[3]};
+					else if(item.screen_colour == 400) tint = {1, 1, 120/255.0f, tint[3]};
+					float offset = float(game::screen_slot_punctuation_offset(item.byte, glyph_height));
+					float x0 = (left + item.x) * 0.64f, x1 = x0 + item.advance * 0.64f;
+					float y0 = (std::trunc(dialog.y) + item.y + offset - dialog.pulse) * 0.48f;
+					float y1 = (std::trunc(dialog.y) + item.y + offset + glyph_height + dialog.pulse) * 0.48f;
+					// 0x429670 passes white at the upper corners and the slot colour
+					// at the lower corners to GLI_DRV_vSendSpriteToClipWithCol.
+					SDL_FColor top{1, 1, 1, tint[3]}, bottom{tint[0], tint[1], tint[2], tint[3]};
+					SDL_Vertex v[] = {{{x0,y0},top,{0,0}}, {{x1,y0},top,{1,0}}, {{x1,y1},bottom,{1,1}},
+						{{x0,y0},top,{0,0}}, {{x1,y1},bottom,{1,1}}, {{x0,y1},bottom,{0,1}}};
+					append(g->texture, false, v);
+				}
+				continue;
+			}
 			float x, y, unit;
 			if(dialog.screen)
 			{
 				x = std::trunc(dialog.x) * 0.64f;
-				y = (std::trunc(dialog.y) - dialog.lift) * 0.48f;
+				y = std::trunc(dialog.y) * 0.48f;
 				// 0x422940 uses reciprocal screen depth. The final glyph magnification is
 				// provisional pending a matched capture from the original renderer.
 				float depth = std::abs(std::trunc(dialog.z)) * 0.001f;

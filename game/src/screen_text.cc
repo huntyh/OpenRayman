@@ -4,6 +4,21 @@
 
 namespace openrayman::game
 {
+	screen_text_metrics screen_slot_metrics(float size)
+	{
+		float d = size - 15.0f;
+		int advance = int(32.0f + 2.0f * d);
+		return {advance, int(38.0f + 2.5f * d), int(46.0f + 4.0f * d), int(advance * 0.6f)};
+	}
+
+	int screen_slot_punctuation_offset(unsigned char byte, int height)
+	{
+		if(byte == '.') return height >> 2;
+		if(byte == ',') return height >> 1;
+		if(byte == 39) return -(height >> 2);
+		return 0;
+	}
+
 	// The exe's out-of-range behaviour is to do nothing at all, so every setter checks 0x32 first.
 	static bool in_range(std::size_t index)
 	{

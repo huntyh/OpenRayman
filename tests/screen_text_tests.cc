@@ -91,3 +91,17 @@ TEST_CASE("screen text: the table has 50 slots and out-of-range indices are igno
 	CHECK(text.used() == 0);
 	CHECK_FALSE(text.at(49).used);
 }
+
+TEST_CASE("screen slot size and punctuation follow the executable")
+{
+	using namespace openrayman::game;
+	auto m = screen_slot_metrics(16);
+	CHECK(m.advance == 34);
+	CHECK(m.height == 40);
+	CHECK(m.line_height == 50);
+	CHECK(m.space == 20);
+	CHECK(screen_slot_punctuation_offset('.', m.height) == 10);
+	CHECK(screen_slot_punctuation_offset(',', m.height) == 20);
+	CHECK(screen_slot_punctuation_offset(39, m.height) == -10);
+	CHECK(screen_slot_punctuation_offset('A', m.height) == 0);
+}

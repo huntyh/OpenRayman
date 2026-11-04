@@ -1596,14 +1596,17 @@ namespace
 								text.prepared = slot.text;
 								text.revealed = int(slot.text.size());
 								text.template_actor = fix->base + 0x15ca8;
-								text.widths.fill(0.38f);
+								// 0x465DD0 computes one shared advance from the slot size.
+								auto metrics = game::screen_slot_metrics(slot.size);
+								text.widths.fill(float(metrics.advance));
+								text.widths[0] = float(metrics.space);
 								text.default_scale = 1;
-								text.line_height = 0.45f;
+								text.line_height = float(metrics.line_height);
 								text.screen = true;
 								text.x = slot.x; text.y = slot.y; text.z = slot.size;
 								// 0x4660B0: the colour mode picks the tint (0/1 blue, 2 red, 3 yellow, as
 								// the /O codes), the slot's alpha fades it (the menu greys entries out at 90),
-								// and the wobble lifts the string by sin(5 t) * 7, t the particle clock.
+								// and the pulse changes both vertical edges by sin(5 t) * 7 slot units.
 								std::array<float, 4> tint{110 / 255.0f, 190 / 255.0f, 1, slot.alpha / 255.0f};
 								if(slot.flags & game::screen_text::colour_set)
 								{
@@ -1612,7 +1615,7 @@ namespace
 								}
 								text.tint = tint;
 								if(slot.wobble)
-									text.lift = std::sin(float(a.vm->clock()) / 1000.0f * 5.0f) * 7.0f;
+									text.pulse = std::sin(float(a.vm->clock()) / 1000.0f * 5.0f) * 7.0f;
 								dialogs.push_back(std::move(text));
 							}
 				const auto& boxes = a.vm->particles().screen_rectangles();
