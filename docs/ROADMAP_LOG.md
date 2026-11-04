@@ -3,6 +3,17 @@
 The dated investigation notes from `ROADMAP.md`, kept here so the roadmap stays short. Newest
 first. The format docs under `formats/` are the permanent home of the findings themselves.
 
+## 2026-11-04: the Teensy's hat is a morph
+
+Codex (read-only, build/helpers/teensy_hat_report.md), re-checked at the morph lookup 0x40DFB0:
+the exe shows the plain object choice except where the animation has a morph record for that
+channel and frame. Animation 316 has two for the hat (channel 12, frames 48 and 49): object 11
+blended towards 16 at 42 percent. We don't read morphs, so we draw plain object 11 there, which
+is the flipped hat. The same mechanism is behind the menu's butterfly. Next: read the morph
+records, then build the blend (0x443990; vertices between two compatible objects). The object
+flags' high byte (0x0800 on the hat's choices) is ignored by this path; the low byte 2/3/5 hides
+the object, 0 shows it.
+
 ## 2026-11-03: the menu Teensy's hat
 
 The flip is at frames 48..49 of animation 316 (50 frames, a plain loop): the hat channel (12)

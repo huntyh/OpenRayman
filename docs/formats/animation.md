@@ -62,7 +62,7 @@ each array's new elements follow inline, every array starting 4-byte aligned, in
 | 8 | frame keys: per channel and frame, a keyframe index (u32) | 4 |
 | 9 | keyframes: 3 floats pivot position, float position multiplier, u16 frame, flags (0x80 = last), rotation, a second rotation, scale vector, position vector, 4 × u16 | 36 |
 | 10 | events (contain pointers, so they're not part of the pointer-free stretch) | 12 |
-| 11 | morph data | 8 |
+| 11 | morphs: u8 target object choice, u8 amount (percent), u16 channel, u16 frame, u16 unknown | 8 |
 
 This accounts for the whole level GPT after its header: the "1.8 MB without pointers" in Learn_10
 is arrays 0–9, the run of pointers after it is the events, and the last stretch is the morph data.
@@ -71,6 +71,13 @@ is arrays 0–9, the run of pointers after it is the events, and the last stretc
 object choices, object choices per channel, channels, frames, keyframes, an unknown, events; 8 more
 u16 (unknowns, a second speed, second start indices, morph count); then u16 start indices of its
 vectors, quaternions, hierarchy links, object choices, frames, channels, events and morph data.
+
+**Morphs.** On a frame and channel that has a morph record (the animation's morph count at +0x24,
+its records from its morph start), the shown object is not the plain object choice: with an
+amount of 100 or more the record's target is shown instead; below 100 the game builds a blended
+object between the frame's own choice and the target (0x443990, only if their geometries match).
+The menu Teensy's hat (Menu, node 29, animation 316, channel 12) morphs object 11 towards 16 at 42
+on frames 48..49, the frames our engine shows flipped. Not read by us yet.
 
 ## Posing a frame
 
@@ -221,6 +228,11 @@ them a look later) get no shadow yet.
 
 - Pivot positions and easing gate: own analysis of Rayman2.exe 0x41A610 and 0x419BD0. The original
   game's live Learn_10 trace confirms that strafing shots use the same state sequence as OpenRayman.
+
+- Morphs: own analysis of Rayman2.exe (the morph lookup 0x40DFB0, the object choice 0x41A400 and
+  0x40E0D0, the blend 0x443990), from a helper model's reading (Codex, 2026-11-04) re-checked at
+  0x40DFB0's record compare (channel +2, frame +4, count at animation +0x24); the Teensy's records
+  are the helper's reading of Menu.gpt, not yet checked by our reader.
 
 - Events: own analysis of Rayman2.exe (0x40E800, 0x40E9E0, 0x41A930..0x41B100), from a helper
   model's reading re-checked at the frame field, the part list and the marker clear.
