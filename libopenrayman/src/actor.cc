@@ -247,7 +247,17 @@ namespace openrayman
 				local = channels[*parent].local * local;
 				parent = channels[*parent].parent;
 			}
-			add(*channels[c].object, actor.world * local);
+			std::size_t object = *channels[c].object;
+			if(channels[c].morph && channels[c].morph->amount >= 100)
+				object = channels[c].morph->target;
+			const auto before = out.size();
+			add(object, actor.world * local);
+			if(channels[c].morph && channels[c].morph->amount < 100 && out.size() != before &&
+				channels[c].morph->target < actor.meshes.size() && actor.meshes[channels[c].morph->target])
+			{
+				out.back().morph_mesh = *actor.meshes[channels[c].morph->target];
+				out.back().morph_amount = channels[c].morph->amount;
+			}
 		}
 	}
 

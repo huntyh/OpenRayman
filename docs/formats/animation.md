@@ -76,8 +76,11 @@ vectors, quaternions, hierarchy links, object choices, frames, channels, events 
 its records from its morph start), the shown object is not the plain object choice: with an
 amount of 100 or more the record's target is shown instead; below 100 the game builds a blended
 object between the frame's own choice and the target (0x443990, only if their geometries match).
-The menu Teensy's hat (Menu, node 29, animation 316, channel 12) morphs object 11 towards 16 at 42
-on frames 48..49, the frames our engine shows flipped. Not read by us yet.
+The target byte indexes the actor's object list directly, rather than the animation's choice table.
+OpenRayman reads the records and applies the match for the whole frame; below 100 it blends
+positions and normals of compatible triangle meshes, retaining the source material and topology.
+Unsupported or incompatible meshes fall back to the source. The menu Teensy's hat (Menu, node 29,
+animation 316, channel 12) morphs object 11 towards 16 at 42 on frames 48 and 49.
 
 ## Posing a frame
 
@@ -231,8 +234,8 @@ them a look later) get no shadow yet.
 
 - Morphs: own analysis of Rayman2.exe (the morph lookup 0x40DFB0, the object choice 0x41A400 and
   0x40E0D0, the blend 0x443990), from a helper model's reading (Codex, 2026-11-04) re-checked at
-  0x40DFB0's record compare (channel +2, frame +4, count at animation +0x24); the Teensy's records
-  are the helper's reading of Menu.gpt, not yet checked by our reader.
+  0x40DFB0's record compare (channel +2, frame +4, count at animation +0x24). The direct target
+  index was checked in 0x40E0D0 and 0x443990 against the actor's object-list entries.
 
 - Events: own analysis of Rayman2.exe (0x40E800, 0x40E9E0, 0x41A930..0x41B100), from a helper
   model's reading re-checked at the frame field, the part list and the marker clear.

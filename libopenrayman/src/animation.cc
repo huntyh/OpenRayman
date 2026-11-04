@@ -69,7 +69,8 @@ namespace openrayman
 						a.keyframes = r.u16();
 						r.u16();
 						a.events = r.u16();
-						r.skip(2 * 8); // unknowns, a second speed, second start indices, the morph count
+						r.skip(2 * 7); // unknowns, a second speed, second start indices
+						a.morphs = r.u16();
 						a.start_vectors = r.u16();
 						a.start_quaternions = r.u16();
 						a.start_hierarchies = r.u16();
@@ -158,6 +159,14 @@ namespace openrayman
 						bank.keyframes.push_back(k);
 						break;
 					}
+					case a_morphs:
+					{
+						animation_bank::morph_record m;
+						m.target = r.u8(); m.amount = r.u8();
+						m.channel = r.u16(); m.frame = r.u16(); m.unknown = r.u16();
+						bank.morphs.push_back(m);
+						break;
+					}
 					default:
 						r.skip(element_size[which]);
 						break;
@@ -217,7 +226,7 @@ namespace openrayman
 			read_elements(bank, which, level, count);
 		}
 		// The level's events: a pointer to the descriptor (resolved through the GPT's table), then 8
-		// bytes (frame, part). The morph data after them isn't needed yet.
+		// bytes (frame, part), followed by the morph records.
 		std::size_t events = level_stacks[a_events].count - level_stacks[a_events].in_fix;
 		if(events && level.position() % 4)
 			level.skip(4 - level.position() % 4);
@@ -230,6 +239,10 @@ namespace openrayman
 				b = std::byte(level.u8());
 			bank.level_events.push_back(e);
 		}
+		std::size_t morphs = level_stacks[a_morphs].count - level_stacks[a_morphs].in_fix;
+		if(morphs && level.position() % 4)
+			level.skip(4 - level.position() % 4);
+		read_elements(bank, a_morphs, level, morphs);
 		return bank;
 	}
 
@@ -352,6 +365,15 @@ namespace openrayman
 			p.id = channel.id;
 			if(!object.invisible())
 				p.object = object.object;
+			for(std::size_t i = 0; i < a.morphs; i++)
+			{
+				const auto& m = at(bank.morphs, std::size_t(a.start_morphs) + i, "morph");
+				if(m.channel == static_cast<std::uint16_t>(channel.id) && m.frame == whole)
+				{
+					p.morph = m;
+					break;
+				}
+			}
 			// The game's quaternions rotate the other way round from the textbook formula (its own
 			// matrix is the transpose), so use the inverse. Checked by eye: with the textbook
 			// rotation, characters' heads and crowns end up sideways or upside down.

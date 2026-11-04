@@ -38,7 +38,7 @@ namespace openrayman
 	{
 		std::uint16_t speed = 0;
 		std::uint16_t vectors = 0, quaternions = 0, hierarchies = 0, ntto = 0, ntto_per_channel = 0;
-		std::uint16_t channels = 0, frames = 0, keyframes = 0, events = 0;
+		std::uint16_t channels = 0, frames = 0, keyframes = 0, events = 0, morphs = 0;
 		std::uint16_t start_vectors = 0, start_quaternions = 0, start_hierarchies = 0, start_ntto = 0;
 		std::uint16_t start_frames = 0, start_channels = 0, start_events = 0, start_morphs = 0;
 	};
@@ -90,6 +90,11 @@ namespace openrayman
 	// docs/formats/animation.md.
 	struct animation_bank
 	{
+		struct morph_record
+		{
+			std::uint8_t target = 0, amount = 0;
+			std::uint16_t channel = 0, frame = 0, unknown = 0;
+		};
 		std::vector<animation> animations;
 		std::vector<vec3> vectors;
 		std::vector<std::array<float, 4>> quaternions; // x, y, z, w
@@ -100,6 +105,7 @@ namespace openrayman
 		std::vector<std::uint16_t> ntto_choices;
 		std::vector<std::uint32_t> frame_keys;
 		std::vector<animation_keyframe> keyframes;
+		std::vector<morph_record> morphs;
 		std::size_t fix_animations = 0;
 		// The animations' events (12 bytes each: descriptor pointer, frame, part, ...) live in one
 		// array in Fix's memory, Fix's first; the level's come from the level GPT and the engine copies
@@ -125,6 +131,7 @@ namespace openrayman
 		std::int16_t id = 0;
 		std::optional<std::size_t> parent;   // index of the parent channel, if any
 		std::optional<std::uint16_t> object; // index in the actor's object list; none if hidden
+		std::optional<animation_bank::morph_record> morph;
 		affine local;                        // relative to the parent channel, or to the actor
 	};
 

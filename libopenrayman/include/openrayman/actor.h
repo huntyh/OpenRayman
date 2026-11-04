@@ -96,6 +96,8 @@ namespace openrayman
 		std::size_t node = 0; // the actor's super object
 		std::size_t mesh = 0; // in actor_set::meshes
 		affine world;
+		std::optional<std::size_t> morph_mesh;
+		std::uint8_t morph_amount = 0;
 	};
 
 	// Appends an actor's parts at a frame of its current animation (see pose()). Actors without an

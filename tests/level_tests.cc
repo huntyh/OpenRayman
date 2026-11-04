@@ -38,6 +38,54 @@
 
 using namespace openrayman;
 
+TEST_CASE("real data: Menu Teensy hat morph records")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto game = game_data::locate(*dir);
+	REQUIRE(game);
+	auto files = load_level_files(*game, "Menu");
+	auto bank = read_animation_bank(files);
+	REQUIRE(bank.animations.size() > 316);
+	const auto& a = bank.animations[316];
+	CHECK(a.morphs == 10);
+	for(unsigned frame : { 48u, 49u })
+	{
+		auto channels = pose(bank, 316, frame);
+		auto channel = std::ranges::find_if(channels, [](const auto& c) { return c.id == 12; });
+		REQUIRE(channel != channels.end());
+		CHECK(channel->object == 11);
+		REQUIRE(channel->morph);
+		CHECK(channel->morph->target == 16);
+		CHECK(channel->morph->amount == 42);
+	}
+	auto header = read_level_header(files);
+	scene tree(files.memory, header);
+	auto actors = read_actors(files.memory, tree, bank);
+	auto actor = std::ranges::find_if(actors.actors, [](const auto& e) { return e.node == 29; });
+	REQUIRE(actor != actors.actors.end());
+	REQUIRE(actor->meshes.size() > 16);
+	REQUIRE(actor->meshes[11]);
+	REQUIRE(actor->meshes[16]);
+	const auto& source = actors.meshes[*actor->meshes[11]];
+	const auto& target = actors.meshes[*actor->meshes[16]];
+	CHECK(source.vertices.size() == target.vertices.size());
+	CHECK(source.normals.size() == target.normals.size());
+	CHECK(source.elements.size() == target.elements.size());
+	CHECK(source.sprites.empty());
+	CHECK(target.sprites.empty());
+	CHECK(source.skipped_types.empty());
+	CHECK(target.skipped_types.empty());
+	CHECK_FALSE(source.vertices.empty());
+	auto posed_actor = *actor;
+	posed_actor.animation = 316;
+	std::vector<posed_part> parts;
+	pose_actor(posed_actor, bank, 48, parts);
+	CHECK(std::ranges::any_of(parts, [&](const auto& part) {
+		return part.mesh == *actor->meshes[11] && part.morph_mesh == actor->meshes[16] && part.morph_amount == 42;
+	}));
+}
+
 TEST_CASE("mask: decoding is its own inverse")
 {
 	std::vector<std::byte> data = { std::byte(1), std::byte(2), std::byte(3), std::byte(250) };

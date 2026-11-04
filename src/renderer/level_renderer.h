@@ -54,6 +54,8 @@ namespace openrayman
 			std::size_t mesh = 0;
 			glm::mat4 model{ 1 };
 			std::optional<std::size_t> sector; // whose lights shine on it; found from where it is if not set
+			std::optional<std::size_t> morph_mesh;
+			std::uint8_t morph_amount = 0;
 		};
 
 		// What to draw of the actors this frame. Parts naming a mesh that wasn't loaded are skipped.
@@ -170,6 +172,9 @@ namespace openrayman
 			std::vector<batch> batches;
 			std::vector<sprite_instance> sprites;
 			look_at look = look_at::none;
+			geometric_object geometry;
+			GLint first = 0;
+			std::vector<std::byte> vertices;
 		};
 
 		// The lights a part is drawn with, as the shader takes them.

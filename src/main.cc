@@ -954,7 +954,7 @@ namespace
 				for(int c = 0; c < 4; c++)
 					model[c][r] = part.world.m[r][c];
 			}
-			out.push_back({ part.mesh, model });
+			out.push_back({ part.mesh, model, {}, part.morph_mesh, part.morph_amount });
 		}
 		a.level->set_parts(std::move(out));
 		a.level->set_time(a.animation_time);

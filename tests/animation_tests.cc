@@ -1,6 +1,7 @@
 // First draft of these tests written by the local model, then reviewed.
 
 #include <openrayman/animation.h>
+#include <openrayman/actor.h>
 
 #include <doctest/doctest.h>
 
@@ -77,6 +78,39 @@ static animation_bank two_keyframe_bank()
 	last.pivot_position = { 4, 0, 0 };
 	bank.keyframes = { first, last };
 	return bank;
+}
+
+TEST_CASE("pose: morphs match channel and whole frame")
+{
+	auto bank = two_keyframe_bank();
+	bank.channels[0].id = 12;
+	bank.animations[0].morphs = 2;
+	bank.morphs = { { 16, 42, 12, 1, 0 }, { 9, 100, 12, 2, 0 } };
+	CHECK_FALSE(pose(bank, 0, 0.9)[0].morph);
+	auto blended = pose(bank, 0, 1.9)[0];
+	REQUIRE(blended.morph);
+	CHECK(blended.morph->target == 16);
+	CHECK(blended.morph->amount == 42);
+	CHECK(pose(bank, 0, 2)[0].morph->target == 9);
+	CHECK_FALSE(pose(bank, 0, 3)[0].morph);
+	actor_set::entry actor;
+	actor.animation = 0;
+	actor.meshes.resize(17);
+	actor.scales.resize(17);
+	actor.meshes[5] = 3;
+	actor.meshes[9] = 4;
+	actor.meshes[16] = 7;
+	std::vector<posed_part> parts;
+	pose_actor(actor, bank, 1, parts);
+	REQUIRE(parts.size() == 1);
+	CHECK(parts[0].mesh == 3);
+	CHECK(parts[0].morph_mesh == 7);
+	CHECK(parts[0].morph_amount == 42);
+	parts.clear();
+	pose_actor(actor, bank, 2, parts);
+	REQUIRE(parts.size() == 1);
+	CHECK(parts[0].mesh == 4);
+	CHECK_FALSE(parts[0].morph_mesh);
 }
 
 TEST_CASE("pose: blends between keyframes, holds after the last, loops back when flagged, eases")

@@ -12,6 +12,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <tuple>
 
 namespace openrayman
@@ -179,6 +180,7 @@ namespace openrayman
 			glm::vec3 normal;
 			glm::vec4 uv_bounds{ -1e6f, -1e6f, 1e6f, 1e6f }; // min u, v, max u, v: see the fragment shader
 			glm::vec4 color{ 1.0f };                          // the game's light on this corner
+			std::uint32_t source_index = 0;
 		};
 
 		// The copy of the texture a triangle's UVs stay within, per axis, or no bounds if they cross
@@ -671,7 +673,7 @@ namespace openrayman
 							rgba sum = light_at(lit, light_target::scenery, p, { turned.x, turned.y, turned.z });
 							color = glm::vec4(sum[0], sum[1], sum[2], sum[3]);
 						}
-						out.push_back({ position, uvs[k], glm::vec3(n[0], n[1], n[2]), bounds, color });
+						out.push_back({ position, uvs[k], glm::vec3(n[0], n[1], n[2]), bounds, color, index });
 					}
 					stats.triangles++;
 				}
@@ -780,8 +782,15 @@ namespace openrayman
 			by_texture triangles;
 			mesh& m = m_meshes.emplace_back();
 			m.look = object.look;
+			m.geometry = object;
 			add(object, affine{}, triangles, m.sprites, {});
+			m.first = GLint(vertices.size());
 			append(triangles, m.batches);
+			if(vertices.size() > std::size_t(m.first))
+			{
+				const auto* begin = reinterpret_cast<const std::byte*>(vertices.data() + m.first);
+				m.vertices.assign(begin, begin + (vertices.size() - m.first) * sizeof(vertex));
+			}
 		};
 		for(const geometric_object& object : meshes)
 			add_mesh(object);
@@ -922,7 +931,7 @@ namespace openrayman
 			for(const part& p : *list)
 			{
 				if(p.mesh < m_meshes.size())
-					parts.push_back({ p.mesh, face_camera(p.model, m_meshes[p.mesh].look, camera), p.sector });
+					parts.push_back({ p.mesh, face_camera(p.model, m_meshes[p.mesh].look, camera), p.sector, p.morph_mesh, p.morph_amount });
 			}
 		}
 
@@ -1002,6 +1011,39 @@ namespace openrayman
 				draw_triangles(b.first, b.count);
 			}
 		};
+		// Temporarily replace only this mesh's expanded corners; restore them after its draw so
+		// other instances sharing the mesh continue to use the original geometry.
+		auto morph = [&](const part& p, bool restore) {
+			if(!p.morph_mesh || *p.morph_mesh >= m_meshes.size()) return;
+			const mesh& source = m_meshes[p.mesh];
+			const auto& a = source.geometry;
+			const auto& b = m_meshes[*p.morph_mesh].geometry;
+			if(source.vertices.empty() || a.elements.size() != b.elements.size() ||
+				a.vertices.size() != b.vertices.size() || a.normals.size() != b.normals.size() ||
+				!a.sprites.empty() || !b.sprites.empty() || !a.skipped_types.empty() || !b.skipped_types.empty()) return;
+			glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+			if(restore)
+			{
+				glBufferSubData(GL_ARRAY_BUFFER, GLintptr(source.first * sizeof(vertex)), GLsizeiptr(source.vertices.size()), source.vertices.data());
+				return;
+			}
+			std::vector<vertex> blended(source.vertices.size() / sizeof(vertex));
+			std::memcpy(blended.data(), source.vertices.data(), source.vertices.size());
+			const float amount = p.morph_amount / 100.0f;
+			for(vertex& v : blended)
+			{
+				const auto i = v.source_index;
+				const auto& pos = b.vertices[i];
+				v.position = glm::mix(v.position, glm::vec3(pos[0], pos[1], pos[2]), amount);
+				if(i < b.normals.size())
+				{
+					const auto& n = b.normals[i];
+					auto normal = glm::mix(v.normal, glm::vec3(n[0], n[1], n[2]), amount);
+					if(glm::length(normal) > 1e-8f) v.normal = glm::normalize(normal);
+				}
+			}
+			glBufferSubData(GL_ARRAY_BUFFER, GLintptr(source.first * sizeof(vertex)), GLsizeiptr(source.vertices.size()), blended.data());
+		};
 		// Solid surfaces first, the level's and the actors'.
 		blend current = blend::none;
 		set_blend(current);
@@ -1013,7 +1055,9 @@ namespace openrayman
 		{
 			glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(parts[i].model));
 			use_lights(part_light[i]);
+			morph(parts[i], false);
 			draw_batches(m_meshes[parts[i].mesh].batches, blend::none);
+			morph(parts[i], true);
 		}
 		// The nearly opaque middle of cut-out-like soft surfaces (a leaf, not its fringe) is solid
 		// too: it hides whatever see-through things lie behind it, however they're sorted (sprites come
@@ -1036,7 +1080,9 @@ namespace openrayman
 		{
 			glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(parts[i].model));
 			use_lights(part_light[i]);
+			morph(parts[i], false);
 			draw_cores(m_meshes[parts[i].mesh].batches);
+			morph(parts[i], true);
 		}
 
 		// Shadows: blobs laid on the ground below the actors that cast them, over the solid surfaces.
@@ -1140,7 +1186,9 @@ namespace openrayman
 			}
 			if(d.first < 0)
 			{
+				if(d.part != level) morph(parts[d.part], false);
 				draw_batches(std::span(d.b, 1), d.b->mode);
+				if(d.part != level) morph(parts[d.part], true);
 				continue;
 			}
 			// Neighbours in the order that continue the same batch go in one draw call.
