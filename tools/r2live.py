@@ -30,6 +30,8 @@ CLOCK = 0x5003EC
 FIX_CAMERA = 0x4B7308  # second Fix entry: camera actor (0x403730)
 SCREEN_RECTS = 0x4E0F20  # screen rectangles, 0x20 each, written by 0x460530 (kind 120)
 SCREEN_SPRITES = 0x4E1638  # screen sprites (0x466530); layout unknown, logged raw
+WORLD_DISPLAY = 0x500458  # the world view's display record (cutscene bars, Sol 2026-11-04)
+BAR_ACTOR = 0x4B730C  # pointer to Fix actor 6, the bar controller
 DISPLAY = 0x5004D4  # the display record: viewport and letterbox (docs/ROADMAP_LOG 2026-11-02)
 FIX_ACTORS = 0x4B7300  # u32 count, then the Fix actors (0x403730)
 PROJECTION = 0x4A723C  # current renderer projection record (0x4228D0)
@@ -255,6 +257,20 @@ def snapshot(m, variables, contacts=False, zones=False, camera=False, generated=
 					s[f"rect{i}"] = fmt(corners) + " " + " ".join(f"{w:X}" for w in words[4:])
 			s["screen_sprites"] = " ".join(f"{m.u32(SCREEN_SPRITES + k * 4):X}" for k in range(64))
 		s["display"] = " ".join(str(m.u32(DISPLAY + offset)) for offset in range(0x30, 0x58, 4))
+		# The world view's own display record (Sol, 2026-11-04: 0x40AF56 hands 0x500458 to the world
+		# render; 0x5004D4 above is the overlay view). Bars: +0x48/+0x4C top/bottom in thousandths,
+		# +0x38/+0x3C their pixel rows. Fix actor 6 (pointer at 0x4B730C) animates them: variables
+		# 57/58/59 request large/small/withdraw (bytes +0x2E9/+0x2E8/+0x2E7), 60 the amount (+0x160).
+		s["world_display"] = " ".join(str(m.u32(WORLD_DISPLAY + offset)) for offset in range(0x30, 0x58, 4))
+		bars = m.u32(BAR_ACTOR)
+		buffer = 0
+		if bars:
+			brain = m.u32(bars + 0x0C)
+			mind = m.u32(brain) if brain else 0
+			memory = m.u32(mind + 0x0C) if mind else 0
+			buffer = m.u32(memory + 8) if memory else 0
+		if buffer:
+			s["bar_controller"] = f"large {m.u8(buffer + 0x2E9)} small {m.u8(buffer + 0x2E8)} out {m.u8(buffer + 0x2E7)} amount " + fmt(m.f32s(buffer + 0x160, 1))
 	data = m.u32(actor)
 	if data:
 		s["state"] = f"0x{m.u32(data + 4):X}"
