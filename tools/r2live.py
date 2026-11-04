@@ -28,6 +28,7 @@ import time
 MAIN_ACTOR = 0x500578
 CLOCK = 0x5003EC
 FIX_CAMERA = 0x4B7308  # second Fix entry: camera actor (0x403730)
+DISPLAY = 0x5004D4  # the display record: viewport and letterbox (docs/ROADMAP_LOG 2026-11-02)
 FIX_ACTORS = 0x4B7300  # u32 count, then the Fix actors (0x403730)
 PROJECTION = 0x4A723C  # current renderer projection record (0x4228D0)
 
@@ -240,6 +241,10 @@ def snapshot(m, variables, contacts=False, zones=False, camera=False, generated=
 		if projection:
 			# 0x422AB0 computes these angles and the focal factor used by 0x42C8A0.
 			s["projection"] = f"kind {m.u32(projection + 8)} angles " + fmt(m.f32s(projection + 0x64, 2)) + " focal " + fmt(m.f32s(projection + 0x74, 1))
+		# The display record (0x419A30 passes it to the renderer). Procedures 313/314 write the
+		# letterbox size at +0x30/+0x34 and bands at +0x48..+0x54; 0x420660 turns them into the
+		# viewport at +0x38..+0x44. Raw words, to see which ones move as a cutscene's bars come in.
+		s["display"] = " ".join(str(m.u32(DISPLAY + offset)) for offset in range(0x30, 0x58, 4))
 	data = m.u32(actor)
 	if data:
 		s["state"] = f"0x{m.u32(data + 4):X}"
