@@ -1404,6 +1404,28 @@ TEST_CASE("real data: Learn_10 portal camera lands with a clear view")
 	CHECK(camera.trace.candidates == 1);
 	CHECK(camera.trace.rejected[0] == 0);
 	CHECK(camera.swing != 0);
+
+	// A fixed camera destination skips the mechanics orbit (0x474420), even when the
+	// script did not request that option itself. The first movement must be straight.
+	game::set_global_placement(m, camera_so, camera_pose);
+	m.write<std::uint16_t>(block + 0x70, 0x40);
+	m.write<std::uint16_t>(block + 0x72, 0x2082);
+	m.write<float>(camera_object + 0x34, 10);
+	m.write<float>(camera_object + 0x38, 8);
+	m.write<float>(camera_object + 0x3C, 0);
+	m.write<float>(block + 0x38, 6);
+	m.write<float>(block + 0x3C, 1);
+	m.write<float>(block + 0x40, 0);
+	camera.previous_move = {};
+	camera.valid = true;
+	game::solve_camera(vm, camera_so);
+	CHECK((camera.flags & 4) != 0);
+	game::move_camera(m, camera_so, camera, 100, vm.world());
+	auto straight = game::global_placement(m, camera_so);
+	REQUIRE(straight);
+	CHECK(straight->m[0][3] == doctest::Approx(0.6f));
+	CHECK(straight->m[1][3] == doctest::Approx(8.0f));
+	CHECK(straight->m[2][3] == doctest::Approx(0.0f));
 }
 
 TEST_CASE("real data: Learn_10 cave follow does not circle at the first clearance waypoint")

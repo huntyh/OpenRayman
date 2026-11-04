@@ -633,6 +633,10 @@ namespace openrayman::game
 		state.off = off;
 		state.back = back;
 		state.flags = m.read<std::uint16_t>(block + camera_field::flags_70);
+		// 0x474420: a script-fixed camera position must use the direct position step,
+		// without the mechanics' separate orbit around the target.
+		if(flags_72 & fixed_position)
+			state.flags |= keep_orientation;
 		// The two direction smoothing divisors (0x474420): the camera settings' +0xA8/+0xAC
 		// (0x4FF6D4/0x4FF6D8, 1 at start-up, 0x4138B0) become mechanics +0x26C/+0x27C, but stay 1
 		// while the block snaps the position or keeps the orientation (+0x70 bits 0x01 and 0x04), while

@@ -156,6 +156,14 @@ Per frame, with dt in seconds (0x50043C):
    swings round the point it looks at. The turn is the angle between (aim − old position) and
    (aim − new position), narrowed the same way with +0x44..+0x4C and the previous turn. Bit 0x04 of
    +0x70 skips this step.
+
+   The handoff at 0x474420 also sets that bit for a fixed wanted position (+0x72 bit 0x2000).
+   Thus procedure 496's position moves directly under the position step law, while the aim point
+   still eases independently. The Menu controllers use this path: a replay showed mode 0,
+   +0x70 = 0x40 and +0x72 = 0x2080 before the handoff. Previously OpenRayman omitted the forced
+   bit and orbited even for these fixed destinations, bending the menu camera's path. This finding
+   is from our own analysis of 0x474420 and 0x433D70 and the Menu scripts and replay; the exact
+   original menu transition has not yet been compared with a live recording.
 3. **Aim point.** The aim point steps towards the offset point with +0x50..+0x58; bit 0x80 of +0x70
    means the aim is a point in front of the camera instead (position − Y axis).
 4. **Publish.** Y = the direction from the aim point back to the camera (so −Y is where it looks),
@@ -267,11 +275,9 @@ original, including cuts and other levels. Own analysis of these executable rout
 user's 2026-10-30 live and OpenRayman traces.
 
 ## What our engine leaves out
-- Menu investigation (own analysis of the level scripts and OpenRayman trace, 2026-11-04): node 7
-  places itself on waypoints selected by node 6's menu behaviour, and nodes 8..10 and 12..16 can
-  set camera overrides when their zones contain it. OpenRayman's separate 10-unit look-at jump
-  shortcut can force a cut; its role in each menu transition and the original's corresponding
-  transition still need verification. No menu camera fix has been made yet.
+- Menu: node 7 places itself on waypoints selected by node 6's menu behaviour, and nodes 8..10
+  and 12..16 can set camera overrides when their zones contain it. The fixed-position mechanics
+  correction above needs a visual comparison with the original across menu entries.
 - **The original's orbit search around obstacles** (0x486880, with 0x486710 deciding whether a step
   may run): our interim candidate search does not yet reproduce its scoring or transitions.
 - **The cutscene modes** (cam+0x60: mode 1 scripted keyframes, mode 4 snap, mode 5 target switch)
