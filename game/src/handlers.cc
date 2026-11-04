@@ -4445,6 +4445,16 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 242 (0x469960): select the low byte of the language setting. The original
+		// also persists its name in ubi.ini; the runtime selection is kept here.
+		std::uint32_t set_language(call& c)
+		{
+			value selected;
+			next_arg(c, selected);
+			c.vm.language = static_cast<std::uint8_t>(selected.as_int());
+			return c.args;
+		}
+
 		// 252 (0x47AAD0): the language index the game runs in.
 		std::uint32_t language(call& c, value& out)
 		{
@@ -4711,6 +4721,7 @@ namespace openrayman::game
 		for(std::uint32_t i : { 343, 344, 345 })
 			vm.on_procedure(i, menu_request);
 		vm.on_function(252, language);
+		vm.on_procedure(242, set_language);
 		vm.on_procedure(101, quit_game);
 		vm.on_procedure(86, change_level);
 		vm.on_procedure(87, change_level);

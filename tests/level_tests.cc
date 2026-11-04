@@ -1110,6 +1110,15 @@ TEST_CASE("real data: English dialog table")
 		CHECK(actual == sum);
 	}
 	CHECK_FALSE(resolve(666).has_value());
+	game::interpreter vm(memory, 0);
+	game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+	auto id = game::value::of(game::value_type::id, 0);
+	for(unsigned language = 0; language < 5; ++language)
+	{
+		vm.language = static_cast<std::uint8_t>(language);
+		CHECK(game::resolve_dialog_value(vm, id) == game::make_dialog_resolver(memory, files, language)(0));
+	}
 }
 
 TEST_CASE("dialog glyph byte mapping")

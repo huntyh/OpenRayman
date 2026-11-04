@@ -267,6 +267,11 @@ original, including cuts and other levels. Own analysis of these executable rout
 user's 2026-10-30 live and OpenRayman traces.
 
 ## What our engine leaves out
+- Menu investigation (own analysis of the level scripts and OpenRayman trace, 2026-11-04): node 7
+  places itself on waypoints selected by node 6's menu behaviour, and nodes 8..10 and 12..16 can
+  set camera overrides when their zones contain it. OpenRayman's separate 10-unit look-at jump
+  shortcut can force a cut; its role in each menu transition and the original's corresponding
+  transition still need verification. No menu camera fix has been made yet.
 - **The original's orbit search around obstacles** (0x486880, with 0x486710 deciding whether a step
   may run): our interim candidate search does not yet reproduce its scoring or transitions.
 - **The cutscene modes** (cam+0x60: mode 1 scripted keyframes, mode 4 snap, mode 5 target switch)

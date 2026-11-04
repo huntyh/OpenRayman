@@ -324,7 +324,13 @@ namespace openrayman::game
 
 	void set_dialog_resolver(interpreter& vm, const level_files& files, unsigned language)
 	{
-		set_dialog_resolver(vm, make_dialog_resolver(vm.memory(), files, language));
+		vm.language = static_cast<std::uint8_t>(language);
+		std::array<dialog_resolver, 5> resolvers;
+		for(unsigned i = 0; i < resolvers.size(); ++i)
+			resolvers[i] = make_dialog_resolver(vm.memory(), files, i);
+		set_dialog_resolver(vm, [&vm, resolvers = std::move(resolvers)](std::int32_t id) {
+			return vm.language < resolvers.size() ? resolvers[vm.language](id) : std::nullopt;
+		});
 	}
 
 	std::vector<dialog_text> visible_dialogs(interpreter& vm)

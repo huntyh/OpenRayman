@@ -295,6 +295,18 @@ loads the requested level after the tick and carries the Fix story-bit array ove
 loaded in the game; the Menu level itself starts with Fix's own bits (no save loaded), not with
 our revisit bits.
 
+### Language selection and menu targets
+
+Own analysis of the GOG executable at 0x469960: procedure 242 stores the low byte of its
+argument as the current language and writes its name to the original game's ini file. OpenRayman
+updates the runtime language and resolves subsequent text IDs from that language's table; it does
+not yet persist the selection. It also does not yet carry the selection into a newly loaded level.
+
+The Menu scripts for node 7 select from eight waypoint references according to node 6's behaviour,
+then use function 18 and procedure 200 to place node 7. Its initial waypoint also depends on story
+bit 1006. This is based on our own reading of the level scripts; the butterfly's identity and
+movement path still need to be established.
+
 ### Exit game (2026-11-04)
 
 Node 6 behaviour 11 handles the main menu. Entry 5 sets var55 to 6 and switches to behaviour 9
@@ -307,8 +319,7 @@ selecting Yes and confirming calls procedure 101. No returns to the main menu.
 Procedure 101 (handler 0x468AB0) requests engine state 2 through 0x404BF0 and sets script state 3
 through 0x4808E0. OpenRayman raises a quit request and closes through SDL after the current tick.
 An `ortool run` from language selection through Yes reached no missing node 6 handlers on the
-exit path itself; procedure 242 (0x469960, language selection) remains missing earlier in the boot
-path. Other actors also reach missing handlers. These findings come from our own analysis of the GOG
+exit path itself. Other actors also reach missing handlers. These findings come from our own analysis of the GOG
 executable's handlers and 0x4660B0, and the Menu scripts and an input replay, 2026-11-04.
 
 ## Where this came from

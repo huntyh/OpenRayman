@@ -543,7 +543,10 @@ namespace openrayman::game
 		// The exe resets its camera when the target changes (0x413E30); how it handles a teleported
 		// target isn't read yet.
 		constexpr float teleported = 10;
-		bool cut = state.valid && target_transform && length(sub(aim, state.look_at)) > teleported;
+		// Only for Rayman: the menu's camera follows a marker (node 7) that jumps from waypoint to
+		// waypoint, and the real game pans there (user 2026-11-04), so other targets travel.
+		bool cut = state.valid && target_transform && target == vm.main_actor() &&
+			length(sub(aim, state.look_at)) > teleported;
 		// A cut need not travel from the old position. If its destination is hidden from the
 		// target, search around the target for a clear landing. This is our approximation; the
 		// executable's startup reset (0x485810) and obstacle transitions have different modes.
