@@ -105,114 +105,31 @@ once it plays right (they have issues of their own, found on a first look).
 Dated details of everything above, and the user's look-by-look feedback, are in
 [ROADMAP_LOG.md](ROADMAP_LOG.md).
 
-**Open** (agreed order with the user, 2026-10-30; state 2026-11-02)
+**Open.** From 2026-11-04 the open items are tracked on the maintainers' own task board; in short:
 
-From 2026-11-04 the open items are tracked on the maintainers' own task board; the lists below
-are a snapshot of that day.
-
-1. **3c leftovers.** The slope contact still differs from the exe in two details; our slide
-   accelerates about 10.7 u/s² where the recorded game's does 10.3 ([formats/dynamics.md](formats/dynamics.md)).
-2. **Dialogs and the HUD.** Left: the exact glyph size and left padding of the dialog text; the
-   HUD's counters sit a little too far left and up and need the menu font (its colour is a little
-   off too). Cutscenes: the game narrows the picture with black bars that slide in from the top
-   and bottom as a scene starts, the bottom one taller, and the subtitles are made to sit on them.
-   Do the bars as the game does, on by default; later an option to turn them off, which then puts
-   a darker backing behind the text (user, 2026-11-02). Not drawn by the scene scripts; the kids'
-   director sets the camera actor's custom bit 30 (and its var6 := 65000) for the scene's length,
-   but nothing in the exe reads either (both are markers for other scripts). The exe's own
-   letterbox is procedures 313/314 (0x46BD40 -> 0x420660: a smaller viewport plus black polygons
-   around it), which no Learn_10 script calls. Next: watch the display record 0x5004D4 live during
-   a kids' scene (see ROADMAP_LOG, 2026-11-02 late night).
-   Revisit start: an interim finished-level snapshot until saves are read
-   ([formats/saves.md](formats/saves.md)).
-   Font wishes for later: fixing the original's text that runs off the screen (the "Yahoo!" for
-   all Lums, the menu's overwrite-save message).
-3. **Sound leftovers.** The transition fades between themes; how loud a sound is by distance
-   (our stand-in: full within 8 units, silent at 30); where the game's DLL applies its music and
-   effect levels.
-4. **The game's camera.** The player may turn it (Q/W) only where the level allows it, level
-   presets often overrule it, and a camera icon with a red X shows when turning is refused (the
-   user saw it in the real game's Ly_10): the icon is not drawn yet. Later levels: in Rodeo_10
-   the camera stays on top of a narrow hole Rayman drops into
-   (`--level Rodeo_10 --camera 14.1,10.4,-4.9,49.8,-42.2`); our obstacle search is a stand-in
-   for the exe's orbit search (0x486880), which is the likely next step.
-5. **The end-of-level cutscene**: Rayman's pupils show through his closed eyelids.
-6. **Other machines**: the user will try a Linux laptop with a Fermi-era Quadro 2000M (NVIDIA
-   390xx driver from the AUR, so real hardware acceleration).
-7. **Performance**: measured with the profiler (F8 shows the build type too; `OPENRAYMAN_PROFILE`,
-   `ORTOOL_COST=1`). Judge it in the release build.
-8. **Unported from the exe** (state 2026-11-02; each is a stand-in or missing today):
-   - The camera's orbit search around obstacles (0x486880, steps decided by 0x486710, transitions
-     0x487520/0x487730) and its offset rays and dynamic collisions (0x485FD0); ours is an interim
-     search. Likely cause of Rodeo_10's stuck camera. Also the cutscene camera modes (cam+0x60: 1
-     scripted keyframes, 4 snap, 5 target switch) and the rest of the global tuning block
-     0x4FF62C ([formats/camera.md](formats/camera.md)).
-   - Script handlers Learn_10 still calls (`ortool run` lists them): procedures 66 (every tick on
-     the revisit start; address not found yet), 11/12 (0x472450), 146/150 (0x472600), 80
-     (0x48B380), 237, 307 (0x46BFE0), 313..315, 347, 418, 420 (0x471A90); functions 76 and 210.
-   - The cutscene black bars (engine side, see item 2).
-   - Particle kinds not traced yet (an unknown kind does nothing), the per-particle draw value at
-     pool +0x38 (0x460A10), and the dimming 0x460670 applies to screen images (0x4A07D4).
-   - Animation morphs (the butterfly) and the scripts' fog override (procedures 42..47).
-   - Reading real saves ([formats/saves.md](formats/saves.md)) instead of the revisit snapshot.
-
-**Later in Phase 3 / Phase 4**
-
-- Flying actors bob where the game's hover still. The river condor (node 7) bobs with each wing
-  flap where the game's glides as if on rails (`--camera -65.1,289.0,-18.7,-28.6,-15.6`; parked by
-  the user as fine). Murfy bobs up and down in place during his tutorial scenes too, where the
-  game's hovers steadily (user, 2026-11-02). Two actors now, so the cause is likely shared (the
-  mechanics, or how a flapping animation's root motion is applied): trace both per tick. The
-  condor's path is smooth every 30 ticks; its flap animation (309) lifts the root about 0.06.
-- F1 holds Murfy's help: in the game it opens a glossary, and on a tutorial tablet it makes
-  Murfy repeat his scene; ours brings up the menu swirl. Esc's pause menu shows some of its
-  elements now (user, 2026-11-02).
-
-- An optional modern camera, turned freely with the right stick like in today's platformers,
-  next to the game's own guided camera. It will see what the guided camera never shows, which
-  needs handling: half-built cutscene sets (e.g. above the waterfall in The Woods of Light,
-  `--camera 36.2,328.9,-3.7,-50.1,24.2`) and painted "paper" trees that simply end.
-- Phase 4 starts with the real intro cutscene in front of the first-visit start: after the Ubisoft
-  logo the camera pans over the dark sea to the pirate ship (Jail_10, Jail_20), then the crash into
-  the woods. `tools/r2record.py` records a playthrough of the real game, a file per topic (camera,
-  actors, text boxes, sounds, music, story bits); recordings of a whole new game are in
-  `H:\r2export\live\run3` and `run4`.
+- 3c leftovers (the slope's acceleration), the dialog text's size and padding, the HUD counters
+- The cutscene black bars, as the game does them (and later an option to turn them off)
+- Sound: theme fades, loudness by distance, music and effect levels
+- The game's camera: the "turning refused" icon, the exe's orbit search around obstacles
+- Unported exe pieces: script handlers Learn_10 still calls, particle kinds, animation morphs
+- Flying actors bobbing where the game's hover, F1's glossary, an optional modern camera
 
 ## Phase 4: the whole game
 
 Everything the PC game has, working before we port it anywhere. The order the user set
 (2026-11-02):
 
-1. The main menu (the menu level and its on-screen text, `docs/formats/menu.md`). The language
-   prompt, the main menu with its colours, and New Game -> name -> Jail_10 run from the level's
-   scripts; the user confirmed it works (2026-11-03). Open: writing the save (functions
-   90/93/95), Load / Delete (it deletes a save slot) / Options (not wired), the per-character
-   flash; "Site Rayman2" opens a dead 1999 URL, to be replaced with something of ours later.
-   The menu's scenery: the Teensy tipping its hat (node 29, animation 316) shows its hat flipped
-   for a moment near the end of each loop (user's recording); only the whale's tail fin looks
-   slow, its body is smooth (in the game the fin is smooth too); the game has a smiling butterfly
-   that lands on the selected entry, which ours doesn't show (likely the morph-animated butterfly,
-   morphs aren't read yet). No music anywhere yet (3d). Hat findings in ROADMAP_LOG 2026-11-03.
-   Gameplay: steering while sliding isn't implemented (the pirate ship's chute, user).
-2. The new-game intro cutscene, in front of the first-visit start. Jail_10 (user, 2026-11-03):
-   the pan over the dark sea is choppy and jitters left and right; on the pirate ship the cages
-   show light bleeding through, and the laser bars of Rayman's cell are a plain white rectangle
-   instead of red beams; in the cell Rayman and Globox are missing at first, Rayman appears when
-   he gets the silver Lum, Globox never does.
-3. Save games: starting a new game writes one; reading the real saves' story bits
-   ([formats/saves.md](formats/saves.md)) replaces the revisit snapshot.
-4. The pause menu and the F1 glossary. The pause menu already half-runs from its own scripts:
-   Esc while playing Learn_10 brings up the menu's swirl in front of Rayman, and it stays there
-   (user, 2026-10-30).
-5. The Hall of Doors: the next bigger goal, the way from one level to the next.
-6. Optional autosave, off by default: save at level transitions without asking every time, as a
-   setting the player turns on (not forced). Goes into IMPROVEMENTS when built.
+1. The main menu ([formats/menu.md](formats/menu.md)): the language prompt, the main menu and
+   New Game -> name -> Jail_10 run from the level's scripts (user confirmed, 2026-11-03). Left:
+   writing the save, the Load / Delete / Options screens, the menu's scenery.
+2. The new-game intro cutscene in front of the first-visit start (Jail_10, Jail_20).
+3. Save games: writing one on New Game, reading the real saves ([formats/saves.md](formats/saves.md)).
+4. The pause menu and the F1 glossary.
+5. The Hall of Doors: the way from one level to the next.
+6. Optional autosave, off by default (into IMPROVEMENTS when built).
 
-Then:
-
-- Cutscenes
-- All the levels, from start to end
-- Widescreen and high resolutions, plus modern quality-of-life options
+Then: cutscenes, all the levels from start to end, widescreen and high resolutions, plus modern
+quality-of-life options.
 
 ## Phase 5: Android
 
