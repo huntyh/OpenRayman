@@ -3,6 +3,15 @@
 The dated investigation notes from `ROADMAP.md`, kept here so the roadmap stays short. Newest
 first. The format docs under `formats/` are the permanent home of the findings themselves.
 
+## 2026-11-04 (evening): the user's look at the morphs build
+
+Fixed (user): the menu whale's tail fin is smooth, the river condor glides, Murfy hovers
+steadily. The butterfly draws now, but stays at the language prompt instead of flying to the
+selected entry. The Teensy's hat still flips for one frame, at the start of the tip (as the
+Teensy touches it), so the morph on frames 48..49 isn't the whole story: next is reading the real
+game's hat object frame by frame. New wishes: remember the chosen language (prompt only on the
+first start); the menu font looks different from the game's.
+
 ## 2026-11-04: the Teensy's hat is a morph
 
 Codex (read-only, build/helpers/teensy_hat_report.md), re-checked at the morph lookup 0x40DFB0:
