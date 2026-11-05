@@ -42,13 +42,23 @@ What works today:
 - A texture browser, `ortool` for looking inside the game's files, and `tools/r2record.py`, which
   records a playthrough of the real game for studying it.
 
-Not yet: the dialog's exact colour, size and padding, the health bar and the HUD's menu-font
-counters, the arrival camera pan, everything about revisiting a finished level, and everything
+Not yet: some dialog padding, counters for lums and cages are not in the right spot, saves, and basically everything
 beyond the first level. See [docs/ROADMAP.md](docs/ROADMAP.md) for the details. It renders with
 OpenGL today; the plan is Vulkan or Direct3D 12, keeping OpenGL for older devices.
 
 Where OpenRayman deliberately does something differently from the game (no shadow limit, soft leaf
 edges, smoother animation loops, ...), it's listed in [docs/IMPROVEMENTS.md](docs/IMPROVEMENTS.md).
+
+Some images from OpenRayman:
+
+|Murfy Tutorial| Woods of Light |
+|---|---|
+|<img width="2560" height="1440" alt="Base Profile Screenshot 2026 11 05 - 18 22 28 10" src="https://github.com/user-attachments/assets/b5975001-5dfc-46b3-88d7-e03a3a555b43" />| <img width="2560" height="1440" alt="Base Profile Screenshot 2026 11 05 - 18 26 48 11" src="https://github.com/user-attachments/assets/74148afc-40de-417f-b943-1d7521b5e23a" />|
+
+| Ly | The Machine |
+|---|---|
+|<img width="2560" height="1440" alt="Base Profile Screenshot 2026 11 05 - 18 32 03 84" src="https://github.com/user-attachments/assets/2867cac5-8412-432e-b03b-d68ad7059d01" />|<img width="2560" height="1440" alt="Base Profile Screenshot 2026 11 05 - 18 32 59 07" src="https://github.com/user-attachments/assets/03a5b82e-a0f5-4562-9e02-ac2545b6b05c" />|
+
 
 ## You need the game
 
@@ -234,6 +244,33 @@ reporting what looks wrong, and keeping the project's rules.
 Every commit made this way says so in its message ("Co-Authored-By: Claude", plus the helper when
 one did the work, e.g. "Co-Authored-By: GPT-6.1 Terra"), so the history shows exactly which work
 came from where.
+
+## FAQ
+
+### Why?
+
+I wanted to play the game on my phone and emulating it would've been lazy, so we're doing it this way.
+And it seemed like a fun project.
+
+### Is this vibe-coded? 
+
+Yes. [How this is made](#how-this-is-made).
+
+### Will this exactly match the original game?
+
+I'm not sure if that's possible, there are a lot of things that need to be figured out, it won't ever be 1:1. E.g. sliding on slopes has a fractional acceleration difference in our build, tiny differences like that.
+
+### When will it be ready?
+
+Hard to say, there are a lot of things to do that will involve me playing through both the original and this game probably several times.
+I'll try to aim for a release so people can try it though.
+
+### What's the point?
+
+I wanted to preserve this game as I played it a lot in my childhood, though I mostly played the PS1 version which is... different.
+This project will add improvements and do its best to preserve - and boost - the original's art direction.
+It already runs at uncapped framerates, does texture clamping better than the original and even fixed a few bugs the original had. The goal is to bring the game on phones, Linux, your fridge, whatever.
+
 
 ## Contributing
 
