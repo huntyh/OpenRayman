@@ -51,11 +51,11 @@ edges, smoother animation loops, ...), it's listed in [docs/IMPROVEMENTS.md](doc
 
 Some images from OpenRayman:
 
-|Murfy Tutorial| Woods of Light |
+|Murfy Tutorial| Woods of Light river |
 |---|---|
 |<img width="2560" height="1440" alt="Base Profile Screenshot 2026 11 05 - 18 22 28 10" src="https://github.com/user-attachments/assets/b5975001-5dfc-46b3-88d7-e03a3a555b43" />| <img width="2560" height="1440" alt="Base Profile Screenshot 2026 11 05 - 18 26 48 11" src="https://github.com/user-attachments/assets/74148afc-40de-417f-b943-1d7521b5e23a" />|
 
-| Ly | The Machine |
+| Ly Dialogue | The Machine |
 |---|---|
 |<img width="2560" height="1440" alt="Base Profile Screenshot 2026 11 05 - 18 32 03 84" src="https://github.com/user-attachments/assets/2867cac5-8412-432e-b03b-d68ad7059d01" />|<img width="2560" height="1440" alt="Base Profile Screenshot 2026 11 05 - 18 32 59 07" src="https://github.com/user-attachments/assets/03a5b82e-a0f5-4562-9e02-ac2545b6b05c" />|
 
