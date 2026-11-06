@@ -2158,7 +2158,7 @@ TEST_CASE("real data: Rayman stands on Learn_10's closed tutorial trapdoor")
 	std::uint32_t rayman_base = m.u32(m.u32(vm.actor_of(rayman) + 8));
 	std::uint32_t report = m.u32(rayman_base + 0x150);
 	std::size_t errors = 0;
-	for(int tick = 0; tick <= 420; tick++)
+	for(int tick = 0; tick <= 600; tick++)
 	{
 		if(tick == 240)
 			game::write_transform(m, rayman, { -25, 291.4f, -9 }, { 0, 1, 0, -1, 0, 0, 0, 0, 1 });
@@ -2196,6 +2196,12 @@ TEST_CASE("real data: Rayman stands on Learn_10's closed tutorial trapdoor")
 	}
 	if(collect)
 	{
+		// The door slides out from under him and he drops straight down the shaft onto the floor
+		// below (user, the real game), not shoved sideways past it (#73).
+		auto fell = *game::global_placement(m, rayman);
+		CHECK(fell.m[0][3] == doctest::Approx(-25.0f).epsilon(0.02));
+		CHECK(fell.m[2][3] > -30.0f);
+		CHECK(fell.m[2][3] < -27.0f);
 		auto at = *game::global_placement(m, door);
 		CHECK(at.m[0][3] > -20); // a sideways slide, not a lowered or switched-off floor
 		CHECK(at.m[2][3] == doctest::Approx(-10.8240f).epsilon(0.00001));

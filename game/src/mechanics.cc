@@ -97,7 +97,17 @@ namespace openrayman::game
 				positive |= side > 0;
 				negative |= side < 0;
 			}
-			if(poly.size() >= 3 && !(positive && negative))
+			// A slice with no area (the band only grazes a corner or an edge of the triangle: a point
+			// or a line) has every side test at zero, which would pass for "inside". It can't hold the
+			// axis; take the nearest point instead. Otherwise a wall touching the band at its top corner
+			// pushed Rayman by its normal on every pass as he fell past it (#73, the Learn_10 trapdoor).
+			float area = 0;
+			for(std::size_t i = 0; i < poly.size(); i++)
+			{
+				const vec &a = poly[i], &b = poly[(i + 1) % poly.size()];
+				area += a[0] * b[1] - b[0] * a[1];
+			}
+			if(poly.size() >= 3 && std::abs(area) > 1e-6f && !(positive && negative))
 			{
 				px = x;
 				py = y;
