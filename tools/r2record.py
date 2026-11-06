@@ -171,6 +171,7 @@ class recorder:
 		self.slots = {}
 		self.vars = {}
 		self.order = None
+		self.extra_logged = set()
 
 	def say(self, topic, line):
 		f = self.files.get(topic)
@@ -234,7 +235,14 @@ class recorder:
 				names.append("Rayman")
 				continue
 			actor = m.u32(so + 4) if m.u32(so) == 2 else 0
-			names.append(model_signature(m, actor) or "-")
+			# actor +0x10 non-zero keeps an actor in the active world on a zone change (0x40B930,
+			# 0x40B290): marked with *, its first words once per actor in order.txt.
+			extra = m.u32(actor + 0x10) if actor else 0
+			names.append((model_signature(m, actor) or "-") + ("*" if extra else ""))
+			if extra and so not in self.extra_logged:
+				self.extra_logged.add(so)
+				words = " ".join(f"{m.u32(extra + 4 * k):08X}" for k in range(8))
+				self.say("order", f"{model_signature(m, actor)} at {position(m, so)}: actor +0x10 = 0x{extra:08X}: {words}")
 		inactive = actors_of(m, m.u32(INACTIVE_WORLD))
 		line = " ".join(names) + f" | inactive {len(inactive)}"
 		if line != self.order:

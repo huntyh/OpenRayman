@@ -1509,8 +1509,9 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	if(std::getenv("ORTOOL_IDS"))
 		for(std::uint32_t so : actors)
 			if(std::uint32_t actor = vm.actor_of(so); actor && memory.u32(actor + 4))
-				std::cout << std::format("node {:>3}: id 0x{:X}, flags 0x{:02X}, type {}, {}\n", node_of[so], memory.u32(memory.u32(actor + 4) + 8),
-					memory.u8(memory.u32(actor + 4) + 0x29), memory.u32(memory.u32(actor + 4) + 0x14), vm.removed(so) ? "removed" : "present");
+				std::cout << std::format("node {:>3}: id 0x{:X}, flags 0x{:02X}, type {}, {}, actor +0x10 0x{:X}, parent 0x{:X}\n", node_of[so], memory.u32(memory.u32(actor + 4) + 8),
+					memory.u8(memory.u32(actor + 4) + 0x29), memory.u32(memory.u32(actor + 4) + 0x14), vm.removed(so) ? "removed" : "present",
+					memory.u32(actor + 0x10), memory.u32(so + 0x1C));
 	// Native probes (the copy protection hides here): with ORTOOL_PROBES=1 also the decoded code, as
 	// hex (Ubisoft's code: keep such output in H:\r2export).
 	for(const auto& check : vm.native_checks())
