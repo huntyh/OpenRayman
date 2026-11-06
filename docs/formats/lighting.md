@@ -119,7 +119,9 @@ first non-virtual +0x30 neighbour that holds it; otherwise 0x44BE50 picks among 
 the point, non-virtual ones first, the highest priority, then the nearest box centre. In Jail_10
 the intro's cave (sector node 16) lists nodes 81, 18 and 20, not node 24, the virtual sector with
 the big cloud planes the camera passes right next to; drawing every sector showed them. OpenRayman
-draws the level's own geometry this way (actors still everywhere); `OPENRAYMAN_ALL_SECTORS=1`
+limits only the virtual sectors' scenery this way: ordinary sectors are always drawn, since the exe
+also draws sectors seen through portals (0x44B740), not followed yet, and limiting them hid distant
+scenery in Learn_30 (actors are drawn everywhere too); `OPENRAYMAN_ALL_SECTORS=1`
 draws all, `OPENRAYMAN_SECTORS=1` logs each change of the camera's sector.
 
 Static geometry is lit once when the level loads. Actors move between lights, so they're lit every

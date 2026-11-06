@@ -975,6 +975,14 @@ namespace openrayman
 		m_drawn_sectors.assign(m_lights.sectors.size(), all || m_camera_sector == std::nullopt);
 		if(!m_camera_sector)
 			return;
+		// Ours: ordinary sectors are always drawn, since the exe also draws sectors seen through
+		// portals (0x44B740), which we don't follow yet; only virtual ones (Jail_10's clouds) need
+		// to be in the camera sector's list.
+		for(std::size_t s = 0; s < m_lights.sectors.size(); s++)
+		{
+			if(!m_lights.sectors[s].is_virtual)
+				m_drawn_sectors[s] = true;
+		}
 		m_drawn_sectors[*m_camera_sector] = true;
 		for(std::size_t s : m_lights.sectors[*m_camera_sector].drawn_with)
 			m_drawn_sectors[s] = true;
