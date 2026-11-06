@@ -1303,7 +1303,10 @@ namespace
 			}
 			a.vm->set_actors(a.thinkers);
 			if(a.save_slot)
+			{
+				SDL_Log("Save slot %u from %s", a.save_slot, openrayman::game::save_root().string().c_str());
 				openrayman::game::load_save_slot(*a.vm, openrayman::game::save_root(), files, header, tree, a.save_slot);
+			}
 			else if(!a.new_game)
 				openrayman::game::apply_revisit_state(*a.vm, tree, levels[index]);
 			if(a.save_slot)

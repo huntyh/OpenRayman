@@ -224,7 +224,7 @@ namespace openrayman
 	{
 		if(slot < 1 || slot > 3) throw format_error("save slot must be 1, 2 or 3");
 		auto path = find_case_insensitive(saves, "Slot" + std::to_string(slot));
-		if(!path) throw format_error("save slot folder is missing");
+		if(!path) throw format_error("save slot folder is missing: " + (saves / ("Slot" + std::to_string(slot))).string());
 		return *path;
 	}
 }
