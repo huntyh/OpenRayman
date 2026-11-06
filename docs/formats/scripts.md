@@ -169,19 +169,75 @@ pass (0x40B150 → 0x419A30 → 0x460670 → 0x465C10). Where this came from: a 
 decompile (2026-11-06), with 0x4120D0, 0x418170/0x418340, 0x40AA10 and 0x40B4C0 checked by us;
 the helper had the head/tail of 0x40B4C0 reversed.
 
-**The order changes on a zone change.** When Rayman's sector changes (0x40B7B0, also on the first
-frame of a level), 0x40B290 moves every active actor whose actor +0x10 is empty (all but the
-camera) into the inactive world, and the wake pass 0x40B620 links them back at the tail of the
-active world: first the new sector's actor list, then its neighbour list (sector data +0x3C, count
-+0x44), then 0x419BC0's list, the generated actors (0x4A6B30) and 0x45B990's. Recorded in the real
-game (Jail_10 new game, `r2record --only order`, H:\r2export\live\run7, run8): file order at load
-(nodes 2..12, Rayman), and from the first frame camera, nodes 6, 7, 9, 10, 11, Rayman, then 4, 3,
-5, 8, 12. So the cutscene director (7) runs before the bar actor (3), which runs before the HUD
-(5): the HUD sees the bars already growing on its first frame and never shows the Lum and cage
-counters. OpenRayman rebuilds its order when Rayman's sector changes: the actors in his sector
-(by live position) with super object flag 8 clear, and Rayman, in file order, then the rest; the
-camera stays last. The order inside the second group, and node 12's place, come from the runtime
-sector lists, which we don't read yet. Own analysis of the decompile and live recordings.
+**Activation on a sector change.** Before the actor passes, 0x40B7B0 compares Rayman's
+sector (first word of the sector information at actor +0x20) with the previous one.
+On first entry and every change, 0x40B290 sends active actors without actor +0x10 to
+the inactive world (0x500FC4); camera objects retain their membership. 0x40B620 tries:
+
+1. The current sector's ordered actor list (sector data +0, count +8).
+2. The actor lists of its wake sectors (+0x3C, count +0x44), one level deep. These differ
+   from drawn-with sectors (+0x24) and movement neighbours (+0x30). Each wake-list entry
+   holds a sector super object and the next pointer at +4.
+3. 0x419BC0's list, generated slots, then 0x45B990's explicitly detached actors.
+
+0x40B4C0 accepts only actors still in the inactive world with standard +0x29 mask 0x02
+set. Mask 0x01 must be clear, except that a fresh sector can wake a removed actor whose
+standard type (+0x14, signed integer) is below 2. Moving actors (+0x28 nonzero) join the
+active head; static actors join its tail. Successful wakes set +0x29 mask 0x04; fresh
+wakes also set custom bit 0x800 at +0x24. This is the out-of-view bit subsequently
+maintained by the visibility pass (0x45C450), not an unconditional brain-enable flag.
+
+Freshness includes first entry. Otherwise 0x40B290 stamps the old sector and its wake
+sectors at data +0x7E with the low byte of frame 0x5003E4; 0x40B620 compares that stamp.
+Sectors shared by the old and new wake regions are not fresh. 0x40B410 clears mask 0x04
+on actors left inactive, including actor children of moving objects. Regular passes
+0x40AA10/0x40A7C0 require mask 0x04 and an unstamped frame (+0x18). The player-object pass
+0x40BAD0 -> 0x40AB90 requires mask 0x02 instead. Updates stamp the frame before the
+brain/animation/mechanics gates.
+
+Procedure 139 -> 0x4062A0 -> 0x406220 sets mask 0x01, keeps 0x02 for placed types other
+than 5, and clears 0x04 for types other than 1. Type 1 goes through its mode-4 reset;
+type 5 clears 0x02. A removed placed type-3 actor cannot wake again. Learn_10 node 4's
+first rule removes node 3 (the kids' director) when story bits 1133 and 1095 are both
+set. With activation, that rule runs before node 3 ever wakes. The manual node-3 removal
+in `apply_revisit_state` is unnecessary with those bits; it remains for older synthetic
+revisits without 1095. The other snapshot removals remain. Snapshot-only removals of low
+standard types also suppress wake eligibility so fresh entry cannot undo that interim
+completed scene.
+
+OpenRayman keeps an ordered active list, reads saved sector actor/wake lists, and adds
+Fix placements to runtime sectors. Nonspatial Fix actors join the fallback sector;
+Rayman follows his live placement. Live membership uses `level_lights::follow` (0x44BF80),
+including priority in overlapping boxes. When an actor crosses out of the current wake
+region, 0x4128D0 clears its active mask unless standard mask 0x10/0x40 exempts it; runtime
+sector information is kept in live memory too. The existing `follow` fallback outside all
+boxes (keep current/nearest) differs from the executable's last-sector fallback.
+Standard mask 0x40 supplies additional always-wake
+candidates (0x419BA0 tests that flag); detached super objects carry mask 0x20. These extra
+lists are reconstructed in file order. The existing camera-last policy remains. Generated
+actors made during a tick can still update that tick; +0x18 prevents duplicate updates
+when a generated actor is also reached through the active list.
+
+**Where this came from:** own reading of the local GOG executable's decompilation at
+0x40B7B0, 0x40B290, 0x40B620, 0x40B4C0, 0x40B410, 0x40B930, 0x40AA10, 0x40A7C0,
+0x40AB90, 0x406220, 0x412670, 0x412740, 0x4128D0, 0x419BA0 and 0x45B9B0, checked
+against relocated Learn_10/Jail_10 data. No executable code was copied. Reconstruction
+of the extra lists uses their flags and Jail_10's recorded order; their complete runtime
+construction and carrier-tree traversal have not been reproduced.
+
+Live recordings `H:/r2export/live/run4` and `run9` corroborate activation: run4's director
+changes behaviour 0 -> 2 at clock 60289 (62.812 seconds after Learn_10 loaded). Rayman's
+preceding recorded position is (-98.748,243.186,-7.507), entering a sector whose +0x3C
+includes the director's sector. With both story bits, the director never thinks. Jail_10
+`run7`/`run8` records camera,6,7,9,10,11,Rayman,4,3,5,8,12: the director precedes the bars,
+which precede the HUD, preserving the new-game counter-flash fix (2296480).
+
+`ORTOOL_WAKE=1` adds sector/order changes, traced actor flags and update counts, and the
+number of ticks with visible HUD number slots 15/16. `ORTOOL_START=new` bypasses manual
+revisit removals; `ORTOOL_STORY_BITS=1133,1095` supplies completed-story input, and
+`ORTOOL_PLACE=x,y,z,yaw@tick` isolates entry from route/input timing. Headless ortool treats
+active actors as in view after each update, replacing the viewer's frustum pass. Its
+traces cannot validate visibility-dependent gameplay or rendered appearance.
 
 Each frame, for each actor (0x4120D0):
 

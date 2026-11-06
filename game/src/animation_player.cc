@@ -468,7 +468,7 @@ namespace openrayman::game
 			// 0x40A5C0 stamps an active actor before its brain/animation/mechanics update.
 			std::uint32_t actor = vm.actor_of(self);
 			std::uint32_t standard = actor ? m.u32(actor + 4) : 0;
-			if(standard && !vm.removed(self) && m.contains(standard + 0x29) && (m.u8(standard + 0x29) & 2))
+			if(standard)
 				m.write(standard + 0x18, vm.frame_number());
 			profiler::scope timed(profiler::zone::brains);
 			profiler::add(profiler::counter::actors);
@@ -563,60 +563,34 @@ namespace openrayman::game
 				}
 			}
 		};
-		// The run order. When Rayman's sector changes (0x40B7B0), 0x40B290 sends every active actor
-		// without actor +0x10 to the inactive world and the wake pass 0x40B620 links them back at the
-		// tail, starting with the new sector's actor list. Recorded in the real game (Jail_10 new game,
-		// H:\r2export\live\run7/run8): from the first frame the actors placed in Rayman's sector run
-		// first, in file order with Rayman among them, and the ones with super object flag 8 (Fix's
-		// HUD, bars and pause menu, a level actor at the origin) after. Ours keeps that result,
-		// classifying by live position (sector_at); the exact order inside the second group (the
-		// exe had 4, 3, 5, 8, 12) comes from lists we don't read yet.
-		{
-			std::uint32_t sector = 0;
-			if(auto placed = global_placement(m, vm.main_actor()))
-				sector = vm.sector_at({ placed->m[0][3], placed->m[1][3], placed->m[2][3] });
-			if(sector != vm.run_order_sector || vm.run_order_source != super_objects.size())
-			{
-				vm.run_order_sector = sector;
-				vm.run_order_source = super_objects.size();
-				vm.run_order.clear();
-				std::vector<std::uint32_t> later;
-				for(std::uint32_t self : super_objects)
-				{
-					if(is_camera(self))
-						continue;
-					bool first = self == vm.main_actor();
-					if(!first && sector && m.contains(self + 0x30, 4) && !(m.u32(self + 0x30) & 8))
-						if(auto placed = global_placement(m, self))
-							first = vm.sector_at({ placed->m[0][3], placed->m[1][3], placed->m[2][3] }) == sector;
-					(first ? vm.run_order : later).push_back(self);
-				}
-				vm.run_order.insert(vm.run_order.end(), later.begin(), later.end());
-			}
-		}
-		for(std::uint32_t self : vm.run_order)
-		{
+		auto update = [&](std::uint32_t self, bool player = false) {
+			const auto actor = vm.actor_of(self);
+			const auto standard = actor ? m.u32(actor + 4) : 0;
+			if(!standard || !vm.active(self, player) || m.u32(standard + 0x18) == vm.frame_number()) return;
 			think(self);
 			advance(self);
-		}
+		};
+		vm.update_activation(super_objects);
+		// Snapshot traversal: a script may restore another actor during this pass.
+		const auto order = vm.run_order;
+		for(std::uint32_t self : order)
+			if(!is_camera(self)) update(self);
 		// Actors the scripts created, after the level's own (the game links them into the dynamic
 		// world as they come). One made this tick by an actor before them already thinks now.
 		for(std::size_t i = 0; i < vm.generated().slots().size(); i++)
 		{
 			const generated_actors::slot& s = vm.generated().slots()[i];
-			if(s.creator && !vm.removed(s.super_object))
+			if(s.creator && vm.active(s.super_object))
 			{
 				std::uint32_t self = s.super_object;
-				think(self);
-				advance(self);
+				update(self);
 			}
 		}
+		// Procedure 84 can explicitly activate an actor during this tick.
 		for(std::uint32_t self : super_objects)
-			if(is_camera(self))
-			{
-				think(self);
-				advance(self);
-			}
+			if(!is_camera(self)) update(self);
+		for(std::uint32_t self : super_objects)
+			if(is_camera(self)) update(self, true);
 		// The exe retains these objects in its screen pass even after their scripts stop
 		// updating their coordinates. Reproject after the camera has moved this tick.
 		if(auto camera = global_placement(m, vm.camera_motion().super_object))

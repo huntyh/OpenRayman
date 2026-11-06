@@ -1,6 +1,7 @@
 #pragma once
 
 #include <openrayman/animation.h>
+#include <openrayman/light.h>
 #include <openrayman/game/camera.h>
 #include <openrayman/game/generated.h>
 #include <openrayman/game/live_memory.h>
@@ -117,6 +118,9 @@ namespace openrayman::game
 		std::vector<std::uint32_t> run_order;
 		std::uint32_t run_order_sector = 0xFFFFFFFF;
 		std::size_t run_order_source = 0;
+		// Sector wake pass (0x40B7B0), before the actor passes.
+		void update_activation(std::span<const std::uint32_t> actors);
+		bool active(std::uint32_t super_object, bool player = false) const;
 
 		// The engine's per-actor gate (0x412230) on the actor's custom bits (standard game +0x24)
 		// and flags (+0x29): whether its brain runs this frame, and whether its mechanics does.
@@ -125,7 +129,7 @@ namespace openrayman::game
 		bool brain_runs(std::uint32_t super_object) const;
 		bool mechanics_runs(std::uint32_t super_object) const;
 
-		// When false (the default), every actor thinks every frame. The game lets scripts slow an
+		// When false (the default), every active actor thinks every frame. The game lets scripts slow an
 		// actor's brain to every Nth frame to save time on 1999 computers.
 		bool honour_brain_period = false;
 
@@ -217,8 +221,8 @@ namespace openrayman::game
 		// The level's actors (super objects), for queries over the world such as procedure 22.
 		void set_actors(std::vector<std::uint32_t> actors);
 		const std::vector<std::uint32_t>& actors() const { return m_actors; }
-		// Sector super objects found through the loaded actors' scene links. Membership is queried
-		// from live positions, including generated actors, rather than the saved sector actor lists.
+		// Spatial query used by script handlers. The activation pass separately retains ordered
+		// sector membership and follows live positions with sector neighbours and priorities.
 		std::uint32_t sector_at(const std::array<float, 3>& position) const;
 		// Procedures 76/77's counted loops (the exe keeps one stack for all scripts, 0x4E9420..).
 		struct loop_frame { std::int32_t count; std::uint32_t body; };
@@ -250,7 +254,7 @@ namespace openrayman::game
 		};
 		const std::vector<native_check>& native_checks() const { return m_native_checks; }
 		// Actors taken out of the world (procedure 139): they stop thinking and aren't drawn.
-		void remove(std::uint32_t super_object) { m_removed.insert(super_object); m_screen_objects.erase(super_object); }
+		void remove(std::uint32_t super_object, bool mark_removed = true);
 		bool removed(std::uint32_t super_object) const { return m_removed.contains(super_object); }
 		// Actors the scripts created (function 66): a generated actor reuses a freed slot's super
 		// object, which then is back in the world.
@@ -398,6 +402,10 @@ namespace openrayman::game
 		std::uint32_t m_clock = 0;
 		std::vector<std::uint32_t> m_actors;
 		std::vector<std::uint32_t> m_sectors;
+		level_lights m_activation_sectors;
+		std::map<std::uint32_t, std::vector<std::uint32_t>> m_sector_members;
+		std::map<std::uint32_t, std::uint32_t> m_actor_sectors;
+		std::vector<std::uint32_t> m_wake_sectors;
 		std::set<std::uint32_t> m_removed;
 		std::map<std::uint32_t, affine> m_start_placements; // where each actor first thought
 		generated_actors m_generated;

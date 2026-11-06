@@ -680,7 +680,7 @@ namespace openrayman::game
 			else if(!(flags & 0x1) && (flags & 0x2))
 			{
 				m.write<std::uint8_t>(standard + 0x29, flags & ~0x7);
-				c.vm.remove(target);
+				c.vm.remove(target, false);
 				if(target == c.self)
 					c.vm.signal(3);
 			}

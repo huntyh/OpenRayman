@@ -80,6 +80,10 @@ namespace openrayman::game
 					memory.write<std::uint8_t>(standard + 0x29, flags);
 				}
 				vm.remove(so);
+				// These host-side snapshot removals stand in for completed scripts/saves.
+				// Low standard types may otherwise wake on fresh sector entry (0x40B4C0).
+				if(standard && memory.read<std::int32_t>(standard + 0x14) < 2)
+					memory.write<std::uint8_t>(standard + 0x29, memory.u8(standard + 0x29) & ~2);
 			}
 	}
 
