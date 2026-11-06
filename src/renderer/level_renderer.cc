@@ -77,7 +77,7 @@ namespace openrayman
 					v_light = lit(a_color);
 				else if(u_lighting == 2)
 				{
-					vec4 sum = vec4(0.0);
+					vec4 sum = a_color; // saved vertex colours initialize the light sum (0x42AAE0)
 					for(int i = 0; i < u_light_count; i++)
 					{
 						float strength = 1.0;
@@ -888,13 +888,17 @@ namespace openrayman
 		if(p.screen)
 		{
 			// The exe's screen pass is a world of its own (0x419A30 draws 0x5003E0 with the fixed
-			// camera 0x4052C0), so the level's lights don't reach it. Ours: one white ambient light,
-			// which shows each surface at its texture's own colours. The logo's arc has a black
-			// material ambient (its white-to-yellow gradient is the texture's) and came out black
-			// under the level's dark lights; whether the exe's pass has a light of its own isn't traced.
-			out.count = 1;
-			out.kind[0] = 0;
-			out.color[0] = glm::vec4(1);
+			// camera 0x4052C0), so level lights don't reach it. Keep the white stand-in for
+			// surfaces without saved colours. The logo's own light is switched off by its script.
+			const auto& sets = m_meshes[p.mesh].geometry.colour_sets;
+			bool saved = p.colour_set && p.colour_set <= sets.size() && !sets[p.colour_set - 1].empty()
+				&& sets[p.colour_set - 1][0].size() == m_meshes[p.mesh].geometry.vertices.size();
+			if(!saved)
+			{
+				out.count = 1;
+				out.kind[0] = 0;
+				out.color[0] = glm::vec4(1);
+			}
 			out.sharpen = true;
 			return out;
 		}
@@ -964,7 +968,7 @@ namespace openrayman
 			for(const part& p : *list)
 			{
 				if(p.mesh < m_meshes.size())
-					parts.push_back({ p.mesh, face_camera(p.model, m_meshes[p.mesh].look, camera), p.sector, p.morph_mesh, p.morph_amount, p.screen, p.alpha });
+					parts.push_back({ p.mesh, face_camera(p.model, m_meshes[p.mesh].look, camera), p.sector, p.morph_mesh, p.morph_amount, p.screen, p.alpha, p.colour_set });
 			}
 		}
 
@@ -1045,16 +1049,22 @@ namespace openrayman
 				draw_triangles(b.first, b.count);
 			}
 		};
-		// Temporarily replace only this mesh's expanded corners; restore them after its draw so
-		// other instances sharing the mesh continue to use the original geometry.
+		// Temporarily replace this mesh's expanded corners for morphing and saved vertex colours;
+		// restore them after drawing so other instances keep their own state.
 		auto morph = [&](const part& p, bool restore) {
-			if(!p.morph_mesh || *p.morph_mesh >= m_meshes.size()) return;
 			const mesh& source = m_meshes[p.mesh];
 			const auto& a = source.geometry;
-			const auto& b = m_meshes[*p.morph_mesh].geometry;
-			if(source.vertices.empty() || a.elements.size() != b.elements.size() ||
-				a.vertices.size() != b.vertices.size() || a.normals.size() != b.normals.size() ||
-				!a.sprites.empty() || !b.sprites.empty() || !a.skipped_types.empty() || !b.skipped_types.empty()) return;
+			const geometric_object* b = p.morph_mesh && *p.morph_mesh < m_meshes.size() ? &m_meshes[*p.morph_mesh].geometry : nullptr;
+			if(b && (a.elements.size() != b->elements.size() || a.vertices.size() != b->vertices.size() ||
+				a.normals.size() != b->normals.size() || !a.sprites.empty() || !b->sprites.empty() ||
+				!a.skipped_types.empty() || !b->skipped_types.empty())) b = nullptr;
+			const std::vector<saved_vertex_colour>* colours = nullptr;
+			if(p.colour_set && p.colour_set <= a.colour_sets.size())
+			{
+				const auto& set = a.colour_sets[p.colour_set - 1];
+				if(!set.empty() && set[0].size() == a.vertices.size()) colours = &set[0];
+			}
+			if(source.vertices.empty() || (!b && !colours)) return;
 			glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
 			if(restore)
 			{
@@ -1067,11 +1077,17 @@ namespace openrayman
 			for(vertex& v : blended)
 			{
 				const auto i = v.source_index;
-				const auto& pos = b.vertices[i];
-				v.position = glm::mix(v.position, glm::vec3(pos[0], pos[1], pos[2]), amount);
-				if(i < b.normals.size())
+				if(colours)
 				{
-					const auto& n = b.normals[i];
+					const auto& c = (*colours)[i];
+					v.color = glm::vec4(c[0], c[1], c[2], c[3]) / 256.0f;
+				}
+				if(!b) continue;
+				const auto& pos = b->vertices[i];
+				v.position = glm::mix(v.position, glm::vec3(pos[0], pos[1], pos[2]), amount);
+				if(i < b->normals.size())
+				{
+					const auto& n = b->normals[i];
 					auto normal = glm::mix(v.normal, glm::vec3(n[0], n[1], n[2]), amount);
 					if(glm::length(normal) > 1e-8f) v.normal = glm::normalize(normal);
 				}

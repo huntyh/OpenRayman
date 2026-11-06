@@ -486,11 +486,10 @@ object transparency (draw flag 8 at +0x2C clear, level at +0x38). Own analysis o
 
 Procedure 393 (0x470F20, shared with 392 and 394) evaluates one argument and calls 0x416D70
 on the object at the calling actor's +0x1C. It writes mode 1 to +0x38, the low byte of the
-argument to +0x39, zero to +0x3A, and floating-point zero to +0x3C. The 600-tick first-visit
-run reaches it 600 times; the trace includes a generated actor, but the caller has not yet been
-identified. The object's role is not established, so this belongs in the actor handler system once
-identified, rather than being registered as a dialog operation. Own analysis of the executable's
-handler and setter; no reference implementation was used.
+argument to +0x39, zero to +0x3A, and floating-point zero to +0x3C. This selects a saved vertex
+colour set: 0 means none, and other values are one-based. The intro logo's template selects set 1.
+Where this came from: own analysis of the executable by GPT-6.1 Sol/Terra via Codex, checked in
+the data; no reference implementation was used.
 
 ## Numbers
 

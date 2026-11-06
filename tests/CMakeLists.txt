@@ -27,7 +27,7 @@ function(ortool_check name expected)
 endfunction()
 
 ortool_check(help
-	6da899f9609cffd1e8f26cfc98b7634ad004fc3ce10ce46e92912a9c23d30aab
+	e8fbd3073253d50c1efabec6fc9cf62158b09ecd3fefc1952b04e8a7c4de375a
 	help)
 ortool_check(level_learn_10
 	489746cf2620b2de2776894f6ba725e6d3edce4258767693b1a9a0b64ec9539d

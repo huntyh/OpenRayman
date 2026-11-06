@@ -79,10 +79,11 @@ namespace openrayman
 		};
 		std::vector<geometric_object> meshes;
 		std::vector<memory_location> mesh_at; // per mesh: its geometric object
+		std::vector<memory_location> mesh_physical_at; // distinct physical objects can share geometry but have different colours
 		std::vector<entry> actors;
 	};
 
-	// Adds what an object list's entries show to the set's meshes (each geometric object once), and
+	// Adds what an object list's entries show to the set's meshes (each physical object once), and
 	// appends each entry's mesh and scale.
 	void add_meshes(actor_set& set, const memory_image& memory, const std::vector<actor_object>& objects,
 		std::vector<std::optional<std::size_t>>& meshes, std::vector<std::optional<vec3>>& scales);

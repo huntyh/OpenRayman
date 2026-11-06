@@ -18,6 +18,8 @@ namespace openrayman
 	using vec2 = std::array<float, 2>;
 	using vec3 = std::array<float, 3>;
 	using rgba = std::array<float, 4>;
+	using saved_vertex_colour = std::array<std::int16_t, 4>;
+	using colour_set = std::vector<std::vector<saved_vertex_colour>>; // LOD, then vertex
 
 	// How a surface looks. Colours are as stored; how the engine combines them isn't confirmed yet.
 	// One image of an animated texture, and how long it shows.
@@ -83,6 +85,7 @@ namespace openrayman
 		std::vector<triangle_element> elements;
 		std::vector<sprite> sprites;
 		std::vector<std::uint16_t> skipped_types; // elements of types not decoded yet
+		std::vector<colour_set> colour_sets; // from the visual set, for actor meshes
 		// Cards that turn towards the camera. They lie flat in their own YZ plane and face +X.
 		look_at look = look_at::none;
 	};
@@ -99,6 +102,9 @@ namespace openrayman
 
 	// The same for a physical object (what IPOs and actors' object lists point to).
 	std::optional<memory_location> physical_object_geometry(const memory_image& memory, const memory_location& physical);
+
+	// Every saved colour set and its LODs on a physical object's visual set.
+	std::vector<colour_set> physical_object_colour_sets(const memory_image& memory, const memory_location& physical);
 
 	// Reads a transform (0x58 bytes) from memory.
 	transform read_transform(const memory_image& memory, const memory_location& at);

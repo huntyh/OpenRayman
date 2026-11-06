@@ -85,6 +85,7 @@ static void usage()
 		"  mesh <game folder> <level> <block> <hex offset>\n"
 		"                                      What a physical object shows: elements, sprites, materials\n"
 		"  motion <game folder> <level>       For each actor: its animation and how far its parts move\n"
+		"  colours <game folder>              Count actors with saved vertex colours in all levels\n"
 		"  states <game folder> <level> <node>\n"
 		"                                      The states of an actor's family and their animations\n"
 		"  anim <game folder> <level> <index> <frame>\n"
@@ -916,6 +917,17 @@ static int cmd_mesh(const fs::path& folder, const std::string& name, const std::
 		return out;
 	};
 	std::cout << std::format("geometric object {} +0x{:X}: {} vertices, look-at {}\n", geometry->block->id.to_string(), geometry->offset, mesh.vertices.size(), int(mesh.look));
+	auto colour_sets = physical_object_colour_sets(memory, at);
+	std::cout << std::format("  {} colour sets\n", colour_sets.size());
+	for(std::size_t s = 0; s < colour_sets.size(); ++s)
+		for(std::size_t l = 0; l < colour_sets[s].size(); ++l)
+		{
+			const auto& colours = colour_sets[s][l];
+			std::cout << std::format("    set {} LOD {}: {} vertices", s + 1, l, colours.size());
+			if(!colours.empty())
+				std::cout << std::format("; first RGBA {} {} {} {}", colours[0][0], colours[0][1], colours[0][2], colours[0][3]);
+			std::cout << "\n";
+		}
 	for(const triangle_element& e : mesh.elements)
 		std::cout << std::format("  triangles {}: {}\n", e.triangles.size(), describe(e.material));
 	for(const sprite& sp : mesh.sprites)
@@ -1006,6 +1018,34 @@ static int cmd_refs(const fs::path& folder, const std::string& name, const std::
 				std::cout << std::format("  {} +0x{:06X}\n", b->id.to_string(), o);
 		}
 	}
+	return EXIT_SUCCESS;
+}
+
+// Survey actors in each loaded level; generated templates are not included.
+static int cmd_colours(const fs::path& folder)
+{
+	game_data game = require_game(folder);
+	std::size_t total = 0, levels = 0;
+	for(const std::string& name : game.game_dsb().levels)
+	{
+		auto files = load_level_files(game, name);
+		auto header = read_level_header(files);
+		scene tree(files.memory, header);
+		auto bank = read_animation_bank(files);
+		auto set = read_actors(files.memory, tree, bank);
+		std::size_t actors = 0;
+		for(const auto& actor : set.actors)
+			if(std::ranges::any_of(actor.meshes, [&](const auto& mesh) {
+				return mesh && !set.meshes[*mesh].colour_sets.empty();
+			})) ++actors;
+		if(actors)
+		{
+			++levels;
+			total += actors;
+			std::cout << std::format("{}: {} actors\n", name, actors);
+		}
+	}
+	std::cout << std::format("{} actors in {} levels (scene actors only)\n", total, levels);
 	return EXIT_SUCCESS;
 }
 
@@ -2041,6 +2081,8 @@ int main(int argc, char** argv)
 			return cmd_scene(args[1], args[2]);
 		if(cmd == "motion" && args.size() == 3)
 			return cmd_motion(args[1], args[2]);
+		if(cmd == "colours" && args.size() == 2)
+			return cmd_colours(args[1]);
 		if(cmd == "states" && args.size() == 4)
 			return cmd_states(args[1], args[2], args[3]);
 		if(cmd == "anim" && args.size() == 5)
