@@ -4324,8 +4324,34 @@ namespace openrayman::game
 			next_arg(c, who);
 			next_arg(c, where);
 			std::uint32_t so = c.vm.super_object_of(actor_value(c.vm, who));
-			if(std::uint32_t t = transform_of(c.vm, so))
-				write3(c.vm.memory(), t + 4, vec_of(where));
+			live_memory& m = c.vm.memory();
+			// Set a transform's position; an identity (type 1) becomes a translation (0x446590).
+			auto place = [&](std::uint32_t t) {
+				if(!t || !m.contains(t, 0x58))
+					return;
+				write3(m, t + 4, vec_of(where));
+				if(m.u32(t) == 1)
+					m.write<std::uint32_t>(t, 2);
+			};
+			place(transform_of(c.vm, so));
+			// 0x432DA0: an actor with dynamics gets the position in the dynamics' own matrices too
+			// (+0xD0 and +0x78, and +0x288/+0x2E0 with flag 4), and the world transform is copied
+			// from +0xD0, unless flag 0x80. Otherwise its next mechanics step starts from where it
+			// was and the move only shows a tick later (a revisit's Rayman flashed at the new-game
+			// spot before reaching the portal).
+			if(std::uint32_t base = dynamics_base(c, so, 0x2E0 + 0x58); base && !(m.u8(base + 0xC) & 0x80))
+			{
+				place(base + 0xD0);
+				place(base + 0x78);
+				if(std::uint32_t t = transform_of(c.vm, so); t && m.contains(t, 0x58))
+					for(std::uint32_t i = 0; i < 0x58; i += 4)
+						m.write<std::uint32_t>(t + i, m.u32(base + 0xD0 + i));
+				if(m.u8(base + 0xC) & 4)
+				{
+					place(base + 0x288);
+					place(base + 0x2E0);
+				}
+			}
 			// 0x432DA0: the dynamics forgets the speed it had (base +0x3C and +0x6C), so a held
 			// actor doesn't gather a fall.
 			if(std::uint32_t base = dynamics_base(c, so, 0x78))

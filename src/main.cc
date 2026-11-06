@@ -1420,9 +1420,14 @@ namespace
 			run_scripts(a, a.animation_time);
 			a.silent_run = false;
 			// The startup script requests a cut on its first tick; the camera lands on
-			// the second. Run both before presenting the saved, out-of-bounds view.
-			if(a.playing && a.tick < 2 && a.camera_super_object)
-				run_scripts(a, double(2 - a.tick) / 60.0);
+			// the second. A revisit takes four: node 4 puts Rayman by the portal on the first
+			// tick, which wakes the portal (node 77, asleep in another sector) on the second, and
+			// it pulls him in on the third. The game hides these behind loading and node 4's
+			// near-black cover; ours runs them before presenting the first frame (Rayman showed
+			// at the new-game spot for a moment).
+			constexpr long settle_ticks = 4;
+			if(a.playing && a.tick < settle_ticks && a.camera_super_object)
+				run_scripts(a, double(settle_ticks - a.tick) / 60.0);
 			update_actors(a);
 			a.dialog_memory = std::make_unique<memory_image>(std::move(files.memory));
 			a.dialog_overlay = std::make_unique<dialog_renderer>(*a.dialog_memory, a.archives, a.api);
