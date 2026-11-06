@@ -14,10 +14,13 @@ The data of a sector super object (type 0x04, see [geometry.md](geometry.md)):
 | 0x00 | actors in the sector: first, last, count |
 | 0x0C | static lights: first element, last element, u32 count |
 | 0x18 | dynamic lights (empty in the saved levels) |
-| 0x24, 0x30, 0x3C | lists of neighbouring sectors (not decoded yet) |
+| 0x24 | sectors drawn with this one (head, tail, count; entry: u16, u8 at +2 where 2 = skipped in the normal draw mode, sector super object at +4, next at +8) |
+| 0x30 | neighbours a moving position is tested against first (entry: sector super object, next, u32) |
+| 0x3C | sectors whose actors stay active with this one (see [scripts.md](scripts.md)) |
 | 0x54 | sounds on entering: first element, last element, u32 count at 0x5C (see [sound.md](sound.md#sector-sounds)) |
 | 0x60 | box: 3 floats minimum, 3 floats maximum |
 | 0x7C | u8: 1 for a virtual sector |
+| 0x7F | i8: priority when several boxes hold a point (0x40 in every Jail_10 sector) |
 | 0x80 | sky: a visual material, or null (then +0x84 is 100 as well) |
 
 A light list element is the light, then the next element. Sectors share lights: Learn_10's 20
@@ -108,10 +111,26 @@ to them, fading out with distance, which gives the waterfall its soft edges and 
 show through the stream. The water's material has ambient alpha 0, so it's only as opaque as its
 lights make it. Solid surfaces ignore alpha.
 
+**Which sectors are drawn** (own analysis, 2026-11-06, first traced by GPT-6.1 Terra): 0x44B2E0 draws
+the camera's sector and then each sector of its +0x24 list, one level deep (not their lists in
+turn). The camera's sector is kept from frame to frame (0x44BF80): while its box holds the camera
+it stays, unless a higher-priority +0x30 neighbour holds it too; when the camera leaves it, the
+first non-virtual +0x30 neighbour that holds it; otherwise 0x44BE50 picks among all boxes holding
+the point, non-virtual ones first, the highest priority, then the nearest box centre. In Jail_10
+the intro's cave (sector node 16) lists nodes 81, 18 and 20, not node 24, the virtual sector with
+the big cloud planes the camera passes right next to; drawing every sector showed them. OpenRayman
+draws the level's own geometry this way (actors still everywhere); `OPENRAYMAN_ALL_SECTORS=1`
+draws all, `OPENRAYMAN_SECTORS=1` logs each change of the camera's sector.
+
 Static geometry is lit once when the level loads. Actors move between lights, so they're lit every
 frame by the strongest 8 lights of the sector they stand in.
 
-**Fog**: the fog light of the sector the camera is in. A surface's fog cover goes by its depth along
+**Fog**: the fog light of the sector being drawn. Before each drawn sector's scenery (0x44AF30) and its
+actors (0x44B1B0) the exe sets the first fog light of that sector's own list, or turns fog off when
+it has none (0x44AE80). So from the intro's cave, which has no fog, the valley outside is still
+fogged by its own sector's fog (it was only fogged once the camera left the cave). OpenRayman
+applies the fog of each static batch's sector and of each actor part's sector; screen objects get
+none (0x45CC80 clears it). A surface's fog cover goes by its depth along
 the view direction (not its straight-line distance): the near blend up to `near`, rising linearly to
 the far blend at `far`, staying there up to the "infinite" distance, and full beyond it. Its colour
 is mixed towards the fog colour by that much. Glows (additive surfaces) fade instead. Objects past
@@ -128,7 +147,9 @@ middle of the screen.
 ## Sky
 
 Behind everything the game clears the screen with the background colour of the first fog light in
-the camera's sector (0x40AD00 packs it and hands it to the screen clear; Learn_10's is teal). On top
+the camera's sector (0x40AD00 packs it and hands it to the screen clear; Learn_10's is teal). A
+sector without a fog light leaves the colour as it was, so the intro's cave keeps the valley's dark
+blue (ours showed its default light blue there). On top
 of that each sector can name a **sky material** (+0x80): in Learn_10 the 11 open-air sectors all
 point to the same one, `foret_sky_txy`, white swirling clouds on cyan that scroll slowly (0.002 per
 frame). How the game maps it onto the sky wasn't found yet; OpenRayman draws it on a dome around the

@@ -144,7 +144,9 @@ namespace openrayman
 			int animation = -1; // an animated texture, which replaces `texture` frame by frame
 			glm::vec2 scroll{ 0 }; // texture widths per second, in our UV space
 			glm::vec4 ambient{ 0 }, diffuse{ 1 }; // the material's colours and alpha
+			std::size_t sector = no_sector; // the level's own geometry: the sector it belongs to
 		};
+		static constexpr std::size_t no_sector = std::size_t(-1);
 
 		// An animated texture: each frame's texture, and when it ends within one loop (seconds).
 		struct texture_animation
@@ -256,5 +258,15 @@ namespace openrayman
 		bool m_lighting = true;
 		float m_luminosity = 0.5f;
 		level_lights m_lights;
+		// The camera's sector, kept from frame to frame as the exe does (level_lights::follow), and
+		// the sectors drawn while the camera is in it: itself and its +0x24 list (0x44B2E0).
+		mutable std::optional<std::size_t> m_camera_sector;
+		mutable std::vector<bool> m_drawn_sectors;
+		mutable std::optional<glm::vec3> m_background; // the last screen clear colour a fog gave
+		bool drawn(std::size_t sector) const
+		{
+			return sector == no_sector || sector >= m_drawn_sectors.size() || m_drawn_sectors[sector];
+		}
+		void follow_camera(const glm::vec3& eye) const;
 	};
 }

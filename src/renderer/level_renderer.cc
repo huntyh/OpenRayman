@@ -1,3 +1,6 @@
+#include <cstdio>
+#include <cstdlib>
+#include <format>
 #include <renderer/level_renderer.h>
 #include <openrayman/game/profiler.h>
 
@@ -416,6 +419,8 @@ namespace openrayman
 		m_batches.clear();
 		m_see_through.clear();
 		m_see_through_triangles.clear();
+		m_camera_sector.reset();
+		m_background.reset();
 		m_sprites.clear();
 		m_effect_materials.clear();
 		m_particles.clear();
@@ -734,7 +739,7 @@ namespace openrayman
 			}
 		};
 
-		by_texture level_triangles;
+		std::map<std::size_t, by_texture> level_triangles; // by sector
 		std::vector<std::size_t> cards;
 		for(std::size_t g = 0; g < geometry.size(); g++)
 		{
@@ -756,9 +761,10 @@ namespace openrayman
 			add(placed.object, placed.world, own, m_sprites, lit);
 			for(auto& [key, list] : own)
 			{
+				const std::size_t sector = g < sectors.size() && sectors[g] ? *sectors[g] : no_sector;
 				if(std::get<0>(key) == blend::none)
 				{
-					auto& into = level_triangles[key];
+					auto& into = level_triangles[sector][key];
 					into.insert(into.end(), list.begin(), list.end());
 					continue;
 				}
@@ -767,6 +773,7 @@ namespace openrayman
 					lo = glm::min(lo, v.position), hi = glm::max(hi, v.position);
 				std::vector<batch> one;
 				append(by_texture{ { key, list } }, one);
+				one.front().sector = sector;
 				m_see_through.push_back({ one.front(), (lo + hi) * 0.5f });
 				// Each triangle sorts on its own: big see-through objects (a light ray, a curtain of
 				// moss) cross each other, so no order of whole objects is right from everywhere.
@@ -779,7 +786,13 @@ namespace openrayman
 				}
 			}
 		}
-		append(level_triangles, m_batches);
+		for(auto& [sector, triangles] : level_triangles)
+		{
+			std::size_t from = m_batches.size();
+			append(triangles, m_batches);
+			for(std::size_t i = from; i < m_batches.size(); i++)
+				m_batches[i].sector = sector;
+		}
 		for(const batch& b : m_batches)
 		{
 			for(GLint i = b.first; i < b.first + b.count; i++)
@@ -875,11 +888,14 @@ namespace openrayman
 	{
 		if(!m_lighting)
 			return std::nullopt;
-		auto s = m_lights.sector_at({ eye.x, eye.y, eye.z });
+		follow_camera(eye);
+		auto s = m_camera_sector;
+		// 0x40AD00 sets the screen clear from the first fog light of the camera's sector, and leaves
+		// it as it was when that sector has none (the intro's cave keeps the valley's dark blue).
 		const light* fog = s ? m_lights.fog(*s) : nullptr;
-		if(!fog)
-			return std::nullopt;
-		return glm::vec3(fog->background[0], fog->background[1], fog->background[2]);
+		if(fog)
+			m_background = glm::vec3(fog->background[0], fog->background[1], fog->background[2]);
+		return m_background;
 	}
 
 	level_renderer::part_lights level_renderer::lights_for(const part& p) const
@@ -940,6 +956,30 @@ namespace openrayman
 		return out;
 	}
 
+	void level_renderer::follow_camera(const glm::vec3& eye) const
+	{
+		auto was = m_camera_sector;
+		m_camera_sector = m_lights.follow(m_camera_sector, { eye.x, eye.y, eye.z });
+		static const bool log = std::getenv("OPENRAYMAN_SECTORS") != nullptr;
+		if(log && was != m_camera_sector)
+		{
+			std::string list;
+			if(m_camera_sector)
+				for(std::size_t s : m_lights.sectors[*m_camera_sector].drawn_with)
+					list += std::format(" {}", s);
+			std::fprintf(stderr, "camera sector %d at (%.1f %.1f %.1f), drawn with:%s, fog %s\n", m_camera_sector ? int(*m_camera_sector) : -1,
+				eye.x, eye.y, eye.z, list.c_str(), m_camera_sector && m_lights.fog(*m_camera_sector) ? "yes" : "no");
+		}
+		// OPENRAYMAN_ALL_SECTORS=1 draws every sector, as before (for looking around in the viewer).
+		static const bool all = std::getenv("OPENRAYMAN_ALL_SECTORS") != nullptr;
+		m_drawn_sectors.assign(m_lights.sectors.size(), all || m_camera_sector == std::nullopt);
+		if(!m_camera_sector)
+			return;
+		m_drawn_sectors[*m_camera_sector] = true;
+		for(std::size_t s : m_lights.sectors[*m_camera_sector].drawn_with)
+			m_drawn_sectors[s] = true;
+	}
+
 	void level_renderer::draw(const glm::mat4& view, const glm::mat4& projection) const
 	{
 		glEnable(GL_DEPTH_TEST);
@@ -959,34 +999,43 @@ namespace openrayman
 		glUniform1f(m_u_luminosity, m_luminosity - 0.5f);
 		std::vector<part> parts;
 		parts.reserve(m_level_cards.size() + m_parts.size());
+		follow_camera(eye);
 		for(const auto* list : { &m_level_cards, &m_parts })
 		{
 			for(const part& p : *list)
 			{
+				if(list == &m_level_cards && p.sector && !drawn(*p.sector))
+					continue;
 				if(p.mesh < m_meshes.size())
 					parts.push_back({ p.mesh, face_camera(p.model, m_meshes[p.mesh].look, camera), p.sector, p.morph_mesh, p.morph_amount, p.screen, p.alpha });
 			}
 		}
 
-		// The fog of the sector the camera is in.
-		glUniform4f(m_u_fog, 0, 0, 0, 0);
-		if(m_lighting)
-		{
-			if(auto s = m_lights.sector_at({ eye.x, eye.y, eye.z }))
+		// Fog goes by the sector being drawn: before each sector's scenery (0x44AF30) and its actors
+		// (0x44B1B0) the exe sets the first fog light of that sector's own list, or none (0x44AE80).
+		// So from the cave the valley outside is fogged, though the cave has no fog. The camera's
+		// sector gives the background (and, here, what has no sector of its own).
+		std::optional<std::size_t> fogged = no_sector; // what the fog uniforms hold now
+		auto use_fog = [&](std::optional<std::size_t> sector) {
+			if(sector == fogged)
+				return;
+			fogged = sector;
+			const light* fog = m_lighting && sector && *sector < m_lights.sectors.size() ? m_lights.fog(*sector) : nullptr;
+			if(!fog)
 			{
-				if(const light* fog = m_lights.fog(*s))
-				{
-					glUniform4f(m_u_fog_color, fog->color[0], fog->color[1], fog->color[2], 1);
-					glUniform4f(m_u_fog, fog->near, fog->far, fog->fog_near_blend, fog->fog_far_blend);
-				}
+				glUniform4f(m_u_fog, 0, 0, 0, 0);
+				return;
 			}
-		}
+			glUniform4f(m_u_fog_color, fog->color[0], fog->color[1], fog->color[2], 1);
+			glUniform4f(m_u_fog, fog->near, fog->far, fog->fog_near_blend, fog->fog_far_blend);
+		};
+		use_fog(m_camera_sector);
 
 		// The sky first, behind everything: the camera's sector's, unlit and unfogged, centred on the
 		// camera so it never comes nearer.
 		if(m_lighting)
 		{
-			auto s = m_lights.sector_at({ eye.x, eye.y, eye.z });
+			auto s = m_camera_sector;
 			auto sky = s ? m_skies.find(*s) : m_skies.end();
 			if(sky != m_skies.end())
 			{
@@ -1018,6 +1067,17 @@ namespace openrayman
 			for(std::size_t i = 0; i < parts.size(); i++)
 				part_light[i] = lights_for(parts[i]);
 		}
+		// Each part's sector, for its fog. Screen objects are drawn in a pass without fog (0x45CC80
+		// clears it, 0x424190).
+		std::vector<std::optional<std::size_t>> part_sector(parts.size());
+		for(std::size_t i = 0; i < parts.size(); i++)
+		{
+			const part& p = parts[i];
+			if(p.screen)
+				continue;
+			glm::vec3 at(p.model[3]);
+			part_sector[i] = p.sector ? p.sector : m_lights.sector_at({ at.x, at.y, at.z });
+		}
 
 		glBindVertexArray(m_vao);
 		const glm::mat4 identity(1.0f);
@@ -1031,11 +1091,13 @@ namespace openrayman
 			glUniform4fv(m_u_light_color, l.count, glm::value_ptr(l.color[0]));
 			glUniform2fv(m_u_light_range, l.count, glm::value_ptr(l.range[0]));
 		};
-		auto draw_batches = [this](std::span<const batch> batches, blend mode) {
+		auto draw_batches = [&, this](std::span<const batch> batches, blend mode) {
 			for(const batch& b : batches)
 			{
-				if(b.mode != mode)
+				if(b.mode != mode || !drawn(b.sector))
 					continue;
+				if(b.sector != no_sector)
+					use_fog(b.sector);
 				glBindTexture(GL_TEXTURE_2D, texture_at(b.animation, b.texture));
 				// Wrapped every 2 widths, which keeps mirrored textures the same and the numbers small.
 				glm::vec2 offset(std::fmod(double(b.scroll.x) * m_time, 2.0), std::fmod(double(b.scroll.y) * m_time, 2.0));
@@ -1091,6 +1153,7 @@ namespace openrayman
 				continue; // drawn blended, with the see-through ones
 			glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(parts[i].model));
 			use_lights(part_light[i]);
+			use_fog(part_sector[i]);
 			glUniform1f(m_u_part_alpha, parts[i].alpha);
 			morph(parts[i], false);
 			draw_batches(m_meshes[parts[i].mesh].batches, blend::none);
@@ -1121,6 +1184,7 @@ namespace openrayman
 				continue;
 			glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(parts[i].model));
 			use_lights(part_light[i]);
+			use_fog(part_sector[i]);
 			glUniform1f(m_u_part_alpha, parts[i].alpha);
 			morph(parts[i], false);
 			draw_cores(m_meshes[parts[i].mesh].batches);
@@ -1129,6 +1193,7 @@ namespace openrayman
 		glUniform1f(m_u_sharpen, 0.0f);
 		glUniform1f(m_u_part_alpha, 1.0f);
 
+		use_fog(m_camera_sector);
 		// Shadows: blobs laid on the ground below the actors that cast them, over the solid surfaces.
 		if(m_shadow_texture && !m_shadows.empty())
 		{
@@ -1203,7 +1268,8 @@ namespace openrayman
 		};
 		std::vector<see_through_draw> order;
 		for(const see_through_triangle& t : m_see_through_triangles)
-			order.push_back({ glm::length(t.centre - eye), &m_see_through[t.object].b, level, t.first, m_see_through[t.object].b.mode });
+			if(drawn(m_see_through[t.object].b.sector))
+				order.push_back({ glm::length(t.centre - eye), &m_see_through[t.object].b, level, t.first, m_see_through[t.object].b.mode });
 		for(std::size_t i = 0; i < parts.size(); i++)
 		{
 			float distance = glm::length(glm::vec3(parts[i].model[3]) - eye);
@@ -1230,7 +1296,7 @@ namespace openrayman
 				glUniform1i(m_u_lighting, m_lighting ? (is_level ? 1 : 2) : 0);
 				glUniform1f(m_u_part_alpha, is_level ? 1.0f : parts[d.part].alpha);
 				if(!is_level)
-					use_lights(part_light[d.part]);
+					use_lights(part_light[d.part]), use_fog(part_sector[d.part]);
 				else
 					glUniform1f(m_u_sharpen, 0.0f);
 			}
@@ -1254,6 +1320,7 @@ namespace openrayman
 		glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(identity));
 		glUniform1f(m_u_sharpen, 0.0f);
 		glUniform1f(m_u_part_alpha, 1.0f);
+		use_fog(m_camera_sector);
 		// Sprites are glows and flames: they shine by themselves.
 		glUniform1i(m_u_lighting, m_lighting ? 3 : 0);
 		glUniform2f(m_u_uv_offset, 0, 0);

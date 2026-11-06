@@ -63,6 +63,12 @@ namespace openrayman
 		vec3 min{}, max{};
 		// Virtual sectors overlay others to light parts of the scenery; nothing stands in them.
 		bool is_virtual = false;
+		// +0x7F: which of several boxes holding a point wins (higher first; 0x44BE50).
+		std::int8_t priority = 0;
+		// +0x24: the sectors drawn with this one while the camera is in it (0x44B2E0, one level,
+		// not recursive). +0x30: the neighbours a position moving out of the box is tested
+		// against first (0x44BF80). Indices into level_lights::sectors.
+		std::vector<std::size_t> drawn_with, neighbours;
 		// What the sky shows while the camera is in this sector (Learn_10: scrolling clouds).
 		std::optional<visual_material> sky;
 
@@ -78,6 +84,11 @@ namespace openrayman
 		std::optional<std::size_t> sector_of(const scene& tree, std::size_t node) const;
 		// The sector a point is in: the smallest box (not virtual) that holds it, or the nearest box.
 		std::optional<std::size_t> sector_at(const vec3& point) const;
+		// The camera's sector as the exe keeps it (0x44BF80): stay in `current` while its box holds
+		// the point, unless a higher-priority neighbour (+0x30) holds it too; on leaving, the first
+		// non-virtual neighbour that holds it; otherwise the pick of 0x44BE50: among the boxes
+		// holding the point, non-virtual first, the highest priority, then the nearest box centre.
+		std::optional<std::size_t> follow(std::optional<std::size_t> current, const vec3& point) const;
 		// The fog light of a sector, if it has one that's on.
 		const light* fog(std::size_t sector) const;
 	};

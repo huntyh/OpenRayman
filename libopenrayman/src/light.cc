@@ -18,7 +18,9 @@ namespace openrayman
 		{
 			constexpr std::uint32_t first_light = 0x0C, light_count = 0x14;
 			constexpr std::uint32_t min = 0x60, max = 0x6C;
+			constexpr std::uint32_t drawn_with = 0x24, neighbours = 0x30; // list: head, tail, count
 			constexpr std::uint32_t is_virtual = 0x7C; // u8
+			constexpr std::uint32_t priority = 0x7F;   // i8
 			constexpr std::uint32_t sky = 0x80;        // visual material
 			constexpr std::uint32_t size = 0x88;
 		}
@@ -188,6 +190,8 @@ namespace openrayman
 			s.max = read_vec3(r);
 			r.seek(sector_field::is_virtual);
 			s.is_virtual = r.u8() != 0;
+			r.seek(sector_field::priority);
+			s.priority = std::int8_t(r.u8());
 			if(auto sky = memory.follow(at + sector_field::sky))
 				s.sky = read_visual_material(memory, *sky);
 			std::optional<memory_location> element = memory.follow(at + sector_field::first_light);
@@ -208,7 +212,98 @@ namespace openrayman
 				throw format_error(std::format("sector at {} +0x{:X} has more lights than its count {}", at.block->id.to_string(), at.offset, count));
 			out.sectors.push_back(std::move(s));
 		}
+
+		// The neighbour lists name sector super objects.
+		auto sector_named = [&](const std::optional<memory_location>& so) -> std::optional<std::size_t>
+		{
+			if(!so)
+				return std::nullopt;
+			for(std::size_t i = 0; i < out.sectors.size(); i++)
+			{
+				const memory_location& at = tree.node(out.sectors[i].node).at;
+				if(at.block == so->block && at.offset == so->offset)
+					return i;
+			}
+			return std::nullopt;
+		};
+		for(sector& s : out.sectors)
+		{
+			const memory_location& at = *tree.node(s.node).data;
+			// +0x24 entries (0x44B2E0): u16, a byte at +2 (2 = skipped outside one draw mode,
+			// 0x500FAC), the sector super object at +4, the next entry at +8.
+			std::optional<memory_location> e = memory.follow(at + sector_field::drawn_with);
+			for(int guard = 0; e && guard < 256; guard++)
+			{
+				binary_reader r = reader_at(*e, 0xC);
+				r.seek(2);
+				std::uint8_t mode = r.u8();
+				if(auto i = sector_named(memory.follow(*e + 4)); i && mode != 2)
+					s.drawn_with.push_back(*i);
+				e = memory.follow(*e + 8);
+			}
+			// +0x30 entries (0x44BF80): the sector super object at +0, the next entry at +4.
+			e = memory.follow(at + sector_field::neighbours);
+			for(int guard = 0; e && guard < 256; guard++)
+			{
+				if(auto i = sector_named(memory.follow(*e)))
+					s.neighbours.push_back(*i);
+				e = memory.follow(*e + 4);
+			}
+		}
 		return out;
+	}
+
+	std::optional<std::size_t> level_lights::follow(std::optional<std::size_t> current, const vec3& point) const
+	{
+		if(current && *current < sectors.size())
+		{
+			const sector& c = sectors[*current];
+			if(c.contains(point) && !c.is_virtual)
+			{
+				for(std::size_t n : c.neighbours)
+				{
+					if(sectors[n].priority <= c.priority)
+						break;
+					if(!sectors[n].is_virtual && sectors[n].contains(point))
+						return n;
+				}
+				return current;
+			}
+			for(std::size_t n : c.neighbours)
+			{
+				if(!sectors[n].is_virtual && sectors[n].contains(point))
+					return n;
+			}
+		}
+		// 0x44BE50 over every sector.
+		std::optional<std::size_t> real, imaginary;
+		float real_distance = 0, imaginary_distance = 0;
+		std::int8_t real_priority = 0, imaginary_priority = 0;
+		for(std::size_t s = 0; s < sectors.size(); s++)
+		{
+			const sector& c = sectors[s];
+			if(!c.contains(point))
+				continue;
+			float d2 = 0;
+			for(int axis = 0; axis < 3; axis++)
+			{
+				float d = (c.min[axis] + c.max[axis]) * 0.5f - point[axis];
+				d2 += d * d;
+			}
+			float distance = std::sqrt(d2);
+			auto& best = c.is_virtual ? imaginary : real;
+			auto& best_distance = c.is_virtual ? imaginary_distance : real_distance;
+			auto& best_priority = c.is_virtual ? imaginary_priority : real_priority;
+			if(!best || c.priority > best_priority || (c.priority == best_priority && distance < best_distance))
+				best = s, best_distance = distance, best_priority = c.priority;
+		}
+		if(real)
+			return real;
+		if(imaginary)
+			return imaginary;
+		// Outside every box: the exe falls back to the last sector it looked at; ours keeps the
+		// current one, or the nearest box.
+		return current ? current : sector_at(point);
 	}
 
 	rgba light_at(std::span<const light* const> lights, std::uint8_t target, const vec3& position, const vec3& normal)
