@@ -27,7 +27,8 @@
 #   slots.txt      the 50 screen-text slots (0x4E1080, 0x1C each: +0 text pointer, +0x10 alpha,
 #                  +0x13 ramp flags): a slot as it gets text, its alpha and flags as they change,
 #                  with the text (the Lum and cage counters are slots 15 and 16)
-#   vars.txt       with --vars: chosen script variables of chosen actors, every frame they change,
+#   vars.txt       with --vars: chosen script variables of actors picked by their AI model (its
+#                  behaviour/variable counts), every frame they change,
 #                  plus each one's thought counter (3D data +0x100) and behaviour
 #   audio.txt      how loud the sound output is every 50 ms (RMS and peak, dBFS; r2audio.py, needs
 #                  `pip install soundcard`): set against sound.txt and music.txt, it gives the game's
@@ -104,6 +105,18 @@ def behaviour_of(m, actor):
 	b = live.list_index(m, m.u32(model), m.u32(normal + 8), 0xC) if normal else -1
 	r = live.list_index(m, m.u32(model + 4), m.u32(reflex + 8), 0xC) if reflex else -1
 	return str(b), str(r)
+
+
+def model_signature(m, actor):
+	# "behaviours/variables" of the actor's AI model: model +0 behaviour list (array, u8 count at
+	# +4), +8 variable declaration (u8 count at +0xC). Matches `ortool brain`'s node header.
+	mind = mind_of(m, actor)
+	model = m.u32(mind) if mind else 0
+	if not model:
+		return None
+	behaviours = m.u32(model)
+	declaration = m.u32(model + 8)
+	return f"{m.u8(behaviours + 4) if behaviours else 0}/{m.u8(declaration + 0xC) if declaration else 0}"
 
 
 def position(m, so):
@@ -220,15 +233,23 @@ class recorder:
 				self.slots[i] = now
 
 	def poll_vars(self):
+		# The active world is relinked as actors wake (0x40B4C0), so its order is not the file's:
+		# actors are picked by their AI model's behaviour and variable counts instead.
 		m = self.m
-		children = actors_of(m, dynamic_world(m))
-		for index, variables in self.watched:
-			if index >= len(children):
-				continue
-			so = children[index]
+		found = {}
+		for so in actors_of(m, dynamic_world(m)):
 			actor = m.u32(so + 4) if m.u32(so) == 2 else 0
+			key = model_signature(m, actor)
+			if key and key not in found:
+				found[key] = (so, actor)
+		for index, variables in self.watched:
+			if index not in found:
+				continue
+			so, actor = found[index]
 			mind = mind_of(m, actor)
-			memory = m.u32(mind + 0xC) if mind else 0
+			# Variable memory: +0 declaration, +4 initial buffer, +8 current buffer.
+			block = m.u32(mind + 0xC) if mind else 0
+			memory = m.u32(block + 8) if block else 0
 			if not memory:
 				continue
 			data = m.u32(actor)
@@ -244,7 +265,7 @@ class recorder:
 					values.append(f"{name} {m.u8(memory + offset)}")
 			line = ", ".join(values)
 			if self.vars.get(index) != line:
-				self.say("vars", f"actor {index} at {position(m, so)}: {line}")
+				self.say("vars", f"model {index} at {position(m, so)}: {line}")
 				self.vars[index] = line
 
 	def node_name(self, so):
@@ -489,15 +510,16 @@ def main():
 	parser.add_argument("folder", help="where the files go (created if missing; appended to)")
 	parser.add_argument("--only", default=",".join(TOPICS), help="topics, comma separated: " + ", ".join(TOPICS))
 	parser.add_argument("--process", default="Rayman2.exe")
-	parser.add_argument("--vars", default="", help="actor:name@offset:kind,... with offsets from `ortool brain` "
-		"(kind b byte, f float, i int); actor = the actors.txt index, e.g. 3:var27@72:f,3:var36@151:b")
+	parser.add_argument("--vars", default="", help="model:name@offset:kind,... with offsets from `ortool brain` "
+		"(kind b byte, f float, i int); model = its behaviour/variable counts as `ortool brain` prints them, "
+		"e.g. 3/58:var27@72:f,3/58:var36@151:b")
 	args = parser.parse_args()
 	watched = {}
 	for item in filter(None, args.vars.split(",")):
 		actor, rest = item.split(":", 1)
 		name, rest = rest.split("@", 1)
 		offset, kind = rest.split(":", 1)
-		watched.setdefault(int(actor), []).append((name, int(offset, 0), kind))
+		watched.setdefault(actor, []).append((name, int(offset, 0), kind))
 	watched = sorted(watched.items())
 	topics = [t for t in args.only.split(",") if t in TOPICS]
 	if "session" not in topics:
