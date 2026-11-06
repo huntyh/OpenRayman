@@ -77,4 +77,4 @@ the saved sum without that stand-in, as needed by the intro logo, whose own ligh
   where the top of his head (2.2 above his feet) would pass a downward-facing surface; slopes
   slide downhill but with the wrong acceleration.
 
-OpenRayman saves live in its per-user folder rather than the game installation?s Data/SaveGame. A `portable.txt` next to the executable selects a local SaveGame folder; `OPENRAYMAN_SAVE_DIR` overrides both.
+OpenRayman saves live in its per-user folder rather than the game installation's Data/SaveGame. A `portable.txt` next to the executable selects a local SaveGame folder; `OPENRAYMAN_SAVE_DIR` overrides both.

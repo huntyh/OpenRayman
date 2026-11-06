@@ -101,6 +101,28 @@ once it plays right (they have issues of their own, found on a first look).
   replaying Murfy; the HUD's icons and Rayman's health bar (particle kinds 50/120); a breaking
   cage's golden burst (kinds 5/45); the revisit start looking like a finished level (interim
   snapshot, [formats/saves.md](formats/saves.md)).
+- ✅ **The main menu** ([formats/menu.md](formats/menu.md)): the Exit prompt (Yes quits), the
+  white-to-colour text gradient with the selected entry's height pulse, the cutscene black bars,
+  the language prompt and its run-time selection (not saved yet), the menu camera's path, the
+  butterfly placed at a screen point, and the startup theme played from the level's GPT.
+- ✅ **The intro, first pieces**: the Ubisoft logo and the tiled Rayman 2 logo as screen objects
+  (smooth edges, turning with the camera), the text boxes' fades, and the logo arc's saved vertex
+  colours (procedure 393); the animation morph records are read and blended (the Teensy's hat).
+- ✅ **The exe's per-frame actor order**: when Rayman changes sector the run order relinks his
+  sector first, so the intro's "SLAVES ON BOARD" counters no longer flash
+  ([formats/scripts.md](formats/scripts.md)).
+- ✅ **Sector rendering**: only the camera's sector and its +0x24 drawn-with list are drawn, with
+  fog per drawn sector, and `--screenshot` draws solid scenery again; the texture colour keys
+  (+0x2C) and the one-sided materials (flag 0x400) match the game
+  ([formats/geometry.md](formats/geometry.md)).
+- ✅ **Reading real saves** ([formats/saves.md](formats/saves.md)): `--save 1..3` restores a slot,
+  `ortool save` decodes one, and saves live in OpenRayman's own folder (per-user, or `portable.txt`
+  beside the executable, `OPENRAYMAN_SAVE_DIR` overrides); `ortool mksave` writes test slots.
+- ✅ **Woken actors only**: an actor thinks only after the exe's wake pass moves it to the active
+  world, with the sector wake lists, so the scripts' pacing holds
+  ([formats/scripts.md](formats/scripts.md)).
+- ✅ **Revisit settling**: a `--save` start runs four ticks before the first frame (no flash of
+  Rayman at the new-game spot), and a teleport moves a dynamic actor at once (its dynamics block too).
 
 Dated details of everything above, and the user's look-by-look feedback, are in
 [ROADMAP_LOG.md](ROADMAP_LOG.md).
@@ -108,10 +130,10 @@ Dated details of everything above, and the user's look-by-look feedback, are in
 **Open.** From 2026-11-04 the open items are tracked on the maintainers' own task board; in short:
 
 - 3c leftovers (the slope's acceleration), the dialog text's size and padding, the HUD counters
-- The cutscene black bars, as the game does them (and later an option to turn them off)
+- The menu's scenery and the name screen (Phase 4), the intro's rest before Jail_10
 - Sound: theme fades, loudness by distance, music and effect levels
 - The game's camera: the "turning refused" icon, the exe's orbit search around obstacles
-- Unported exe pieces: script handlers Learn_10 still calls, particle kinds, animation morphs
+- Unported exe pieces: script handlers Learn_10 still calls, particle kinds
 - Flying actors bobbing where the game's hover, F1's glossary, an optional modern camera
 
 ## Phase 4: the whole game
@@ -122,8 +144,10 @@ Everything the PC game has, working before we port it anywhere. The order the us
 1. The main menu ([formats/menu.md](formats/menu.md)): the language prompt, the main menu and
    New Game -> name -> Jail_10 run from the level's scripts (user confirmed, 2026-11-03). Left:
    writing the save, the Load / Delete / Options screens, the menu's scenery.
-2. The new-game intro cutscene in front of the first-visit start (Jail_10, Jail_20).
-3. Save games: writing one on New Game, reading the real saves ([formats/saves.md](formats/saves.md)).
+2. The new-game intro cutscene in front of the first-visit start (Jail_10, Jail_20); the logos,
+   text boxes and bars are in (see 3c).
+3. Save games: reading the real saves is done (`--save 1..3`, [formats/saves.md](formats/saves.md));
+   writing one on New Game is left.
 4. The pause menu and the F1 glossary.
 5. The Hall of Doors: the way from one level to the next.
 6. Optional autosave, off by default (into IMPROVEMENTS when built).

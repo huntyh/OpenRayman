@@ -3,6 +3,36 @@
 The dated investigation notes from `ROADMAP.md`, kept here so the roadmap stays short. Newest
 first. The format docs under `formats/` are the permanent home of the findings themselves.
 
+## 2026-11-07: menu and intro, saves, and the exe's order
+
+A big pass of unported exe pieces landed (2026-11-05..07). Menu: the Exit prompt with its choice
+colours (Yes quits, procedure 101), the white-to-colour text gradient with the selected entry's
+height pulse, the cutscene black bars (procedure 314's world view bounds), the language selection
+at run time (procedure 242; not saved yet), the menu camera's straight moves, and the butterfly
+placed at a screen point (procedure 409, reprojected every tick). Intro: the Ubisoft logo and the
+tiled Rayman 2 logo (kinds 170/171) as screen objects with smooth edges, the text boxes' fades,
+and the logo arc's saved vertex colour sets selected by procedure 393. The animation morph
+records are read and blended, and the menu camera's jump cut now applies to Rayman only.
+
+The "SLAVES ON BOARD" counter flash in the intro came from the actor order: when Rayman changes
+sector the exe relinks its run order so his sector's actors run first (0x40B290, wake pass
+0x40B620); ours now does the same, and only actors the exe has woken think (active/inactive
+world, the sector wake lists, [formats/scripts.md](formats/scripts.md)).
+
+Saves: we read the real saves now — the decoder, the registry layout, `--save 1..3`, and
+`ortool save` ([formats/saves.md](formats/saves.md)). Saves live in OpenRayman's own folder
+(SDL per-user path, `portable.txt` beside the executable, `OPENRAYMAN_SAVE_DIR` overrides);
+`ortool mksave` writes test slots, and the tests no longer read the installed saves.
+
+Rendering: only the camera's sector and its +0x24 drawn-with list are drawn, with fog per drawn
+sector (virtual sectors depend on the list only), and `--screenshot` draws solid scenery again.
+The texture colour keys (+0x2C) and the one-sided materials (flag 0x400 / 0x80000) match the
+game. A revisit start runs four ticks before the first frame, so the portal's pull on the third
+tick is hidden as in the game, and a teleport moves a dynamic actor at once (its dynamics block too).
+
+Note: the Globox kids' scene in Learn_10 replays on a revisit in the real game too — an original
+bug, kept on purpose; an optional fix may come later.
+
 ## 2026-11-04: the hat flip was interpolation across a parent change
 
 Correction to the earlier hat investigations: the real Menu Teensies are nodes 27/28; their hat

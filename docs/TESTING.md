@@ -199,7 +199,7 @@ keys go to the game, and compare with the GOG game side by side:
 Don't report these as bugs, they're the next steps:
 
 - Some actors are invisible on purpose (triggers, waypoints)
-- The HUD is still rough: no health bar, and the counters sit a little too far left and up and
+- The HUD is still rough: the counters sit a little too far left and up and
   lack the menu font; the dialog text's colour, size and padding are a little off
 - The arrival start (without `--start new`) begins the camera behind a wall, out of bounds
 
