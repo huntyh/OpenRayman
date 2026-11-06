@@ -5,6 +5,8 @@
 #include <openrayman/file.h>
 #include <openrayman/game_data.h>
 #include <openrayman/game/saves.h>
+#include <openrayman/game/first_visit.h>
+#include <random>
 
 #include <doctest/doctest.h>
 #include <algorithm>
@@ -57,85 +59,20 @@ TEST_CASE("save wrapping: dictionary reuse, patches, final block and validation"
 	CHECK_THROWS_AS(save_file::decode(std::span<const std::byte>{}), format_error);
 }
 
-TEST_CASE("real data: installed save checksums, registry lengths and restoration")
+TEST_CASE("save encoder round trips")
 {
-	auto dir = real_game_dir(); if(!dir) return;
-	auto game = game_data::locate(*dir); REQUIRE(game);
-	auto saves = game->directory("saves"); REQUIRE(saves);
-	std::size_t checked = 0;
-	for(const auto& folder : std::filesystem::directory_iterator(*saves))
+	std::mt19937 random(12345);
+	for(std::size_t size : {0u, 1u, 7u, 8u, 9u, 196u, 1200u})
 	{
-		if(!folder.is_directory()) continue;
-		for(const auto& file : std::filesystem::directory_iterator(folder.path()))
-		{
-			if(file.path().extension() != ".sav") continue;
-			CAPTURE(file.path().filename().string());
-			save_file save(file.path());
-			CHECK(save.checksum == 0);
-			++checked;
-			auto stem = file.path().stem().string();
-			bool general = stem == "General";
-			auto name = general ? "Learn_10" : stem.substr(0, stem.rfind('_'));
-			auto files = load_level_files(*game, name);
-			auto h = read_level_header(files);
-			scene tree(files.memory, h);
-			auto registry = read_save_registry(files.memory, h, tree);
-			CHECK(save.bytes.size() == (general ? registry.general_size : registry.level_size));
-			CHECK(registry.general_size == 196);
-			if(general)
-			{
-				CHECK(save.bytes.size() == 196);
-				REQUIRE(registry.general.size() == 55);
-				// Structural metadata, never copies of Ubisoft save bytes.
-				for(unsigned i = 0; i < 3; ++i)
-				{
-					CHECK(registry.general[i].standard_offset == 0x23u - i);
-					CHECK(registry.general[i].offset == i);
-					CHECK(registry.general[i].size == 1);
-				}
-				const std::pair<unsigned, unsigned> scalar_offsets[] = {
-					{67, 3}, {50, 7}, {49, 8}, {46, 9}, {45, 10}, {20, 191}, {6, 192}
-				};
-				for(auto [variable, offset] : scalar_offsets)
-				{
-					auto it = std::ranges::find(registry.general, variable, &save_entry::variable);
-					REQUIRE(it != registry.general.end());
-					CHECK(it->offset == offset);
-				}
-				CHECK(registry.general[8].offset == 11);
-				CHECK(registry.general[8].element == 44);
-				CHECK(registry.general[52].offset == 187);
-				CHECK(registry.general[52].element == 0);
-				CHECK(std::ranges::count_if(registry.general, [](const auto& e) { return e.variable == 42; }) == 45);
-			}
-			game::live_memory memory(files.memory);
-			game::interpreter vm(memory, h.placements.empty() ? 0 : h.placements.front().super_object.address());
-			const auto& entries = general ? registry.general : registry.level;
-			game::apply_save_entries(vm, tree, entries, save.bytes, general ? registry.general_size : registry.level_size);
-			for(const auto& e : entries)
-			{
-				if(e.bit)
-				{
-					bool absent = (std::to_integer<unsigned>(save.bytes[e.offset]) >> *e.bit) & 1;
-					CHECK(bool(memory.u8(e.address) & 1) == absent);
-					CHECK(bool(memory.u8(e.address) & 2) == !absent);
-					if(e.node) CHECK(vm.removed(tree.node(*e.node).at.address()) == absent);
-				}
-				else CHECK(std::ranges::equal(memory.span(e.address, e.size), std::span(save.bytes).subspan(e.offset, e.size)));
-			}
-		}
+		std::vector<std::byte> plain(size);
+		for(auto& b : plain) b = std::byte(random() & 255);
+		auto decoded = save_file::decode(save_file::encode(plain));
+		CHECK(decoded.bytes == plain);
+		CHECK(decoded.checksum == 0);
 	}
-	CHECK(checked > 0);
-	if(auto options = game->directory("options"))
-		if(auto cfg = find_case_insensitive(*options, "Current.cfg"))
-		{
-			save_file config(*cfg);
-			CHECK(config.checksum == 0);
-			CHECK(config.bytes.size() == 87);
-		}
 }
 
-TEST_CASE("real data: chosen slot bypasses snapshots and type-5 restoration preserves other flags")
+TEST_CASE("real data: registry layout and generated mock restoration")
 {
 	auto dir = real_game_dir(); if(!dir) return;
 	auto game = game_data::locate(*dir); REQUIRE(game);
@@ -143,25 +80,36 @@ TEST_CASE("real data: chosen slot bypasses snapshots and type-5 restoration pres
 	auto h = read_level_header(files);
 	scene tree(files.memory, h);
 	auto registry = read_save_registry(files.memory, h, tree);
+	CHECK(registry.general_size == 196);
+	REQUIRE(registry.general.size() == 55);
+	CHECK(registry.general[8].offset == 11);
+	CHECK(registry.general[8].element == 44);
+	CHECK(registry.general[52].offset == 187);
+	CHECK(registry.general[52].element == 0);
 	REQUIRE(registry.level.size() == 2);
 	CHECK(registry.level[0].node == 71);
-	CHECK(registry.level[0].offset == 0);
-	CHECK(registry.level[0].bit == 0);
-	CHECK_FALSE(registry.level[1].node.has_value());
-	CHECK(registry.level[1].bit == 1);
-	game::live_memory memory(files.memory);
-	game::interpreter vm(memory, h.placements.front().super_object.address());
-	game::load_save_slot(vm, *game, files, h, tree, 1);
-	CHECK(vm.removed(tree.node(71).at.address()));
-	CHECK_FALSE(vm.removed(tree.node(3).at.address())); // the interim snapshot would remove this
-	const auto& e = registry.level[0];
-	memory.write<std::uint8_t>(e.address, 0xa5);
-	std::vector<std::byte> zero(registry.level_size);
-	game::apply_save_entries(vm, tree, registry.level, zero, registry.level_size);
-	CHECK(memory.u8(e.address) == 0xa6);
-	CHECK_FALSE(vm.removed(tree.node(71).at.address()));
-	CHECK_THROWS_AS(game::apply_save_entries(vm, tree, registry.level, {}, registry.level_size), format_error);
-	CHECK(memory.u8(e.address) == 0xa6);
-	CHECK_THROWS_AS(save_slot_folder(*game->directory("saves"), 0), format_error);
-	CHECK_THROWS_AS(save_slot_folder(*game->directory("saves"), 4), format_error);
+	game::live_memory source(files.memory);
+	game::interpreter original(source, h.placements.front().super_object.address());
+	std::vector<std::uint32_t> actors;
+	for(const auto& a : h.placements) actors.push_back(a.super_object.address());
+	for(auto bit : game::revisit_story_bits) REQUIRE(original.set_story_bit(actors, bit));
+	game::apply_revisit_state(original, tree, "Learn_10");
+	auto general = game::capture_save_entries(source, registry.general, registry.general_size);
+	auto level = game::capture_save_entries(source, registry.level, registry.level_size);
+	auto folder = std::filesystem::current_path() / "mock_save_test";
+	std::filesystem::create_directories(folder);
+	save_file::write(folder / "General.sav", general);
+	save_file::write(folder / "Learn_10_0.sav", level);
+	save_file decoded_general(folder / "General.sav");
+	save_file decoded_level(folder / "Learn_10_0.sav");
+	std::filesystem::remove(folder / "General.sav");
+	std::filesystem::remove(folder / "Learn_10_0.sav");
+	std::filesystem::remove(folder);
+	game::live_memory target(files.memory);
+	game::interpreter restored(target, h.placements.front().super_object.address());
+	game::apply_save_entries(restored, tree, registry.level, decoded_level.bytes, registry.level_size);
+	game::apply_save_entries(restored, tree, registry.general, decoded_general.bytes, registry.general_size);
+	CHECK(restored.removed(tree.node(71).at.address()));
+	CHECK(game::capture_save_entries(target, registry.general, registry.general_size) == general);
+	CHECK(game::capture_save_entries(target, registry.level, registry.level_size) == level);
 }

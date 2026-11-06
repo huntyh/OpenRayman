@@ -1,6 +1,6 @@
 # Saves
 
-Real saves can now be restored in game mode with `--save 1`, `--save 2` or `--save 3`.
+OpenRayman saves can be restored in game mode with `--save 1`, `--save 2` or `--save 3`.
 Without that option the interim revisit snapshot remains the default. Reading saves is separate
 from writing saves (functions 90/93/95, card #24), which is not implemented.
 
@@ -9,15 +9,17 @@ from writing saves (functions 90/93/95, card #24), which is not implemented.
 Each slot has `General.sav` and level files such as `Learn_10_0.sav`. The final number is the
 level variant returned in the upper half of 0x404DB0 (0x410450), not the user slot number; the
 installed files all use variant 0. OpenRayman currently loads variant 0 only. `--save` chooses
-`Slot1..3` under the installation's configured save directory (`Data/SaveGame`). A missing general
+`Slot1..3` under OpenRayman?s save root. A missing general
 file, invalid slot, checksum failure or registry-size mismatch is an error. A missing level
-file leaves that level's initial state. `HiddenSlot` is tested but is not a selectable user slot.
+file leaves that level's initial state. `HiddenSlot` is not a selectable user slot.
 
 0x403730 reads level and general files separately (0x410450, 0x410410), applies the registered
 values (0x449E80), then refreshes activity (0x406340). OpenRayman restores the bytes before the
 first script tick and adjusts type-5 activity. With a slot selected, neither the revisit snapshot
 nor first-visit hand-over runs. Explicit `--story-bits` overrides run after restoration. The slot
 is re-read at each level load; progress is not written back to disk.
+
+On Windows the root is `%APPDATA%\OpenRayman\OpenRayman\SaveGame`. A `portable.txt` beside the executable selects its `SaveGame` folder; `OPENRAYMAN_SAVE_DIR` overrides either location. The game?s own saves are never used by default. `ortool mksave <level> <slot> [--story-bits a,b,...]` writes a synthetic revisit state and refuses destinations inside the game folder.
 
 ## Registry order
 
@@ -86,8 +88,7 @@ script variable has 0x100/0x200 in these levels. Always actors can exist outside
 | Menu, Jail_10, Jail_20, Mapmonde, Bonux, Learn_31, Bast_22, Learn_60, Ski_10, Batam_10, Chase_22, nego_10, Water_20, poloc_10, Raycap | 0 | No entries |
 
 The block/offset identifies the actor structure. There are 25 installed `.sav` files, including
-HiddenSlot's general and empty Menu save. Every wrapping and registry length is tested, as are
-restored variables, packed bits, activity flags and bypassing the interim snapshot.
+HiddenSlot's general and empty Menu save. Current tests use generated data and do not open installed save files.
 
 ## File encoding (0x48D890)
 
@@ -106,12 +107,14 @@ Every `.sav` and `Options/Current.cfg` uses the same wrapping:
 - The reader checks checksum, token bounds, partial-block count and exact expanded length, and
   bounds allocation by token stream size. Malformed files throw `format_error`.
 
+The encoder emits full-mask dictionary blocks, padding the last block and appending its partial length when needed. It computes the checksum over the unwrapped compressed stream.
+
 The current `Current.cfg` expands to 87 bytes with zero checksum; the earlier 72-byte observation
-was a different options/slot-name state. Options are decoded in tests but not applied.
+was a different options/slot-name state. Options are not applied.
 `ortool save <slot>` (using `OPENRAYMAN_GAME_DIR`) prints scalar entries, sorted set story bits
 and each installed level file's actor bits. `ortool save <game folder> <slot>` also works.
 
-## Notes for future writing (out of scope)
+## Registry writing notes
 
 0x44A650 iterates the same registry with selected flags, writes a temporary plain stream, flushes
 pending packed bits, then calls the compression/wrapping path through 0x48D2C0. 0x44A730 chooses

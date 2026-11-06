@@ -3,9 +3,47 @@
 #include <openrayman/file.h>
 
 #include <algorithm>
+#include <cstdlib>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace openrayman::game
 {
+	std::filesystem::path save_root()
+	{
+		if(const char* p = std::getenv("OPENRAYMAN_SAVE_DIR"); p && *p) return p;
+#ifdef _WIN32
+		std::wstring executable(32768, L'\0');
+		auto n = GetModuleFileNameW(nullptr, executable.data(), DWORD(executable.size()));
+		if(!n || n == executable.size()) throw format_error("cannot locate executable");
+		executable.resize(n);
+		auto directory = std::filesystem::path(executable).parent_path();
+#else
+		auto directory = std::filesystem::canonical("/proc/self/exe").parent_path();
+#endif
+		if(std::filesystem::exists(directory / "portable.txt")) return directory / "SaveGame";
+#ifdef _WIN32
+		if(const char* p = std::getenv("APPDATA"); p && *p) return std::filesystem::path(p) / "OpenRayman" / "OpenRayman" / "SaveGame";
+#else
+		if(const char* p = std::getenv("XDG_DATA_HOME"); p && *p) return std::filesystem::path(p) / "OpenRayman" / "OpenRayman" / "SaveGame";
+		if(const char* p = std::getenv("HOME"); p && *p) return std::filesystem::path(p) / ".local/share/OpenRayman/OpenRayman/SaveGame";
+#endif
+		throw format_error("cannot find per-user save directory");
+	}
+
+	std::vector<std::byte> capture_save_entries(const live_memory& memory, std::span<const save_entry> entries, std::size_t size)
+	{
+		std::vector<std::byte> result(size);
+		for(const auto& e : entries)
+		{
+			if(e.offset > size || (e.bit ? e.offset == size : e.size > size - e.offset) || !memory.contains(e.address, e.bit ? 1 : e.size)) throw format_error("invalid save registry entry");
+			if(e.bit) { if(memory.u8(e.address) & 1) result[e.offset] |= std::byte(1u << *e.bit); }
+			else std::ranges::copy(memory.span(e.address, e.size), result.begin() + e.offset);
+		}
+		return result;
+	}
+
 	void apply_save_entries(interpreter& vm, const scene& tree, std::span<const save_entry> entries,
 		std::span<const std::byte> bytes, std::size_t expected_size)
 	{
@@ -37,12 +75,10 @@ namespace openrayman::game
 		}
 	}
 
-	void load_save_slot(interpreter& vm, const game_data& game, const level_files& files,
+	void load_save_slot(interpreter& vm, const std::filesystem::path& saves, const level_files& files,
 		const level_header& header, const scene& tree, unsigned slot)
 	{
-		auto saves = game.directory("saves");
-		if(!saves) throw format_error("installation has no save directory");
-		auto folder = save_slot_folder(*saves, slot);
+		auto folder = save_slot_folder(saves, slot);
 		auto general_path = find_case_insensitive(folder, "General.sav");
 		if(!general_path) throw format_error("selected slot has no General.sav");
 		auto registry = read_save_registry(files.memory, header, tree);

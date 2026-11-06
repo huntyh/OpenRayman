@@ -15,6 +15,8 @@ namespace openrayman
 	{
 		std::vector<std::byte> bytes;
 		std::uint8_t checksum = 0; // zero on success; a mismatch throws format_error
+		static std::vector<std::byte> encode(std::span<const std::byte> plain);
+		static void write(const std::filesystem::path& path, std::span<const std::byte> plain);
 		static save_file decode(std::span<const std::byte> encoded);
 		explicit save_file(const std::filesystem::path& path);
 	private:

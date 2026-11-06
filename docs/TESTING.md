@@ -205,18 +205,8 @@ Don't report these as bugs, they're the next steps:
 
 Tip: compare with the real game at the same spot.
 
-## Real save slots
+## Mock save slots
 
-- [ ] Set `OPENRAYMAN_GAME_DIR` as above and run `.\build\windows-debug\bin\ortool.exe save 1`.
-      It should report zero checksums, general variables, set story bits and each level's actor bits.
-- [ ] Start `.\build\windows-debug\bin\openrayman.exe --game "F:\Games\Rayman 2" --level Learn_10 --save 1`.
-      Compare the Lum/cage counters and health with the real game's slot 1 in the same level.
-      Check which Lums/cages are removed, including the caged Lum and end cage, and the kids' scene.
-      The old revisit snapshot is bypassed with `--save`.
-- [ ] Repeat on another saved level and another occupied slot. Without `--save`, the revisit start
-      and `--start new` should behave as before. `--save` overrides `--start`; `--story-bits` adds
-      bits after restoring the slot.
-
-Visual comparison is still required: automated checks establish bytes/registry mapping, not
-parity with the real game's scripts and scenes. Slot2/3 were empty during the 2026-11-06 check.
-Writing progress to disk is not implemented.
+- [ ] Set `OPENRAYMAN_GAME_DIR` to the game folder and run `ortool mksave Learn_10 1`.
+- [ ] Run `openrayman --game "<folder>" --level Learn_10 --save 1`. Check for the finished Woods of Light: 5/5 Lums, 2/2 cages, and no tutorial double.
+- [ ] Run `ortool save 1` to inspect the generated slot. Saves use the OpenRayman per-user folder, or `OPENRAYMAN_SAVE_DIR` when set.

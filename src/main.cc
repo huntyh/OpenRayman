@@ -1252,8 +1252,7 @@ namespace
 			openrayman::game::register_handlers(*a.vm);
 			openrayman::game::register_dialog_handlers(*a.vm);
 			openrayman::game::set_dialog_resolver(*a.vm, files);
-			if(auto saves = a.game->directory("saves"))
-				a.vm->save_folder = saves->string();
+			a.vm->save_folder = openrayman::game::save_root().string();
 			a.vm->set_world(openrayman::game::world_collision(std::move(collision)));
 			a.vm->set_animations(&a.bank);
 			// The level's animation events, then the sound events the scripts and animations name
@@ -1304,7 +1303,7 @@ namespace
 			}
 			a.vm->set_actors(a.thinkers);
 			if(a.save_slot)
-				openrayman::game::load_save_slot(*a.vm, *a.game, files, header, tree, a.save_slot);
+				openrayman::game::load_save_slot(*a.vm, openrayman::game::save_root(), files, header, tree, a.save_slot);
 			else if(!a.new_game)
 				openrayman::game::apply_revisit_state(*a.vm, tree, levels[index]);
 			if(a.save_slot)

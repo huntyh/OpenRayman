@@ -9,12 +9,48 @@
 #include <algorithm>
 #include <array>
 #include <set>
+#include <fstream>
+#include <limits>
 
 namespace openrayman
 {
 	save_file::save_file(const std::filesystem::path& path)
 	{
 		*this = decode(read_file(path));
+	}
+
+	std::vector<std::byte> save_file::encode(std::span<const std::byte> plain)
+	{
+		if(plain.size() > std::numeric_limits<std::uint32_t>::max()) throw format_error("save too large");
+		std::vector<std::uint8_t> stream;
+		for(std::size_t at = 0; at < plain.size(); at += 8)
+		{
+			stream.push_back(0); stream.push_back(255);
+			for(unsigned i = 0; i < 8; ++i)
+				stream.push_back(at + i < plain.size() ? std::to_integer<std::uint8_t>(plain[at + i]) : 0);
+		}
+		if(plain.size() % 8) stream.push_back(std::uint8_t(plain.size() % 8));
+		std::uint8_t sum = 0;
+		for(auto v : stream) sum = std::uint8_t(sum + v);
+		std::vector<std::byte> result{std::byte(sum ^ 0x53)};
+		auto length = std::uint32_t(plain.size()) ^ 0x54555657u;
+		for(unsigned i = 0; i < 4; ++i) result.push_back(std::byte((length >> (8 * i)) & 255));
+		std::uint8_t counter = 0x57;
+		for(auto v : stream)
+		{
+			unsigned reversed = 0;
+			for(unsigned b = 0; b < 8; ++b) reversed |= ((counter >> b) & 1u) << (7 - b);
+			result.push_back(std::byte(v ^ 0xb9u ^ reversed)); ++counter;
+		}
+		return result;
+	}
+
+	void save_file::write(const std::filesystem::path& path, std::span<const std::byte> plain)
+	{
+		auto encoded = encode(plain);
+		std::ofstream out(path, std::ios::binary | std::ios::trunc);
+		if(!out || !out.write(reinterpret_cast<const char*>(encoded.data()), std::streamsize(encoded.size())))
+			throw format_error("cannot write save file: " + path.string());
 	}
 
 	save_file save_file::decode(std::span<const std::byte> encoded)

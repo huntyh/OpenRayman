@@ -1,3 +1,5 @@
+#include <cwctype>
+#include <openrayman/game/saves.h>
 #include <openrayman/save_file.h>
 #include <openrayman/binary_reader.h>
 // ortool: inspects and exports Rayman 2 data, mainly for checking that the readers work.
@@ -55,6 +57,7 @@ static void usage()
 	std::cout <<
 		"usage: ortool <command> [arguments]\n"
 		"\n"
+		"  mksave <level> <slot> [--story-bits a,b,...]  Create a mock save\n"
 		"  save <slot>                       Decode a slot (OPENRAYMAN_GAME_DIR); optional: save <folder> <slot>\n"
 		"  info <game folder>                  Summarize a Rayman 2 installation\n"
 		"  dsb <file.dsb>                      Print the contents of a DSB script\n"
@@ -1460,8 +1463,7 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	game::register_handlers(vm);
 	game::register_dialog_handlers(vm);
 	game::set_dialog_resolver(vm, files);
-	if(auto saves = game.directory("saves"))
-		vm.save_folder = saves->string();
+	vm.save_folder = game::save_root().string();
 	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
 	vm.set_animations(&bank);
 	// As the viewer does (first_visit.h): a revisit, unless ORTOOL_START=new asks for a first visit
@@ -2039,14 +2041,61 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	return EXIT_SUCCESS;
 }
 
+static int cmd_mksave(const std::string& name, const std::string& slot_text, const std::string& extra)
+{
+	if(slot_text != "1" && slot_text != "2" && slot_text != "3") throw std::runtime_error("save slot must be 1, 2 or 3");
+	const char* root = std::getenv("OPENRAYMAN_GAME_DIR");
+	if(!root || !*root) throw std::runtime_error("set OPENRAYMAN_GAME_DIR");
+	if(name.empty() || !std::ranges::all_of(name, [](unsigned char c) { return std::isalnum(c) || c == '_'; })) throw std::runtime_error("invalid level name");
+	auto game = require_game(root);
+	auto dest = fs::weakly_canonical(game::save_root() / ("Slot" + slot_text));
+	auto game_root = fs::weakly_canonical(game.data_dir());
+	if(game_root.filename() == "Data" || game_root.filename() == "data") game_root = game_root.parent_path();
+	auto inside_game = [&](const fs::path& path) {
+		auto target = fs::weakly_canonical(path).wstring();
+		auto base = game_root.wstring();
+#ifdef _WIN32
+		std::ranges::transform(target, target.begin(), [](wchar_t c) { return std::towlower(c); });
+		std::ranges::transform(base, base.begin(), [](wchar_t c) { return std::towlower(c); });
+#endif
+		return target == base || (target.size() > base.size() && target.compare(0, base.size(), base) == 0 && (target[base.size()] == L'/' || target[base.size()] == L'\\'));
+	};
+	if(inside_game(dest) || inside_game(dest / "General.sav") || inside_game(dest / (name + "_0.sav"))) throw std::runtime_error("save destination must be outside the game folder");
+	auto files = load_level_files(game, name);
+	auto header = read_level_header(files);
+	scene tree(files.memory, header);
+	auto registry = read_save_registry(files.memory, header, tree);
+	game::live_memory memory(files.memory);
+	game::interpreter vm(memory, header.placements.empty() ? 0 : header.placements.front().super_object.address());
+	std::vector<std::uint32_t> actors;
+	for(const auto& a : header.placements) actors.push_back(a.super_object.address());
+	for(auto bit : game::revisit_story_bits) vm.set_story_bit(actors, bit);
+	for(std::size_t at = 0; at < extra.size();)
+	{
+		auto end = extra.find(',', at);
+		auto item = extra.substr(at, end == std::string::npos ? end : end - at);
+		std::size_t used = 0; auto bit = std::stoul(item, &used);
+		if(used != item.size() || !vm.set_story_bit(actors, std::uint32_t(bit))) throw std::runtime_error("invalid story bit");
+		if(end == std::string::npos) break;
+		at = end + 1;
+		if(at == extra.size()) throw std::runtime_error("invalid story bit");
+	}
+	game::apply_revisit_state(vm, tree, name);
+	auto general = game::capture_save_entries(memory, registry.general, registry.general_size);
+	auto level = game::capture_save_entries(memory, registry.level, registry.level_size);
+	fs::create_directories(dest);
+	save_file::write(dest / "General.sav", general);
+	save_file::write(dest / (name + "_0.sav"), level);
+	std::cout << "Wrote mock save to " << dest.string() << "\n";
+	return EXIT_SUCCESS;
+}
+
 static int cmd_save(const fs::path& folder, const std::string& slot_text)
 {
 	if(slot_text != "1" && slot_text != "2" && slot_text != "3")
 		throw std::runtime_error("save slot must be 1, 2 or 3");
 	auto game = require_game(folder);
-	auto saves = game.directory("saves");
-	if(!saves) throw std::runtime_error("no saves directory");
-	auto slot = save_slot_folder(*saves, unsigned(slot_text[0] - '0'));
+	auto slot = save_slot_folder(game::save_root(), unsigned(slot_text[0] - '0'));
 	auto files = load_level_files(game, "Learn_10");
 	auto header = read_level_header(files);
 	scene tree(files.memory, header);
@@ -2124,6 +2173,7 @@ int main(int argc, char** argv)
 	try
 	{
 		const std::string& cmd = args[0];
+		if(cmd == "mksave" && (args.size() == 3 || (args.size() == 5 && args[3] == "--story-bits"))) return cmd_mksave(args[1], args[2], args.size() == 5 ? args[4] : "");
 		if(cmd == "save" && args.size() == 3) return cmd_save(args[1], args[2]);
 		if(cmd == "save" && args.size() == 2)
 		{
