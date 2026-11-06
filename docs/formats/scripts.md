@@ -165,10 +165,23 @@ Waking an actor (0x40B4C0, from the wake pass 0x40B620) moves it from the inacti
 order is the moving actors newest first, then the static ones in the order they woke. Per actor
 (0x40A5C0) the animation steps first, then the brain and mechanics (0x412230); the clock and
 frame number advance after all actors (0x409DD0); effects and screen text are drawn in a later
-pass (0x40B150 → 0x419A30 → 0x460670 → 0x465C10). The Jail_10 intro actors (nodes 2..13) are
-all static, so our tree order matches there. Where this came from: a DeepSeek read of the
+pass (0x40B150 → 0x419A30 → 0x460670 → 0x465C10). Where this came from: a DeepSeek read of the
 decompile (2026-11-06), with 0x4120D0, 0x418170/0x418340, 0x40AA10 and 0x40B4C0 checked by us;
 the helper had the head/tail of 0x40B4C0 reversed.
+
+**The order changes on a zone change.** When Rayman's sector changes (0x40B7B0, also on the first
+frame of a level), 0x40B290 moves every active actor whose actor +0x10 is empty (all but the
+camera) into the inactive world, and the wake pass 0x40B620 links them back at the tail of the
+active world: first the new sector's actor list, then its neighbour list (sector data +0x3C, count
++0x44), then 0x419BC0's list, the generated actors (0x4A6B30) and 0x45B990's. Recorded in the real
+game (Jail_10 new game, `r2record --only order`, H:\r2export\live\run7, run8): file order at load
+(nodes 2..12, Rayman), and from the first frame camera, nodes 6, 7, 9, 10, 11, Rayman, then 4, 3,
+5, 8, 12. So the cutscene director (7) runs before the bar actor (3), which runs before the HUD
+(5): the HUD sees the bars already growing on its first frame and never shows the Lum and cage
+counters. OpenRayman rebuilds its order when Rayman's sector changes: the actors in his sector
+(by live position) with super object flag 8 clear, and Rayman, in file order, then the rest; the
+camera stays last. The order inside the second group, and node 12's place, come from the runtime
+sector lists, which we don't read yet. Own analysis of the decompile and live recordings.
 
 Each frame, for each actor (0x4120D0):
 

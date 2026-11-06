@@ -563,12 +563,42 @@ namespace openrayman::game
 				}
 			}
 		};
-		for(std::uint32_t self : super_objects)
-			if(!is_camera(self))
+		// The run order. When Rayman's sector changes (0x40B7B0), 0x40B290 sends every active actor
+		// without actor +0x10 to the inactive world and the wake pass 0x40B620 links them back at the
+		// tail, starting with the new sector's actor list. Recorded in the real game (Jail_10 new game,
+		// H:\r2export\live\run7/run8): from the first frame the actors placed in Rayman's sector run
+		// first, in file order with Rayman among them, and the ones with super object flag 8 (Fix's
+		// HUD, bars and pause menu, a level actor at the origin) after. Ours keeps that result,
+		// classifying by live position (sector_at); the exact order inside the second group (the
+		// exe had 4, 3, 5, 8, 12) comes from lists we don't read yet.
+		{
+			std::uint32_t sector = 0;
+			if(auto placed = global_placement(m, vm.main_actor()))
+				sector = vm.sector_at({ placed->m[0][3], placed->m[1][3], placed->m[2][3] });
+			if(sector != vm.run_order_sector || vm.run_order_source != super_objects.size())
 			{
-				think(self);
-				advance(self);
+				vm.run_order_sector = sector;
+				vm.run_order_source = super_objects.size();
+				vm.run_order.clear();
+				std::vector<std::uint32_t> later;
+				for(std::uint32_t self : super_objects)
+				{
+					if(is_camera(self))
+						continue;
+					bool first = self == vm.main_actor();
+					if(!first && sector && m.contains(self + 0x30, 4) && !(m.u32(self + 0x30) & 8))
+						if(auto placed = global_placement(m, self))
+							first = vm.sector_at({ placed->m[0][3], placed->m[1][3], placed->m[2][3] }) == sector;
+					(first ? vm.run_order : later).push_back(self);
+				}
+				vm.run_order.insert(vm.run_order.end(), later.begin(), later.end());
 			}
+		}
+		for(std::uint32_t self : vm.run_order)
+		{
+			think(self);
+			advance(self);
+		}
 		// Actors the scripts created, after the level's own (the game links them into the dynamic
 		// world as they come). One made this tick by an actor before them already thinks now.
 		for(std::size_t i = 0; i < vm.generated().slots().size(); i++)

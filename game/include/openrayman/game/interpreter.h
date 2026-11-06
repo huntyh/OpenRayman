@@ -112,6 +112,11 @@ namespace openrayman::game
 		// When set, called for every script write to a designer variable: the actor thinking, the
 		// variable's address and the value (a debugging aid, `ORTOOL_WRITES`).
 		std::function<void(std::uint32_t self, std::uint32_t address, const value& v)> on_write;
+		// The order step() runs the level's actors in, rebuilt when the main actor changes sector
+		// (see step(): 0x40B290 / 0x40B620's relink), and the sector it was built for.
+		std::vector<std::uint32_t> run_order;
+		std::uint32_t run_order_sector = 0xFFFFFFFF;
+		std::size_t run_order_source = 0;
 
 		// The engine's per-actor gate (0x412230) on the actor's custom bits (standard game +0x24)
 		// and flags (+0x29): whether its brain runs this frame, and whether its mechanics does.
