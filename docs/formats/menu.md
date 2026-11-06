@@ -341,10 +341,10 @@ mirrored. OpenRayman now turns each screen object's own orientation with the gam
 followed by a half turn about the camera's up axis (the quarter turn between the camera object's
 matrix and our camera super object's axes was settled by eye on the logo). The menu camera looks
 along +Y, where that turn is nearly none. Since the pass is a world of its own, the level's lights
-don't reach it: OpenRayman lights screen objects with one white ambient light. The logo's arc has
-a black material ambient and a plain white texture, so in the game its white-to-yellow gradient
-must come from light in that pass. That light is not traced yet, so ours is plain white. The 409
-scale (width / 640) isn't applied.
+don't reach it. The logo arc's white-to-yellow gradient comes from its saved vertex colours,
+selected by procedure 393; its own light is switched off by procedure 387. OpenRayman applies
+those colours without its stand-in white ambient light. Other screen objects without saved colours
+still use that stand-in. The 409 scale (width / 640) isn't applied.
 
 The logo fades in and out with procedures 11 and 12 (0x472450, cases 0xB and 0xC; first read by
 a DeepSeek helper, checked against the decompile). 11 sets draw flag 8 at super object +0x2C

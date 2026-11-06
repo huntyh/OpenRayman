@@ -48,6 +48,10 @@ are kept as the game has them, since changing their timing could change gameplay
 These aren't improvements, they keep things working until the missing parts exist, and go away
 as those arrive:
 
+Screen objects without a selected saved vertex colour set still use a white ambient stand-in;
+the separate pass's full light handling has not been reconstructed. Those with saved colours use
+the saved sum without that stand-in, as needed by the intro logo, whose own light is switched off.
+
 - Script handlers that aren't written yet do nothing and read as 0; `ortool run` lists them.
 - A reference to an actor that isn't set (or has no brain) reads as nobody, and a distance to
   nobody as very far, instead of stopping the actor's scripts.

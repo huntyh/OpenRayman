@@ -61,6 +61,7 @@ namespace openrayman
 			bool screen = false;
 			// Its actor's transparency level (procedures 11 and 12), 0..1; below 1 it's drawn blended.
 			float alpha = 1;
+			std::uint8_t colour_set = 0; // one-based, zero means no saved colours
 		};
 
 		// What to draw of the actors this frame. Parts naming a mesh that wasn't loaded are skipped.

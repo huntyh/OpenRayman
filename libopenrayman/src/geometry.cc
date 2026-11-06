@@ -354,4 +354,44 @@ namespace openrayman
 		auto list = memory.follow(*visual_set + 0x0C);
 		return list ? memory.follow(*list) : std::nullopt;
 	}
+
+	std::vector<colour_set> physical_object_colour_sets(const memory_image& memory, const memory_location& physical)
+	{
+		std::vector<colour_set> result;
+		auto visual = memory.follow(physical);
+		if(!visual)
+			return result;
+		std::uint32_t count = reader_at(*visual + 0x14, 4).u32();
+		if(!count)
+			return result;
+		auto sets = require(memory.follow(*visual + 0x10), *visual, "colour set list");
+		reader_at(sets, std::size_t(count) * 4);
+		for(std::uint32_t i = 0; i < count; ++i)
+		{
+			auto set = require(memory.follow(sets + i * 4), sets, "colour set");
+			std::uint16_t lod_count = reader_at(set, 2).u16();
+			colour_set lods;
+			if(lod_count)
+			{
+				auto records = require(memory.follow(set + 4), set, "colour LOD records");
+				reader_at(records, std::size_t(lod_count) * 8);
+				for(std::uint16_t lod = 0; lod < lod_count; ++lod)
+				{
+					auto record = records + lod * 8;
+					std::uint16_t vertices = reader_at(record, 2).u16();
+					std::vector<saved_vertex_colour> colours;
+					if(vertices)
+					{
+						auto data = require(memory.follow(record + 4), record, "vertex colours");
+						auto r = reader_at(data, std::size_t(vertices) * 8);
+						for(std::uint16_t v = 0; v < vertices; ++v)
+							colours.push_back({ r.i16(), r.i16(), r.i16(), r.i16() });
+					}
+					lods.push_back(std::move(colours));
+				}
+			}
+			result.push_back(std::move(lods));
+		}
+		return result;
+	}
 }

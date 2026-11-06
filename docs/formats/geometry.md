@@ -50,6 +50,15 @@ stream).
 
 **Visual set**: +0x00 u32 type (0 = levels of detail), +0x04 u32 number of levels, +0x08 their
 switching distances (floats), +0x0C list of geometric object pointers. OpenRayman uses the first.
+At +0x10 is an array of pointers to saved vertex colour sets; +0x14 is the number of sets.
+Each set has an LOD count at +0 and a pointer to LOD records at +4. Each 8-byte LOD record
+contains a vertex count at +0 and a pointer at +4 to signed 16-bit RGBA values, four per vertex.
+Procedure 393 selects a set using a one-based index (zero means none). The renderer starts each
+vertex's light sum with these components divided by 256, then adds applicable lights before applying
+the material. Where this came from: own analysis of the executable by GPT-6.1 Sol/Terra via Codex,
+checked in the data; 0x42B2B0, 0x42AF70, 0x4315D0, 0x431400 and 0x428CB0.
+`ortool colours` finds 1,735 scene actors with at least one saved colour set across all 70 levels;
+this count excludes generated templates.
 
 **Geometric object**:
 

@@ -4287,6 +4287,23 @@ namespace openrayman::game
 			return after_loop(m, start);
 		}
 
+		// 393 (0x470F20 -> 0x416D70): select a saved vertex colour set.
+		std::uint32_t select_colour_set(call& c)
+		{
+			value selected;
+			next_arg(c, selected);
+			auto& memory = c.vm.memory();
+			std::uint32_t object = actor_part(c.vm, c.vm.target(c.self, true), 0x1C);
+			if(object && memory.contains(object + 0x38, 8))
+			{
+				memory.write<std::uint8_t>(object + 0x38, 1);
+				memory.write<std::uint8_t>(object + 0x39, std::uint8_t(selected.as_int()));
+				memory.write<std::uint8_t>(object + 0x3A, 0);
+				memory.write<float>(object + 0x3C, 0.0f);
+			}
+			return c.args;
+		}
+
 		// 409 (0x4710C0, case 0x199): register the actor in the persistent screen-object pass.
 		std::uint32_t place_screen_object(call& c)
 		{
@@ -5640,6 +5657,7 @@ namespace openrayman::game
 		for(std::uint32_t i : { 396, 397, 398 })
 			vm.on_procedure(i, capabilities);
 		vm.on_procedure(200, teleport);
+		vm.on_procedure(393, select_colour_set);
 		vm.on_procedure(409, place_screen_object);
 		vm.on_procedure(433, face_horizontal);
 		vm.on_procedure(171, orient_from_vectors);

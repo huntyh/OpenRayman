@@ -907,6 +907,7 @@ namespace
 		std::vector<posed_part> parts;
 		std::vector<bool> screen_parts; // per part: drawn by the exe's screen pass (procedure 409)
 		std::vector<float> part_alpha;  // per part: its actor's transparency level
+		std::vector<std::uint8_t> part_colour_set;
 		for(std::size_t i = 0; i < a.actors.actors.size(); i++)
 		{
 			const actor_set::entry& actor = a.actors.actors[i];
@@ -957,6 +958,14 @@ namespace
 				if(std::uint32_t so = a.super_object_at[i]; so && a.live->contains(so + 0x2C, 0x10) && !(a.live->u32(so + 0x2C) & 8))
 					alpha = std::clamp(a.live->f32(so + 0x38) / 255.0f, 0.0f, 1.0f);
 			part_alpha.resize(parts.size(), alpha);
+			std::uint8_t selected = 0;
+			if(a.vm && a.scripts && i < a.actor_at.size() && a.actor_at[i] && a.live->contains(a.actor_at[i] + 0x1C, 4))
+			{
+				std::uint32_t state = a.live->u32(a.actor_at[i] + 0x1C);
+				if(state && a.live->contains(state + 0x38, 2) && a.live->u8(state + 0x38) == 1)
+					selected = a.live->u8(state + 0x39);
+			}
+			part_colour_set.resize(parts.size(), selected);
 		}
 		std::vector<level_renderer::part> out;
 		out.reserve(parts.size());
@@ -969,7 +978,7 @@ namespace
 				for(int c = 0; c < 4; c++)
 					model[c][r] = part.world.m[r][c];
 			}
-			out.push_back({ part.mesh, model, {}, part.morph_mesh, part.morph_amount, n < screen_parts.size() && screen_parts[n], n < part_alpha.size() ? part_alpha[n] : 1.0f });
+			out.push_back({ part.mesh, model, {}, part.morph_mesh, part.morph_amount, n < screen_parts.size() && screen_parts[n], n < part_alpha.size() ? part_alpha[n] : 1.0f, part_colour_set[n] });
 		}
 		a.level->set_parts(std::move(out));
 		a.level->set_time(a.animation_time);

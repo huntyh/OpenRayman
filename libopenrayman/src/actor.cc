@@ -197,14 +197,16 @@ namespace openrayman
 			auto at = object.physical_object ? physical_object_geometry(memory, *object.physical_object) : std::nullopt;
 			if(at)
 			{
-				auto found = std::ranges::find(set.mesh_at, *at);
-				if(found == set.mesh_at.end())
+				auto found = std::ranges::find(set.mesh_physical_at, *object.physical_object);
+				if(found == set.mesh_physical_at.end())
 				{
 					set.mesh_at.push_back(*at);
+					set.mesh_physical_at.push_back(*object.physical_object);
 					set.meshes.push_back(read_geometric_object(memory, *at));
-					found = set.mesh_at.end() - 1;
+					set.meshes.back().colour_sets = physical_object_colour_sets(memory, *object.physical_object);
+					found = set.mesh_physical_at.end() - 1;
 				}
-				mesh = std::size_t(found - set.mesh_at.begin());
+				mesh = std::size_t(found - set.mesh_physical_at.begin());
 			}
 			meshes.push_back(mesh);
 			scales.push_back(object.scale);

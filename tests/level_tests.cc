@@ -39,6 +39,30 @@
 
 using namespace openrayman;
 
+TEST_CASE("real data: Ubisoft arc saved vertex colours follow its physical object")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto game = game_data::locate(*dir);
+	REQUIRE(game);
+	auto files = load_level_files(*game, "Jail_10");
+	const auto* block = files.memory.find({ 0x05, 0x02 });
+	REQUIRE(block);
+	actor_object object;
+	object.physical_object = memory_location{ block, 0x61AC4 };
+	actor_set set;
+	std::vector<std::optional<std::size_t>> meshes;
+	std::vector<std::optional<vec3>> scales;
+	add_meshes(set, files.memory, { object }, meshes, scales);
+	REQUIRE(meshes.size() == 1);
+	REQUIRE(meshes[0]);
+	const auto& sets = set.meshes[*meshes[0]].colour_sets;
+	REQUIRE(sets.size() == 1);
+	REQUIRE(sets[0].size() == 1);
+	REQUIRE(sets[0][0].size() == 10);
+	CHECK((sets[0][0][0] == saved_vertex_colour{ 255, 255, 36, 255 }));
+}
+
 TEST_CASE("real data: level startup music events")
 {
 	auto dir = real_game_dir();
@@ -539,7 +563,13 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 			CHECK(wings);
 		}
 		if(level == "Learn_10")
-			CHECK(set.meshes.size() == 113); // distinct meshes, shared between actors
+		{
+			// Different physical objects may share the same geometry but have different colour sets.
+			std::vector<memory_location> unique;
+			for(const auto& at : set.mesh_at)
+				if(std::ranges::find(unique, at) == unique.end()) unique.push_back(at);
+			CHECK(unique.size() == 113);
+		}
 		if(level == "Learn_10")
 		{
 			// Recorded from a render checked by eye: Rayman, Lums and props correctly posed.
