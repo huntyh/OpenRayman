@@ -70,6 +70,8 @@ namespace openrayman::game
 		// the super object itself where a script would name the actor, so both are accepted.
 		std::uint32_t super_object_value(interpreter& vm, const value& v)
 		{
+			if(v.type == value_type::super_object)
+				return v.word();
 			if(vm.actor_of(v.word()))
 				return v.word();
 			return vm.super_object_of(actor_value(vm, v));
@@ -232,14 +234,14 @@ namespace openrayman::game
 			return c.args;
 		}
 
-		// 67, 68 (0x48A950): an actor's current reflex (67) or normal behaviour (68) is this one.
+		// 67..69 (0x48A950): behavior tests; 69 compares the named actor's reflex.
 		std::uint32_t in_behaviour(call& c, bool& result)
 		{
 			value who, behaviour;
 			next_arg(c, who);
 			next_arg(c, behaviour);
 			std::uint32_t mind = mind_of(c.vm, c.vm.super_object_of(actor_value(c.vm, who)));
-			std::uint32_t intelligence = mind ? c.vm.memory().u32(mind + (c.index == 67 ? mind_field::reflex : mind_field::normal)) : 0;
+			std::uint32_t intelligence = mind ? c.vm.memory().u32(mind + (c.index == 68 ? mind_field::normal : mind_field::reflex)) : 0;
 			result = intelligence && c.vm.memory().u32(intelligence + intelligence_behaviour) == behaviour.word();
 			return c.args;
 		}
@@ -739,6 +741,37 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 237 (0x4675A0): set the byte at brain +0x08 to the low byte of the argument.
+		std::uint32_t set_brain_byte(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value v;
+			next_arg(c, v);
+			std::uint32_t brain = actor_part(c.vm, self, actor_field::brain);
+			if(brain && c.vm.memory().contains(brain + 8))
+				c.vm.memory().write<std::uint8_t>(brain + 8, std::uint8_t(v.word()));
+			return c.args;
+		}
+
+		// 438 (0x471FB0): standard-game +0x33. 439 (0x472020): +0x2A and +0x2B.
+		std::uint32_t set_standard_byte(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value v;
+			next_arg(c, v);
+			value second;
+			if(c.index == 439) next_arg(c, second);
+			std::uint32_t standard = actor_part(c.vm, self, actor_field::standard_game);
+			std::uint32_t offset = c.index == 438 ? 0x33 : 0x2A;
+			if(standard && c.vm.memory().contains(standard + offset, c.index == 439 ? 2 : 1))
+			{
+				c.vm.memory().write<std::uint8_t>(standard + offset, std::uint8_t(v.word()));
+				if(c.index == 439)
+					c.vm.memory().write<std::uint8_t>(standard + offset + 1, std::uint8_t(second.word()));
+			}
+			return c.args;
+		}
+
 		// 378..385 (0x470770): a global gauge, a value and its maximum (0x4E9308, 0x4E930C; functions
 		// 102..107 read and change them). What it measures isn't known yet.
 		std::uint32_t gauge(call& c)
@@ -815,7 +848,7 @@ namespace openrayman::game
 			return base && m.contains(base, size) ? base : 0;
 		}
 
-		// 291, 292 (0x46DD50): three numbers into the dynamics base. 291 writes +0x48..+0x50 and sets
+		// 270 (0x46C980), 291, 292 (0x46DD50): three numbers into the dynamics base. 291 writes +0x48..+0x50 and sets
 		// end flag 0x1000; 292 the factors of the second inertia (+0x168..+0x170, used with end flag
 		// 0x20000): how much of the last move each axis keeps. Rayman sets 0.65, 1, 1, and his slide on
 		// slippery slopes keeps its speed with them.
@@ -830,10 +863,10 @@ namespace openrayman::game
 			std::uint32_t base = dynamics_base(c, self, 0x174);
 			if(!base)
 				return c.args;
-			std::uint32_t at = c.index == 291 ? 0x48 : 0x168;
-			m.write<float>(base + at, x.as_float());
-			m.write<float>(base + at + 4, y.as_float());
-			m.write<float>(base + at + 8, z.as_float());
+			std::uint32_t at = c.index == 270 ? 0x154 : c.index == 291 ? 0x48 : 0x168;
+			m.write<float>(base + at, c.index == 270 ? x.component(0) : x.as_float());
+			m.write<float>(base + at + 4, c.index == 270 ? y.component(0) : y.as_float());
+			m.write<float>(base + at + 8, c.index == 270 ? z.component(0) : z.as_float());
 			if(c.index == 291)
 				m.write<std::uint32_t>(base + 0x0C, m.u32(base + 0x0C) | 0x1000);
 			return c.args;
@@ -850,7 +883,7 @@ namespace openrayman::game
 				{ 244, { 8, 0x1 } }, { 245, { 8, 0x2 } }, { 246, { 8, 0x4 } }, { 247, { 8, 0x8 } }, { 248, { 8, 0x10 } },
 				{ 249, { 8, 0x40 } }, { 250, { 8, 0x20 } }, { 251, { 0xC, 0x100 } }, { 252, { 0xC, 0x200 } },
 				{ 253, { 0xC, 0x100000 } }, { 254, { 0xC, 0x200000 } }, { 256, { 8, 0x80 } }, { 257, { 8, 0x100 } },
-				{ 258, { 8, 0x200 } }, { 259, { 8, 0x400 } }, { 260, { 8, 0x800 } }, { 261, { 8, 0x1000 } },
+				{ 258, { 8, 0x200 } }, { 259, { 8, 0x400 } }, { 260, { 8, 0x800 } }, { 261, { 8, 0x1000 } }, { 262, { 8, 0x2000 } },
 			};
 			auto it = bits.find(c.index);
 			if(!base || it == bits.end())
@@ -858,7 +891,8 @@ namespace openrayman::game
 			live_memory& m = c.vm.memory();
 			auto [word, bit] = it->second;
 			std::uint32_t flags = m.u32(base + word);
-			m.write<std::uint32_t>(base + word, on.as_int() ? flags | bit : flags & ~bit);
+			bool enabled = c.index == 262 ? (on.word() & 255) != 0 : on.as_int() != 0;
+			m.write<std::uint32_t>(base + word, enabled ? flags | bit : flags & ~bit);
 			return c.args;
 		}
 
@@ -1091,41 +1125,51 @@ namespace openrayman::game
 			return c.args;
 		}
 
-		// 126/130/132/133 (0x477300): current index, advance, waypoint and link capability.
+		std::uint32_t path_cursor(call& c, value& out, std::uint32_t self);
+
+		// 126..133,137..138 (0x477300): use a generated path when one exists;
+		// otherwise read the actor's saved cursor. Both have the same index rules.
 		std::uint32_t graph_path_query(call& c, value& out, std::map<std::uint32_t, graph_path>& paths)
 		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			auto it = paths.find(self);
+			if(it == paths.end()) return path_cursor(c, out, self);
 			value arg;
-			if(c.index != 126)
-				next_arg(c, arg);
-			auto it = paths.find(c.vm.target(c.self, true));
-			if(it == paths.end() || it->second.entries.empty())
-			{
-				out = c.index == 132 ? value::of(value_type::waypoint, 0) : value::integer(-1);
-				return c.args;
-			}
+			if(c.index != 126 && c.index != 128 && c.index != 129) next_arg(c, arg);
 			graph_path& path = it->second;
-			std::int32_t count = std::int32_t(path.entries.size());
-			auto index = [&](std::int32_t n) {
-				if(path.loop)
-					return (n % count + count) % count;
-				return n >= 0 && n < count ? n : -1;
+			int count = int(path.entries.size());
+			out = value::integer(-1);
+			if(count == 0) { if(c.index == 132) out = value::of(value_type::waypoint, 0); else if(c.index == 133) out = value::of(0x2B, 0); return c.args; }
+			auto index = [&](std::int64_t n) {
+				if(path.loop) return int((n % count + count) % count);
+				return n >= 0 && n < count ? int(n) : -1;
 			};
-			if(c.index == 126)
-				out = value::integer(path.current);
-			else if(c.index == 130)
+			switch(c.index)
 			{
-				std::int32_t next = index(path.current + arg.as_int());
-				if(next >= 0)
-					path.current = next;
-				out = value::integer(next);
+			case 126: out = value::integer(path.current); break;
+			case 128: out = value::integer(0); break;
+			case 129: out = value::integer(count - 1); break;
+			case 127:
+				path.current = path.loop ? index(arg.as_int()) : std::clamp(arg.as_int(), 0, count - 1);
+				out = value::integer(path.current); break;
+			case 130: case 131:
+			{
+				int next = index(std::int64_t(path.current) + (c.index == 130 ? std::int64_t(arg.as_int()) : -std::int64_t(arg.as_int())));
+				if(next >= 0) path.current = next;
+				out = value::integer(next); break;
 			}
-			else
+			case 132: case 133:
 			{
-				std::int32_t n = index(arg.as_int());
-				if(c.index == 132)
-					out = value::of(value_type::waypoint, n < 0 ? 0 : path.entries[std::size_t(n)].waypoint);
-				else
-					out = value::of(0x2B, n < 0 || index(n + 1) < 0 ? 0 : path.entries[std::size_t(n)].capability);
+				int n = index(arg.as_int());
+				if(c.index == 132) out = value::of(value_type::waypoint, n < 0 ? 0 : path.entries[std::size_t(n)].waypoint);
+				else out = value::of(0x2B, n < 0 || index(n + 1) < 0 ? 0 : path.entries[std::size_t(n)].capability);
+				break;
+			}
+			case 137: case 138:
+				for(int n = 0; n < count; ++n)
+					if(path.entries[std::size_t(n)].waypoint == arg.word())
+					{ if(c.index == 138) path.current = n; out = value::integer(n); break; }
+				break;
 			}
 			return c.args;
 		}
@@ -2171,11 +2215,13 @@ namespace openrayman::game
 		};
 		zone_element first_zone_element(call& c, std::uint32_t kind)
 		{
+			std::uint32_t self = c.vm.target(c.self, true);
 			value n;
 			next_arg(c, n);
 			live_memory& m = c.vm.memory();
-			std::uint32_t set = collision_set(c.vm, c.vm.target(c.self, true));
-			std::uint32_t zone = n.as_int() >= 1 ? zone_at(c.vm, set, kind, std::uint32_t(n.as_int() - 1)) : 0;
+			std::uint32_t set = collision_set(c.vm, self);
+			std::int16_t index = std::int16_t(n.word());
+			std::uint32_t zone = index >= 1 ? zone_at(c.vm, set, kind, std::uint32_t(index - 1)) : 0;
 			if(!zone || !m.contains(zone, 0x30))
 				return {};
 			std::uint32_t kinds = safe_u32(m, zone + 0x10);
@@ -2503,6 +2549,53 @@ namespace openrayman::game
 			}
 			return c.args;
 		}
+
+		// 210..213 (0x478AA0): world/local position, world scale, world -Y direction of a numbered animation part, falling back to the
+		// target itself when there is no part at that index. 255 means no part.
+		std::uint32_t channel_position(call& c, value& out)
+		{
+			std::uint32_t so = c.vm.target(c.self, true);
+			value channel;
+			next_arg(c, channel);
+			std::uint32_t index = channel.word() & 0xFF;
+			out = value::vector(0, 0, 0);
+			if(index == 0xFF) return c.args;
+			live_memory& m = c.vm.memory();
+			std::uint32_t actor = c.vm.actor_of(so);
+			std::uint32_t data = actor ? safe_u32(m, actor) : 0;
+			std::uint32_t table = data ? safe_u32(m, data + 0x90) : 0;
+			std::uint32_t part = table ? safe_u32(m, table + index * 20) : 0;
+			if(part) so = part;
+			std::uint32_t transform = so ? safe_u32(m, so + (c.index == 211 ? 0x20 : 0x24)) : 0;
+			if(transform && m.contains(transform, 0x58))
+			{
+				if(c.index == 210 || c.index == 211) out = value_of(read3(m, transform + 4));
+				else if(c.index == 212)
+				{
+					if(m.u32(transform) < 4) out = value::vector(1, 1, 1);
+					else
+					{
+						vec3 scales{};
+						for(unsigned row = 0; row < 3; ++row)
+						{
+							vec3 combined = read3(m, transform + 0x34 + row * 12), local{};
+							for(unsigned axis = 0; axis < 3; ++axis) local[axis] = dot(combined, read3(m, transform + 0x10 + axis * 12));
+							scales[row] = length(local);
+						}
+						out = value_of(scales);
+					}
+				}
+				else
+				{
+					vec3 y = read3(m, transform + 0x1C);
+					out = value::vector(-y[0], -y[1], -y[2]);
+				}
+			}
+			return c.args;
+		}
+
+		// 66 (0x472F90): the executable's procedure does nothing and consumes no arguments.
+		std::uint32_t empty_procedure(call& c) { return c.args; }
 
 		// 180..185 (0x47C350): vector maths: project, mix, mix (frame-rate scaled, the same at our
 		// fixed 60 per second), scale, length, rotate about an axis.
@@ -3067,6 +3160,683 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 62 (0x472C40): edit one draw bit of a super object; 311 (0x46D8A0):
+		// edit a super-object flag, wrapping the bit index as an x86 shift does.
+		std::uint32_t object_bit(call& c)
+		{
+			value object, bit, mode;
+			next_arg(c, object); next_arg(c, bit); next_arg(c, mode);
+			live_memory& m = c.vm.memory();
+			std::uint32_t so = object.word(), b = bit.word();
+			if(c.index == 62 && b >= 32) return c.args;
+			std::uint32_t at = so + (c.index == 62 ? 0x2C : 0x30);
+			if(!so || !m.contains(at, 4)) return c.args;
+			std::uint32_t flags = m.u32(at), mask = 1u << (b & 31);
+			if(c.index == 311)
+				flags = mode.word() ? flags | mask : flags & ~mask;
+			else if(mode.word() == 0) flags &= ~mask;
+			else if(mode.word() == 1) flags |= mask;
+			else if(mode.word() == 2) flags ^= mask;
+			m.write(at, flags);
+			return c.args;
+		}
+
+		// 334..339 (0x46E180 -> 0x4179C0..0x417A60): collision-set flag byte.
+		std::uint32_t collision_option(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value enabled;
+			next_arg(c, enabled);
+			std::uint32_t set = collision_set(c.vm, self);
+			live_memory& m = c.vm.memory();
+			constexpr std::uint8_t masks[] = { 1, 2, 4, 8, 0x20, 0x40 };
+			if(set && m.contains(set + 0x42))
+			{
+				std::uint8_t flags = m.u8(set + 0x42), mask = masks[c.index - 334];
+				m.write<std::uint8_t>(set + 0x42, (enabled.word() & 0xFF) ? flags | mask : flags & ~mask);
+			}
+			return c.args;
+		}
+
+		// 104 (0x48B6E0): carried by the named actor, or its immediate scene child
+		// when the dynamics does not select a supporting actor.
+		std::uint32_t carried_by(call& c, bool& result)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value who;
+			next_arg(c, who);
+			std::uint32_t other = super_object_value(c.vm, who);
+			live_memory& m = c.vm.memory();
+			std::uint32_t base = dynamics_base(c, self, 0x288);
+			result = false;
+			if(base && (m.u32(base + 0xC) & 4))
+				result = other && m.u32(base + 0x284) == other;
+			else if(other)
+			{
+				std::set<std::uint32_t> seen;
+				for(std::uint32_t child = safe_u32(m, other + 8); child && seen.insert(child).second; child = safe_u32(m, child + 0x14))
+					if(child == self) { result = true; break; }
+			}
+			return c.args;
+		}
+
+		// 126..132,137..138 (0x477300 -> 0x4170D0..0x417210): graph cursor.
+		std::uint32_t path_cursor(call& c, value& out, std::uint32_t self)
+		{
+			live_memory& m = c.vm.memory();
+			std::uint32_t cursor = actor_part(c.vm, self, 0x18);
+			std::uint32_t graph = cursor ? safe_u32(m, cursor) : 0;
+			value arg;
+			// The native handler leaves the argument unevaluated when the cursor is absent.
+			if(!cursor) { out = value::integer(-1); return c.args; }
+			if(c.index == 127 || c.index == 130 || c.index == 131 || c.index == 132 || c.index == 133 || c.index >= 137)
+				next_arg(c, arg);
+			int count = graph ? int(safe_u32(m, graph + 8)) : 0;
+			int current = int(safe_u32(m, cursor + 4)), answer = -1;
+			bool loop = m.contains(cursor + 8) && m.u8(cursor + 8) != 0;
+			auto wrap = [&](std::int64_t n) { return int((n % count + count) % count); };
+			if(graph && count > 0)
+			{
+				switch(c.index)
+				{
+				case 126: answer = current; break;
+				case 128: answer = 0; break;
+				case 129: answer = count - 1; break;
+				case 127:
+					answer = loop ? wrap(arg.as_int()) : std::clamp(arg.as_int(), 0, count - 1);
+					m.write(cursor + 4, answer); break;
+				case 130: case 131:
+				{
+					std::int64_t n = std::int64_t(current) + (c.index == 130 ? std::int64_t(arg.as_int()) : -std::int64_t(arg.as_int()));
+					if(loop || (n >= 0 && n < count))
+					{ answer = loop ? wrap(n) : int(n); m.write(cursor + 4, answer); }
+					break;
+				}
+				case 132: case 133:
+				{
+					int n = loop ? wrap(arg.as_int()) : arg.as_int();
+					std::uint32_t node = safe_u32(m, graph);
+					if(n < 0 || n >= count) node = 0;
+					else for(int j = count - n - 1; j > 0 && node; --j) node = safe_u32(m, node);
+					if(c.index == 132) out = value::of(value_type::waypoint, node ? safe_u32(m, node + 0xC) : 0);
+					else
+					{
+						int next = loop ? wrap(std::int64_t(n) + 1) : n + 1;
+						std::uint32_t to = safe_u32(m, graph), capability = 0;
+						if(next < 0 || next >= count || !node) to = 0;
+						else for(int j = count - next - 1; j > 0 && to; --j) to = safe_u32(m, to);
+						std::int32_t cost = 0;
+						if(node && to) graph_link(m, node, to, capability, cost);
+						out = value::of(0x2B, capability);
+					}
+					return c.args;
+				}
+				case 137: case 138:
+				{
+					std::uint32_t node = safe_u32(m, graph);
+					for(int j = 0; j < count && node; ++j, node = safe_u32(m, node))
+						if(safe_u32(m, node + 0xC) == arg.word()) { answer = count - j - 1; break; }
+					if(answer >= 0 && c.index == 138) m.write(cursor + 4, answer);
+					break;
+				}
+				}
+			}
+			else if(c.index == 132 || c.index == 133) { out = value::of(c.index == 132 ? value_type::waypoint : 0x2B, 0); return c.args; }
+			out = value::integer(answer);
+			return c.args;
+		}
+
+		// 25,27,28 (0x4682B0): append, remove by index, remove first matching actor.
+		// 303 (0x46DA50): collect immediate actor children into a list.
+		std::uint32_t edit_actor_list(call& c)
+		{
+			std::uint32_t self = c.index == 303 ? c.vm.target(c.self, true) : c.self;
+			value list, item;
+			next_arg(c, list);
+			if(c.index != 303) next_arg(c, item);
+			live_memory& m = c.vm.memory();
+			std::uint32_t at = list.word();
+			if(!at || !m.contains(at, 4)) return c.args;
+			unsigned count = m.u8(at), capacity = m.u8(at + 1);
+			auto append = [&](std::uint32_t so) {
+				if(count < capacity && m.contains(at + 4 + count * 4, 4))
+				{ m.write(at + 4 + count++ * 4, so); m.write<std::uint8_t>(at, std::uint8_t(count)); }
+			};
+			if(c.index == 25) append(super_object_value(c.vm, item));
+			else if(c.index == 303)
+			{
+				count = 0; m.write<std::uint8_t>(at, 0);
+				std::set<std::uint32_t> seen;
+				for(auto child = safe_u32(m, self + 8); child && count < capacity && seen.insert(child).second; child = safe_u32(m, child + 0x14))
+					if(c.vm.actor_of(child)) append(child);
+			}
+			else
+			{
+				unsigned index = item.word() & 0xFF;
+				if(c.index == 27 && index == 255) index = count ? count - 1 : count;
+				if(c.index == 28)
+				{
+					std::uint32_t so = super_object_value(c.vm, item);
+					for(index = 0; index < count && safe_u32(m, at + 4 + index * 4) != so; ++index) {}
+				}
+				if(index < count && m.contains(at + 4, count * 4))
+				{
+					for(unsigned j = index; j + 1 < count; ++j) m.write(at + 4 + j * 4, m.u32(at + 8 + j * 4));
+					m.write<std::uint8_t>(at, std::uint8_t(count - 1));
+				}
+			}
+			return c.args;
+		}
+
+		// 146/150 (0x472600 -> 0x4249E0/0x424B80): dynamics flag and linked-entry selection.
+		// 305 (0x46E3C0): dynamics flag 0x40000000, controlled by a byte.
+		std::uint32_t dynamics_option(call& c)
+		{
+			value actor, arg;
+			std::uint32_t self = c.index == 305 ? c.vm.target(c.self, true) : c.self;
+			if(c.index != 305) { next_arg(c, actor); self = super_object_value(c.vm, actor); }
+			next_arg(c, arg);
+			live_memory& m = c.vm.memory();
+			std::uint32_t base = dynamics_base(c, self, c.index == 150 ? 0x6C : 12);
+			if(!base) return c.args;
+			if(c.index == 150)
+			{
+				std::uint32_t head = m.u32(base + 0x64), selected = head;
+				std::set<std::uint32_t> seen;
+				int n = arg.as_int();
+				for(int j = 1; selected && j != n && seen.insert(selected).second; ++j) selected = safe_u32(m, selected + 8);
+				m.write(base + 0x68, selected ? selected : head);
+			}
+			else
+			{
+				std::uint32_t at = base + (c.index == 305 ? 8 : 0), mask = c.index == 305 ? 0x40000000u : 0x400000u;
+				bool set = c.index == 305 ? (arg.word() & 255) != 0 : arg.word() == 0;
+				m.write(at, set ? m.u32(at) | mask : m.u32(at) & ~mask);
+			}
+			return c.args;
+		}
+
+		// 307..309 (0x46BFE0): translate a zone without changing a box's size.
+		// 420 (0x471A90): set the radius of kind-1 sphere 1's first entry.
+		std::uint32_t move_zone(call& c)
+		{
+			live_memory& m = c.vm.memory();
+			zone_element e;
+			if(c.index == 420) e = first_zone_element(c, 1);
+			else
+			{
+				value who, index; next_arg(c, who); next_arg(c, index);
+				constexpr unsigned kinds[] = {1, 0, 2};
+				std::uint32_t set = collision_set(c.vm, super_object_value(c.vm, who));
+				unsigned n = (index.word() - 1) & 0xFFFF;
+				std::uint32_t zone = zone_at(c.vm, set, kinds[c.index - 307], n);
+				std::uint32_t types = zone ? safe_u32(m, zone + 0x10) : 0;
+				std::uint32_t elements = zone ? safe_u32(m, zone + 0x14) : 0;
+				std::uint32_t element = elements ? safe_u32(m, elements) : 0;
+				e = {zone ? safe_u32(m, zone) : 0, types ? safe_i16(m, types) : std::int16_t(0), element ? safe_u32(m, element) : 0};
+			}
+			value v;
+			if(c.index == 420)
+			{
+				if(e.kind != 7) return c.args;
+				next_arg(c, v);
+				if(e.entries && m.contains(e.entries, 4)) m.write(e.entries, v.word());
+			}
+			else
+			{
+				next_arg(c, v);
+				if(!e.vertices) return c.args;
+				if(e.kind == 5 || e.kind == 7)
+				{
+					if(m.contains(e.vertices, 12)) write3(m, e.vertices, vec_of(v));
+				}
+				else if((e.kind == 8 || e.kind == 9) && e.entries)
+				{
+					auto a = safe_i16(m, e.entries), b = safe_i16(m, e.entries + 2);
+					if(a < 0 || b < 0) return c.args;
+					auto first = e.vertices + unsigned(a) * 12, second = e.vertices + unsigned(b) * 12;
+					if(!m.contains(first, 12) || !m.contains(second, 12)) return c.args;
+					vec3 delta = sub(vec_of(v), read3(m, first)), end = read3(m, second);
+					for(int j = 0; j < 3; ++j) end[j] += delta[j];
+					write3(m, first, vec_of(v)); write3(m, second, end);
+				}
+			}
+			c.vm.surface_cache() = {};
+			return c.args;
+		}
+
+		// 169..171 (0x474B60): sphere vertex 0 or the midpoint of the first box.
+		std::uint32_t zone_midpoint(call& c, value& out)
+		{
+			constexpr unsigned kinds[] = {1, 2, 0};
+			zone_element e = first_zone_element(c, kinds[c.index - 169]);
+			live_memory& m = c.vm.memory();
+			vec3 p{};
+			if((e.kind == 5 || e.kind == 7) && e.vertices && m.contains(e.vertices, 12)) p = read3(m, e.vertices);
+			else if(e.kind == 8 && e.vertices && e.entries)
+			{
+				auto a = safe_i16(m, e.entries), b = safe_i16(m, e.entries + 2);
+				if(a >= 0 && b >= 0 && m.contains(e.vertices + unsigned(a) * 12, 12) && m.contains(e.vertices + unsigned(b) * 12, 12))
+				{
+					vec3 first = read3(m, e.vertices + unsigned(a) * 12), second = read3(m, e.vertices + unsigned(b) * 12);
+					for(int j = 0; j < 3; ++j) p[j] = (first[j] + second[j]) * 0.5f;
+				}
+			}
+			out = value_of(p);
+			return c.args;
+		}
+
+		// 38..40 (0x48A6F0): list membership by actor, model or family.
+		std::uint32_t list_contains(call& c, bool& result)
+		{
+			value list, what; next_arg(c, list); next_arg(c, what);
+			live_memory& m = c.vm.memory();
+			std::uint32_t at = list.word();
+			result = false;
+			if(!at || !m.contains(at, 4)) return c.args;
+			for(unsigned j = 0; j < m.u8(at); ++j)
+			{
+				std::uint32_t so = safe_u32(m, at + 4 + j * 4), candidate = 0;
+				if(c.index == 38) candidate = so;
+				else if(c.index == 39)
+				{
+					auto mind = mind_of(c.vm, so); candidate = mind ? safe_u32(m, mind) : 0;
+				}
+				else
+				{
+					auto data = actor_part(c.vm, so, actor_field::data_3d); candidate = data ? safe_u32(m, data + 0x14) : 0;
+				}
+				if(candidate == (c.index == 38 ? super_object_value(c.vm, what) : what.word())) { result = true; break; }
+			}
+			return c.args;
+		}
+
+		// 340 (0x46E2A0 -> 0x417AA0): collision-set byte +0x40.
+		std::uint32_t collision_byte(call& c)
+		{
+			std::uint32_t set = collision_set(c.vm, c.vm.target(c.self, true));
+			value arg; next_arg(c, arg);
+			if(set && c.vm.memory().contains(set + 0x40)) c.vm.memory().write<std::uint8_t>(set + 0x40, std::uint8_t(arg.word()));
+			return c.args;
+		}
+
+		// 33 (0x48A430 -> 0x437A20): contact with the named actor or its parts.
+		std::uint32_t contact_actor(call& c, bool& result)
+		{
+			std::uint32_t report = contact_report(c);
+			value who; next_arg(c, who);
+			live_memory& m = c.vm.memory();
+			std::uint32_t so = report && (safe_u32(m, report + 4) & 0x10000) ? safe_u32(m, report + 0xA4) : 0;
+			std::set<std::uint32_t> seen;
+			while(so && !c.vm.actor_of(so) && seen.insert(so).second) so = safe_u32(m, so + 0x1C);
+			result = so && c.vm.actor_of(so) && so == super_object_value(c.vm, who);
+			return c.args;
+		}
+
+		// 178/179 (0x4750F0): displacement to the closest point on a line/segment.
+		std::uint32_t closest_displacement(call& c, value& out)
+		{
+			value point, start, end; next_arg(c, point); next_arg(c, start); next_arg(c, end);
+			vec3 p = vec_of(point), a = vec_of(start), d = vec_of(end), relative = sub(p, a);
+			if(c.index == 179) d = sub(d, a);
+			vec3 result{};
+			bool nonzero = std::abs(d[0]) >= 0.0001f || std::abs(d[1]) >= 0.0001f || std::abs(d[2]) >= 0.0001f;
+			if(nonzero)
+			{
+				float t = dot(relative, d) / dot(d, d);
+				if(c.index == 179) t = std::clamp(t, 0.0f, 1.0f);
+				for(int j = 0; j < 3; ++j) result[j] = t * d[j] - relative[j];
+			}
+			else if(c.index == 179) result = sub(a, p);
+			out = value_of(result); return c.args;
+		}
+
+		// 238 (0x47A660): velocity to reach a point with an apex above both endpoints.
+		std::uint32_t ballistic_velocity(call& c, value& out)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value start, end, height; next_arg(c, start); next_arg(c, end); next_arg(c, height);
+			out = value::vector(0, 0, 0);
+			std::uint32_t base = dynamics_base(c, self, 0x14);
+			if(!base || height.as_float() < 0) return c.args;
+			float gravity = c.vm.memory().f32(base + 0x10);
+			if(gravity == 0) return c.args;
+			vec3 from = vec_of(start), to = vec_of(end);
+			float apex = std::max(from[2], to[2]) + height.as_float();
+			float vertical = std::sqrt(2 * (apex - from[2]) * gravity);
+			float discriminant = vertical * vertical + 2 * gravity * (from[2] - to[2]);
+			if(discriminant < 0) return c.args;
+			float time = (vertical + std::sqrt(discriminant)) / gravity;
+			out = value::vector((to[0] - from[0]) / time, (to[1] - from[1]) / time, vertical);
+			return c.args;
+		}
+
+		// 140..144 (0x476F20/0x477CC0), 400 (0x470D60): graph field operations.
+		std::uint32_t graph_node_for(live_memory& m, std::uint32_t graph, std::uint32_t waypoint)
+		{
+			std::set<std::uint32_t> seen;
+			for(std::uint32_t node = graph ? safe_u32(m, graph) : 0; node && seen.insert(node).second; node = safe_u32(m, node))
+				if(safe_u32(m, node + 0xC) == waypoint) return node;
+			return 0;
+		}
+		std::uint32_t graph_fields(call& c, value& out)
+		{
+			value graph, from, to, data, mode;
+			next_arg(c, graph); next_arg(c, from);
+			live_memory& m = c.vm.memory();
+			if(c.index == 144)
+			{
+				auto node = graph_node_for(m, graph.word(), from.word());
+				out = value::of(0x2B, node ? safe_u32(m, node + 0x10) : 0);
+				return c.args;
+			}
+			next_arg(c, to);
+			out = c.index == 140 ? value::of(0x2B, 0) : value::integer(-1);
+			if(!graph.word()) return c.args; // native null-graph path skips further evaluation
+			if(c.index == 141 || c.index == 143) next_arg(c, data);
+			if(c.index == 141) next_arg(c, mode);
+			std::uint32_t first = from.word() ? graph_node_for(m, graph.word(), from.word()) : 0;
+			std::uint32_t last = to.word() ? graph_node_for(m, graph.word(), to.word()) : 0;
+			std::uint32_t list = first ? safe_u32(m, first + 0x18) : 0;
+			std::set<std::uint32_t> seen;
+			for(std::uint32_t link = list ? safe_u32(m, list) : 0; last && link && seen.insert(link).second; link = safe_u32(m, link))
+				if(safe_u32(m, link + 0xC) == last)
+				{
+					if(c.index == 140) out = value::of(0x2B, safe_u32(m, link + 0x10));
+					else if(c.index == 142) out = value::integer(std::int32_t(safe_u32(m, link + 0x18)));
+					else
+					{
+						if(c.index == 143 && m.contains(link + 0x18, 4)) m.write(link + 0x18, data.word());
+						else if(c.index == 141 && m.contains(link + 0x10, 4))
+						{
+							std::uint32_t bits = m.u32(link + 0x10);
+							switch(mode.word())
+							{
+							case 0: case 2: bits |= data.word(); break;
+							case 1: case 3: bits = data.word(); break;
+							case 4: bits &= ~data.word(); break;
+							case 5: bits = 0; break;
+							}
+							m.write(link + 0x10, bits);
+						}
+						out = value::integer(0);
+					}
+					break;
+				}
+			return c.args;
+		}
+		std::uint32_t reset_graph_fields(call& c)
+		{
+			value graph; next_arg(c, graph);
+			live_memory& m = c.vm.memory();
+			std::set<std::uint32_t> nodes;
+			for(std::uint32_t node = graph.word() ? safe_u32(m, graph.word()) : 0; node && nodes.insert(node).second; node = safe_u32(m, node))
+			{
+				if(m.contains(node + 0x10, 8)) m.write(node + 0x10, m.u32(node + 0x14));
+				std::uint32_t list = safe_u32(m, node + 0x18);
+				std::set<std::uint32_t> links;
+				for(std::uint32_t link = list ? safe_u32(m, list) : 0; link && links.insert(link).second; link = safe_u32(m, link))
+					if(m.contains(link + 0x10, 16))
+					{ m.write(link + 0x10, m.u32(link + 0x14)); m.write(link + 0x18, m.u32(link + 0x1C)); }
+			}
+			return c.args;
+		}
+
+		// 56 (0x48AE60): the named actor has already begun this frame's update.
+		std::uint32_t updated_this_frame(call& c, bool& result)
+		{
+			value who; next_arg(c, who);
+			live_memory& m = c.vm.memory();
+			std::uint32_t actor = actor_value(c.vm, who), standard = actor ? safe_u32(m, actor + 4) : 0;
+			result = standard && safe_u32(m, standard + 0x18) == c.vm.frame_number();
+			return c.args;
+		}
+
+		// Scalar speed forms (0x46CE00): X/Y/Z, XY, XYZ in local/world axes.
+		// The third world group writes the first vector in the native handler too.
+		std::uint32_t speed_components(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			struct group { unsigned first, offset, bit, world; bool global; };
+			constexpr group groups[] = {
+				{183,0x24,0x20000,0x4000,true}, {189,0x30,0x100000,0x8000,false},
+				{195,0x30,0x100000,0x8000,true}, {202,0x190,0x800000,0x10000,false},
+				{208,0x24,0x800000,0x10000,true}, {281,0x19C,0x4000000,0,true}
+			};
+			group g{};
+			for(auto candidate : groups) if(c.index >= candidate.first && c.index <= candidate.first + (candidate.first == 281 ? 3 : 4)) g = candidate;
+			bool clearing = c.index >= 285;
+			unsigned form = clearing ? c.index - 285 : c.index - g.first;
+			if(c.index >= 281) { g = groups[5]; if(form == 3) form = 4; }
+			unsigned first_axis = form < 3 ? form : 0, count = form < 3 ? 1 : form == 3 ? 2 : 3;
+			std::array<value, 3> values;
+			if(!clearing) for(unsigned j = 0; j < count; ++j) next_arg(c, values[j]);
+			std::uint32_t base = dynamics_base(c, self, 0x1A8);
+			if(!base) return c.args;
+			live_memory& m = c.vm.memory();
+			std::uint32_t mask = 0;
+			for(unsigned j = 0; j < count; ++j)
+			{
+				mask |= g.bit << (first_axis + j);
+				if(!clearing) m.write(base + g.offset + (first_axis + j) * 4, values[j].word());
+			}
+			std::uint32_t flags = m.u32(base + 8);
+			if(clearing) flags &= ~mask;
+			else { flags |= mask; flags = g.global ? flags | g.world : flags & ~g.world; }
+			m.write(base + 8, flags);
+			return c.args;
+		}
+
+		// 311 (0x488DC0 -> 0x42DE30): secondary dynamics vector at +0x10.
+		std::uint32_t secondary_dynamics_vector(call& c, value& out)
+		{
+			auto self = c.vm.target(c.self, true);
+			auto dynamics = actor_part(c.vm, self, actor_field::dynamics);
+			live_memory& m = c.vm.memory();
+			auto block = dynamics ? safe_u32(m, dynamics + 4) : 0;
+			if(block && m.contains(block + 0x10, 12)) out = value_of(read3(m, block + 0x10));
+			return c.args;
+		}
+
+		// 364 (0x46FF00): two high-word masks in the target's actor +0x2C block.
+		std::uint32_t high_word_masks(call& c)
+		{
+			auto self = c.vm.target(c.self, true);
+			auto block = actor_part(c.vm, self, 0x2C);
+			if(!block) return c.args;
+			value first, second; next_arg(c, first); next_arg(c, second);
+			live_memory& m = c.vm.memory();
+			if(m.contains(block, 8)) { m.write(block, first.word() << 16); m.write(block + 4, second.word() << 16); }
+			return c.args;
+		}
+
+		// 70..80 (0x47D190): packed byte percentages, value type 0x27.
+		// The native add helper 0x47D5D0 swaps the second input's middle bytes.
+		std::uint32_t percentage_channels(call& c, value& out)
+		{
+			value a, b;
+			std::uint32_t packed = 0;
+			if(c.index == 75 || c.index == 76)
+			{
+				unsigned count = c.index == 75 ? 4 : 3;
+				for(unsigned j = 0; j < count; ++j)
+				{ next_arg(c, a); packed |= std::uint32_t(std::clamp(a.as_int(), 0, 100)) << (j * 8); }
+			}
+			else
+			{
+				next_arg(c, a);
+				if(c.index >= 77)
+				{
+					out = value::integer(std::min(100u, (a.word() >> ((c.index - 77) * 8)) & 255));
+					return c.args;
+				}
+				next_arg(c, b);
+				std::uint32_t right = c.index == 70 ? b.word() : std::uint32_t(std::uint8_t(b.as_int())) << ((c.index - 71) * 8);
+				constexpr unsigned shifts[] = {0, 16, 8, 24};
+				for(unsigned j = 0; j < 4; ++j)
+					packed |= std::min(100u, ((a.word() >> (j * 8)) & 255) + ((right >> shifts[j]) & 255)) << (j * 8);
+			}
+			out = value::of(0x27, packed); return c.args;
+		}
+
+		// 121 (0x4770F0 -> 0x47F960): minimum-cost path restricted by actor capabilities.
+		std::uint32_t shortest_graph_path(call& c, value& out, std::map<std::uint32_t, graph_path>& paths)
+		{
+			auto self = c.vm.target(c.self, true);
+			value graph, from, to; next_arg(c, graph); next_arg(c, from); next_arg(c, to);
+			out = value::integer(0);
+			live_memory& m = c.vm.memory();
+			if(!graph.word() || !actor_part(c.vm, self, 0x18)) return c.args;
+			graph_path& path = paths[self]; path = {};
+			auto start = graph_node_for(m, graph.word(), from.word());
+			auto finish = graph_node_for(m, graph.word(), to.word());
+			if(!start || !finish) return c.args;
+			auto standard = actor_part(c.vm, self, actor_field::standard_game);
+			std::uint32_t allowed = standard ? safe_u32(m, standard + 0x1C) : 0;
+			struct candidate { std::uint32_t node, parent, capability; std::int64_t cost; };
+			std::vector<candidate> open{{start, 0, 0, 0}};
+			std::map<std::uint32_t, candidate> closed;
+			while(!open.empty())
+			{
+				auto best = std::min_element(open.begin(), open.end(), [](const candidate& a, const candidate& b) { return a.cost < b.cost; });
+				candidate current = *best; open.erase(best); closed.emplace(current.node, current);
+				if(current.node == finish) break;
+				auto list = safe_u32(m, current.node + 0x18);
+				std::set<std::uint32_t> seen;
+				for(auto link = list ? safe_u32(m, list) : 0; link && seen.insert(link).second; link = safe_u32(m, link))
+				{
+					auto next = safe_u32(m, link + 0xC), capability = safe_u32(m, link + 0x10);
+					if(!next || closed.contains(next) || !(capability & allowed)) continue;
+					std::int64_t cost = current.cost + std::int32_t(safe_u32(m, link + 0x18));
+					auto queued = std::find_if(open.begin(), open.end(), [&](const candidate& a) { return a.node == next; });
+					candidate replacement{next, current.node, capability, cost};
+					if(queued == open.end()) open.push_back(replacement);
+					else if(cost < queued->cost) *queued = replacement;
+				}
+			}
+			if(!closed.contains(finish)) return c.args;
+			for(auto node = finish; node; node = closed.at(node).parent)
+				path.entries.push_back({node, safe_u32(m, node + 0xC), closed.at(node).capability});
+			std::reverse(path.entries.begin(), path.entries.end());
+			// Each entry carries the outgoing link; the search remembered the incoming one.
+			for(std::size_t j = 0; j + 1 < path.entries.size(); ++j) path.entries[j].capability = path.entries[j + 1].capability;
+			path.entries.back().capability = 0;
+			out = value::integer(int(path.entries.size()));
+			return c.args;
+		}
+
+		// 97..99/216 (0x468970 -> 0x419530): channel entry byte +0x10.
+		std::uint32_t channel_enabled(call& c)
+		{
+			value arg;
+			if(c.index != 216) next_arg(c, arg);
+			auto data = actor_part(c.vm, c.self, actor_field::data_3d);
+			live_memory& m = c.vm.memory();
+			auto table = data ? safe_u32(m, data + 0x90) : 0;
+			unsigned count = data ? safe_u32(m, data + 0x94) : 0;
+			if(!table) return c.args;
+			unsigned first = arg.word() & 0xFFFF, limit = first + 1;
+			if(c.index == 216 || first == 0xFFFF) { first = 0; limit = count; }
+			if(c.index == 98) { first = 0; limit = std::int32_t(arg.word()) > 0 ? std::min(arg.word(), count) : 0; }
+			for(unsigned j = first; j < limit; ++j)
+				if(m.contains(table + j * 20 + 16)) m.write<std::uint8_t>(table + j * 20 + 16, c.index == 97 || c.index == 98 ? 1 : 0);
+			return c.args;
+		}
+
+		// 148 (0x477F90 -> 0x40FE50): current animation's frame count.
+		std::uint32_t animation_frame_count(call& c, value& out)
+		{
+			auto data = actor_part(c.vm, c.vm.target(c.self, true), actor_field::data_3d);
+			live_memory& m = c.vm.memory();
+			auto state = data ? safe_u32(m, data + 4) : 0, animation = state ? safe_u32(m, state + 4) : 0;
+			out = value::integer(animation && m.contains(animation, 2) ? m.read<std::uint16_t>(animation) : 0);
+			return c.args;
+		}
+
+		// 118 (0x477A80): cheapest outgoing link whose capabilities overlap a mask.
+		std::uint32_t cheapest_neighbor(call& c, value& out)
+		{
+			value graph, from, mask; next_arg(c, graph); next_arg(c, from); next_arg(c, mask);
+			live_memory& m = c.vm.memory();
+			auto node = graph_node_for(m, graph.word(), from.word()), list = node ? safe_u32(m, node + 0x18) : 0;
+			out = value::of(value_type::waypoint, 0);
+			std::int32_t best = 0x7FFFFFFF;
+			std::set<std::uint32_t> seen;
+			for(auto link = list ? safe_u32(m, list) : 0; link && seen.insert(link).second; link = safe_u32(m, link))
+				if((safe_u32(m, link + 0x10) & mask.word()) && std::int32_t(safe_u32(m, link + 0x18)) < best)
+				{
+					best = std::int32_t(safe_u32(m, link + 0x18));
+					auto neighbor = safe_u32(m, link + 0xC);
+					out = value::of(value_type::waypoint, neighbor ? safe_u32(m, neighbor + 0xC) : 0);
+				}
+			return c.args;
+		}
+
+		// 395 (0x4713E0): graph node capability modes (including native mode-4 fallthrough).
+		std::uint32_t graph_node_bits(call& c)
+		{
+			value graph, waypoint, mask, mode; next_arg(c, graph); next_arg(c, waypoint); next_arg(c, mask); next_arg(c, mode);
+			live_memory& m = c.vm.memory();
+			unsigned how = mode.word() & 255;
+			if(how == 2 || how == 3)
+			{
+				std::set<std::uint32_t> seen;
+				for(auto node = graph.word() ? safe_u32(m, graph.word()) : 0; node && seen.insert(node).second; node = safe_u32(m, node))
+					if(m.contains(node + 0x10, 4)) m.write(node + 0x10, how == 2 ? m.u32(node + 0x10) & ~mask.word() : 0u);
+			}
+			auto node = graph_node_for(m, graph.word(), waypoint.word());
+			if(node && m.contains(node + 0x10, 4))
+			{
+				auto bits = m.u32(node + 0x10);
+				if(how == 0 || how == 2) bits |= mask.word();
+				else if(how == 1 || how == 3) bits = mask.word();
+				else if(how == 4 || how == 5) bits = 0;
+				m.write(node + 0x10, bits);
+			}
+			return c.args;
+		}
+
+		// 270..272 (0x47AE10): the standard-game bytes written by 438/439.
+		std::uint32_t standard_byte(call& c, value& out)
+		{
+			auto standard = actor_part(c.vm, c.vm.target(c.self, true), actor_field::standard_game);
+			unsigned offset = c.index == 270 ? 0x33 : c.index == 271 ? 0x2A : 0x2B;
+			out = value::integer(standard && c.vm.memory().contains(standard + offset) ? c.vm.memory().u8(standard + offset) : 0);
+			return c.args;
+		}
+
+		// 107/108/110..112 (0x48B7A0): all/any capability bits, or a byte-numbered bit.
+		std::uint32_t capability_test(call& c, bool& result)
+		{
+			auto self = c.vm.target(c.self, true);
+			value a, b;
+			std::uint32_t bits = 0;
+			if(c.index <= 108) { next_arg(c, a); bits = a.word(); }
+			else
+			{
+				auto standard = actor_part(c.vm, self, actor_field::standard_game);
+				bits = standard ? safe_u32(c.vm.memory(), standard + 0x1C) : 0;
+			}
+			next_arg(c, b);
+			std::uint32_t mask = b.word();
+			if(c.index == 112)
+			{
+				unsigned bit = mask & 255;
+				if(bit > 31) { result = false; return c.args; }
+				mask = 1u << bit;
+			}
+			result = c.index == 108 || c.index == 111 ? (bits & mask) != 0 : (bits & mask) == mask;
+			return c.args;
+		}
+
+		// 239 (0x47A150): primary dynamics animation-motion vector +0x54.
+		std::uint32_t animation_motion_vector(call& c, value& out)
+		{
+			auto base = dynamics_base(c, c.vm.target(c.self, true), 0x60);
+			out = base ? value_of(read3(c.vm.memory(), base + 0x54)) : value::real(0);
+			return c.args;
+		}
+
 		// 333 (0x46E360): super object flag 0x1 (+0x30): set by 0, cleared by anything else. The cage
 		// uses both.
 		std::uint32_t super_object_flag_1(call& c)
@@ -3083,7 +3853,7 @@ namespace openrayman::game
 			return c.args;
 		}
 
-		// 36 (0x4682B0 case 0x24): drop the list's actors of a family (3D data +0x14). 37 (case
+		// 32/33 retain, 36/37 drop (0x4682B0): drop the list's actors of a family (3D data +0x14). 37 (case
 		// 0x25): those of an AI model (brain -> mind -> model).
 		std::uint32_t list_drop(call& c)
 		{
@@ -3098,7 +3868,7 @@ namespace openrayman::game
 				std::uint32_t actor = c.vm.actor_of(so);
 				if(!actor)
 					return false;
-				if(c.index == 36)
+				if(c.index == 32 || c.index == 36)
 				{
 					std::uint32_t data = m.u32(actor);
 					return data && m.u32(data + 0x14) == what.word();
@@ -3112,7 +3882,7 @@ namespace openrayman::game
 			for(std::uint8_t i = 0; i < count; i++)
 			{
 				std::uint32_t so = m.u32(at + actor_list::entries + 4u * i);
-				if(!matches(so))
+				if(matches(so) == (c.index == 32 || c.index == 33))
 					m.write<std::uint32_t>(at + actor_list::entries + 4u * kept++, so);
 			}
 			m.write<std::uint8_t>(at + actor_list::count, kept);
@@ -4088,7 +4858,8 @@ namespace openrayman::game
 			return c.args;
 		}
 
-		// 263 (0x46C710, case 0x46C78B): a dynamics value at base +0x10, stored as given. 274
+		// 263..269,271..273,275,277,293..295 (0x46C710): direct dynamics fields;
+		// 266 converts degrees to a slope tangent. 274
 		// (0x46CA40, case 0x46CB2B): the vector at base +0x178, but only its components the
 		// argument makes positive. What the physics does with them isn't read yet.
 		std::uint32_t set_dynamics_value(call& c)
@@ -4096,16 +4867,72 @@ namespace openrayman::game
 			std::uint32_t self = c.vm.target(c.self, true);
 			value v;
 			next_arg(c, v);
-			std::uint32_t base = dynamics_base(c, self, 0x184);
+			std::uint32_t base = dynamics_base(c, self, 0x1E8);
 			if(!base)
 				return c.args;
 			live_memory& m = c.vm.memory();
-			if(c.index == 263)
-				m.write<float>(base + 0x10, v.as_float()); // 0x4825B0 converts the argument
-			else
+			if(c.index == 274)
+			{
 				for(int i = 0; i < 3; i++)
 					if(float f = v.component(i); f > 0)
 						m.write<float>(base + 0x178 + std::uint32_t(i) * 4, f);
+			}
+			else
+			{
+				std::uint32_t offset = 0;
+				switch(c.index)
+				{
+				case 263: offset = 0x10; break;
+				case 264: offset = 0x1C; break;
+				case 265: offset = 0x20; break;
+				case 266: offset = 0x14; break;
+				case 267: case 268: case 269: offset = 0x154 + (c.index - 267) * 4; break;
+				case 271: case 272: case 273: offset = 0x1DC + (c.index - 271) * 4; break;
+				case 275: offset = 0x160; break;
+				case 277: offset = 0x164; break;
+				case 293: case 294: case 295: offset = 0x168 + (c.index - 293) * 4; break;
+				}
+				float f = c.index == 263 ? v.as_float() : v.component(0);
+				if(c.index == 266) f = std::tan(f * 0.017453292f);
+				if(offset) m.write<float>(base + offset, f);
+			}
+			return c.args;
+		}
+
+		// 276/278 (0x46CA40): replace/add the vector at dynamics +0x184.
+		std::uint32_t dynamics_vector_value(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			value v; next_arg(c, v);
+			std::uint32_t base = dynamics_base(c, self, 0x190);
+			if(base)
+			{
+				vec3 result = vec_of(v);
+				if(c.index == 278)
+				{
+					vec3 previous = read3(c.vm.memory(), base + 0x184);
+					for(int j = 0; j < 3; ++j) result[j] += previous[j];
+				}
+				write3(c.vm.memory(), base + 0x184, result);
+			}
+			return c.args;
+		}
+
+		// 1/4/5 (0x467D90 -> 0x4949B0/0x4949E0/0x494A30): byte mailbox or bounded health.
+		std::uint32_t adjust_health(call& c)
+		{
+			value who, amount; next_arg(c, who); next_arg(c, amount);
+			std::uint32_t actor = actor_value(c.vm, who);
+			live_memory& m = c.vm.memory();
+			std::uint32_t standard = actor ? safe_u32(m, actor + 4) : 0;
+			if(!standard || !m.contains(standard, 0x34)) return c.args;
+			if(c.index == 1) m.write<std::uint8_t>(standard + 0x30, std::uint8_t(amount.word()));
+			else
+			{
+				int n = std::uint8_t(amount.as_int()), hp = m.u8(standard + 0x21);
+				hp = c.index == 4 ? std::min(hp + n, int(m.u8(standard + 0x22))) : std::max(hp - n, 0);
+				m.write<std::uint8_t>(standard + 0x21, std::uint8_t(hp));
+			}
 			return c.args;
 		}
 
@@ -4564,7 +5391,12 @@ namespace openrayman::game
 		vm.on_procedure(288, set_dynamics_xy);
 		vm.on_procedure(435, set_movement_actions);
 		vm.on_procedure(346, read_movement);
-		vm.on_procedure(263, set_dynamics_value);
+		for(std::uint32_t i : { 263, 264, 265, 266, 267, 268, 269, 271, 272, 273, 275, 277, 293, 294, 295 })
+			vm.on_procedure(i, set_dynamics_value);
+		vm.on_procedure(270, dynamics_triple);
+		vm.on_procedure(276, dynamics_vector_value);
+		vm.on_procedure(278, dynamics_vector_value);
+		for(std::uint32_t i : { 1, 4, 5 }) vm.on_procedure(i, adjust_health);
 		vm.on_procedure(291, dynamics_triple);
 		vm.on_procedure(292, dynamics_triple);
 		vm.on_procedure(297, climb_over);
@@ -4588,6 +5420,13 @@ namespace openrayman::game
 		vm.on_condition(103, is_zero_vector);
 		vm.on_condition(67, in_behaviour);
 		vm.on_condition(68, in_behaviour);
+		vm.on_condition(69, in_behaviour);
+		vm.on_condition(104, carried_by);
+		vm.on_condition(33, contact_actor);
+		vm.on_condition(56, updated_this_frame);
+		for(std::uint32_t i : { 183,184,185,186,187,189,191,192,193,195,196,197,199,202,203,204,205,206,208,209,210,211,212,281,282,283,284,285,286,287 })
+			vm.on_procedure(i, speed_components);
+		vm.on_procedure(80, [](call& c) { reinstall_state_mechanics(c.vm.memory(), c.vm.actor_of(c.self)); return c.args; }); // 0x467770
 		vm.on_condition(70, in_state);
 		vm.on_condition(75, custom_bit);
 		vm.on_condition(119, is_kind);
@@ -4596,12 +5435,14 @@ namespace openrayman::game
 			vm.on_condition(i, actor_inside_zone);
 
 		vm.on_function(0, position);
+		vm.on_function(1, [](call& c, value& out) { out = value_of(position_of(c.vm, c.self)); return c.args; }); // 0x47B830
 		vm.on_function(18, waypoint_location);
 		vm.on_function(114, nearest_waypoint);
 		auto paths = std::make_shared<std::map<std::uint32_t, graph_path>>();
+		vm.on_function(121, [paths](call& c, value& out) { return shortest_graph_path(c, out, *paths); });
 		for(std::uint32_t i : { 122, 123 })
 			vm.on_function(i, [paths](call& c, value& out) { return make_graph_path(c, out, *paths); });
-		for(std::uint32_t i : { 126, 130, 132, 133 })
+		for(std::uint32_t i : { 126, 127, 128, 129, 130, 131, 132, 133, 137, 138 })
 			vm.on_function(i, [paths](call& c, value& out) { return graph_path_query(c, out, *paths); });
 		vm.on_function(181, blend_vectors);
 		for(std::uint32_t i : { 43, 44, 45, 46, 47, 48 })
@@ -4625,8 +5466,25 @@ namespace openrayman::game
 		vm.on_function(60, clock_function);
 		vm.on_function(61, clock_function);
 		vm.on_function(149, dot_product);
+		for(std::uint32_t i : { 178, 179 }) vm.on_function(i, closest_displacement);
+		vm.on_function(238, ballistic_velocity);
+		vm.on_function(239, animation_motion_vector);
+		for(std::uint32_t i : {107,108,110,111,112}) vm.on_condition(i, capability_test);
+		vm.on_function(311, secondary_dynamics_vector);
+		for(std::uint32_t i = 270; i <= 272; ++i) vm.on_function(i, standard_byte);
+		vm.on_function(148, animation_frame_count);
+		vm.on_function(118, cheapest_neighbor);
+		vm.on_procedure(395, graph_node_bits);
+		for(std::uint32_t i : {97, 98, 99, 216}) vm.on_procedure(i, channel_enabled);
+		vm.on_procedure(364, high_word_masks);
+		for(std::uint32_t i = 70; i <= 80; ++i) vm.on_function(i, percentage_channels);
+		for(std::uint32_t i = 140; i <= 144; ++i) vm.on_function(i, graph_fields);
+		vm.on_procedure(400, reset_graph_fields);
 		for(std::uint32_t i : { 162, 164, 165 })
 			vm.on_function(i, matrix_vector);
+		for(std::uint32_t i = 210; i <= 213; ++i) vm.on_function(i, channel_position);
+		for(std::uint32_t i = 169; i <= 171; ++i) vm.on_function(i, zone_midpoint);
+		vm.on_procedure(66, empty_procedure);
 		for(std::uint32_t i = 180; i <= 185; i++)
 			vm.on_function(i, vector_ops);
 		vm.on_function(240, parent_actor);
@@ -4640,6 +5498,9 @@ namespace openrayman::game
 		for(std::uint32_t i = 205; i <= 207; i++)
 			vm.on_function(i, read_collision_event);
 		vm.on_procedure(333, super_object_flag_1);
+		for(std::uint32_t i : { 25, 27, 28, 303 }) vm.on_procedure(i, edit_actor_list);
+		vm.on_procedure(32, list_drop);
+		vm.on_procedure(33, list_drop);
 		vm.on_procedure(36, list_drop);
 		vm.on_procedure(37, list_drop);
 		vm.on_procedure(13, draw_flag);
@@ -4701,7 +5562,7 @@ namespace openrayman::game
 		for(std::uint32_t i : { 177, 178, 179, 180 })
 			vm.on_procedure(i, set_dynamics_axis);
 		vm.on_procedure(181, set_dynamics_xyz);
-		for(std::uint32_t i = 244; i <= 261; i++)
+		for(std::uint32_t i = 244; i <= 262; i++)
 			if(i != 255)
 				vm.on_procedure(i, dynamics_flag);
 		vm.on_procedure(312, super_object_flag);
@@ -4709,6 +5570,18 @@ namespace openrayman::game
 		for(std::uint32_t i = 321; i <= 332; i++)
 			vm.on_procedure(i, zone_mode);
 		vm.on_procedure(341, brain_period);
+		vm.on_procedure(237, set_brain_byte);
+		for(std::uint32_t i : { 146, 150, 305 }) vm.on_procedure(i, dynamics_option);
+		vm.on_condition(124, [](call& c, bool& out) { out = c.vm.menu_request[3] != 0; return c.args; }); // 0x48BB70
+		vm.on_procedure(438, set_standard_byte);
+		vm.on_procedure(439, set_standard_byte);
+		for(std::uint32_t i : { 307, 308, 309, 420 }) vm.on_procedure(i, move_zone);
+		for(std::uint32_t i = 38; i <= 40; ++i) vm.on_condition(i, list_contains);
+		vm.on_procedure(340, collision_byte);
+		vm.on_procedure(62, object_bit);
+		vm.on_procedure(311, object_bit);
+		for(std::uint32_t i = 334; i <= 339; i++)
+			vm.on_procedure(i, collision_option);
 		for(std::uint32_t i = 378; i <= 385; i++)
 			vm.on_procedure(i, gauge);
 		for(std::uint32_t i : { 396, 397, 398 })

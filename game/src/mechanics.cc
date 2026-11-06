@@ -810,6 +810,16 @@ namespace openrayman::game
 		return out;
 	}
 
+	void reinstall_state_mechanics(live_memory& m, std::uint32_t actor)
+	{
+		if(!actor || !m.contains(actor, 12)) return;
+		std::uint32_t dynamics = m.u32(actor + 8), data = m.u32(actor);
+		std::uint32_t b = dynamics && m.contains(dynamics, 4) ? m.u32(dynamics) : 0;
+		std::uint32_t s = data && m.contains(data + 4, 4) ? m.u32(data + 4) : 0;
+		std::uint32_t mech = s && m.contains(s + state_mechanics, 4) ? m.u32(s + state_mechanics) : 0;
+		if(b && mech && m.contains(b, base::size) && m.contains(mech, 0x3C)) install_mechanics(m, b, mech);
+	}
+
 	void move_actor(live_memory& m, std::uint32_t super_object, std::uint32_t actor, double ms, const world_collision& world, interpreter* vm)
 	{
 		std::uint32_t dynamics = m.u32(actor + 8);

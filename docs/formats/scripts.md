@@ -1,5 +1,11 @@
 # Scripts: the actors' brains (Rayman 2 PC)
 
+Handler census findings (own analysis of `Rayman2.exe`): function 210 (0x478AA0) returns
+the global position of the selected 20-byte entry in 3D data +0x90; absent entries fall back
+to the target, and channel 255 yields a zero vector. Procedure 66 (0x472F90) is an empty handler;
+procedure 237 (0x4675A0) writes its argument's low byte to the target's brain +0x08, and
+procedure 438 (0x471FB0) writes its argument's low byte to standard game +0x33.
+
 Almost all gameplay lives in the levels as compiled scripts: what Rayman does when you press a
 button, how a Lum flies, when a cage breaks. `Rayman2.exe` runs them with a small tree-walking
 interpreter. The game keeps no names for anything here (no strings in the exe or the data), so the
@@ -474,3 +480,138 @@ after Murfy's first full scene, it is back at (7.414, 311.965, -6.993) in behavi
 waits (behaviour 5) for Rayman to come near again. We keep type-1 actors in the world after the
 reset; what re-activates them in the exe isn't traced yet. Only that one actor took this path in
 our Learn_10 runs; the others procedure 139 removes are of type 0, 2, 3 or 5 and stay out.
+
+
+## Handler census, second pass (2026-11-05)
+
+Where this came from: own analysis of the local GOG executable's decompiled handlers and
+small callees; descriptions and implementation are independently written. Addresses below
+identify the observations, not source code to copy.
+
+- Procedure 62 (0x472C40) takes a super object, zero-based draw bit, and mode 0/1/2
+  (clear/set/toggle); it changes only super object +0x2C. Other modes leave it alone.
+  Procedure 311 (0x46D8A0) instead changes +0x30, masking the shift to five bits;
+  any nonzero third argument sets the bit.
+- Procedures 334..339 (0x46E180, callees 0x4179C0..0x417A60) set/clear bits
+  1, 2, 4, 8, 0x20, 0x40 of collision set +0x42. Only the argument's low byte matters.
+- Procedure 439 (0x472020) stores its two arguments' low bytes at standard-game +0x2A/+0x2B.
+- Procedures 264,265,267..269,271..273,275,277,293..295 (0x46C710) store a real at
+  dynamics base +0x1C,+0x20,+0x154,+0x158,+0x15C,+0x1DC,+0x1E0,+0x1E4,
+  +0x160,+0x164,+0x168,+0x16C,+0x170 respectively. Procedure 266 stores
+  tan(degrees * pi/180) at +0x14. These are direct writes, with no clamping.
+- Condition 69 (0x48A950, case 0x45) compares the named actor's current reflex with
+  a behavior pointer. Condition 104 (0x48B6E0) checks the target's supporting actor
+  (+0x284) when dynamics end flag 4 is set, otherwise checks whether the target is
+  an immediate child of the named actor (children +8, siblings +0x14).
+
+- Functions 126..132,137..138 (0x477300, callees 0x4170D0..0x417210): actor +0x18
+  is a graph-path cursor (graph +0, current index +4, loop byte +8). Index 0 names the
+  last node in the graph's forward list. 126 reads the index, 127 sets it (wrap/clamp),
+  128 gives 0, 129 gives count-1, 130/131 advance/retreat without changing on failure,
+  132 reads a waypoint by index, 137 finds an index by waypoint, 138 finds and selects it.
+  An absent cursor/graph returns integer -1, including 132's absent-cursor case.
+- Procedures 25/27/28 (0x4682B0; 0x483120/0x483340/0x4832B0) append an actor's super
+  object, remove by byte index (255 = last), or remove the first matching actor.
+  Procedures 32/33 retain a family's / model's actors; 36/37 remove those actors.
+  Procedure 303 (0x46DA50) fills a list with the target's immediate actor children.
+- Function 1 (0x47B830) reads the running actor's global position without an override.
+  Functions 169..171 (0x474B60) read the midpoint of a kind-1/2/0 box, or vertex 0
+  for sphere elements. No geometry returns zero.
+- Procedure 146 (0x472600 -> 0x4249E0) clears dynamics base +0 bit 0x400000 for a nonzero
+  argument, otherwise sets it. Procedure 150 (same handler -> 0x424B80) selects the
+  nth (1-based) dynamics entry: list head +0x64, next +8, selected pointer +0x68;
+  any index not found falls back to the head. Procedure 305 (0x46E3C0) sets/clears
+  dynamics +8 bit 0x40000000 according to the argument's low byte.
+- Procedure 270 (0x46C980) writes three real arguments to +0x154..0x15C. Procedures
+  276/278 (0x46CA40) replace/add a vector at +0x184. The scalar/vector fields accept
+  their real bits directly; unlike the byte-index helpers they do not coerce integers.
+- Procedure 1 (0x467D90 -> 0x4949B0) writes a byte at standard-game +0x30;
+  4/5 add/subtract a converted byte of health, bounded by maximum / zero
+  (0x467EE0/0x467F40 -> 0x4949E0/0x494A30).
+- Condition 124 (0x48BB70) returns menu-request byte 3 (truth as a condition).
+
+- Procedures 307..309 (0x46BFE0, assembly checked at 0x46C01F) evaluate actor,
+  zone index, then position. The index survives in EDI (the decompiler misleadingly
+  prints the vector's low word). They translate kind-1/0/2 zones to put vertex 0
+  or the first box corner at that position, keeping a box's extent. Procedure 420
+  (0x471A90 -> 0x41E6C0) replaces kind-1 sphere radius. Ours invalidates the surface
+  cache; native cached normals/bounds are not used by our zone tests.
+- Functions 211/212/213 share 0x478AA0 with 210: local part position, world scale
+  lengths, world minus-Y direction. Verified the second switch's mapping in executable
+  table 0x478DD8. Like 210, channel 255 returns zero without selecting a part.
+- Conditions 38..40 (0x48A6F0 -> 0x4831D0/0x483210/0x483260) ask whether a list
+  contains the named actor / an actor of a model / an actor of a family.
+- Procedure 340 (0x46E2A0 -> 0x417AA0) stores the low byte in collision +0x40.
+
+- Condition 33 (0x48A430 -> 0x437A20): report +4 bit 0x10000 must be set;
+  the super object at report +0xA4 (or its first actor ancestor via +0x1C) must name
+  the actor argument. A zero report/object is false.
+- Function 238 (0x47A660) computes a launch velocity from start to finish with an apex
+  height above the higher endpoint, using the target's gravity. Negative height or
+  zero gravity returns zero. Own analysis includes constants 0x49CCEC=-0.5 and
+  0x49CCF0=4; the apparent integer conversion in the decompile is a float sign flip.
+- Functions 178/179 (0x4750F0) return the displacement from a point to its closest
+  point on a line (origin, direction) / segment (two endpoints). A line direction with
+  all components below 0.0001 returns zero; a degenerate segment returns start-point.
+- Functions 140..143 (0x476F20, 0x47F7A0..0x47F8C0, 0x487A80..0x487B90)
+  query/change a directed link's capability (+0x10) or cost (+0x18). Capability modes
+  0/2 OR, 1/3 replace, 4 remove, 5 zero. A missing link returns -1 (capability query: 0).
+  Function 144 (0x477CC0) reads the matching graph node's capability +0x10.
+  Procedure 400 (0x470D60 -> 0x47F920) restores every node's capability from +0x14
+  and each link's capability/cost from +0x14/+0x1C.
+
+- Procedure 80 (0x467770 -> 0x412040 -> 0x419990 -> 0x435DF0) reinstalls the
+  current state's mechanics immediately, even when the mechanics pointer did not change.
+- Condition 56 (0x48AE60) compares standard-game +0x18 with the frame number at
+  0x5003E4 (incremented by 0x409DD0). 0x40A5C0 stamps that field before updating
+  animation/brain/mechanics. Ours stamps at the beginning of the actor's tick too.
+
+- More scalar speed forms share 0x46CE00: 183..187 impose world X/Y/Z/XY/XYZ;
+  189..193 propose local X/Y/Z/XY/XYZ; 195..199 propose world X/Y/Z/XY/XYZ;
+  202..206 write the third local speed; 208..212 set the third world-speed flags.
+  Local forms clear the group's world bit; world forms retain it. All scalar values
+  are stored as raw real bits. The 208..212 cases actually write +0x24..0x2C, despite
+  setting the third group's flags (confirmed in the decompile; retained as observed).
+  Procedures 281..284 write X/Y/Z/XYZ at +0x19C, setting 0x4000000..0x10000000;
+  285..288 clear the corresponding bits without touching the stored vector.
+
+- Functions 70..80 (0x47D190) work with four packed percentage bytes (type 0x27).
+  75/76 construct four/three channels with numeric conversion and clamping to 0..100;
+  77..80 extract a channel, capped at 100. 70 adds channels with saturation; the native
+  helper 0x47D5D0 crosses the second input's middle bytes (also verified in assembly).
+  71..74 use that same helper after byte truncation and shifting their scalar argument.
+- Function 311 (0x488DC0 -> 0x42DE30) reads the vector at +0x10 of the secondary
+  dynamics block, the pointer at [actor+8]+4; it is not the primary dynamics base.
+  Procedure 364 (0x46FF00 -> 0x42DB20/0x42DE40) stores its two arguments shifted
+  left 16 into actor +0x2C's block, words +0/+4. Procedure 262 (0x46C1D0) controls
+  primary dynamics +8 bit 0x2000, like the neighboring flag setters.
+
+- Function 121 (0x4770F0 -> 0x47F960) makes a shortest-cost directed path from
+  start to finish. Only links sharing a bit with the target actor's capabilities
+  (standard-game +0x1C, 0x494B60) participate. The executable uses an ordered open
+  list: the first minimum wins, a strictly cheaper route updates a queued node,
+  and a closed node is not revisited. The result is an owned path with cursor 0,
+  no wrapping, copied node/link capabilities, and the number of waypoints returned.
+  No route clears the existing path; absent cursor/graph returns 0 without changing it.
+
+- Procedures 97/98/99/216 (0x468970 -> 0x419530) change the running actor's channel
+  entry byte +0x10 (20-byte table at 3D data +0x90, count +0x94): enable one,
+  enable the first N, disable one, disable all. Index 0xFFFF means all channels.
+  These store the native channel state; downstream per-part update gating is not added here.
+- Function 148 (0x477F90 -> 0x40FE50) returns the current state's animation frame count
+  (u16 at the animation reference's start).
+- Function 118 (0x477A80) returns the waypoint at the cheapest outgoing link sharing a
+  capability bit with its mask; ties keep the earlier link. No match returns no waypoint.
+- Procedure 395 (0x4713E0) changes a graph node's capability. Modes 2/3 first remove the
+  mask / clear all graph nodes; 0/2 OR and 1/3 replace the selected node. Native mode 4
+  falls through the clear case and clears the selected node entirely, as does mode 5.
+
+- Functions 270..272 (0x47AE10), newly exposed by the census after implementing
+  procedure 439, read standard-game +0x33/+0x2A/+0x2B as unsigned bytes. These pair
+  with procedures 438/439, use the redirected actor, and return zero without standard data.
+
+- The final path-enabled census exposed condition 107 and function 239. Conditions
+  107/108 (0x48B7A0) test all/any bits between two values; 110/111 apply all/any to
+  the target's standard-game capabilities +0x1C; 112 tests a low-byte bit number
+  (0..31). Function 239 (0x47A150) reads the primary dynamics motion vector +0x54;
+  without dynamics its native result is real zero.

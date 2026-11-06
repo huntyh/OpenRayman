@@ -1936,6 +1936,13 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	for(std::size_t i = 0; i < missing.size(); i++)
 		std::cout << std::format("{}{} x{}", i % 6 ? ", " : "\n  ", missing[i].second, missing[i].first);
 	std::cout << "\n";
+	for(const auto& [what, count] : vm.missing)
+	{
+		std::size_t actor_count = 0;
+		for(const auto& [actor, handlers] : vm.missing_by_actor)
+			if(handlers.contains(what)) ++actor_count;
+		std::cout << std::format("missing actors: {} {} {}\n", what.first, what.second, actor_count);
+	}
 	return EXIT_SUCCESS;
 }
 

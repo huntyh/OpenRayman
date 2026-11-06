@@ -465,6 +465,11 @@ namespace openrayman::game
 			return actor && m.contains(actor + 0x10, 4) && m.u32(actor + 0x10) != 0;
 		};
 		auto think = [&](std::uint32_t self) {
+			// 0x40A5C0 stamps an active actor before its brain/animation/mechanics update.
+			std::uint32_t actor = vm.actor_of(self);
+			std::uint32_t standard = actor ? m.u32(actor + 4) : 0;
+			if(standard && !vm.removed(self) && m.contains(standard + 0x29) && (m.u8(standard + 0x29) & 2))
+				m.write(standard + 0x18, vm.frame_number());
 			profiler::scope timed(profiler::zone::brains);
 			profiler::add(profiler::counter::actors);
 			struct cost

@@ -35,6 +35,7 @@
 #include <format>
 #include <cstdint>
 #include <map>
+#include <tuple>
 
 using namespace openrayman;
 
@@ -836,6 +837,556 @@ TEST_CASE("real data: cutscene bars follow the controller script")
 	CHECK(vm.get_variable(controller, 60).as_float() == doctest::Approx(0));
 	CHECK(vm.world_view_bounds().top == 0);
 	CHECK(vm.world_view_bounds().bottom == 1000);
+}
+
+TEST_CASE("channel position uses the selected part and falls back to the actor")
+{
+	game::live_memory m(three_super_objects());
+	auto so = m.allocate(0x48), actor = m.allocate(0x38), data = m.allocate(0x118);
+	auto transform = m.allocate(0x58), part = m.allocate(0x48), part_transform = m.allocate(0x58);
+	auto table = m.allocate(60), script = m.allocate(24);
+	m.write<std::uint32_t>(so, 2);
+	m.write(so + 4, actor);
+	m.write(actor, data);
+	m.write(so + 0x24, transform);
+	m.write(transform + 4, vec3{ 1, 2, 3 });
+	m.write(part + 0x24, part_transform);
+	m.write(part_transform + 4, vec3{ 4, 5, 6 });
+	m.write(data + 0x90, table);
+	m.write(table + 20, part);
+	m.write<std::uint32_t>(script, 210);
+	m.write<std::uint8_t>(script + 7, std::uint8_t(node_type::function));
+	m.write<std::uint8_t>(script + 14, 1);
+	m.write<std::uint8_t>(script + 15, std::uint8_t(node_type::integer));
+	game::interpreter vm(m, so);
+	game::register_handlers(vm);
+	auto check = [&](std::uint32_t index, vec3 expected) {
+		m.write(script + 8, index);
+		game::value result;
+		CHECK(vm.eval(so, script, result) == script + 16);
+		CHECK(result.words == game::value::vector(expected[0], expected[1], expected[2]).words);
+	};
+	check(1, { 4, 5, 6 });
+	check(2, { 1, 2, 3 });
+	check(255, { 0, 0, 0 });
+	m.write<std::uint32_t>(data + 0x90, 0);
+	check(1, { 1, 2, 3 });
+
+	auto brain = m.allocate(12);
+	m.write(actor + 0x0C, brain);
+	m.write<std::uint32_t>(script, 237);
+	m.write<std::uint8_t>(script + 7, std::uint8_t(node_type::procedure));
+	m.write<std::uint32_t>(script + 8, 0x123);
+	game::value result;
+	CHECK(vm.eval(so, script, result) == script + 16);
+	CHECK(m.u8(brain + 8) == 0x23);
+	auto standard = m.allocate(0x34);
+	m.write(actor + 4, standard);
+	m.write<std::uint32_t>(script, 438);
+	CHECK(vm.eval(so, script, result) == script + 16);
+	CHECK(m.u8(standard + 0x33) == 0x23);
+}
+
+// Synthetic script calls retain value types and verify argument consumption as well as writes.
+struct handler_fixture
+{
+	game::live_memory m{ three_super_objects() };
+	std::uint32_t so = m.allocate(0x48), actor = m.allocate(0x38), data = m.allocate(0x118);
+	std::uint32_t standard = m.allocate(0x34), dynamics = m.allocate(4), base = m.allocate(0x300);
+	std::uint32_t collision = m.allocate(0x68), script = m.allocate(128);
+	game::interpreter vm{ m, so };
+	handler_fixture()
+	{
+		m.write<std::uint32_t>(so, 2); m.write(so + 4, actor);
+		m.write(actor, data); m.write(actor + 4, standard); m.write(standard + 0xC, so);
+		m.write(actor + 8, dynamics); m.write(dynamics, base); m.write(actor + 0x14, collision);
+		game::register_handlers(vm);
+	}
+	game::value invoke(node_type kind, unsigned number, std::initializer_list<game::value> args, std::uint32_t target_actor = 0)
+	{
+		std::uint32_t start = script;
+		if(target_actor)
+		{
+			m.write<std::uint32_t>(script, 24); m.write<std::uint8_t>(script + 6, 0);
+			m.write<std::uint8_t>(script + 7, std::uint8_t(node_type::operator_));
+			m.write(script + 8, target_actor); m.write<std::uint8_t>(script + 14, 1);
+			m.write<std::uint8_t>(script + 15, std::uint8_t(node_type::actor));
+			start += 16;
+		}
+		m.write(start, number); m.write<std::uint8_t>(start + 6, 1);
+		m.write<std::uint8_t>(start + 7, std::uint8_t(kind));
+		unsigned j = 0;
+		for(auto v : args)
+		{
+			auto at = start + 8 + j * 8;
+			m.write(at, 1000u + j); m.write<std::uint8_t>(at + 6, 2);
+			m.write<std::uint8_t>(at + 7, std::uint8_t(node_type::function));
+			vm.on_function(1000u + j++, [v](game::call& c, game::value& out) { out = v; return c.args; });
+		}
+		game::value result;
+		CHECK(vm.eval(so, script, result) == start + 8 + unsigned(args.size()) * 8);
+		CHECK(vm.missing.empty());
+		return result;
+	}
+	game::value integer(int n) { return game::value::integer(n); }
+	game::value me() { return game::value::of(game::value_type::actor, actor); }
+	game::value object(std::uint32_t n) { return game::value::of(game::value_type::super_object, n); }
+	void procedure(unsigned n, std::initializer_list<game::value> args) { invoke(node_type::procedure, n, args); }
+	game::value function(unsigned n, std::initializer_list<game::value> args = {}) { return invoke(node_type::function, n, args); }
+	bool condition(unsigned n, std::initializer_list<game::value> args = {}) { return invoke(node_type::condition, n, args).word() != 0; }
+};
+
+TEST_CASE("handler census: object and collision flags preserve neighboring bits")
+{
+	handler_fixture f;
+	f.m.write<std::uint32_t>(f.so + 0x2C, 0x80000001);
+	f.procedure(62, { f.object(f.so), f.integer(31), f.integer(2) });
+	CHECK(f.m.u32(f.so + 0x2C) == 1);
+	f.procedure(62, { f.object(f.so), f.integer(32), f.integer(1) });
+	f.procedure(62, { f.object(f.so), f.integer(0), f.integer(3) });
+	CHECK(f.m.u32(f.so + 0x2C) == 1);
+	f.procedure(311, { f.object(f.so), f.integer(63), f.integer(-1) });
+	CHECK(f.m.u32(f.so + 0x30) == 0x80000000);
+	f.procedure(311, { f.object(f.so), f.integer(31), f.integer(0) });
+	CHECK(f.m.u32(f.so + 0x30) == 0);
+	const unsigned masks[] = { 1, 2, 4, 8, 0x20, 0x40 };
+	for(unsigned j = 0; j < 6; ++j)
+	{
+		f.m.write<std::uint8_t>(f.collision + 0x42, 0x90);
+		f.procedure(334 + j, { f.integer(257) });
+		CHECK(f.m.u8(f.collision + 0x42) == (0x90 | masks[j]));
+		f.procedure(334 + j, { f.integer(256) });
+		CHECK(f.m.u8(f.collision + 0x42) == 0x90);
+	}
+	f.procedure(439, { f.integer(0x123), f.integer(-2) });
+	CHECK(f.m.u8(f.standard + 0x2A) == 0x23);
+	CHECK(f.m.u8(f.standard + 0x2B) == 0xFE);
+	CHECK(f.function(271).as_int() == 0x23); CHECK(f.function(272).as_int() == 0xFE);
+	f.procedure(438, {f.integer(0x180)}); CHECK(f.function(270).as_int() == 0x80);
+	f.procedure(66, {});
+	f.vm.menu_request[3] = 0;
+	CHECK_FALSE(f.condition(124));
+	f.vm.menu_request[3] = 7;
+	CHECK(f.condition(124));
+}
+
+TEST_CASE("handler census: dynamics fields and linked selections")
+{
+	handler_fixture f;
+	const std::pair<unsigned, unsigned> fields[] = {
+		{264,0x1C},{265,0x20},{267,0x154},{268,0x158},{269,0x15C},{271,0x1DC},
+		{272,0x1E0},{273,0x1E4},{275,0x160},{277,0x164},{293,0x168},{294,0x16C},{295,0x170}
+	};
+	for(auto [procedure, offset] : fields)
+	{
+		f.procedure(procedure, { game::value::real(-0.25f) });
+		CHECK(f.m.f32(f.base + offset) == -0.25f);
+	}
+	f.procedure(266, { game::value::real(45) });
+	CHECK(f.m.f32(f.base + 0x14) == doctest::Approx(1.0f));
+	f.procedure(270, { game::value::real(0.25f), game::value::real(0.5f), game::value::real(1) });
+	CHECK(f.m.f32(f.base + 0x154) == 0.25f);
+	CHECK(f.m.f32(f.base + 0x158) == 0.5f);
+	CHECK(f.m.f32(f.base + 0x15C) == 1);
+	f.procedure(276, { game::value::vector(1, 2, 3) });
+	f.procedure(278, { game::value::vector(4, -2, 1) });
+	CHECK(f.m.read<vec3>(f.base + 0x184) == vec3{5, 0, 4});
+	f.m.write<std::uint32_t>(f.base, 1);
+	f.procedure(146, { f.me(), f.integer(0) });
+	CHECK(f.m.u32(f.base) == 0x400001);
+	f.procedure(146, { f.me(), f.integer(1) });
+	CHECK(f.m.u32(f.base) == 1);
+	f.procedure(305, { f.integer(257) });
+	CHECK(f.m.u32(f.base + 8) == 0x40000000);
+	f.procedure(305, { f.integer(256) });
+	CHECK(f.m.u32(f.base + 8) == 0);
+	auto head = f.m.allocate(12), second = f.m.allocate(12);
+	f.m.write(f.base + 0x64, head); f.m.write(head + 8, second);
+	f.procedure(150, { f.me(), f.integer(2) });
+	CHECK(f.m.u32(f.base + 0x68) == second);
+	for(int n : { 0, -1, 3 })
+	{
+		f.procedure(150, { f.me(), f.integer(n) });
+		CHECK(f.m.u32(f.base + 0x68) == head);
+	}
+}
+
+TEST_CASE("handler census: graph cursor wraps, clamps, and preserves failed moves")
+{
+	handler_fixture f;
+	auto cursor = f.m.allocate(12), graph = f.m.allocate(12), n0 = f.m.allocate(16), n1 = f.m.allocate(16), n2 = f.m.allocate(16);
+	f.m.write(f.actor + 0x18, cursor); f.m.write(cursor, graph); f.m.write(graph, n0);
+	f.m.write<std::uint32_t>(graph + 8, 3); f.m.write(n0, n1); f.m.write(n1, n2);
+	f.m.write<std::uint32_t>(n0 + 12, 100); f.m.write<std::uint32_t>(n1 + 12, 200); f.m.write<std::uint32_t>(n2 + 12, 300);
+	CHECK(f.function(128).as_int() == 0);
+	CHECK(f.function(129).as_int() == 2);
+	CHECK(f.function(127, { f.integer(99) }).as_int() == 2);
+	CHECK(f.function(130, { f.integer(1) }).as_int() == -1);
+	CHECK(f.function(126).as_int() == 2);
+	CHECK(f.function(131, { f.integer(2) }).as_int() == 0);
+	CHECK(f.function(132, { f.integer(0) }).word() == 300);
+	CHECK(f.function(132, { f.integer(3) }).word() == 0);
+	CHECK(f.function(137, { f.integer(100) }).as_int() == 2);
+	CHECK(f.function(138, { f.integer(200) }).as_int() == 1);
+	CHECK(f.function(138, { f.integer(999) }).as_int() == -1);
+	CHECK(f.function(126).as_int() == 1);
+	f.m.write<std::uint8_t>(cursor + 8, 1);
+	CHECK(f.function(127, { f.integer(-1) }).as_int() == 2);
+	CHECK(f.function(130, { f.integer(2) }).as_int() == 1);
+	CHECK(f.function(131, { f.integer(5) }).as_int() == 2);
+	CHECK(f.function(132, { f.integer(-1) }).word() == 100);
+}
+
+TEST_CASE("handler census: list mutation and membership keep stable order")
+{
+	handler_fixture f;
+	auto list = f.m.allocate(20), other = f.m.allocate(0x48), other_actor = f.m.allocate(0x38), other_standard = f.m.allocate(0x34);
+	f.m.write<std::uint8_t>(list + 1, 4);
+	f.m.write<std::uint32_t>(other, 2); f.m.write(other + 4, other_actor);
+	f.m.write(other_actor + 4, other_standard); f.m.write(other_standard + 0xC, other);
+	auto l = game::value::of(game::value_type::buffer, list);
+	f.procedure(25, { l, f.me() });
+	f.procedure(25, { l, f.object(other) });
+	f.procedure(25, { l, f.me() });
+	CHECK(f.m.u8(list) == 3);
+	f.procedure(28, { l, f.me() });
+	CHECK(f.m.u8(list) == 2);
+	CHECK(f.m.u32(list + 4) == other);
+	CHECK(f.m.u32(list + 8) == f.so);
+	f.procedure(27, { l, f.integer(255) });
+	CHECK(f.m.u8(list) == 1);
+	f.procedure(27, { l, f.integer(9) });
+	CHECK(f.m.u8(list) == 1);
+	f.procedure(27, { l, f.integer(255) });
+	f.procedure(27, { l, f.integer(255) });
+	CHECK(f.m.u8(list) == 0);
+	f.m.write(f.so + 8, other);
+	f.procedure(303, { l });
+	CHECK(f.m.u8(list) == 1);
+	CHECK(f.m.u32(list + 4) == other);
+}
+
+TEST_CASE("handler census: health byte conversion and carried-by alternatives")
+{
+	handler_fixture f;
+	f.m.write<std::uint8_t>(f.standard + 0x21, 5); f.m.write<std::uint8_t>(f.standard + 0x22, 10);
+	f.procedure(1, { f.me(), f.integer(0x123) });
+	CHECK(f.m.u8(f.standard + 0x30) == 0x23);
+	f.procedure(4, { f.me(), game::value::real(258.9f) });
+	CHECK(f.m.u8(f.standard + 0x21) == 7);
+	f.procedure(4, { f.me(), f.integer(9) });
+	CHECK(f.m.u8(f.standard + 0x21) == 10);
+	f.procedure(5, { f.me(), f.integer(20) });
+	CHECK(f.m.u8(f.standard + 0x21) == 0);
+	auto carrier = f.m.allocate(0x48);
+	f.m.write<std::uint32_t>(f.base + 0xC, 4); f.m.write(f.base + 0x284, carrier);
+	CHECK(f.condition(104, { f.object(carrier) }));
+	f.m.write<std::uint32_t>(f.base + 0x284, 0);
+	CHECK_FALSE(f.condition(104, { f.object(carrier) }));
+	f.m.write(carrier + 8, f.so); f.m.write<std::uint32_t>(f.base + 0xC, 0);
+	CHECK(f.condition(104, { f.object(carrier) }));
+	f.m.write<std::uint32_t>(carrier + 8, 0);
+	CHECK_FALSE(f.condition(104, { f.object(carrier) }));
+	auto brain = f.m.allocate(12), mind = f.m.allocate(20), reflex = f.m.allocate(32);
+	f.m.write(f.actor + 0xC, brain); f.m.write(brain, mind); f.m.write(mind + 8, reflex);
+	f.m.write<std::uint32_t>(reflex + 8, 1234);
+	CHECK(f.condition(69, { f.me(), f.integer(1234) }));
+	CHECK_FALSE(f.condition(69, { f.me(), f.integer(1235) }));
+}
+
+TEST_CASE("handler census: zone edits affect queries and invalidate cached surfaces")
+{
+	handler_fixture f;
+	auto head = f.m.allocate(12), node = f.m.allocate(8), zone = f.m.allocate(0x50);
+	auto vertices = f.m.allocate(24), kinds = f.m.allocate(4), elements = f.m.allocate(4), element = f.m.allocate(4), entries = f.m.allocate(12);
+	f.m.write(f.collision + 8, head); f.m.write(f.collision + 4, head); f.m.write(f.collision, head);
+	f.m.write(head, node); f.m.write<std::uint32_t>(head + 8, 1); f.m.write(node + 4, zone);
+	f.m.write(zone, vertices); f.m.write(zone + 0x10, kinds); f.m.write(zone + 0x14, elements);
+	f.m.write(elements, element); f.m.write(element, entries);
+	f.m.write<std::int16_t>(kinds, 7); f.m.write<float>(entries, 1);
+	f.procedure(307, { f.me(), f.integer(1), game::value::vector(2, 4, 6) });
+	CHECK(f.m.read<vec3>(vertices) == vec3{2, 4, 6});
+	for(unsigned fn : {169, 170, 171})
+		CHECK(f.function(fn, { f.integer(1) }).words == game::value::vector(2, 4, 6).words);
+	f.vm.surface_cache().actors[f.so] = {};
+	f.procedure(420, { f.integer(1), game::value::real(2.5f) });
+	CHECK(f.m.f32(entries) == 2.5f);
+	CHECK(f.vm.surface_cache().actors.empty());
+	CHECK(f.function(175, { f.integer(1) }).words == game::value::vector(2.5f, 2.5f, 2.5f).words);
+	f.m.write<std::int16_t>(kinds, 8);
+	f.m.write<std::int16_t>(entries, 0); f.m.write<std::int16_t>(entries + 2, 1);
+	f.m.write(vertices, vec3{1, 2, 3}); f.m.write(vertices + 12, vec3{5, 8, 11});
+	f.procedure(308, { f.me(), f.integer(1), game::value::vector(10, 20, 30) });
+	CHECK(f.m.read<vec3>(vertices) == vec3{10, 20, 30});
+	CHECK(f.m.read<vec3>(vertices + 12) == vec3{14, 26, 38});
+	CHECK(f.function(171, { f.integer(1) }).words == game::value::vector(12, 23, 34).words);
+	f.procedure(309, { f.me(), f.integer(1), game::value::vector(0, 0, 0) });
+	CHECK(f.m.read<vec3>(vertices + 12) == vec3{4, 6, 8});
+	f.procedure(340, { f.integer(0x123) });
+	CHECK(f.m.u8(f.collision + 0x40) == 0x23);
+}
+
+TEST_CASE("handler census: part positions, scale and direction use the chosen transform")
+{
+	handler_fixture f;
+	auto world = f.m.allocate(0x58), local = f.m.allocate(0x58), part = f.m.allocate(0x48), table = f.m.allocate(40);
+	f.m.write(f.data + 0x90, table); f.m.write(table + 20, part);
+	f.m.write(part + 0x24, world); f.m.write(part + 0x20, local); f.m.write(f.so + 0x24, world);
+	f.m.write(world + 4, vec3{10, 20, 30}); f.m.write(local + 4, vec3{1, 2, 3});
+	f.m.write<std::uint32_t>(world, 4);
+	f.m.write(world + 0x10, vec3{0, 1, 0}); f.m.write(world + 0x1C, vec3{-1, 0, 0}); f.m.write(world + 0x28, vec3{0, 0, 1});
+	f.m.write(world + 0x34, vec3{0, 2, 0}); f.m.write(world + 0x40, vec3{-3, 0, 0}); f.m.write(world + 0x4C, vec3{0, 0, 4});
+	CHECK(f.function(1).words == game::value::vector(10, 20, 30).words);
+	CHECK(f.function(210, { f.integer(1) }).words == game::value::vector(10, 20, 30).words);
+	CHECK(f.function(211, { f.integer(1) }).words == game::value::vector(1, 2, 3).words);
+	CHECK(f.function(212, { f.integer(1) }).words == game::value::vector(2, 3, 4).words);
+	auto forward = f.function(213, { f.integer(1) });
+	CHECK(forward.component(0) == 1); CHECK(forward.component(1) == 0); CHECK(forward.component(2) == 0);
+	for(unsigned n : {210, 211, 212, 213}) CHECK(f.function(n, { f.integer(255) }).words == game::value::vector(0, 0, 0).words);
+}
+
+TEST_CASE("handler census: projection and ballistic calculations have exact simple cases")
+{
+	handler_fixture f;
+	auto v = [](float x, float y, float z) { return game::value::vector(x,y,z); };
+	CHECK(f.function(178, { v(3,4,0), v(0,0,0), v(1,0,0) }).words == v(0,-4,0).words);
+	CHECK(f.function(178, { v(3,4,0), v(0,0,0), v(0,0,0) }).words == v(0,0,0).words);
+	CHECK(f.function(179, { v(3,4,0), v(0,0,0), v(2,0,0) }).words == v(-1,-4,0).words);
+	CHECK(f.function(179, { v(-1,4,0), v(0,0,0), v(2,0,0) }).words == v(1,-4,0).words);
+	CHECK(f.function(179, { v(3,4,0), v(0,0,0), v(0,0,0) }).words == v(-3,-4,0).words);
+	f.m.write<float>(f.base + 0x10, 8);
+	CHECK(f.function(238, { v(0,0,0), v(8,4,0), game::value::real(4) }).words == v(4,2,8).words);
+	CHECK(f.function(238, { v(0,0,0), v(8,4,0), game::value::real(-1) }).words == v(0,0,0).words);
+	f.m.write<float>(f.base + 0x10, 0);
+	CHECK(f.function(238, { v(0,0,0), v(8,4,0), game::value::real(4) }).words == v(0,0,0).words);
+}
+
+TEST_CASE("handler census: directed graph fields and reset restore saved defaults")
+{
+	handler_fixture f;
+	auto graph = f.m.allocate(12), first = f.m.allocate(28), last = f.m.allocate(28), links = f.m.allocate(12), link = f.m.allocate(32);
+	f.m.write(graph, first); f.m.write(first, last); f.m.write<std::uint32_t>(first + 12, 100); f.m.write<std::uint32_t>(last + 12, 200);
+	f.m.write(first + 0x18, links); f.m.write(links, link); f.m.write(link + 12, last);
+	f.m.write<std::uint32_t>(first + 0x14, 8); f.m.write<std::uint32_t>(link + 0x14, 3); f.m.write<std::uint32_t>(link + 0x1C, 9);
+	f.procedure(400, { f.integer(int(graph)) });
+	CHECK(f.function(144, {f.integer(int(graph)), f.integer(100)}).word() == 8);
+	CHECK(f.function(140, {f.integer(int(graph)), f.integer(100), f.integer(200)}).word() == 3);
+	CHECK(f.function(142, {f.integer(int(graph)), f.integer(100), f.integer(200)}).word() == 9);
+	CHECK(f.function(141, {f.integer(int(graph)), f.integer(100), f.integer(200), f.integer(4), f.integer(0)}).as_int() == 0);
+	CHECK(f.m.u32(link + 0x10) == 7);
+	CHECK(f.function(141, {f.integer(int(graph)), f.integer(100), f.integer(200), f.integer(3), f.integer(4)}).as_int() == 0);
+	CHECK(f.m.u32(link + 0x10) == 4);
+	CHECK(f.function(143, {f.integer(int(graph)), f.integer(100), f.integer(200), f.integer(-8)}).as_int() == 0);
+	CHECK(f.m.read<std::int32_t>(link + 0x18) == -8);
+	CHECK(f.function(142, {f.integer(int(graph)), f.integer(200), f.integer(100)}).as_int() == -1);
+	f.procedure(400, { f.integer(int(graph)) });
+	CHECK(f.m.u32(link + 0x10) == 3); CHECK(f.m.u32(link + 0x18) == 9);
+}
+
+TEST_CASE("handler census: mechanics reset, update stamp and contact actor ancestor")
+{
+	handler_fixture f;
+	auto state = f.m.allocate(0x30), mechanics = f.m.allocate(0x3C), report = f.m.allocate(0x100), part = f.m.allocate(0x48);
+	f.m.write(f.data + 4, state); f.m.write(state + 0x24, mechanics);
+	f.m.write<std::uint32_t>(mechanics, 1); f.m.write<std::uint32_t>(mechanics + 4, 4); f.m.write<float>(mechanics + 8, 25);
+	f.procedure(80, {}); CHECK(f.m.u32(f.base + 4) == mechanics); CHECK(f.m.f32(f.base + 0x10) == 25);
+	f.m.write<float>(f.base + 0x10, 3);
+	f.procedure(80, {}); CHECK(f.m.f32(f.base + 0x10) == 25);
+	f.vm.next_tick(); CHECK_FALSE(f.condition(56, { f.me() }));
+	f.m.write(f.standard + 0x18, f.vm.frame_number()); CHECK(f.condition(56, { f.me() }));
+	f.vm.next_tick(); CHECK_FALSE(f.condition(56, { f.me() }));
+	f.m.write(f.base + 0x150, report); f.m.write<std::uint32_t>(report + 4, 0x10000);
+	f.m.write(report + 0xA4, part); f.m.write(part + 0x1C, f.so);
+	CHECK(f.condition(33, { f.me() }));
+	f.m.write<std::uint32_t>(report + 4, 0); CHECK_FALSE(f.condition(33, { f.me() }));
+}
+
+TEST_CASE("handler census: scalar speeds set the appropriate axes and preserve other fields")
+{
+	handler_fixture f;
+	for(auto [number, offset, flags] : std::initializer_list<std::tuple<unsigned,unsigned,unsigned>>{
+		{185,0x2C,0x84000}, {187,0x24,0xE4000}, {189,0x30,0x100000}, {191,0x38,0x400000},
+		{192,0x30,0x300000}, {193,0x30,0x700000}, {195,0x30,0x108000}, {196,0x34,0x208000},
+		{197,0x38,0x408000}, {199,0x30,0x708000}, {202,0x190,0x800000}, {203,0x194,0x1000000},
+		{204,0x198,0x2000000}, {205,0x190,0x1800000}, {206,0x190,0x3800000},
+		{208,0x24,0x810000}, {209,0x28,0x1010000}, {210,0x2C,0x2010000},
+		{211,0x24,0x1810000}, {212,0x24,0x3810000}, {281,0x19C,0x4000000},
+		{282,0x1A0,0x8000000}, {283,0x1A4,0x10000000}, {284,0x19C,0x1C000000}})
+	{
+		f.m.write<std::uint32_t>(f.base + 8, 1);
+		if(number == 187 || number == 193 || number == 199 || number == 206 || number == 212 || number == 284)
+			f.procedure(number, {game::value::real(2),game::value::real(3),game::value::real(4)});
+		else if(number == 192 || number == 205 || number == 211)
+			f.procedure(number, {game::value::real(2),game::value::real(3)});
+		else f.procedure(number, {game::value::real(2)});
+		CHECK(f.m.f32(f.base + offset) == 2);
+		CHECK(f.m.u32(f.base + 8) == (flags | 1));
+	}
+	f.m.write<std::uint32_t>(f.base + 8, 0x1C000001);
+	f.procedure(285, {}); CHECK(f.m.u32(f.base + 8) == 0x18000001);
+	f.procedure(286, {}); CHECK(f.m.u32(f.base + 8) == 0x10000001);
+	f.procedure(287, {}); CHECK(f.m.u32(f.base + 8) == 1);
+	f.procedure(262, {f.integer(1)}); CHECK(f.m.u32(f.base + 8) == 0x2001);
+	f.procedure(262, {f.integer(256)}); CHECK(f.m.u32(f.base + 8) == 1);
+}
+
+TEST_CASE("handler census: percentage channel packing and native crossed addition")
+{
+	handler_fixture f;
+	auto packed = game::value::of(0x27, 0x001E140A);
+	CHECK(f.function(76, {f.integer(10),f.integer(20),f.integer(30)}).word() == packed.word());
+	CHECK(f.function(75, {f.integer(-1),game::value::real(25.9f),f.integer(200),f.integer(100)}).word() == 0x64641900);
+	CHECK(f.function(70, {packed,game::value::of(0x27,0x04030201)}).word() == 0x0420170B);
+	CHECK(f.function(71, {packed,f.integer(5)}).word() == 0x001E140F);
+	CHECK(f.function(72, {packed,f.integer(5)}).word() == 0x0023140A);
+	CHECK(f.function(73, {packed,f.integer(5)}).word() == 0x001E190A);
+	CHECK(f.function(74, {packed,f.integer(5)}).word() == 0x051E140A);
+	for(unsigned j = 0; j < 4; ++j)
+		CHECK(f.function(77 + j, {game::value::of(0x27, 0xFF1E140A)}).word() == std::array<unsigned,4>{10,20,30,100}[j]);
+	CHECK(f.function(71, {packed,f.integer(-1)}).word() == 0x001E1464);
+}
+
+TEST_CASE("handler census: secondary dynamics and high-word masks")
+{
+	handler_fixture f;
+	auto block = f.m.allocate(0x20), masks = f.m.allocate(8), dynamics = f.m.allocate(8);
+	f.m.write(f.actor + 8, dynamics); f.m.write(dynamics + 4, block); f.m.write(block + 0x10, vec3{1,2,3});
+	CHECK(f.function(311).words == game::value::vector(1,2,3).words);
+	f.m.write(f.actor + 0x2C, masks);
+	f.procedure(364, {f.integer(0x12345678), f.integer(-1)});
+	CHECK(f.m.u32(masks) == 0x56780000); CHECK(f.m.u32(masks + 4) == 0xFFFF0000);
+}
+
+TEST_CASE("handler census: shortest paths honor capability bits and cheaper queued routes")
+{
+	handler_fixture f;
+	auto graph = f.m.allocate(12), cursor = f.m.allocate(12), a = f.m.allocate(28), b = f.m.allocate(28), c = f.m.allocate(28);
+	auto ab_list = f.m.allocate(12), b_list = f.m.allocate(12), ab = f.m.allocate(32), ac = f.m.allocate(32), bc = f.m.allocate(32);
+	f.m.write(f.actor + 0x18, cursor); f.m.write(graph, a); f.m.write<std::uint32_t>(graph + 8, 3);
+	f.m.write(a, b); f.m.write(b, c); f.m.write<std::uint32_t>(a + 12, 100); f.m.write<std::uint32_t>(b + 12, 200); f.m.write<std::uint32_t>(c + 12, 300);
+	f.m.write(a + 0x18, ab_list); f.m.write(ab_list, ac); f.m.write(ac, ab); f.m.write(ac + 12, c);
+	f.m.write(ab + 12, b); f.m.write(b + 0x18, b_list); f.m.write(b_list, bc); f.m.write(bc + 12, c);
+	f.m.write<std::uint32_t>(ac + 0x10, 2); f.m.write<std::uint32_t>(ac + 0x18, 10);
+	f.m.write<std::uint32_t>(ab + 0x10, 1); f.m.write<std::uint32_t>(ab + 0x18, 2);
+	f.m.write<std::uint32_t>(bc + 0x10, 1); f.m.write<std::uint32_t>(bc + 0x18, 3);
+	f.m.write<std::uint32_t>(f.standard + 0x1C, 3);
+	CHECK(f.function(121, {f.integer(int(graph)),f.integer(100),f.integer(300)}).as_int() == 3);
+	CHECK(f.function(126).as_int() == 0);
+	CHECK(f.function(132, {f.integer(0)}).word() == 100);
+	CHECK(f.function(132, {f.integer(1)}).word() == 200);
+	CHECK(f.function(132, {f.integer(2)}).word() == 300);
+	CHECK(f.function(133, {f.integer(0)}).word() == 1);
+	CHECK(f.function(127, {f.integer(99)}).as_int() == 2);
+	CHECK(f.function(131, {f.integer(1)}).as_int() == 1);
+	CHECK(f.function(138, {f.integer(100)}).as_int() == 0);
+	f.m.write<std::uint32_t>(f.standard + 0x1C, 2);
+	CHECK(f.function(121, {f.integer(int(graph)),f.integer(100),f.integer(300)}).as_int() == 2);
+	CHECK(f.function(132, {f.integer(1)}).word() == 300);
+	CHECK(f.function(133, {f.integer(0)}).word() == 2);
+	f.m.write<std::uint32_t>(f.standard + 0x1C, 0);
+	CHECK(f.function(121, {f.integer(int(graph)),f.integer(100),f.integer(300)}).as_int() == 0);
+	CHECK(f.function(126).as_int() == -1);
+	CHECK(f.function(132, {f.integer(0)}).word() == 0);
+}
+
+TEST_CASE("handler census: list model and family filters distinguish retaining from dropping")
+{
+	handler_fixture f;
+	auto brain = f.m.allocate(12), mind = f.m.allocate(20), list = f.m.allocate(12);
+	f.m.write(f.actor + 0xC, brain); f.m.write(brain, mind); f.m.write<std::uint32_t>(mind, 123);
+	f.m.write<std::uint32_t>(f.data + 0x14, 456);
+	f.m.write<std::uint8_t>(list + 1, 2);
+	auto l = game::value::of(game::value_type::buffer, list);
+	f.procedure(25, {l, f.me()});
+	CHECK(f.condition(38, {l, f.me()}));
+	CHECK(f.condition(39, {l, f.integer(123)}));
+	CHECK_FALSE(f.condition(39, {l, f.integer(124)}));
+	CHECK(f.condition(40, {l, f.integer(456)}));
+	f.procedure(32, {l, f.integer(456)}); CHECK(f.m.u8(list) == 1);
+	f.procedure(33, {l, f.integer(123)}); CHECK(f.m.u8(list) == 1);
+	f.procedure(36, {l, f.integer(456)}); CHECK(f.m.u8(list) == 0);
+	f.procedure(25, {l, f.me()});
+	f.procedure(37, {l, f.integer(123)}); CHECK(f.m.u8(list) == 0);
+}
+
+TEST_CASE("handler census: redirected byte setters and position queries choose the right actor")
+{
+	handler_fixture f;
+	auto so = f.m.allocate(0x48), actor = f.m.allocate(0x38), standard = f.m.allocate(0x34), brain = f.m.allocate(12), data = f.m.allocate(0x118);
+	auto world = f.m.allocate(0x58), own_world = f.m.allocate(0x58);
+	f.m.write<std::uint32_t>(so, 2); f.m.write(so + 4, actor); f.m.write(actor + 4, standard); f.m.write(standard + 0xC, so);
+	f.m.write(actor + 0xC, brain); f.m.write(actor, data); f.m.write(so + 0x24, world); f.m.write(f.so + 0x24, own_world);
+	f.m.write(world + 4, vec3{4,5,6}); f.m.write(own_world + 4, vec3{1,2,3});
+	f.invoke(node_type::procedure, 237, {f.integer(0x123)}, actor); CHECK(f.m.u8(brain + 8) == 0x23);
+	f.invoke(node_type::procedure, 438, {f.integer(0x124)}, actor); CHECK(f.m.u8(standard + 0x33) == 0x24);
+	CHECK(f.m.u8(f.standard + 0x33) == 0);
+	CHECK(f.invoke(node_type::function, 210, {f.integer(0)}, actor).words == game::value::vector(4,5,6).words);
+	CHECK(f.invoke(node_type::function, 1, {}, actor).words == game::value::vector(1,2,3).words);
+	// Function 1 leaves the pending target alone, as its native handler does.
+	CHECK(f.function(0).words == game::value::vector(4,5,6).words);
+}
+
+TEST_CASE("handler census: the actor tick writes the update stamp only for active actors")
+{
+	handler_fixture f;
+	f.m.write<std::uint8_t>(f.standard + 0x29, 2);
+	std::array<std::uint32_t,1> actors{f.so};
+	game::step(f.vm, actors);
+	CHECK(f.m.u32(f.standard + 0x18) == f.vm.frame_number());
+	CHECK(f.condition(56, {f.me()}));
+	f.m.write<std::uint8_t>(f.standard + 0x29, 0);
+	game::step(f.vm, actors);
+	CHECK_FALSE(f.condition(56, {f.me()}));
+}
+
+TEST_CASE("handler census: channel bytes and animation frame count")
+{
+	handler_fixture f;
+	auto table = f.m.allocate(60), state = f.m.allocate(0x30), animation = f.m.allocate(0x20);
+	f.m.write(f.data + 0x90, table); f.m.write<std::uint32_t>(f.data + 0x94, 3);
+	f.procedure(97, {f.integer(1)}); CHECK(f.m.u8(table + 36) == 1); CHECK(f.m.u8(table + 16) == 0);
+	f.procedure(98, {f.integer(2)}); CHECK(f.m.u8(table + 16) == 1); CHECK(f.m.u8(table + 56) == 0);
+	f.procedure(99, {f.integer(1)}); CHECK(f.m.u8(table + 36) == 0);
+	f.procedure(97, {f.integer(0xFFFF)}); CHECK(f.m.u8(table + 16) == 1); CHECK(f.m.u8(table + 36) == 1); CHECK(f.m.u8(table + 56) == 1);
+	f.procedure(216, {}); CHECK(f.m.u8(table + 16) == 0); CHECK(f.m.u8(table + 36) == 0); CHECK(f.m.u8(table + 56) == 0);
+	f.m.write(f.data + 4, state); f.m.write(state + 4, animation); f.m.write<std::uint16_t>(animation, 456);
+	CHECK(f.function(148).as_int() == 456);
+}
+
+TEST_CASE("handler census: graph neighbor choice and node capability modes")
+{
+	handler_fixture f;
+	auto graph = f.m.allocate(12), a = f.m.allocate(28), b = f.m.allocate(28), c = f.m.allocate(28), list = f.m.allocate(12), ab = f.m.allocate(32), ac = f.m.allocate(32);
+	f.m.write(graph, a); f.m.write(a, b); f.m.write(b, c);
+	f.m.write<std::uint32_t>(a + 12, 100); f.m.write<std::uint32_t>(b + 12, 200); f.m.write<std::uint32_t>(c + 12, 300);
+	f.m.write(a + 0x18, list); f.m.write(list, ab); f.m.write(ab, ac); f.m.write(ab + 12, b); f.m.write(ac + 12, c);
+	f.m.write<std::uint32_t>(ab + 0x10, 1); f.m.write<std::uint32_t>(ac + 0x10, 2);
+	f.m.write<std::uint32_t>(ab + 0x18, 9); f.m.write<std::uint32_t>(ac + 0x18, 5);
+	CHECK(f.function(118, {f.integer(int(graph)),f.integer(100),f.integer(3)}).word() == 300);
+	CHECK(f.function(118, {f.integer(int(graph)),f.integer(100),f.integer(1)}).word() == 200);
+	CHECK(f.function(118, {f.integer(int(graph)),f.integer(100),f.integer(0)}).word() == 0);
+	f.m.write<std::uint32_t>(a + 0x10, 7); f.m.write<std::uint32_t>(b + 0x10, 7);
+	f.procedure(395, {f.integer(int(graph)),f.integer(100),f.integer(2),f.integer(2)});
+	CHECK(f.m.u32(a + 0x10) == 7); CHECK(f.m.u32(b + 0x10) == 5);
+	f.procedure(395, {f.integer(int(graph)),f.integer(100),f.integer(1),f.integer(4)});
+	CHECK(f.m.u32(a + 0x10) == 0); // native mode 4 clears everything via fallthrough
+	f.procedure(395, {f.integer(int(graph)),f.integer(200),f.integer(8),f.integer(3)});
+	CHECK(f.m.u32(a + 0x10) == 0); CHECK(f.m.u32(b + 0x10) == 8);
+}
+
+TEST_CASE("handler census: newly reached capability tests and animation motion")
+{
+	handler_fixture f;
+	CHECK(f.condition(107, {f.integer(7),f.integer(3)}));
+	CHECK_FALSE(f.condition(107, {f.integer(1),f.integer(3)}));
+	CHECK(f.condition(108, {f.integer(1),f.integer(3)}));
+	CHECK_FALSE(f.condition(108, {f.integer(0),f.integer(3)}));
+	f.m.write<std::uint32_t>(f.standard + 0x1C, 5);
+	CHECK(f.condition(110, {f.integer(5)})); CHECK_FALSE(f.condition(110, {f.integer(3)}));
+	CHECK(f.condition(111, {f.integer(3)})); CHECK(f.condition(112, {f.integer(2)}));
+	CHECK_FALSE(f.condition(112, {f.integer(32)}));
+	f.m.write(f.base + 0x54, vec3{2,4,6});
+	CHECK(f.function(239).words == game::value::vector(2,4,6).words);
 }
 
 TEST_CASE("homing ranks live actors only in the current and linked sectors")

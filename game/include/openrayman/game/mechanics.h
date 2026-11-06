@@ -122,5 +122,7 @@ namespace openrayman::game
 	// One tick of an actor's mechanics (0x431AD0, docs/formats/dynamics.md): the speeds the scripts
 	// set and gravity give a target position, the floor stops it, and the result becomes the speed
 	// the scripts read back (dynamics base +0x3C) and the contact word they test (conditions 27..32).
+	// Procedure 80 (0x467770): reinstall the current state mechanics, even unchanged.
+	void reinstall_state_mechanics(live_memory& memory, std::uint32_t actor);
 	void move_actor(live_memory& memory, std::uint32_t super_object, std::uint32_t actor, double ms, const world_collision& world, interpreter* vm = nullptr);
 }

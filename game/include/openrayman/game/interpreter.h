@@ -131,6 +131,8 @@ namespace openrayman::game
 		std::uint32_t main_actor() const { return m_main_actor; }
 		// The game's clock in milliseconds (0x5003EC), which timers in scripts compare against.
 		std::uint32_t clock() const { return m_clock; }
+		// Native frame counter 0x5003E4, used by condition 56.
+		std::uint32_t frame_number() const { return std::uint32_t(m_ticks); }
 		// Call once per tick (1/60 s), before the actors think.
 		void next_tick()
 		{
