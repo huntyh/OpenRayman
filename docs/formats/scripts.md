@@ -155,13 +155,32 @@ prints an actor's scripts in this form.
 
 ## Running the scripts
 
+**Which actor first** (0x40ADA0, the actor frame, from the main loop through 0x49F37C): pass 1
+(0x40AA10) runs the active world's (0x500FD0) children from the head while they are moving
+(standard block +0x28 non-zero) and stops at the first static one; pass 2 (0x40A7C0) walks the
+world tree for the rest, carriers before what they carry; pass 3 (0x40BAD0) a player-slot list.
+Each actor runs once per frame (standard block +0x18 stamped with the frame number 0x5003E4).
+Waking an actor (0x40B4C0, from the wake pass 0x40B620) moves it from the inactive world
+(0x500FC4) to the active one: a moving actor at the head, a static one at the tail. So the
+order is the moving actors newest first, then the static ones in the order they woke. Per actor
+(0x40A5C0) the animation steps first, then the brain and mechanics (0x412230); the clock and
+frame number advance after all actors (0x409DD0); effects and screen text are drawn in a later
+pass (0x40B150 → 0x419A30 → 0x460670 → 0x465C10). The Jail_10 intro actors (nodes 2..13) are
+all static, so our tree order matches there. Where this came from: a DeepSeek read of the
+decompile (2026-11-06), with 0x4120D0, 0x418170/0x418340, 0x40AA10 and 0x40B4C0 checked by us;
+the helper had the head/tail of 0x40B4C0 reversed.
+
 Each frame, for each actor (0x4120D0):
 
 1. Its brain may be slowed: 3D data +0xFE is a period set by the scripts (procedure 341), +0xFF counts
    frames, and the brain runs only when the count wraps to 0. A 1999 time saver; OpenRayman runs
    every brain every frame unless asked to honour it.
-2. 3D data +0x100 (u16) counts the frames the actor has thought; its low byte is what the
-   every-N-frames ifs test.
+2. 3D data +0x100 (u16) counts the frames the actor has thought; it is raised before the rules
+   run and its low byte is copied to 0x4A7070, which the every-N-frames ifs test (keyword handler
+   0x489250, jump table 0x48932C: every 2/4/8/16 frames = (count & 1/3/7/0xF) == 0). The 3D data
+   constructor (0x418170) and the state reset (0x418340) start it at a pseudo-random 1..17
+   (0x449C10(0, 1, 0x11)), so the actors' every-N tests are staggered and differ from run to run.
+   OpenRayman keeps the value from the level file.
 3. The reflex intelligence runs first (mind +0x10 = 0 while it does). If it didn't start a
    meta-action, the normal intelligence runs (mind +0x10 = 1).
 

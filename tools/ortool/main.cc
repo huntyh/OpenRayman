@@ -1556,6 +1556,12 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	{
 		std::uint32_t brain = memory.contains(traced + 0xC, 4) ? memory.u32(traced + 0xC) : 0;
 		std::uint32_t mind = brain && memory.contains(brain, 4) ? memory.u32(brain) : 0;
+		// The standard block's moving byte (+0x28) and state bits (+0x29): moving actors think
+		// first each frame (0x40AA10), the rest in the active world's order (0x40B4C0).
+		std::uint32_t standard_block = memory.contains(traced + 4, 4) ? memory.u32(traced + 4) : 0;
+		if(standard_block && memory.contains(standard_block + 0x28, 2))
+			std::cout << std::format("traced node {}: moving {}, state bits 0x{:X}\n", *trace,
+				memory.u8(standard_block + 0x28), memory.u8(standard_block + 0x29));
 		std::cout << std::format("traced node {}: super object 0x{:X}, actor 0x{:X}, model 0x{:X}, normal 0x{:X}, reflex 0x{:X}, 3D data {}{}, brain runs {}, mechanics runs {}\n",
 			*trace, traced_super, traced,
 			mind && memory.contains(mind, 4) ? memory.u32(mind) : 0,
