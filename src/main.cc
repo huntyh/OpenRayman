@@ -1595,6 +1595,10 @@ namespace
 		}
 		else
 			glClearColor(0.08f, 0.08f, 0.1f, 1.0f);
+		// The clear only touches what the masks allow: a pass that left depth writes off would keep
+		// last frame's depth.
+		glDepthMask(GL_TRUE);
+		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		if(level_view && w > 0 && h > 0)
@@ -1686,6 +1690,11 @@ namespace
 			glPixelStorei(GL_PACK_ALIGNMENT, 1);
 			glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, surface->pixels);
 			SDL_FlipSurface(surface, SDL_FLIP_VERTICAL); // GL reads bottom-up
+			// The window shows colour only; the framebuffer's alpha is whatever the passes wrote
+			// (solid surfaces leave it at their own alpha), so make the saved picture opaque.
+			auto* bytes = static_cast<std::uint8_t*>(surface->pixels);
+			for(int i = 3; i < w * h * 4; i += 4)
+				bytes[i] = 255;
 			SDL_SaveBMP(surface, a.screenshot->string().c_str());
 			SDL_DestroySurface(surface);
 		}

@@ -978,14 +978,6 @@ namespace openrayman
 		m_drawn_sectors.assign(m_lights.sectors.size(), all || m_camera_sector == std::nullopt);
 		if(!m_camera_sector)
 			return;
-		// Ours: ordinary sectors are always drawn, since the exe also draws sectors seen through
-		// portals (0x44B740), which we don't follow yet; only virtual ones (Jail_10's clouds) need
-		// to be in the camera sector's list.
-		for(std::size_t s = 0; s < m_lights.sectors.size(); s++)
-		{
-			if(!m_lights.sectors[s].is_virtual)
-				m_drawn_sectors[s] = true;
-		}
 		m_drawn_sectors[*m_camera_sector] = true;
 		for(std::size_t s : m_lights.sectors[*m_camera_sector].drawn_with)
 			m_drawn_sectors[s] = true;
@@ -1008,6 +1000,10 @@ namespace openrayman
 		const glm::vec3 forward = -glm::normalize(glm::vec3(camera[2]));
 		glUniform3f(m_u_camera_forward, forward.x, forward.y, forward.z);
 		glUniform1f(m_u_luminosity, m_luminosity - 0.5f);
+		// Uniforms keep their values between frames and start at 0: a part alpha of 0 on the first frame
+		// cut every solid surface away (the --screenshot frame showed no solid scenery).
+		glUniform1f(m_u_part_alpha, 1.0f);
+		glUniform1f(m_u_sharpen, 0.0f);
 		std::vector<part> parts;
 		parts.reserve(m_level_cards.size() + m_parts.size());
 		follow_camera(eye);
