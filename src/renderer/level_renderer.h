@@ -59,6 +59,8 @@ namespace openrayman
 			// Drawn by the game's screen pass (procedure 409: the intro's Ubisoft logo, the menu
 			// butterfly), not lit by the level: see lights_for.
 			bool screen = false;
+			// Its actor's transparency level (procedures 11 and 12), 0..1; below 1 it's drawn blended.
+			float alpha = 1;
 		};
 
 		// What to draw of the actors this frame. Parts naming a mesh that wasn't loaded are skipped.
@@ -189,6 +191,7 @@ namespace openrayman
 			std::array<glm::vec3, max_part_lights> vector{};
 			std::array<glm::vec4, max_part_lights> color{};
 			std::array<glm::vec2, max_part_lights> range{};
+			bool sharpen = false; // screen objects: redraw stretched cut-out edges crisply (u_sharpen)
 		};
 		part_lights lights_for(const part& p) const;
 
@@ -205,7 +208,7 @@ namespace openrayman
 		GLuint m_program = 0;
 		GLint m_u_view_projection = -1;
 		GLint m_u_model = -1;
-		GLint m_u_alpha_cut = -1;
+		GLint m_u_alpha_cut = -1, m_u_sharpen = -1, m_u_part_alpha = -1;
 		GLint m_u_edge_clamp = -1;
 		GLint m_u_uv_offset = -1;
 		GLint m_u_camera = -1, m_u_camera_forward = -1, m_u_lighting = -1;

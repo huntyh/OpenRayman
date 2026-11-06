@@ -343,6 +343,16 @@ a black material ambient and a plain white texture, so in the game its white-to-
 must come from light in that pass. That light is not traced yet, so ours is plain white. The 409
 scale (width / 640) isn't applied.
 
+The logo fades in and out with procedures 11 and 12 (0x472450, cases 0xB and 0xC; first read by
+a DeepSeek helper, checked against the decompile). 11 sets draw flag 8 at super object +0x2C
+(and 3D data +0xE8) when its argument is 0, and clears it otherwise. Actors are saved with +0x2C =
+0xFFFFFFFF, so flag 8 (opaque) is on by default. 12 writes a transparency level, clamped to
+0..255 (0x49CC60 = 255, below 0 gives 0x49CBFC = 0), as an f32 to +0x38. Then 0x40F260 copies it
+to the super objects listed at 3D data +0x98 (entry: super object, -, next) that lack flag 0x10000
+at +0x30, passing flag 8 on to them. The logo's actor calls 11(1) once, then 12 each frame
+while its var9 rises by var4 x frame time / 16 and falls again. OpenRayman draws an actor whose
+flag 8 is clear at level / 255, blended.
+
 ### Exit game (2026-11-04)
 
 Node 6 behaviour 11 handles the main menu. Entry 5 sets var55 to 6 and switches to behaviour 9

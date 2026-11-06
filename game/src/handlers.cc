@@ -3889,6 +3889,57 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 11 (0x472450, case 0xB): whether the actor's transparency level counts. 0 sets draw flag 8
+		// (opaque, the default most actors are saved with), anything else clears it. Kept in the
+		// super object (+0x2C) and the 3D data (+0xE8), like procedure 13's bits.
+		std::uint32_t transparency_on(call& c)
+		{
+			value on;
+			next_arg(c, on);
+			live_memory& m = c.vm.memory();
+			std::uint32_t so = c.vm.target(c.self, true);
+			if(!so || !m.contains(so + 0x2C, 4))
+				return c.args;
+			std::uint32_t flags = m.u32(so + 0x2C);
+			flags = on.as_float() == 0 ? flags | 8u : flags & ~8u;
+			m.write<std::uint32_t>(so + 0x2C, flags);
+			if(std::uint32_t actor = c.vm.actor_of(so))
+				if(std::uint32_t data = m.u32(actor); data && m.contains(data + 0xE8, 4))
+					m.write<std::uint32_t>(data + 0xE8, flags);
+			return c.args;
+		}
+
+		// 12 (0x472450, case 0xC): the actor's transparency level, 0 (gone) .. 255 (solid), negative
+		// as 0, at super object +0x38 (f32). 0x40F260 hands it to the super objects in the 3D data's
+		// list at +0x98 (entry: super object, -, next), those without flag 0x10000 at +0x30, and
+		// passes draw flag 8 on to them. The intro's Ubisoft logo fades in and out this way.
+		std::uint32_t transparency_level(call& c)
+		{
+			value level;
+			next_arg(c, level);
+			live_memory& m = c.vm.memory();
+			std::uint32_t so = c.vm.target(c.self, true);
+			if(!so || !m.contains(so + 0x38, 4))
+				return c.args;
+			float v = level.as_float();
+			v = v < 0 ? 0.0f : std::min(v, 255.0f);
+			m.write<float>(so + 0x38, v);
+			std::uint32_t actor = c.vm.actor_of(so);
+			std::uint32_t data = actor ? m.u32(actor) : 0;
+			std::uint32_t flags = m.u32(so + 0x2C);
+			int guard = 0;
+			for(std::uint32_t e = data && m.contains(data + 0x98, 4) ? m.u32(data + 0x98) : 0; e && m.contains(e, 12) && guard++ < 256; e = m.u32(e + 8))
+			{
+				std::uint32_t child = m.u32(e);
+				if(!child || !m.contains(child + 0x38, 4) || (m.u32(child + 0x30) & 0x10000))
+					continue;
+				m.write<float>(child + 0x38, v);
+				if(flags & 8)
+					m.write<std::uint32_t>(child + 0x2C, m.u32(child + 0x2C) | 8u);
+			}
+			return c.args;
+		}
+
 		// 13 (0x472D60): bit n (0..31) of an actor's draw flags: 0 clears, 1 sets, 2 flips. Kept in
 		// the super object (+0x2C) and the 3D data (+0xE8).
 		std::uint32_t draw_flag(call& c)
@@ -5503,6 +5554,8 @@ namespace openrayman::game
 		vm.on_procedure(33, list_drop);
 		vm.on_procedure(36, list_drop);
 		vm.on_procedure(37, list_drop);
+		vm.on_procedure(11, transparency_on);
+		vm.on_procedure(12, transparency_level);
 		vm.on_procedure(13, draw_flag);
 		vm.on_procedure(94, set_object_list);
 		vm.on_procedure(160, shift_self);

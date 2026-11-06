@@ -906,6 +906,7 @@ namespace
 	{
 		std::vector<posed_part> parts;
 		std::vector<bool> screen_parts; // per part: drawn by the exe's screen pass (procedure 409)
+		std::vector<float> part_alpha;  // per part: its actor's transparency level
 		for(std::size_t i = 0; i < a.actors.actors.size(); i++)
 		{
 			const actor_set::entry& actor = a.actors.actors[i];
@@ -949,6 +950,13 @@ namespace
 			if(a.vm && a.scripts && i < a.super_object_at.size() && a.vm->screen_objects().contains(a.super_object_at[i]))
 				screen_parts.insert(screen_parts.end(), parts.size() - std::min(parts.size(), first_part), true);
 			screen_parts.resize(parts.size(), false);
+			// Its transparency level counts while draw flag 8 is clear (procedures 11 and 12, 0x472450):
+			// super object +0x2C, level 0..255 at +0x38.
+			float alpha = 1;
+			if(a.vm && a.scripts && i < a.super_object_at.size())
+				if(std::uint32_t so = a.super_object_at[i]; so && a.live->contains(so + 0x2C, 0x10) && !(a.live->u32(so + 0x2C) & 8))
+					alpha = std::clamp(a.live->f32(so + 0x38) / 255.0f, 0.0f, 1.0f);
+			part_alpha.resize(parts.size(), alpha);
 		}
 		std::vector<level_renderer::part> out;
 		out.reserve(parts.size());
@@ -961,7 +969,7 @@ namespace
 				for(int c = 0; c < 4; c++)
 					model[c][r] = part.world.m[r][c];
 			}
-			out.push_back({ part.mesh, model, {}, part.morph_mesh, part.morph_amount, n < screen_parts.size() && screen_parts[n] });
+			out.push_back({ part.mesh, model, {}, part.morph_mesh, part.morph_amount, n < screen_parts.size() && screen_parts[n], n < part_alpha.size() ? part_alpha[n] : 1.0f });
 		}
 		a.level->set_parts(std::move(out));
 		a.level->set_time(a.animation_time);

@@ -124,6 +124,22 @@ namespace openrayman
 			uniform vec4 u_fog;       // near, far, how much fog covers at near and at far (0..1)
 			uniform float u_additive; // additive surfaces fade out in fog instead of taking its colour
 			uniform float u_light_alpha; // see-through surfaces: the lights' alpha counts
+			// Ours: screen objects (the intro's Ubisoft logo) stretch small cut-out textures over the
+			// screen, and bilinear filtering smears their edges over many pixels. Where the alpha
+			// jumps from one texel to the next (a hard edge in the picture) and the texture is
+			// magnified, redraw the edge about one pixel wide at the filtered alpha's half-way line.
+			// Soft gradients in the picture are left as they are.
+			uniform float u_sharpen;
+			uniform float u_part_alpha; // the actor's transparency level (procedures 11 and 12), 0..1
+			float sharpened(float a, vec2 uv)
+			{
+				vec2 texels = fwidth(uv * vec2(textureSize(u_texture, 0)));
+				float per_pixel = max(max(texels.x, texels.y), 1e-5); // texels a pixel covers
+				float change = fwidth(a);
+				float hard = smoothstep(0.25, 0.5, change / per_pixel) * (1.0 - smoothstep(0.75, 1.0, per_pixel));
+				float w = max(change, 1e-4) * 0.75;
+				return mix(a, smoothstep(0.5 - w, 0.5 + w, a), hard);
+			}
 			void main()
 			{
 				// A triangle that stays within one copy of its texture keeps half a texel inside
@@ -148,7 +164,9 @@ namespace openrayman
 				// The level of detail comes from the unclamped coordinates, so clamping doesn't change it.
 				// Scrolling textures tile seamlessly, so their offset goes on after the clamp.
 				vec4 texel = textureGrad(u_texture, uv + u_uv_offset, uv_dx, uv_dy);
-				float alpha = texel.a * (u_light_alpha > 0.5 ? v_light.a : 1.0);
+				if(u_sharpen > 0.5)
+					texel.a = sharpened(texel.a, v_uv);
+				float alpha = texel.a * (u_light_alpha > 0.5 ? v_light.a : 1.0) * u_part_alpha;
 				if(alpha < u_alpha_cut)
 					discard;
 				vec3 color = texel.rgb * v_light.rgb;
@@ -331,6 +349,8 @@ namespace openrayman
 		m_u_model = glGetUniformLocation(m_program, "u_model");
 		m_u_uv_offset = glGetUniformLocation(m_program, "u_uv_offset");
 		m_u_alpha_cut = glGetUniformLocation(m_program, "u_alpha_cut");
+		m_u_sharpen = glGetUniformLocation(m_program, "u_sharpen");
+		m_u_part_alpha = glGetUniformLocation(m_program, "u_part_alpha");
 		m_u_edge_clamp = glGetUniformLocation(m_program, "u_edge_clamp");
 		m_u_camera = glGetUniformLocation(m_program, "u_camera");
 		m_u_camera_forward = glGetUniformLocation(m_program, "u_camera_forward");
@@ -875,6 +895,7 @@ namespace openrayman
 			out.count = 1;
 			out.kind[0] = 0;
 			out.color[0] = glm::vec4(1);
+			out.sharpen = true;
 			return out;
 		}
 		glm::vec3 at(p.model[3]);
@@ -943,7 +964,7 @@ namespace openrayman
 			for(const part& p : *list)
 			{
 				if(p.mesh < m_meshes.size())
-					parts.push_back({ p.mesh, face_camera(p.model, m_meshes[p.mesh].look, camera), p.sector, p.morph_mesh, p.morph_amount, p.screen });
+					parts.push_back({ p.mesh, face_camera(p.model, m_meshes[p.mesh].look, camera), p.sector, p.morph_mesh, p.morph_amount, p.screen, p.alpha });
 			}
 		}
 
@@ -1001,6 +1022,7 @@ namespace openrayman
 		glBindVertexArray(m_vao);
 		const glm::mat4 identity(1.0f);
 		auto use_lights = [this](const part_lights& l) {
+			glUniform1f(m_u_sharpen, l.sharpen ? 1.0f : 0.0f);
 			glUniform1i(m_u_light_count, l.count);
 			if(l.count == 0)
 				return;
@@ -1065,12 +1087,17 @@ namespace openrayman
 		glUniform1i(m_u_lighting, m_lighting ? 2 : 0);
 		for(std::size_t i = 0; i < parts.size(); i++)
 		{
+			if(parts[i].screen || parts[i].alpha < 1)
+				continue; // drawn blended, with the see-through ones
 			glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(parts[i].model));
 			use_lights(part_light[i]);
+			glUniform1f(m_u_part_alpha, parts[i].alpha);
 			morph(parts[i], false);
 			draw_batches(m_meshes[parts[i].mesh].batches, blend::none);
 			morph(parts[i], true);
 		}
+		glUniform1f(m_u_sharpen, 0.0f);
+		glUniform1f(m_u_part_alpha, 1.0f);
 		// The nearly opaque middle of cut-out-like soft surfaces (a leaf, not its fringe) is solid
 		// too: it hides whatever see-through things lie behind it, however they're sorted (sprites come
 		// last). Not for soft gradients like light rays, whose bright body must stay see-through.
@@ -1090,12 +1117,17 @@ namespace openrayman
 		glUniform1i(m_u_lighting, m_lighting ? 2 : 0);
 		for(std::size_t i = 0; i < parts.size(); i++)
 		{
+			if(parts[i].screen || parts[i].alpha < 1)
+				continue;
 			glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(parts[i].model));
 			use_lights(part_light[i]);
+			glUniform1f(m_u_part_alpha, parts[i].alpha);
 			morph(parts[i], false);
 			draw_cores(m_meshes[parts[i].mesh].batches);
 			morph(parts[i], true);
 		}
+		glUniform1f(m_u_sharpen, 0.0f);
+		glUniform1f(m_u_part_alpha, 1.0f);
 
 		// Shadows: blobs laid on the ground below the actors that cast them, over the solid surfaces.
 		if(m_shadow_texture && !m_shadows.empty())
@@ -1167,17 +1199,20 @@ namespace openrayman
 			const batch* b;
 			std::size_t part;
 			GLint first = -1; // a single triangle of the level's, or the whole batch
+			blend mode = blend::alpha; // how it's drawn: its own, or alpha for a screen object's cut-outs
 		};
 		std::vector<see_through_draw> order;
 		for(const see_through_triangle& t : m_see_through_triangles)
-			order.push_back({ glm::length(t.centre - eye), &m_see_through[t.object].b, level, t.first });
+			order.push_back({ glm::length(t.centre - eye), &m_see_through[t.object].b, level, t.first, m_see_through[t.object].b.mode });
 		for(std::size_t i = 0; i < parts.size(); i++)
 		{
 			float distance = glm::length(glm::vec3(parts[i].model[3]) - eye);
 			for(const batch& b : m_meshes[parts[i].mesh].batches)
 			{
-				if(b.mode != blend::none)
-					order.push_back({ distance, &b, i });
+				// A screen object's cut-outs are blended too, so their sharpened edges can be smooth
+				// (u_sharpen); in the solid pass they'd be cut at a staircase of texels.
+				if(b.mode != blend::none || parts[i].screen || parts[i].alpha < 1)
+					order.push_back({ distance, &b, i, -1, b.mode == blend::none ? blend::alpha : b.mode });
 			}
 		}
 		std::ranges::stable_sort(order, [](const see_through_draw& a, const see_through_draw& b) { return a.distance > b.distance; });
@@ -1185,21 +1220,26 @@ namespace openrayman
 		for(std::size_t k = 0; k < order.size(); k++)
 		{
 			const see_through_draw& d = order[k];
-			if(d.b->mode != current)
-				set_blend(current = d.b->mode);
+			if(d.mode != current)
+				set_blend(current = d.mode);
 			if(d.part != placed)
 			{
 				placed = d.part;
 				bool is_level = d.part == level;
 				glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(is_level ? identity : parts[d.part].model));
 				glUniform1i(m_u_lighting, m_lighting ? (is_level ? 1 : 2) : 0);
+				glUniform1f(m_u_part_alpha, is_level ? 1.0f : parts[d.part].alpha);
 				if(!is_level)
 					use_lights(part_light[d.part]);
+				else
+					glUniform1f(m_u_sharpen, 0.0f);
 			}
 			if(d.first < 0)
 			{
+				batch as_drawn = *d.b;
+				as_drawn.mode = d.mode;
 				if(d.part != level) morph(parts[d.part], false);
-				draw_batches(std::span(d.b, 1), d.b->mode);
+				draw_batches(std::span(&as_drawn, 1), d.mode);
 				if(d.part != level) morph(parts[d.part], true);
 				continue;
 			}
@@ -1212,6 +1252,8 @@ namespace openrayman
 			draw_batches(std::span(&run, 1), run.mode);
 		}
 		glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(identity));
+		glUniform1f(m_u_sharpen, 0.0f);
+		glUniform1f(m_u_part_alpha, 1.0f);
 		// Sprites are glows and flames: they shine by themselves.
 		glUniform1i(m_u_lighting, m_lighting ? 3 : 0);
 		glUniform2f(m_u_uv_offset, 0, 0);
