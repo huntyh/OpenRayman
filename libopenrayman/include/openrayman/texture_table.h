@@ -44,8 +44,8 @@ namespace openrayman
 		std::uint32_t flags = 0;
 		std::uint8_t tiling = 0; // the byte before the name; see texture_tiling
 		// +0x2C, 0x00BBGGRR: the colour made transparent when flags has texture_flag::color_key.
-		// Mostly black; Jail_10's mountains use their sky grey (208, 217, 218). The drivers key on
-		// the 16-bit (RGB565) value (GliVd1vf.dll 0x10008019, exe 0x42C370).
+		// Mostly black; Jail_10's mountains use their sky grey (208, 217, 218), the forest's leaves
+		// their background green (GliVd1vf.dll 0x10008019, exe 0x42C370).
 		std::uint32_t color_key = 0;
 		// The size the engine expects. For about 3% of textures the GF file in the archive is
 		// half or double this in some direction; the GF file's own size is what to render with.
@@ -60,7 +60,7 @@ namespace openrayman
 	std::vector<texture_info> read_texture_table(const level_files& files, bool level);
 
 	// Makes the key colour's pixels transparent (alpha 0) in RGBA data when the texture has
-	// texture_flag::color_key. Pixels match on their RGB565 value, as the drivers compare them.
+	// texture_flag::color_key: pixels of exactly the key colour (the exe keeps other colours off it).
 	void apply_color_key(const texture_info& info, std::span<std::uint8_t> rgba);
 
 	// Reads the texture description at a location in memory.

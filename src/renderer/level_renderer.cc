@@ -529,8 +529,11 @@ namespace openrayman
 				try
 				{
 					gf_texture gf = decode_gf(archive->read(*entry));
+					// How it blends goes by the texture's own alpha, before keying: keying a leaf
+					// texture's soft fringe away must not turn it into a solid one.
+					const gf_texture own = gf;
 					// The texture's key colour is transparent (mostly black; Jail_10's mountains key out
-					// their sky grey). These textures have no alpha of their own.
+					// their sky grey; the forest's leaf textures their background green).
 					apply_color_key(info, gf.rgba);
 					bleed_edges(gf.width, gf.height, gf.rgba);
 					texture.id = upload_texture(gf.width, gf.height, gf.rgba.data());
@@ -550,17 +553,17 @@ namespace openrayman
 					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap_v);
 					if(info.flags & texture_flag::additive)
 						texture.mode = blend::additive;
-					else if(has_soft_alpha(gf))
+					else if(has_soft_alpha(own))
 					{
 						texture.mode = blend::alpha;
 						// Leaves are mostly fully opaque with a soft fringe; light rays, water and
 						// mist are mostly partly see-through.
 						std::size_t opaque = 0, partial = 0;
-						for(std::size_t i = 3; i < gf.rgba.size(); i += 4)
+						for(std::size_t i = 3; i < own.rgba.size(); i += 4)
 						{
-							if(gf.rgba[i] >= 230)
+							if(own.rgba[i] >= 230)
 								opaque++;
-							else if(gf.rgba[i] > 16)
+							else if(own.rgba[i] > 16)
 								partial++;
 						}
 						if(opaque * 2 >= partial * 3)

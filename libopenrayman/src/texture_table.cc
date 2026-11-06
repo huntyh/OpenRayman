@@ -59,11 +59,12 @@ namespace openrayman
 	{
 		if(!(info.flags & texture_flag::color_key))
 			return;
-		auto rgb565 = [](unsigned r, unsigned g, unsigned b) { return ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3); };
-		const unsigned key = rgb565(info.color_key & 0xFF, (info.color_key >> 8) & 0xFF, (info.color_key >> 16) & 0xFF);
+		// The drivers key on the 16-bit value, but the exe nudges other colours that would round to
+		// it (0x42C370), so only pixels of exactly the key colour turn transparent.
+		const std::uint32_t key = info.color_key & 0xFFFFFF;
 		for(std::size_t i = 0; i + 3 < rgba.size(); i += 4)
 		{
-			if(rgb565(rgba[i], rgba[i + 1], rgba[i + 2]) == key)
+			if((std::uint32_t(rgba[i]) | std::uint32_t(rgba[i + 1]) << 8 | std::uint32_t(rgba[i + 2]) << 16) == key)
 				rgba[i + 3] = 0;
 		}
 	}
