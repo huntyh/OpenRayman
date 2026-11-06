@@ -1639,6 +1639,9 @@ namespace
 				// The gauges (kind 120) are painted before the images (0x460670, then 0x460600).
 				std::vector<game::particles::screen_image> images = a.vm->particles().screen_bar_images();
 				images.insert(images.end(), a.vm->particles().screen_images().begin(), a.vm->particles().screen_images().end());
+				// Then the tiled picture of kinds 170/171 (0x460670 -> 0x4658B0).
+				for(const auto& tile : a.vm->particles().screen_tile_images())
+					images.push_back(tile);
 				if(!dialogs.empty() || !boxes.empty() || !images.empty() ||
 					(a.show_cutscene_bars && (a.vm->world_view_bounds().top > 0 || a.vm->world_view_bounds().bottom < 1000)))
 					a.dialog_overlay->draw(dialogs, boxes, images, projection * view, projection, w, h, a.animation_time, a.vm->world_view_bounds(), a.show_cutscene_bars);

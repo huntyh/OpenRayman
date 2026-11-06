@@ -55,6 +55,9 @@ namespace openrayman::game
 			std::uint32_t material = 0;
 			int slot = 0;
 			double born = 0;
+			// Ours: kept in the centred 4:3 area at wide window sizes (the tiled logo), instead of
+			// stretched over the whole width like the HUD.
+			bool centred = false;
 		};
 
 		// Kind 120's gauge slots (0x460530, table 0x4E0F20, drawn by 0x460670): two percent corners,
@@ -82,6 +85,9 @@ namespace openrayman::game
 		const std::vector<screen_bar>& screen_bars() const { return m_screen_bars; }
 		// The bars as the images 0x460670 paints: the filled part and, below 100 percent, the rest.
 		std::vector<screen_image> screen_bar_images() const;
+		// The tiled picture of kinds 170/171 (the intro's Rayman 2 logo) as images, painted after
+		// the kind-125 ones (0x460670 -> 0x4658B0); empty while its opacity is 0.01 or less.
+		std::vector<screen_image> screen_tile_images() const;
 		// Where a particle shows now (type 11 circles around its position).
 		vec3 shown_at(const particle& p, double now) const;
 
@@ -96,6 +102,11 @@ namespace openrayman::game
 		std::vector<screen_rectangle> m_screen_rectangles;
 		std::vector<screen_image> m_screen_images;
 		std::vector<screen_bar> m_screen_bars;
+		// Kinds 170/171 (0x465850, 0x465870): 18 tile materials (0x4E1020, six columns of three),
+		// the picture's percent corners (0x4E1600) and its opacity 0..255 (0x4B9B10).
+		std::array<std::uint32_t, 18> m_tiles{};
+		vec3 m_tiles_first{}, m_tiles_second{};
+		float m_tiles_alpha = 0;
 		std::uint32_t m_bar_track = 0; // kind 50's material, which the next bars use as their track
 		double m_rising_clock = 0; // effect 28 starts at most one particle every 0.05 s
 		double m_ripple_clock = 0; // effect 7 starts at most one ripple every 0.2 s (0x4B9B0C)

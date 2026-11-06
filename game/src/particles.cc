@@ -44,6 +44,23 @@ namespace openrayman::game
 			}
 			return;
 		}
+		if(kind == 170)
+		{
+			// 0x465850: tile `number` of the tiled picture gets the material.
+			int tile = int(number);
+			if(tile >= 0 && tile < int(m_tiles.size()))
+				m_tiles[std::size_t(tile)] = material;
+			return;
+		}
+		if(kind == 171)
+		{
+			// 0x465870: the picture's corners (point and vector x, y, in viewport percent) and its
+			// opacity (the number).
+			m_tiles_first = point;
+			m_tiles_second = vector;
+			m_tiles_alpha = number;
+			return;
+		}
 		if(kind == 50)
 		{
 			// 0x463390 case 0x32: keeps the point, vector and number for other effects and makes
@@ -299,6 +316,24 @@ namespace openrayman::game
 				if(bar.fill < 100) image(right, y0, x1, y1, bar.track);
 			}
 		}
+		return out;
+	}
+
+	std::vector<particles::screen_image> particles::screen_tile_images() const
+	{
+		// 0x4658B0: six columns and three rows between the corners, tile = column * 3 + row (so
+		// logo_<column><row>), top to bottom in each column, at the opacity / 255 (0x42A300). The
+		// exe rounds the corners and tile sizes down to whole pixels; ours stays in percent.
+		std::vector<screen_image> out;
+		if(m_tiles_alpha <= 0.01f)
+			return out;
+		float x0 = m_tiles_first[0], y0 = m_tiles_first[1];
+		float w = (m_tiles_second[0] - x0) / 6, h = (m_tiles_second[1] - y0) / 3;
+		float a = std::min(m_tiles_alpha, 255.0f);
+		for(int column = 0; column < 6; column++)
+			for(int row = 0; row < 3; row++)
+				if(std::uint32_t material = m_tiles[std::size_t(column * 3 + row)])
+					out.push_back({ vec3{ x0 + w * column, y0 + h * row, 0 }, vec3{ x0 + w * (column + 1), y0 + h * (row + 1), a }, material, 100 + column * 3 + row, 0, true });
 		return out;
 	}
 

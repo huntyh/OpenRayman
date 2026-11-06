@@ -192,6 +192,13 @@ namespace openrayman
 							{
 								SDL_FRect r{image.first[0] * 6.4f, image.first[1] * 4.8f,
 									(image.second[0] - image.first[0]) * 6.4f, (image.second[1] - image.first[1]) * 4.8f};
+								if(image.centred)
+								{
+									// Like the slot layer: a centred 4:3 area at wide window sizes.
+									float area = std::min(1.0f, (4.0f / 3.0f) * height / width);
+									r.x = 320.0f + (r.x - 320.0f) * area;
+									r.w *= area;
+								}
 								SDL_FColor colour{1,1,1,std::clamp(image.second[2] / 255.0f, 0.0f, 1.0f)};
 								bool additive = (frame->flags & texture_flag::additive) != 0;
 								if(frame->tiling & texture_tiling::mirror_u)

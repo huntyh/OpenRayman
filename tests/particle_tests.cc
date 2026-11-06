@@ -56,6 +56,28 @@ TEST_CASE("particles: a gauge fills from its left with kind 50's track behind th
 	CHECK(p.screen_bar_images().empty());
 }
 
+TEST_CASE("particles: kinds 170/171 lay out the tiled logo in six columns of three")
+{
+	// Jail_10's Rayman 2 logo: 18 tiles, then the corners (15, 20)-(85, 60) and an opacity.
+	particles p;
+	for(int i = 0; i < 18; i++)
+		p.start(170, {0, 0, 0}, {0, 0, 0}, 0x1000u + std::uint32_t(i), float(i), 1);
+	CHECK(p.screen_tile_images().empty()); // no opacity yet
+	p.start(171, {15, 20, 0}, {85, 60, 0}, 0, 128, 1);
+	auto tiles = p.screen_tile_images();
+	REQUIRE(tiles.size() == 18);
+	// Tile 4 is column 1, row 1 (logo_11).
+	const auto& t = tiles[4];
+	CHECK(t.material == 0x1004);
+	CHECK(t.first[0] == doctest::Approx(15 + 70.0f / 6));
+	CHECK(t.first[1] == doctest::Approx(20 + 40.0f / 3));
+	CHECK(t.second[0] == doctest::Approx(15 + 2 * 70.0f / 6));
+	CHECK(t.second[2] == doctest::Approx(128));
+	CHECK(t.centred);
+	p.start(171, {15, 20, 0}, {85, 60, 0}, 0, 0, 1);
+	CHECK(p.screen_tile_images().empty());
+}
+
 TEST_CASE("particles: a breaking cage's golden sparks and smoke")
 {
 	particles p;

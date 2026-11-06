@@ -23,6 +23,18 @@ switch on the low byte of its flags) and draws it as a camera-facing square with
 material's texture, faded by its alpha (0..255). Time is in seconds (0x4B9AFC now, 0x4B9B04 the
 frame's length).
 
+**Kinds 170 and 171, a tiled picture** (0x4648B0 cases 0xAA/0xAB → 0x465850, 0x465870; drawn by
+0x4658B0 from 0x460670, after the kind-125 images, only while its opacity is above 0.01). Kind 170
+puts the material in tile `number` (0..17, the array at 0x4E1020). Kind 171 sets the corners
+(point and vector x, y, in viewport percent, 0x4E1600) and the opacity (the number, 0..255,
+0x4B9B10, given to 0x42A300 as /255). The tiles are six columns of three between the corners,
+tile = column × 3 + row, each column top to bottom. The exe rounds the corners and tile sizes
+down to whole pixels: width × (x1 − x0) / 600 (0x49CBC8) and height × (y1 − y0) / 300
+(0x49CBCC). Jail_10 node 4 spawns actor `04/01 +0x680` with var3 = 0, which loads `logo_00` …
+`logo_52` into tiles 0..17 and draws the Rayman 2 title between (15, 20) and (85, 60) as its var9
+rises and falls. Ours keeps the picture in the centred 4:3 area at wide sizes (IMPROVEMENTS).
+Where this came from: own analysis of the decompile and the disassembly of 0x4658B0.
+
 **Kind 28, rising specks** (0x463DE8 → 0x462C50). Node 4 of Learn_10 calls it every frame with the
 camera actor's position and forward axis (−Y), the level's `plancton` material and 0.5:
 
