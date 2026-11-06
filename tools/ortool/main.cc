@@ -1,3 +1,5 @@
+#include <openrayman/save_file.h>
+#include <openrayman/binary_reader.h>
 // ortool: inspects and exports Rayman 2 data, mainly for checking that the readers work.
 
 #include <openrayman/actor.h>
@@ -53,6 +55,7 @@ static void usage()
 	std::cout <<
 		"usage: ortool <command> [arguments]\n"
 		"\n"
+		"  save <slot>                       Decode a slot (OPENRAYMAN_GAME_DIR); optional: save <folder> <slot>\n"
 		"  info <game folder>                  Summarize a Rayman 2 installation\n"
 		"  dsb <file.dsb>                      Print the contents of a DSB script\n"
 		"  cnt <file.cnt>                      List the files in a CNT archive\n"
@@ -1996,6 +1999,79 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	return EXIT_SUCCESS;
 }
 
+static int cmd_save(const fs::path& folder, const std::string& slot_text)
+{
+	if(slot_text != "1" && slot_text != "2" && slot_text != "3")
+		throw std::runtime_error("save slot must be 1, 2 or 3");
+	auto game = require_game(folder);
+	auto saves = game.directory("saves");
+	if(!saves) throw std::runtime_error("no saves directory");
+	auto slot = save_slot_folder(*saves, unsigned(slot_text[0] - '0'));
+	auto files = load_level_files(game, "Learn_10");
+	auto header = read_level_header(files);
+	scene tree(files.memory, header);
+	auto registry = read_save_registry(files.memory, header, tree);
+	auto print = [](const fs::path& path, const std::vector<save_entry>& entries, std::size_t expected) {
+		save_file save(path);
+		if(save.bytes.size() != expected) throw std::runtime_error(std::format("save registry size mismatch: {}: decoded {}, registry {}", path.filename().string(), save.bytes.size(), expected));
+		std::cout << path.filename().string() << ": " << save.bytes.size() << " decoded bytes, checksum " << unsigned(save.checksum) << "\n";
+		std::vector<unsigned> story;
+		for(const auto& e : entries)
+		{
+			binary_reader r(std::span<const std::byte>(save.bytes).subspan(e.offset, e.bit ? 1 : e.size));
+			std::uint32_t value = e.bit || e.size == 1 ? r.u8() : e.size == 2 ? r.u16() : r.u32();
+			if(e.variable == 42 && e.element && e.fix_actor)
+			{
+				for(unsigned b = 0; b < 32; ++b)
+					if(value & (1u << b)) story.push_back(*e.element * 32 + b + 1);
+				continue;
+			}
+			std::cout << "  offset " << e.offset;
+			if(e.bit) std::cout << " bit " << *e.bit;
+			else std::cout << " size " << e.size;
+			if(e.fix_actor) std::cout << " Fix index " << *e.fix_actor;
+			if(e.node) std::cout << " node " << *e.node;
+			else std::cout << " always actor " << e.actor.block->id.to_string() << "+0x" << std::hex << e.actor.offset << std::dec;
+			if(e.bit) std::cout << " out-of-world = " << ((value >> *e.bit) & 1u);
+			else
+			{
+				if(e.standard_offset) std::cout << " standard+0x" << std::hex << *e.standard_offset << std::dec;
+				else std::cout << " var" << e.variable;
+				if(e.element) std::cout << "[" << *e.element << "]";
+				std::cout << " type " << e.type << " = ";
+				if(e.type == 7) { binary_reader f(std::span<const std::byte>(save.bytes).subspan(e.offset, e.size)); std::cout << f.f32(); }
+				else if(e.type <= 1) std::cout << int(std::int8_t(value));
+				else if(e.type == 3) std::cout << std::int16_t(value);
+				else if(e.type == 5) std::cout << std::int32_t(value);
+				else std::cout << value;
+			}
+			std::cout << "\n";
+		}
+		if(std::ranges::any_of(entries, [](const auto& e) { return e.variable == 42 && e.element && e.fix_actor; }))
+		{
+			std::ranges::sort(story);
+			std::cout << "  Fix actor 6 var42 story bits (offset 11, 180 bytes, reversed words):";
+			for(auto bit : story) std::cout << " " << bit;
+			std::cout << "\n";
+		}
+	};
+
+	auto general = find_case_insensitive(slot, "General.sav");
+	if(!general) throw std::runtime_error("selected slot has no General.sav");
+	print(*general, registry.general, registry.general_size);
+	for(const auto& name : game.game_dsb().levels)
+	{
+		auto path = find_case_insensitive(slot, name + "_0.sav");
+		if(!path) continue;
+		auto level = load_level_files(game, name);
+		auto h = read_level_header(level);
+		scene t(level.memory, h);
+		auto reg = read_save_registry(level.memory, h, t);
+		print(*path, reg.level, reg.level_size);
+	}
+	return EXIT_SUCCESS;
+}
+
 int main(int argc, char** argv)
 {
 	std::vector<std::string> args(argv + 1, argv + argc);
@@ -2008,6 +2084,21 @@ int main(int argc, char** argv)
 	try
 	{
 		const std::string& cmd = args[0];
+		if(cmd == "save" && args.size() == 3) return cmd_save(args[1], args[2]);
+		if(cmd == "save" && args.size() == 2)
+		{
+			fs::path folder;
+#ifdef _MSC_VER
+			char* value = nullptr;
+			std::size_t length = 0;
+			if(_dupenv_s(&value, &length, "OPENRAYMAN_GAME_DIR") == 0 && value) folder = value;
+			std::free(value);
+#else
+			if(const char* value = std::getenv("OPENRAYMAN_GAME_DIR")) folder = value;
+#endif
+			if(folder.empty()) throw std::runtime_error("set OPENRAYMAN_GAME_DIR or use save <folder> <slot>");
+			return cmd_save(folder, args[1]);
+		}
 		if(cmd == "info" && args.size() == 2)
 			return cmd_info(args[1]);
 		if(cmd == "dsb" && args.size() == 2)

@@ -16,6 +16,7 @@
 #include <renderer/level_renderer.h>
 
 #include <openrayman/actor.h>
+#include <openrayman/game/saves.h>
 #include <openrayman/game/animation_player.h>
 #include <openrayman/game/first_visit.h>
 #include <openrayman/game/handlers.h>
@@ -191,6 +192,7 @@ namespace
 		// --keys Up:60-200,A:100-110: keys held over script ticks, to replay input for screenshots.
 		struct held_key { std::uint8_t key; long from, to; };
 		std::vector<held_key> held_keys;
+		unsigned save_slot = 0; // --save 1..3: restore the installed slot at level load
 		bool new_game = false; // --start new: levels start as on a new game, not as reached from the hub
 		std::vector<std::int32_t> story_bits; // --story-bits 1095,1143: more of a save's story, set at load
 		// The story-bit words a level change carries over (Fix stays loaded in the game), set when the
@@ -1256,7 +1258,7 @@ namespace
 			a.sound_sources.clear();
 			// The story so far (first_visit.h): a revisit includes the completed intro and Learn_10; a new
 			// game has the pirate ship and the intro behind it.
-			// Further bits stand in for a save game until saves are read (Phase 4): 1095 gives
+			// Explicit story-bit overrides: 1095 gives
 			// Rayman the silver (blue) shot, 1143 the golden one that charges.
 			{
 				std::vector<std::uint32_t> fix_actors;
@@ -1267,13 +1269,13 @@ namespace
 					[](unsigned char x, unsigned char y) { return std::tolower(x) == std::tolower(y); });
 				if(a.carried_story)
 					a.vm->set_story_words(fix_actors, *a.carried_story);
-				else if(!menu)
+				else if(!menu && !a.save_slot)
 					for(std::uint32_t bit : a.new_game ? std::span<const std::uint32_t>(openrayman::game::first_visit_story_bits) : std::span<const std::uint32_t>(openrayman::game::revisit_story_bits))
 						a.vm->set_story_bit(fix_actors, bit);
 				a.carried_story.reset();
 				a.fix_actors = fix_actors;
 				for(std::int32_t bit : a.story_bits)
-					a.vm->set_story_bit(fix_actors, bit);
+					if(!a.save_slot) a.vm->set_story_bit(fix_actors, bit);
 			}
 			a.input.reset();
 			a.tick = 0;
@@ -1292,8 +1294,12 @@ namespace
 					a.thinkers.push_back(tree.node(n).at.address());
 			}
 			a.vm->set_actors(a.thinkers);
-			if(!a.new_game)
+			if(a.save_slot)
+				openrayman::game::load_save_slot(*a.vm, *a.game, files, header, tree, a.save_slot);
+			else if(!a.new_game)
 				openrayman::game::apply_revisit_state(*a.vm, tree, levels[index]);
+			if(a.save_slot)
+				for(std::int32_t bit : a.story_bits) a.vm->set_story_bit(a.fix_actors, bit);
 			a.camera_super_object = 0;
 			for(const fix_actor_placement& placed : header.placements)
 			{
@@ -1333,7 +1339,7 @@ namespace
 			// to the hand-over plays what the game plays there.
 			a.rayman_sector = rayman_sector_now(a);
 			// A first visit starts where the level's intro cutscene hands Rayman over (first_visit.h).
-			if(a.new_game && !header.placements.empty())
+			if(a.new_game && !a.save_slot && !header.placements.empty())
 				openrayman::game::apply_first_visit_hand_over(*a.live, *a.vm, tree, levels[index], header.placements[0].super_object.address(), a.camera_super_object);
 			a.script_clock = 0;
 			a.animation_time = a.start_time.value_or(0.0);
@@ -1746,6 +1752,12 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 	// Game folder: --game <folder>, else the last one used, else ask.
 	std::optional<fs::path> folder;
 	std::optional<long> start_texture;
+	for(int n = 1; n < argc; ++n)
+		if(std::string_view(argv[n]) == "--save" && n + 1 == argc)
+		{
+			SDL_Log("--save requires a slot number from 1 to 3");
+			return SDL_APP_FAILURE;
+		}
 	for(int n = 1; n + 1 < argc; n++)
 	{
 		std::string arg = argv[n];
@@ -1807,6 +1819,16 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 		}
 		else if(arg == "--collision") // on or off (default): what the level collides with; C in the viewer
 			a->show_collision = std::string_view(argv[n + 1]) == "on";
+		else if(arg == "--save")
+		{
+			std::string_view slot = argv[n + 1];
+			if(slot != "1" && slot != "2" && slot != "3")
+			{
+				SDL_Log("--save requires a slot number from 1 to 3");
+				return SDL_APP_FAILURE;
+			}
+			a->save_slot = unsigned(slot[0] - '0');
+		}
 		else if(arg == "--start") // portal (default): as reached from the hub; new: as on a new game
 			a->new_game = std::string_view(argv[n + 1]) == "new";
 		else if(arg == "--story-bits") // comma-separated story bits to set at load, e.g. 1095,1143

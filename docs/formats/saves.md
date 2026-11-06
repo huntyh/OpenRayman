@@ -1,60 +1,125 @@
 # Saves
 
-What a Rayman 2 save holds and how the game puts it back, as far as we know (2026-11-02). Reading
-real saves is Phase 4; until then the revisit start (without `--start new`) applies the story bits
-and a finished-level snapshot of its own (see the end).
+Real saves can now be restored in game mode with `--save 1`, `--save 2` or `--save 3`.
+Without that option the interim revisit snapshot remains the default. Reading saves is separate
+from writing saves (functions 90/93/95, card #24), which is not implemented.
 
-## Two files
+## Files and loading
 
-The game keeps a **general** save (`General.sav`) and one **level** save per level and slot (e.g.
-`Learn_10_0.sav`). While a level loads, 0x403730 reads the level file and the general file
-separately (0x410450, 0x410410), and 0x449E80 applies what they hold to the entries registered
-for them. Both files are compressed; 0x48D890 expands them (the installed `General.sav` files
-expand to 196 bytes each, the three installed `Learn_10_0.sav` files to one byte each).
+Each slot has `General.sav` and level files such as `Learn_10_0.sav`. The final number is the
+level variant returned in the upper half of 0x404DB0 (0x410450), not the user slot number; the
+installed files all use variant 0. OpenRayman currently loads variant 0 only. `--save` chooses
+`Slot1..3` under the installation's configured save directory (`Data/SaveGame`). A missing general
+file, invalid slot, checksum failure or registry-size mismatch is an error. A missing level
+file leaves that level's initial state. `HiddenSlot` is tested but is not a selectable user slot.
 
-## What gets registered
+0x403730 reads level and general files separately (0x410450, 0x410410), applies the registered
+values (0x449E80), then refreshes activity (0x406340). OpenRayman restores the bytes before the
+first script tick and adjusts type-5 activity. With a slot selected, neither the revisit snapshot
+nor first-visit hand-over runs. Explicit `--story-bits` overrides run after restoration. The slot
+is re-read at each level load; progress is not written back to disk.
 
-A save does not store the world. It stores a list of registered values, in registration order:
+## Registry order
 
-- **Script variables with a save flag.** 0x466BD0 walks each AI model's variable declarations and
-  registers those whose save flags (declaration +0x08) are set. The registry (0x44A240) keeps the
-  address, type and flags; 0x44A650 writes the entries, 0x44AC10 / 0x44A500 read and apply them.
-  Flag 0x80 means the general save. In Learn_10 only Fix actor 6 has such variables: 6, 20, 42,
-  45, 46, 49, 50 and 67. Variable 42 is the story-bit array (functions 248/249, procedure 351;
-  [scripts.md](scripts.md) lists the bits). No scene actor's variable carries 0x100 or 0x200.
-- **The out-of-world bit of type-5 actors.** 0x4135C0 registers standard game +0x29 bit 0 (mask 1,
-  turned into bit index 0 by 0x44A630) of every placed actor of type 5 under flag 0x200, the level
-  save; 0x44ACD0 packs these bits into bytes and 0x44AD20 unpacks them. Learn_10 has one type-5
-  actor, node 71 (the tutorial's Rayman double), and the installed level saves' one byte is 0x01:
-  node 71 is out of the world, as procedure 139 (0x406220) leaves it.
+0x4062F0 initializes the dynamic subtree, children before parent (0x406620), then the always list
+in forward order (0x40BC30). Registration order is **not Fix header order**. 0x466BD0 walks variable
+declarations in increasing index order. Flag 0x80 selects current general values, 0x200 current
+level values; 0x40/0x100 select registration snapshots. 0x44A0F0 adds load-group flags 4/8.
+0x44A240 **prepends ordinary entries but appends packed bits** (storage type 0x8000).
 
-## The file encoding (0x48D890)
+Arrays register elements in increasing order, so they appear reversed in the file. Their eight-byte
+runtime header is not saved. Non-vector elements occupy four-byte runtime slots, even if their
+saved scalar width is smaller. `read_save_registry` reconstructs the list from declarations, the
+dynamic tree and always actors; every entry identifies its actor, variable/element or standard
+field, file offset and size. Unsupported flagged types, including pointers, fail explicitly;
+none occur in the installed general/level registries checked here.
 
-Every `.sav` and `Options/Current.cfg` use the same wrapping, read in our own words:
+## General.sav: all 196 bytes matched
 
-- byte 0 XOR 0x53 is a checksum seed; bytes 1..4 XOR 0x54555657 are the expanded length.
-- every further byte is XORed with 0xB9 and with the bit-reversed value of a counter that starts
-  at 0x57 and goes up by one per byte (0x48D5A0, 0x48D420). The seed minus every decoded byte
-  must end at 0.
-- the decoded stream is a dictionary of 256 blocks of 8 bytes, block i starting as eight copies
-  of i (0x48D660). Each step reads a block number and a mask byte; each set mask bit replaces
-  that byte of the block with the next byte from the stream, and the block is the next 8 bytes
-  of output. The previous block is written when the next one starts; at the end the last one is
-  written whole, or, when the stream ends after a block number, only that many of its bytes.
+The global controller is **scene node 6** in Learn_10, Fix header index 2; Rayman is scene node 84,
+Fix header index 0. Earlier notes called node 6 "Fix actor 6". All entries below carry 0x80.
+Types 0 and 2 are signed/unsigned bytes; type 5 is signed 32-bit integer.
 
-Decoded with a scratch script (2026-11-02): all three installed `General.sav` files give their
-196 bytes with a zero checksum, `Current.cfg` 72 (the slot count, the slot names with their
-percentages, e.g. `AAA 00.5`, then the options' volumes), and `Bast_20_0.sav` 1 byte.
+| Offset | Bytes | Destination |
+| --- | --- | --- |
+| 0 | 1 | Rayman standard game +0x23 (meaning not yet identified) |
+| 1 | 1 | Rayman standard game +0x22 (maximum hit points) |
+| 2 | 1 | Rayman standard game +0x21 (hit points) |
+| 3 | 4 | Global controller var67, type 5 |
+| 7 | 1 | Global controller var50, type 0 |
+| 8 | 1 | Global controller var49, type 0 |
+| 9 | 1 | Global controller var46, type 2 |
+| 10 | 1 | Global controller var45, type 2 |
+| 11 | 180 | Global controller var42: 45 words, word 44 first, word 0 last |
+| 191 | 1 | Global controller var20, type 0 |
+| 192 | 4 | Global controller var6, type 5 |
 
-### General.sav's layout
+There are 55 registrations: three standard bytes, seven scalar variables, 45 story words.
+Story word `i` starts at `11 + 4*(44-i)`; bit numbers are one-based (`i*32 + bit-in-word + 1`).
+The requested seven scalar variables account for only eight bytes before and five after the
+story words. The remaining three prefix bytes are **not script variables**: 0x4135E0 registers
+standard game +0x21, +0x22, +0x23 for actors with custom bit 31 (mask 0x80000000 at +0x24).
+Rayman has this flag and is initialized after the controller, so his bytes precede its variables.
+The scalar variables' gameplay meanings beyond their script indices remain unnamed.
 
-The story-bit array (Fix actor 6's var42: an 8-byte array header, then 45 words, 1440 bits)
-sits at offset 11 of the 196 bytes **with its words in reverse order** (word 44 first), as
-0x44A240 prepends each registered entry to the list it writes. With that placement every bit a
-Learn_10 playthrough sets (840, 841, 1089, 1091, 1092, 1133, 1175..1177, 1396..1400) is set in
-all three installed saves. The 11 bytes before and the 5 after are the other flagged variables
-(6, 20, 45, 46, 49, 50, 67), not yet matched one by one. Bit 1006 (the menu's "language picked")
-is clear in all three.
+Slot1 and HiddenSlot's general saves both decode to this layout with zero checksum. Restoration
+tests check all destinations. Slot1's story array agrees with the previously identified Learn_10
+bits. **Slot2 and Slot3 are empty as of 2026-11-06**, including hidden files, so the requested
+comparison of three installed user-slot saves cannot be completed. No raw saves or value dumps
+are stored in the repository.
+
+## Level saves: exact packed entries in the installed files
+
+0x4135C0 registers standard game +0x29 bit 0 of type-5 actors under 0x200. 0x44ACD0 packs bits
+LSB first in initialization order. 0x44AD80 flushes the final partial byte. No placed actor's
+script variable has 0x100/0x200 in these levels. Always actors can exist outside the scene tree.
+
+| Level | Decoded bytes | Entries, in file/bit order |
+| --- | --- | --- |
+| Learn_10 | 1 | byte 0 bit 0: node 71; byte 0 bit 1: always actor 04/01 +0x29B8 |
+| Learn_30 | 1 | byte 0 bit 0: always actor 04/01 +0x1D00 |
+| Bast_20 | 1 | byte 0 bit 0: always actor 04/01 +0x43B4 |
+| Ski_60 | 1 | byte 0 bit 0: always actor 04/01 +0x2830 |
+| Chase_10 | 1 | byte 0 bit 0: always actor 04/01 +0x7130 |
+| Ly_10 | 1 | byte 0 bit 0: always actor 04/01 +0x30A0 |
+| Water_10 | 1 | byte 0 bit 0: always actor 04/01 +0x3EF4 |
+| Menu, Jail_10, Jail_20, Mapmonde, Bonux, Learn_31, Bast_22, Learn_60, Ski_10, Batam_10, Chase_22, nego_10, Water_20, poloc_10, Raycap | 0 | No entries |
+
+The block/offset identifies the actor structure. There are 25 installed `.sav` files, including
+HiddenSlot's general and empty Menu save. Every wrapping and registry length is tested, as are
+restored variables, packed bits, activity flags and bypassing the interim snapshot.
+
+## File encoding (0x48D890)
+
+Every `.sav` and `Options/Current.cfg` uses the same wrapping:
+
+- Byte 0 XOR 0x53 is a checksum seed; little-endian bytes 1..4 XOR 0x54555657 are expanded length.
+- Each further byte is XORed with 0xB9 and the bit-reversed byte counter starting at 0x57 and
+  wrapping at 256 (0x48D5A0, 0x48D420). Subtract each deobfuscated **compressed-stream** byte from
+  the seed modulo 256: the result must be zero. The checksum is not over expanded bytes.
+- The dictionary has 256 eight-byte blocks, block `i` initially eight copies of `i` (0x48D660).
+  Each token selects a block and provides an LSB-first replacement mask, followed by one byte
+  per set bit. Changes persist when that block is reused.
+- Each complete token supplies the next eight-byte output block. EOF after a complete token
+  emits the last block whole; a lone final byte instead specifies how many bytes (1..7) of the
+  pending block to emit. A zero-length file needs no stream.
+- The reader checks checksum, token bounds, partial-block count and exact expanded length, and
+  bounds allocation by token stream size. Malformed files throw `format_error`.
+
+The current `Current.cfg` expands to 87 bytes with zero checksum; the earlier 72-byte observation
+was a different options/slot-name state. Options are decoded in tests but not applied.
+`ortool save <slot>` (using `OPENRAYMAN_GAME_DIR`) prints scalar entries, sorted set story bits
+and each installed level file's actor bits. `ortool save <game folder> <slot>` also works.
+
+## Notes for future writing (out of scope)
+
+0x44A650 iterates the same registry with selected flags, writes a temporary plain stream, flushes
+pending packed bits, then calls the compression/wrapping path through 0x48D2C0. 0x44A730 chooses
+cached snapshots (0x40/0x100) or current bytes (0x80/0x200). Pointer entries, if present, store a
+two-byte module identifier and four-byte offset; null pointers use module 0xFFFF. 0x44AAF0 reads
+cached entries, 0x44A500 applies them, 0x44AD20 consumes packed bits LSB first. A writer must
+preserve registry order, reversed array elements, Rayman's standard bytes and always actors,
+and checksum the compressed stream. The temporary revisit snapshot is not a save format.
 
 ## The HUD's counters
 
@@ -73,11 +138,21 @@ skips the Lums it has already given.
 ## The revisit snapshot (ours, interim)
 
 Story bits alone don't give a finished level: some actors only leave through their own scenes.
-Until saves are read, `apply_revisit_state` (game/include/openrayman/game/first_visit.h) takes
+When no `--save` is supplied, `apply_revisit_state` (game/include/openrayman/game/first_visit.h) takes
 nodes 3, 11, 12, 13, 36, 53, 56..61, 70 and 71 out of the world (bit 0 set; type 5 also loses bit
 1), which matches the finished level the user sees in the game. It is a stand-in for the requested
 end state, not a decoded save.
 
-**Where this came from:** own analysis of the GOG `Rayman2.exe` (the addresses above), the Fix and
-Learn_10 data and the three installed save folders, by GPT-6.1 Terra (Codex), reviewed by us;
-`ortool run` with `ORTOOL_IDS=1` / `ORTOOL_VARS=6:4,5,43,44` shows the counters and removals.
+## Where this came from
+
+Own independent analysis on 2026-11-06 of the GOG `Rayman2.exe`: decoder 0x48D890 / 0x48D660 /
+0x48D5A0 / 0x48D610, registry 0x466BD0 / 0x466B50 / 0x481260 / 0x44A240 / 0x44A0F0,
+initialization 0x4062F0 / 0x406620 / 0x40BC30 / 0x4132A0 / 0x4135C0 / 0x4135E0,
+IO 0x44A650 / 0x44A730 / 0x44AAF0 / 0x44A500 / 0x44ACD0 / 0x44AD20,
+level loading 0x403730 / 0x410410 / 0x410450. No decompiled code is copied.
+Cross-checked against Fix declarations, each saved level's dynamic tree and always list,
+Slot1 and HiddenSlot, with synthetic malformed-stream and installed-file restoration tests.
+The exact meaning of standard +0x23, visual parity with the real game and Slot2/3 values remain
+unverified. Earlier HUD/story/snapshot observations came from independent executable and
+Fix/Learn_10 analysis (2026-11-02), including `ortool run` with `ORTOOL_IDS=1` /
+`ORTOOL_VARS=6:4,5,43,44`.

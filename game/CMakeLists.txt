@@ -13,6 +13,7 @@ add_library(openrayman_game STATIC
 	src/mechanics.cc
 	src/particles.cc
 	src/profiler.cc
+	src/saves.cc
 	src/screen_text.cc
 )
 add_library(openrayman::game ALIAS openrayman_game)
