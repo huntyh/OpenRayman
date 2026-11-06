@@ -249,6 +249,19 @@ namespace openrayman
 					s.neighbours.push_back(*i);
 				e = memory.follow(*e + 4);
 			}
+			binary_reader r = reader_at(at, sector_field::size);
+			r.seek(0x44);
+			const auto count = r.u32();
+			e = memory.follow(at + 0x3C);
+			for(std::uint32_t n = 0; n < count; ++n)
+			{
+				if(!e) throw format_error("sector wake list shorter than its count");
+				auto i = sector_named(memory.follow(*e));
+				if(!i) throw format_error("sector wake list names an unknown sector");
+				s.wake_with.push_back(*i);
+				e = memory.follow(*e + 4);
+			}
+			if(e) throw format_error("sector wake list longer than its count");
 		}
 		return out;
 	}

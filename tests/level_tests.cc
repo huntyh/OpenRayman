@@ -1653,6 +1653,10 @@ TEST_CASE("real data: an off-axis shot hits Learn_10's last cage")
 		game::step(vm, actors, [&](std::uint32_t, const std::exception& e) {
 			if(errors++ == 0) MESSAGE(e.what());
 		});
+		// Headless test: the target is in view. The viewer's render pass clears
+		// fresh-wake bit 0x800 after this update (0x45C450).
+		const auto cage_standard = m.u32(cage + 4);
+		m.write<std::uint32_t>(cage_standard + 0x24, m.u32(cage_standard + 0x24) & ~0x800u);
 		if(tick == 308) waiting_state = m.u32(cage_data + 4);
 		if(tick > 308 && hit < 0 && m.u8(cage_set + 0x65))
 		{
@@ -1933,6 +1937,12 @@ TEST_CASE("real data: Learn_10 portal camera lands with a clear view")
 	vm.set_world(game::world_collision{});
 	auto camera_so = vm.camera_motion().super_object;
 	auto camera_actor = m.u32(camera_so + 4);
+	auto dynamics = m.u32(camera_actor + 8);
+	auto base = m.u32(dynamics);
+	auto report = m.u32(base + 0x150);
+	REQUIRE(m.contains(report + 0x168, 1));
+	m.write<std::uint8_t>(report + 0x168, 0); // isolate swing geometry from the startup collision
+
 	auto camera_object = m.u32(camera_actor + 0x10);
 	auto block = m.u32(camera_object + 4);
 	m.write<std::uint8_t>(camera_object + 0x74, 0);
@@ -1972,10 +1982,6 @@ TEST_CASE("real data: Learn_10 portal camera lands with a clear view")
 	CHECK(camera.swing != 0);
 
 	// A collision report blocks a new swing unless global option bit 0 allows it.
-	auto dynamics = m.u32(camera_actor + 8);
-	auto base = m.u32(dynamics);
-	auto report = m.u32(base + 0x150);
-	REQUIRE(m.contains(report + 0x168, 1));
 	m.write<std::uint8_t>(report + 0x168, 1);
 	camera.swing = 0;
 	game::solve_camera(vm, camera_so);
@@ -2412,4 +2418,146 @@ TEST_CASE("actor floors carry a rider through translation and rotation and relea
 	m.write<std::uint32_t>(set + 0x3C, 1);
 	vm.remove(platform);
 	CHECK(game::actor_collision_triangles(vm, rider).empty());
+}
+
+TEST_CASE("real data: sector wake delays the kids and story removal prevents their first thought")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto game_data = game_data::locate(*dir);
+	REQUIRE(game_data);
+	auto files = load_level_files(*game_data, "Learn_10");
+	auto header = read_level_header(files);
+	scene tree(files.memory, header);
+	auto bank = read_animation_bank(files);
+	game::live_memory m(files.memory);
+	auto rayman = header.placements.at(0).super_object.address();
+	game::interpreter vm(m, rayman);
+	game::register_handlers(vm);
+	game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+	std::vector<std::uint32_t> actors;
+	for(const auto& node : tree.nodes())
+		if(node.type == super_object_type::actor) actors.push_back(node.at.address());
+	vm.set_actors(actors);
+	for(const auto& e : read_actors(files.memory, tree, bank).actors)
+		game::set_global_placement(m, tree.node(e.node).at.address(), e.world);
+	for(auto bit : game::first_visit_story_bits) REQUIRE(vm.set_story_bit(actors, bit));
+	REQUIRE(game::apply_first_visit_hand_over(m, vm, tree, "Learn_10", rayman));
+	bool completed = false;
+	SUBCASE("first visit waits for the cave approach") {}
+	SUBCASE("the level script removes the completed director before he wakes") { completed = true; }
+	if(completed)
+	{
+		REQUIRE(vm.set_story_bit(actors, 1133));
+		REQUIRE(vm.set_story_bit(actors, 1095));
+	}
+	// Do not apply_revisit_state: node 4 must perform this removal itself.
+	auto director = tree.node(3).at.address();
+	auto standard = m.u32(vm.actor_of(director) + 4);
+	auto data = m.u32(vm.actor_of(director));
+	auto before = m.read<std::uint16_t>(data + 0x100);
+	game::input keys(m, read_input_actions(files));
+	for(int tick = 0; tick < 6; ++tick)
+	{
+		keys.step();
+		game::step(vm, actors);
+		CHECK_FALSE(vm.active(director));
+		CHECK(m.u32(standard + 0x18) == 0);
+		CHECK(m.read<std::uint16_t>(data + 0x100) == before);
+	}
+	CHECK(vm.removed(director) == completed);
+	// run4: the director wakes at clock 60289, as Rayman reaches this approach
+	// (last recorded point at 60257). The warp isolates activation from route/input timing.
+	game::write_transform(m, rayman, { -98.75f, 243.19f, -7.51f }, { 0, 1, 0, -1, 0, 0, 0, 0, 1 });
+	keys.step();
+	game::step(vm, actors);
+	CHECK(vm.active(director) == !completed);
+	if(completed)
+	{
+		CHECK(m.read<std::uint16_t>(data + 0x100) == before);
+		CHECK(m.u8(standard + 0x29) == 0x0B);
+		CHECK(m.u32(standard + 0x18) == 0);
+	}
+	else
+	{
+		CHECK(m.u32(standard + 0x18) == vm.frame_number());
+		CHECK(m.read<std::uint16_t>(data + 0x100) != before);
+	}
+}
+
+TEST_CASE("handler census: procedure 139 writes placed actor removal flags")
+{
+	handler_fixture f;
+	f.m.write<std::uint32_t>(f.standard + 0x14, 3);
+	f.m.write<std::uint8_t>(f.standard + 0x29, 0x46);
+	f.procedure(139, { f.me() });
+	CHECK(f.vm.removed(f.so));
+	CHECK(f.m.u8(f.standard + 0x29) == 0x43);
+}
+
+TEST_CASE("sector wake uses eligibility, fresh entry and moving-head order")
+{
+	handler_fixture f;
+	auto root = f.m.allocate(0x48);
+	auto a = f.m.allocate(0x48), b = f.m.allocate(0x48);
+	auto ad = f.m.allocate(0x88), bd = f.m.allocate(0x88);
+	f.m.write<std::uint32_t>(a, 4); f.m.write(a + 4, ad);
+	f.m.write<std::uint32_t>(b, 4); f.m.write(b + 4, bd);
+	f.m.write(root + 8, a); f.m.write(a + 0x14, b);
+	f.m.write(a + 0x1C, root); f.m.write(b + 0x1C, root);
+	f.m.write(f.so + 0x1C, root);
+	for(auto d : { ad, bd })
+	{
+		f.m.write(d + 0x60, vec3{ d == ad ? 0.0f : 10.0f, -5, -5 });
+		f.m.write(d + 0x6C, vec3{ d == ad ? 9.0f : 20.0f, 5, 5 });
+	}
+	auto transform = f.m.allocate(0x58);
+	f.m.write(f.so + 0x24, transform);
+	auto place = [&](float x) {
+		affine p; p.m[0][3] = x;
+		game::set_global_placement(f.m, f.so, p);
+	};
+	place(1);
+	f.m.write<std::uint8_t>(f.standard + 0x29, 2);
+	auto target = f.m.allocate(0x48), actor = f.m.allocate(0x38), standard = f.m.allocate(0x34);
+	f.m.write<std::uint32_t>(target, 2); f.m.write(target + 4, actor); f.m.write(actor + 4, standard);
+	f.m.write<std::uint8_t>(standard + 0x29, 3);
+	f.m.write<std::uint32_t>(standard + 0x14, 3);
+	bool eligible = false, overlap = false;
+	SUBCASE("removed type 3 never wakes") {}
+	SUBCASE("removed type 1 wakes on a fresh entry") { eligible = true; f.m.write<std::uint32_t>(standard + 0x14, 1); }
+	SUBCASE("negative standard type uses the executable's signed comparison") { eligible = true; f.m.write<std::int32_t>(standard + 0x14, -1); }
+	SUBCASE("a shared sector is not fresh") { overlap = true; f.m.write<std::uint32_t>(standard + 0x14, 1); }
+	SUBCASE("mask 2 clear prevents any wake") { f.m.write<std::uint8_t>(standard + 0x29, 0); }
+	SUBCASE("moving actor enters the head") { eligible = true; f.m.write<std::uint8_t>(standard + 0x29, 2); f.m.write<std::uint8_t>(standard + 0x28, 1); }
+	auto fixed = f.m.allocate(0x48), fixed_actor = f.m.allocate(0x38), fixed_standard = f.m.allocate(0x34);
+	f.m.write<std::uint32_t>(fixed, 2); f.m.write(fixed + 4, fixed_actor); f.m.write(fixed_actor + 4, fixed_standard);
+	f.m.write<std::uint8_t>(fixed_standard + 0x29, 2);
+	auto entry = f.m.allocate(0x10), fixed_entry = f.m.allocate(0x10);
+	f.m.write(entry, target); f.m.write(fixed_entry, fixed); f.m.write(fixed_entry + 4, entry);
+	f.m.write(bd, fixed_entry); f.m.write<std::uint32_t>(bd + 8, 2);
+	if(overlap)
+	{
+		auto link = f.m.allocate(8);
+		f.m.write(link, b); f.m.write(ad + 0x3C, link); f.m.write<std::uint32_t>(ad + 0x44, 1);
+	}
+	std::vector<std::uint32_t> actors{f.so, target, fixed};
+	f.vm.set_actors(actors);
+	f.vm.update_activation(actors);
+	CHECK(f.vm.active(f.so));
+	CHECK(f.vm.active(target) == overlap); // first entry is fresh
+	if(overlap) f.vm.remove(target);
+	place(12);
+	f.vm.update_activation(actors);
+	CHECK(f.vm.active(f.so));
+	CHECK(f.vm.active(target) == eligible);
+	if(eligible)
+	{
+		CHECK((f.m.u32(standard + 0x24) & 0x800) != 0);
+		CHECK(f.vm.run_order.front() == (f.m.u8(standard + 0x28) ? target : fixed));
+	}
+	place(1);
+	f.vm.update_activation(actors);
+	CHECK_FALSE(f.vm.active(target));
 }

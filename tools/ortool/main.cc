@@ -1475,6 +1475,15 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	bool first_visit = start && std::string_view(start) == "new";
 	for(std::uint32_t bit : first_visit ? std::span<const std::uint32_t>(game::first_visit_story_bits) : std::span<const std::uint32_t>(game::revisit_story_bits))
 		vm.set_story_bit(fix_actors, bit);
+	// ORTOOL_STORY_BITS=a,b: explicit story input, also useful with ORTOOL_START=new
+	// to test the level's own removal rules without the interim revisit snapshot.
+	if(const char* bits = std::getenv("ORTOOL_STORY_BITS"))
+		for(const char* at = bits; at && *at; )
+		{
+			vm.set_story_bit(fix_actors, std::uint32_t(std::strtoul(at, nullptr, 10)));
+			const char* comma = std::strchr(at, ',');
+			at = comma ? comma + 1 : nullptr;
+		}
 	std::cout << std::format("level animation events: {}\n", game::install_level_events(memory, bank));
 	std::cout << std::format("sound slots filled: {}\n", game::apply_sound_slots(memory, game, name));
 	// Keys to hold, as name:from-to ticks, comma separated (e.g. Up:60-200,A:100-110).
@@ -1710,6 +1719,10 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 					std::int32_t(v.word()), v.as_float(), writer != node_of.end() ? std::format("node {}", writer->second) : std::format("0x{:X}", self), vm.last_node());
 			};
 	}
+	const bool wake_trace = std::getenv("ORTOOL_WAKE") != nullptr;
+	std::uint32_t last_wake_sector = 0xFFFFFFFF, thought_ticks = 0;
+	int last_wake_flags = -1;
+	std::size_t counter_ticks = 0;
 	for(int f = 0; f < frames; f++)
 	{
 		tick_now = f;
@@ -1745,6 +1758,48 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 		{
 			throw format_error(std::format("tick {}, outside the actors' scripts (last node 0x{:08X}): {}", f, vm.last_node(), e.what()));
 		}
+		if(wake_trace)
+		{
+			if(vm.run_order_sector != last_wake_sector)
+			{
+				last_wake_sector = vm.run_order_sector;
+				std::cout << std::format("wake tick {}: sector 0x{:X}, order", f, last_wake_sector);
+				for(auto so : vm.run_order)
+					if(node_of.contains(so)) std::cout << " " << node_of[so];
+				std::cout << "\n";
+			}
+			if(traced)
+			{
+				auto standard = memory.u32(traced + 4);
+				auto flags = standard ? memory.u8(standard + 0x29) : 0;
+				thought_ticks += standard && memory.u32(standard + 0x18) == vm.frame_number();
+				if(last_wake_flags != flags || f == frames - 1)
+				{
+					last_wake_flags = flags;
+					std::cout << std::format("wake tick {}: node {} flags 0x{:02X}, updated ticks {}, removed {}\n", f, *trace, flags, thought_ticks, vm.removed(traced_super));
+				}
+			}
+			// The Lum/cage number slots (Fix HUD script), rather than health bars.
+			bool counters = false;
+			for(std::size_t slot : { 15u, 16u })
+			{
+				const auto& number = vm.screen_text().at(slot);
+				counters |= number.used && number.alpha > 0;
+			}
+			counter_ticks += counters;
+			if(f == frames - 1) std::cout << std::format("wake HUD: counters visible on {} of {} ticks\n", counter_ticks, frames);
+		}
+		// There is no renderer in this tool. Treat active actors as in view after the
+		// update, as the old headless runner did; otherwise the fresh-wake 0x800
+		// marker would freeze visibility-gated brains forever. The viewer supplies
+		// actual frustum visibility (0x45C450) in src/main.cc.
+		auto in_view = [&](std::uint32_t so) {
+			if(!vm.active(so)) return;
+			auto standard = memory.u32(vm.actor_of(so) + 4);
+			memory.write<std::uint32_t>(standard + 0x24, memory.u32(standard + 0x24) & ~0x800u);
+		};
+		for(auto so : actors) in_view(so);
+		for(auto so : vm.generated().alive()) in_view(so);
 		// ORTOOL_ACTION=<hex offset in Fix block 06/00>: that input action's counter every tick
 		// (+0x0C; 1 on the press tick), as `ortool input` lists them, e.g. CB4.
 		if(const char* action = std::getenv("ORTOOL_ACTION"))

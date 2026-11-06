@@ -69,6 +69,8 @@ namespace openrayman
 		// not recursive). +0x30: the neighbours a position moving out of the box is tested
 		// against first (0x44BF80). Indices into level_lights::sectors.
 		std::vector<std::size_t> drawn_with, neighbours;
+		// +0x3C (count +0x44): sectors whose actors wake together with this sector (0x40B620).
+		std::vector<std::size_t> wake_with;
 		// What the sky shows while the camera is in this sector (Learn_10: scrolling clouds).
 		std::optional<visual_material> sky;
 

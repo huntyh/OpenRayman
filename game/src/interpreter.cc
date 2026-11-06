@@ -97,6 +97,12 @@ namespace openrayman::game
 
 	void interpreter::set_actors(std::vector<std::uint32_t> actors)
 	{
+		run_order_source = 0;
+		run_order_sector = 0xFFFFFFFF;
+		run_order.clear();
+		m_sector_members.clear();
+		m_actor_sectors.clear();
+		m_wake_sectors.clear();
 		m_actors = std::move(actors);
 		m_supports.clear();
 		m_sectors.clear();
@@ -121,6 +127,190 @@ namespace openrayman::game
 			initialize_native_check(self);
 			select_zone_groups(m_memory, actor_of(self));
 		}
+	}
+
+	bool interpreter::active(std::uint32_t self, bool player) const
+	{
+		auto actor = actor_of(self);
+		auto standard = actor ? m_memory.u32(actor + 4) : 0;
+		return standard && !removed(self) && (m_memory.u8(standard + 0x29) & (player ? 2 : 4));
+	}
+
+	void interpreter::remove(std::uint32_t self, bool mark_removed)
+	{
+		m_removed.insert(self);
+		m_screen_objects.erase(self);
+		auto actor = actor_of(self);
+		auto standard = actor ? m_memory.u32(actor + 4) : 0;
+		if(mark_removed && standard)
+		{
+			auto flags = std::uint8_t((m_memory.u8(standard + 0x29) | 1) & ~4);
+			flags = std::uint8_t(m_memory.u32(standard + 0x14) == 5 ? flags & ~2 : flags | 2);
+			m_memory.write<std::uint8_t>(standard + 0x29, flags);
+		}
+	}
+
+	void interpreter::update_activation(std::span<const std::uint32_t> actors)
+	{
+		auto& m = m_memory;
+		auto standard_of = [&](std::uint32_t self) { auto a = actor_of(self); return a ? m.u32(a + 4) : 0; };
+		auto camera = [&](std::uint32_t self) { auto a = actor_of(self); return a && m.u32(a + 0x10); };
+		auto remember_sector = [&](std::uint32_t self, std::uint32_t owner) {
+			m_actor_sectors[self] = owner;
+			auto actor = actor_of(self), info = actor ? m.u32(actor + 0x20) : 0;
+			if(info && m.contains(info, 4)) m.write<std::uint32_t>(info, owner);
+		};
+		auto insert = [&](std::vector<std::uint32_t>& list, std::uint32_t self) {
+			if(std::ranges::find(list, self) != list.end()) return;
+			auto s = standard_of(self);
+			if(s && m.u8(s + 0x28)) list.insert(list.begin(), self);
+			else list.push_back(self);
+		};
+		if(!run_order_source)
+		{
+			if(m_actors.empty()) set_actors({ actors.begin(), actors.end() });
+			run_order_source = actors.size();
+			// Restore sector file order (the discovery walk reaches these from either end).
+			if(!m_sectors.empty())
+			{
+				auto parent = m.u32(m_sectors.front() + 0x1C);
+				std::vector<std::uint32_t> ordered;
+				for(auto so = parent ? m.u32(parent + 8) : 0; so && ordered.size() < m_sectors.size(); so = m.u32(so + 0x14))
+					if(std::ranges::find(m_sectors, so) != m_sectors.end()) ordered.push_back(so);
+				if(ordered.size() == m_sectors.size()) m_sectors = std::move(ordered);
+			}
+			m_activation_sectors = {};
+			auto index_of = [&](std::uint32_t so) -> std::optional<std::size_t> {
+				auto i = std::ranges::find(m_sectors, so);
+				return i == m_sectors.end() ? std::nullopt : std::optional<std::size_t>(i - m_sectors.begin());
+			};
+			for(auto so : m_sectors)
+			{
+				auto d = m.u32(so + 4);
+				sector s;
+				s.is_virtual = m.u8(d + 0x7C) != 0;
+				s.priority = std::int8_t(m.u8(d + 0x7F));
+				for(std::uint32_t axis = 0; axis < 3; ++axis)
+				{
+					s.min[axis] = m.f32(d + 0x60 + axis * 4);
+					s.max[axis] = m.f32(d + 0x6C + axis * 4);
+				}
+				for(auto [offset, list] : { std::pair{0x30u, &s.neighbours}, {0x3Cu, &s.wake_with} })
+				{
+					auto entry = m.u32(d + offset), count = m.u32(d + offset + 8);
+					for(std::uint32_t n = 0; entry && n < count; ++n, entry = m.u32(entry + 4))
+						if(auto i = index_of(m.u32(entry))) list->push_back(*i);
+				}
+				m_activation_sectors.sectors.push_back(std::move(s));
+				// The saved actor list preserves wake order, including moving actors at its head.
+				auto entry = m.u32(d), count = m.u32(d + 8);
+				for(std::uint32_t n = 0; entry && n < count; ++n, entry = m.u32(entry + 4))
+				{
+					auto self = m.u32(entry);
+					if(std::ranges::find(actors, self) != actors.end())
+					{
+						m_sector_members[so].push_back(self);
+						remember_sector(self, so);
+					}
+				}
+			}
+			for(auto self : actors)
+			{
+				auto s = standard_of(self);
+				if(!s) continue;
+				if(camera(self)) { insert(run_order, self); m.write<std::uint8_t>(s + 0x29, m.u8(s + 0x29) | 4); }
+				if(m_actor_sectors.contains(self)) continue;
+				// Fix has no saved level membership. The loader appends its placements; the
+				// actors with flag 8 use the fallback sector, whose box is deliberately empty.
+				std::uint32_t owner = 0;
+				if(!m_sectors.empty())
+				{
+					if(self != m_main_actor && (m.u32(self + 0x30) & 8)) owner = m_sectors.back();
+					else if(auto p = global_placement(m, self))
+						if(auto i = m_activation_sectors.follow({}, {p->m[0][3], p->m[1][3], p->m[2][3]})) owner = m_sectors[*i];
+				}
+				remember_sector(self, owner);
+				insert(m_sector_members[owner], self);
+			}
+		}
+		// Track live sector membership. Teleports and walking both use follow, including
+		// priority changes in overlapping boxes; do not replace it with smallest-box lookup.
+		std::vector<std::uint32_t> live_actors(actors.begin(), actors.end()), changed;
+		for(auto self : m_generated.alive()) live_actors.push_back(self);
+		for(auto self : live_actors)
+		{
+			if((self != m_main_actor && (m.u32(self + 0x30) & (8 | 0x20))) || camera(self)) continue;
+			auto p = global_placement(m, self);
+			if(!p || m_sectors.empty()) continue;
+			auto old = m_actor_sectors[self];
+			auto it = std::ranges::find(m_sectors, old);
+			std::optional<std::size_t> current;
+			if(it != m_sectors.end()) current = it - m_sectors.begin();
+			auto i = m_activation_sectors.follow(current, {p->m[0][3], p->m[1][3], p->m[2][3]});
+			auto owner = i ? m_sectors[*i] : 0;
+			if(owner == old) continue;
+			std::erase(m_sector_members[old], self);
+			insert(m_sector_members[owner], self);
+			remember_sector(self, owner);
+			changed.push_back(self);
+		}
+		auto sector = m_actor_sectors[m_main_actor];
+		if(run_order_sector == sector)
+		{
+			// 0x4128D0: an actor that moves out of the wake region leaves the active
+			// world, unless standard mask 0x10/0x40 exempts it from spatial sleeping.
+			for(auto self : changed)
+				if(auto s = standard_of(self); s && !(m.u8(s + 0x29) & 0x50) &&
+					std::ranges::find(m_wake_sectors, m_actor_sectors[self]) == m_wake_sectors.end())
+				{
+					m.write<std::uint8_t>(s + 0x29, m.u8(s + 0x29) & ~4);
+					std::erase(run_order, self);
+				}
+			return;
+		}
+		const bool first = run_order_sector == 0xFFFFFFFF;
+		run_order_sector = sector;
+		std::erase_if(run_order, [&](auto self) { return !camera(self); });
+		std::vector<std::uint32_t> wake_sectors;
+		if(m_sectors.empty()) wake_sectors.push_back(0); // isolated VM fixtures have no sector tree
+		if(sector)
+		{
+			wake_sectors.push_back(sector);
+			auto i = std::ranges::find(m_sectors, sector) - m_sectors.begin();
+			for(auto other : m_activation_sectors.sectors[i].wake_with) wake_sectors.push_back(m_sectors[other]);
+		}
+		auto fresh = [&](std::uint32_t so) { return first || std::ranges::find(m_wake_sectors, so) == m_wake_sectors.end(); };
+		auto wake = [&](std::uint32_t self, bool new_sector) {
+			if(std::ranges::find(live_actors, self) == live_actors.end()) return;
+			auto s = standard_of(self);
+			if(!s || std::ranges::find(run_order, self) != run_order.end()) return;
+			auto flags = m.u8(s + 0x29);
+			if(!(flags & 2) || ((flags & 1) && !(new_sector && m.read<std::int32_t>(s + 0x14) < 2))) return;
+			insert(run_order, self);
+			m_removed.erase(self);
+			m.write<std::uint8_t>(s + 0x29, flags | 4);
+			if(new_sector) m.write<std::uint32_t>(s + 0x24, m.u32(s + 0x24) | 0x800);
+		};
+		for(auto so : wake_sectors)
+			for(auto self : m_sector_members[so]) wake(self, fresh(so));
+		// 0x419BC0's always-wake list: standard flag 0x40. The list remains in
+		// file order; already woken entries do not get relinked.
+		for(auto self : actors)
+			if(auto s = standard_of(self); s && (m.u8(s + 0x29) & 0x40)) wake(self, first);
+		for(auto self : m_generated.alive())
+		{
+			auto owner = m_actor_sectors[self];
+			wake(self, first || (owner && fresh(owner)));
+		}
+		// 0x45B990's explicitly detached actors (procedures 410/411).
+		for(auto self : actors) if(m.u32(self + 0x30) & 0x20) wake(self, first);
+		for(auto self : actors)
+			if(auto s = standard_of(self); s && std::ranges::find(run_order, self) == run_order.end())
+				m.write<std::uint8_t>(s + 0x29, m.u8(s + 0x29) & ~4);
+		for(auto self : m_generated.alive())
+			if(auto s = standard_of(self); s && std::ranges::find(run_order, self) == run_order.end())
+				m.write<std::uint8_t>(s + 0x29, m.u8(s + 0x29) & ~4);
+		m_wake_sectors = std::move(wake_sectors);
 	}
 
 	std::uint32_t interpreter::sector_at(const std::array<float, 3>& position) const
