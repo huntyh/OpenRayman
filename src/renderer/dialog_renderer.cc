@@ -84,9 +84,7 @@ namespace openrayman
 				try
 				{
 					auto image = decode_gf(archive->read(*entry));
-					if(info.flags & texture_flag::color_key)
-						for(std::size_t i = 0; i < image.rgba.size(); i += 4)
-							if(image.rgba[i] < 8 && image.rgba[i + 1] < 8 && image.rgba[i + 2] < 8) image.rgba[i + 3] = 0;
+					apply_color_key(info, image.rgba);
 					return image;
 				}
 				catch(const std::exception& e) { SDL_Log("Dialog texture %s: %s", path.c_str(), e.what()); }

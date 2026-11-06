@@ -529,15 +529,9 @@ namespace openrayman
 				try
 				{
 					gf_texture gf = decode_gf(archive->read(*entry));
-					if(info.flags & texture_flag::color_key)
-					{
-						// Black is transparent: these textures have no alpha of their own.
-						for(std::size_t i = 0; i < gf.rgba.size(); i += 4)
-						{
-							if(gf.rgba[i] < 8 && gf.rgba[i + 1] < 8 && gf.rgba[i + 2] < 8)
-								gf.rgba[i + 3] = 0;
-						}
-					}
+					// The texture's key colour is transparent (mostly black; Jail_10's mountains key out
+					// their sky grey). These textures have no alpha of their own.
+					apply_color_key(info, gf.rgba);
 					bleed_edges(gf.width, gf.height, gf.rgba);
 					texture.id = upload_texture(gf.width, gf.height, gf.rgba.data());
 					texture.mirror_u = info.tiling & texture_tiling::mirror_u;
@@ -644,7 +638,7 @@ namespace openrayman
 
 		// Triangles grouped by texture. Corners are expanded into separate vertices, because a
 		// corner's UV is indexed separately from its position.
-		using by_texture = std::map<std::tuple<blend, GLuint, int, std::array<float, 2>, std::array<float, 8>>, std::vector<vertex>>;
+		using by_texture = std::map<std::tuple<blend, GLuint, int, std::array<float, 2>, std::array<float, 8>, cull>, std::vector<vertex>>;
 		// Static geometry is lit once here, by the lights its sector lists for scenery; meshes placed
 		// per frame (`lit` empty) are lit as they're drawn.
 		auto add = [&](const geometric_object& object, const affine& world, by_texture& triangles, std::vector<sprite_instance>& sprites,
@@ -657,10 +651,12 @@ namespace openrayman
 				std::array<float, 2> scroll{};
 				// The material's ambient colour is its least light; lights add on top, times its diffuse colour.
 				std::array<float, 8> colors{ 0, 0, 0, 1, 1, 1, 1, 1 };
+				cull faces = cull::none;
 				if(element.material)
 				{
 					const visual_material& m = *element.material;
 					colors = { m.ambient[0], m.ambient[1], m.ambient[2], m.ambient[3], m.diffuse[0], m.diffuse[1], m.diffuse[2], m.diffuse[3] };
+					faces = cull_for(m.flags);
 				}
 				if(element.material && element.material->texture)
 				{
@@ -670,7 +666,7 @@ namespace openrayman
 					animation = animation_for(*element.material, archives, stats);
 					scroll = element.material->scroll;
 				}
-				std::vector<vertex>& out = triangles[{ texture.mode, texture.id, animation, scroll, colors }];
+				std::vector<vertex>& out = triangles[{ texture.mode, texture.id, animation, scroll, colors, faces }];
 				for(std::size_t t = 0; t < element.triangles.size(); t++)
 				{
 					// The game's v runs up from the bottom row; our textures are uploaded top row first.
@@ -734,7 +730,7 @@ namespace openrayman
 				glm::vec2 per_second(scroll[0] * scroll_frames_per_second, -scroll[1] * scroll_frames_per_second);
 				const std::array<float, 8>& c = std::get<4>(key);
 				batches.push_back({ std::get<1>(key), GLint(vertices.size()), GLsizei(list.size()), std::get<0>(key), std::get<2>(key), per_second,
-					glm::vec4(c[0], c[1], c[2], c[3]), glm::vec4(c[4], c[5], c[6], c[7]) });
+					glm::vec4(c[0], c[1], c[2], c[3]), glm::vec4(c[4], c[5], c[6], c[7]), no_sector, std::get<5>(key) });
 				vertices.insert(vertices.end(), list.begin(), list.end());
 			}
 		};
@@ -1103,6 +1099,26 @@ namespace openrayman
 			glUniform4fv(m_u_light_color, l.count, glm::value_ptr(l.color[0]));
 			glUniform2fv(m_u_light_range, l.count, glm::value_ptr(l.range[0]));
 		};
+		// One-sided surfaces (material flag 0x400): the drivers drop triangles by the sign of their
+		// projected area (GliVd1vf.dll 0x1000311B, 0x10003520/0x10003580; GliDX6vf.dll 0x1000237B).
+		// Keeping a positive area there is keeping counter-clockwise here (the other way round shows
+		// Rayman's face through the back of his head).
+		static const bool no_cull = std::getenv("OPENRAYMAN_NO_CULL") != nullptr;
+		cull culled = cull::none;
+		glDisable(GL_CULL_FACE);
+		auto use_cull = [&](cull faces) {
+			if(no_cull || faces == culled)
+				return;
+			culled = faces;
+			if(faces == cull::none)
+			{
+				glDisable(GL_CULL_FACE);
+				return;
+			}
+			glEnable(GL_CULL_FACE);
+			glCullFace(GL_BACK);
+			glFrontFace(faces == cull::keep_positive ? GL_CCW : GL_CW);
+		};
 		auto draw_batches = [&, this](std::span<const batch> batches, blend mode) {
 			for(const batch& b : batches)
 			{
@@ -1110,6 +1126,7 @@ namespace openrayman
 					continue;
 				if(b.sector != no_sector)
 					use_fog(b.sector);
+				use_cull(b.faces);
 				glBindTexture(GL_TEXTURE_2D, texture_at(b.animation, b.texture));
 				// Wrapped every 2 widths, which keeps mirrored textures the same and the numbers small.
 				glm::vec2 offset(std::fmod(double(b.scroll.x) * m_time, 2.0), std::fmod(double(b.scroll.y) * m_time, 2.0));
@@ -1218,6 +1235,7 @@ namespace openrayman
 		glUniform1f(m_u_part_alpha, 1.0f);
 
 		use_fog(m_camera_sector);
+		use_cull(cull::none);
 		// Shadows: blobs laid on the ground below the actors that cast them, over the solid surfaces.
 		if(m_shadow_texture && !m_shadows.empty())
 		{
@@ -1345,6 +1363,7 @@ namespace openrayman
 		glUniform1f(m_u_sharpen, 0.0f);
 		glUniform1f(m_u_part_alpha, 1.0f);
 		use_fog(m_camera_sector);
+		use_cull(cull::none);
 		// Sprites are glows and flames: they shine by themselves.
 		glUniform1i(m_u_lighting, m_lighting ? 3 : 0);
 		glUniform2f(m_u_uv_offset, 0, 0);

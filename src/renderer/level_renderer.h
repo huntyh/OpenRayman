@@ -136,6 +136,17 @@ namespace openrayman
 			additive, // glows and light
 		};
 
+		// Which side of a triangle is drawn, from its material's flags (cull_for).
+		enum class cull : std::uint8_t { none, keep_positive, keep_negative };
+		// Visual material flag 0x400 turns culling on; 0x80000 picks the side, together with the
+		// draw flags' 0x02000000 (set: the levels' draw flags are 0xFFFFFFFF), so with it set the
+		// drivers keep a positive projected area (exe 0x42A410 ands the two; GliVd1vf.dll 0x1000311B).
+		static cull cull_for(std::uint32_t material_flags)
+		{
+			if(!(material_flags & 0x400))
+				return cull::none;
+			return material_flags & 0x80000 ? cull::keep_positive : cull::keep_negative;
+		}
 		struct batch
 		{
 			GLuint texture = 0;
@@ -146,6 +157,7 @@ namespace openrayman
 			glm::vec2 scroll{ 0 }; // texture widths per second, in our UV space
 			glm::vec4 ambient{ 0 }, diffuse{ 1 }; // the material's colours and alpha
 			std::size_t sector = no_sector; // the level's own geometry: the sector it belongs to
+			cull faces = cull::none;
 		};
 		static constexpr std::size_t no_sector = std::size_t(-1);
 

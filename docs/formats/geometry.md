@@ -103,6 +103,17 @@ specular's fourth may be an exponent), +0x48 texture description (see [gpt.md](g
 +0x4C scroll speed (2 floats, u and v), +0x54 the same two again, +0x5C u32 1 if it scrolls, +0x64
 first frame of an animated texture, +0x68 the frame showing now, +0x6C u32 number of frames.
 
+**One-sided surfaces** (own analysis of the exe and drivers by GPT-6.1 Sol, Codex, 2026-11-06): the
+visual material's flags are ANDed with the draw flags passed in (exe 0x42A410; the level's are
+0xFFFFFFFF, GPT offset 0x328, global 0x5003E0). Flag 0x400 turns face culling on; then, with the draw
+flags' 0x02000000 set, flag 0x80000 set keeps triangles whose projected area (corners in stored
+order) is positive and clear keeps the negative ones (`GliVd1vf.dll` 0x1000311B, tests 0x10003520 /
+0x10003580; `GliDX6vf.dll` 0x1000237B). In OpenGL terms "positive" is counter-clockwise front faces,
+settled on Rayman (the other way shows his face through the back of his head). Jail_10's materials
+are 0x4DDC07FF (cull, keep positive; 0x08000000 depth writes, 0x40000000 normal depth test): its
+mountain ring hides from behind. Before, OpenRayman drew everything double-sided;
+`OPENRAYMAN_NO_CULL=1` still does, for comparison.
+
 **Scrolling textures**: the speed is in texture widths per frame, with v counting up as everywhere
 in the game (0.0065 for the Learn_10 stream). 177 materials in all levels scroll: water, foam and
 mist, fog, skies and star fields, rain, a vortex. In every one the flag is 1 exactly when a speed is

@@ -15,6 +15,7 @@ namespace openrayman
 	{
 		constexpr std::uint32_t flags = 0x14;
 		constexpr std::uint32_t size = 0x1C; // u16 height, u16 width (0x18 holds a similar pair, often half)
+		constexpr std::uint32_t color_key = 0x2C; // u32 0x00BBGGRR, used with texture_flag::color_key
 		constexpr std::uint32_t name = 0x46;
 		constexpr std::uint32_t name_length = 0x80;
 	}
@@ -42,6 +43,7 @@ namespace openrayman
 		info.flags = memory.read_u32(at + field::flags);
 		info.tiling = std::uint8_t(data[at.offset + field::name - 1]);
 		std::uint32_t size = memory.read_u32(at + field::size);
+		info.color_key = memory.read_u32(at + field::color_key);
 		info.height = std::uint16_t(size);
 		info.width = std::uint16_t(size >> 16);
 
@@ -51,6 +53,19 @@ namespace openrayman
 		if(info.name.empty() || !std::ranges::all_of(info.name, [](unsigned char c) { return c >= 0x20 && c != 0x7F; }))
 			throw format_error(std::format("texture at {} +0x{:X} has no readable name", at.block->id.to_string(), at.offset));
 		return info;
+	}
+
+	void apply_color_key(const texture_info& info, std::span<std::uint8_t> rgba)
+	{
+		if(!(info.flags & texture_flag::color_key))
+			return;
+		auto rgb565 = [](unsigned r, unsigned g, unsigned b) { return ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3); };
+		const unsigned key = rgb565(info.color_key & 0xFF, (info.color_key >> 8) & 0xFF, (info.color_key >> 16) & 0xFF);
+		for(std::size_t i = 0; i + 3 < rgba.size(); i += 4)
+		{
+			if(rgb565(rgba[i], rgba[i + 1], rgba[i + 2]) == key)
+				rgba[i + 3] = 0;
+		}
 	}
 
 	std::vector<texture_info> read_texture_table(const level_files& files, bool level)

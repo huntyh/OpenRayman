@@ -85,9 +85,10 @@ Texture description, as far as known:
 
 | Offset | Field |
 | --- | --- |
-| 0x14 | u32 flags: 0x2 black is transparent ("_nz"), 0x8 alpha ("_aaa"), 0x20 additive ("_ad") |
+| 0x14 | u32 flags: 0x2 colour key ("_nz", the key colour at 0x2C is transparent), 0x8 alpha ("_aaa"), 0x20 additive ("_ad") |
 | 0x18 | u16 height, u16 width: often half of the size at 0x1C; meaning unknown |
 | 0x1C | u16 height, u16 width |
+| 0x2C | u32 key colour, 0x00BBGGRR, used with flag 0x2: mostly black; Jail_10's mountains `mount1..4_nz` key out their sky grey 0x00DAD9D0 (208, 217, 218). The drivers compare on the 16-bit RGB565 value (`GliVd1vf.dll` 0x10008019 sets `grChromakeyValue`, `GliDX6vf.dll` 0x1000A437; exe 0x42C370 nudges non-key colours that would round to the key). Found by GPT-6.1 Sol (Codex), 2026-11-06; ours keyed only black, so the mountains showed their sky as flat shapes |
 | 0x45 | u8 tiling: bits 1 and 2 repeat, 4 and 8 mirror ("_txy" is 3, "_mxy" is 15); which axis each bit is, is not settled (below) |
 | 0x46 | file name, NUL terminated, Latin-1, e.g. `textures_foret\foret_bordtri_nz.tga` |
 
