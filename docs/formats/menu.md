@@ -324,6 +324,25 @@ with a centred 4:3 mapping consistent with the menu text at wide aspect ratios. 
 viewport scaling and separate draw pass have not been fully reproduced; the placement and size
 still need comparison with the real game, especially at other aspect ratios.
 
+The separate pass (own analysis, 2026-11-06): 0x405180 sets up a second viewport record at
+0x5004D4 (display 100 x 100, 0..1000) with its own camera 0x50054C, built once by 0x4052C0: kind
+0x67, angles 1.5 and 0.75 (0x422660), near 0.1, far 1000, at (0, 0, 5), turned a quarter about X
+(0x445BE0) and a half about Z (0x445C70). 0x419A30 draws the world 0x5003E0 through it every
+frame. Procedure 409 also makes the actor's transform type 4 and writes viewport width / 640
+(0.0015625 at 0x49CC58) to the diagonal entries 0 and 8 of its combined matrix, leaving the rest.
+So a screen object keeps its own orientation relative to that fixed camera. The intro's Ubisoft
+logo (Jail_10 node 4 spawns actor `04/01 +0x680` with var3 = 1; object list `04/01 +0x9A0`: the
+"Ubi Soft"/"Entertainment" plate and the arc, both lying in their XZ plane facing -Y) has an
+identity transform. Left in its world orientation in front of the Jail_10 camera it showed its back,
+mirrored. OpenRayman now turns each screen object's own orientation with the game camera,
+followed by a half turn about the camera's up axis (the quarter turn between the camera object's
+matrix and our camera super object's axes was settled by eye on the logo). The menu camera looks
+along +Y, where that turn is nearly none. Since the pass is a world of its own, the level's lights
+don't reach it: OpenRayman lights screen objects with one white ambient light. The logo's arc has
+a black material ambient and a plain white texture, so in the game its white-to-yellow gradient
+must come from light in that pass. That light is not traced yet, so ours is plain white. The 409
+scale (width / 640) isn't applied.
+
 ### Exit game (2026-11-04)
 
 Node 6 behaviour 11 handles the main menu. Entry 5 sets var55 to 6 and switches to behaviour 9

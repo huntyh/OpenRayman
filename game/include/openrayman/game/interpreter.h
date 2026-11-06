@@ -296,7 +296,7 @@ namespace openrayman::game
 		// its super object carries from tick to tick (procedure 444, 0x4359D0; see camera.h).
 		camera_state& camera_motion() { return m_camera_motion; }
 		// Procedure 409's persistent screen objects, in thousandths of the viewport.
-		std::map<std::uint32_t, std::array<int, 3>>& screen_objects() { return m_screen_objects; }
+		std::map<std::uint32_t, screen_object>& screen_objects() { return m_screen_objects; }
 
 		// Handlers that don't exist yet, by kind and index, and how often scripts reached them.
 		// The key is the kind's name (a string literal) and the index.
@@ -405,6 +405,6 @@ namespace openrayman::game
 		const animation_bank* m_animations = nullptr;
 		camera_globals m_camera;
 		camera_state m_camera_motion;
-		std::map<std::uint32_t, std::array<int, 3>> m_screen_objects;
+		std::map<std::uint32_t, screen_object> m_screen_objects;
 	};
 }

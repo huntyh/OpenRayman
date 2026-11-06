@@ -905,6 +905,7 @@ namespace
 	void update_actors(app& a)
 	{
 		std::vector<posed_part> parts;
+		std::vector<bool> screen_parts; // per part: drawn by the exe's screen pass (procedure 409)
 		for(std::size_t i = 0; i < a.actors.actors.size(); i++)
 		{
 			const actor_set::entry& actor = a.actors.actors[i];
@@ -936,6 +937,7 @@ namespace
 						frame = std::min(frame, double(frames - 1));
 				}
 			}
+			std::size_t first_part = parts.size();
 			try
 			{
 				pose_actor(actor, a.bank, frame, parts);
@@ -944,18 +946,22 @@ namespace
 			{
 				// Bad animation data: leave this actor out rather than stop the level.
 			}
+			if(a.vm && a.scripts && i < a.super_object_at.size() && a.vm->screen_objects().contains(a.super_object_at[i]))
+				screen_parts.insert(screen_parts.end(), parts.size() - std::min(parts.size(), first_part), true);
+			screen_parts.resize(parts.size(), false);
 		}
 		std::vector<level_renderer::part> out;
 		out.reserve(parts.size());
-		for(const posed_part& part : parts)
+		for(std::size_t n = 0; n < parts.size(); n++)
 		{
+			const posed_part& part = parts[n];
 			glm::mat4 model(1.0f);
 			for(int r = 0; r < 3; r++)
 			{
 				for(int c = 0; c < 4; c++)
 					model[c][r] = part.world.m[r][c];
 			}
-			out.push_back({ part.mesh, model, {}, part.morph_mesh, part.morph_amount });
+			out.push_back({ part.mesh, model, {}, part.morph_mesh, part.morph_amount, n < screen_parts.size() && screen_parts[n] });
 		}
 		a.level->set_parts(std::move(out));
 		a.level->set_time(a.animation_time);

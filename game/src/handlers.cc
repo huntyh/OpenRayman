@@ -4245,7 +4245,7 @@ namespace openrayman::game
 			next_arg(c, depth);
 			std::uint32_t self = c.vm.target(c.self, true);
 			if(self)
-				c.vm.screen_objects()[self] = { x.as_int(), y.as_int(), depth.as_int() };
+				c.vm.screen_objects()[self].at = { x.as_int(), y.as_int(), depth.as_int() };
 			return c.args;
 		}
 

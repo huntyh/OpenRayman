@@ -865,6 +865,18 @@ namespace openrayman
 	level_renderer::part_lights level_renderer::lights_for(const part& p) const
 	{
 		part_lights out;
+		if(p.screen)
+		{
+			// The exe's screen pass is a world of its own (0x419A30 draws 0x5003E0 with the fixed
+			// camera 0x4052C0), so the level's lights don't reach it. Ours: one white ambient light,
+			// which shows each surface at its texture's own colours. The logo's arc has a black
+			// material ambient (its white-to-yellow gradient is the texture's) and came out black
+			// under the level's dark lights; whether the exe's pass has a light of its own isn't traced.
+			out.count = 1;
+			out.kind[0] = 0;
+			out.color[0] = glm::vec4(1);
+			return out;
+		}
 		glm::vec3 at(p.model[3]);
 		vec3 position{ at.x, at.y, at.z };
 		std::optional<std::size_t> sector = p.sector ? p.sector : m_lights.sector_at(position);
@@ -931,7 +943,7 @@ namespace openrayman
 			for(const part& p : *list)
 			{
 				if(p.mesh < m_meshes.size())
-					parts.push_back({ p.mesh, face_camera(p.model, m_meshes[p.mesh].look, camera), p.sector, p.morph_mesh, p.morph_amount });
+					parts.push_back({ p.mesh, face_camera(p.model, m_meshes[p.mesh].look, camera), p.sector, p.morph_mesh, p.morph_amount, p.screen });
 			}
 		}
 

@@ -38,6 +38,36 @@ namespace openrayman::game
 		return result;
 	}
 
+	affine screen_object_placement(const affine& camera, const std::array<int, 3>& screen, const affine& own)
+	{
+		// The exe draws these objects in a screen pass of their own, with a fixed camera (0x4052C0:
+		// at (0, 0, 5), turned a quarter about X by 0x445BE0 and a half about Z by 0x445C70), so an
+		// object keeps the orientation it has in front of that camera whatever the game camera does
+		// (identity for the intro's Ubisoft logo; 409 sets only its scale, which we leave). Ours draws it in the world
+		// in front of the game camera, so it turns with that camera. Relative to our camera super
+		// object's axes that comes out as a half turn about the camera's up axis (col 2): the two
+		// camera matrices differ by a quarter turn about X, settled by eye on the logo (it reads
+		// left to right and stands upright only this way). Left in its world orientation, the logo
+		// showed its back, mirrored (#65). The menu camera looks along +Y, where this turn is close
+		// to none: that is why the menu butterfly already matched with its world orientation.
+		affine turn;
+		for(int r = 0; r < 3; r++)
+		{
+			turn.m[r][0] = -camera.m[r][0];
+			turn.m[r][1] = -camera.m[r][1];
+			turn.m[r][2] = camera.m[r][2];
+			turn.m[r][3] = 0;
+		}
+		affine rotation = own;
+		for(int r = 0; r < 3; r++)
+			rotation.m[r][3] = 0;
+		affine a = turn * rotation;
+		auto point = screen_object_position(camera, screen);
+		for(int i = 0; i < 3; ++i)
+			a.m[i][3] = point[i];
+		return a;
+	}
+
 	namespace
 	{
 		namespace camera_field

@@ -590,14 +590,21 @@ namespace openrayman::game
 		// The exe retains these objects in its screen pass even after their scripts stop
 		// updating their coordinates. Reproject after the camera has moved this tick.
 		if(auto camera = global_placement(m, vm.camera_motion().super_object))
-			for(const auto& [self, screen] : vm.screen_objects())
+			for(auto& [self, object] : vm.screen_objects())
 				if(!vm.removed(self))
 					if(auto placed = global_placement(m, self))
 					{
-						auto point = screen_object_position(*camera, screen);
-						for(int i = 0; i < 3; ++i)
-							placed->m[i][3] = point[i];
-						set_global_placement(m, self, *placed);
+						// Its own orientation: what it had when it became a screen object, or what
+						// its scripts gave it since we last drew it.
+						bool moved = !object.placed;
+						for(int r = 0; r < 3 && !moved; r++)
+							for(int c = 0; c < 3; c++)
+								moved = moved || std::abs(placed->m[r][c] - object.shown.m[r][c]) > 1e-4f;
+						if(moved)
+							object.own = *placed;
+						object.shown = screen_object_placement(*camera, object.at, object.own);
+						object.placed = true;
+						set_global_placement(m, self, object.shown);
 					}
 		// The pool's sweep (0x40C2F0, from 0x40ADEF): a generated actor whose custom bits carry
 		// 0x20000 goes once its animation has played out with nothing after it (0x410310: 3D data

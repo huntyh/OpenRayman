@@ -13,6 +13,17 @@ namespace openrayman::game
 
 	// Unproject the screen-object coordinates using the renderer's 4:3 projection.
 	std::array<float, 3> screen_object_position(const affine& camera, const std::array<int, 3>& screen);
+	// A procedure 409 object: where on screen (thousandths of the viewport, depth), the orientation
+	// it has of its own (what its scripts or its saved transform give it), and what we last drew.
+	struct screen_object
+	{
+		std::array<int, 3> at{};
+		affine own, shown;
+		bool placed = false;
+	};
+	// The whole placement of a screen object: that point, its own orientation turned with the game
+	// camera (0x4052C0).
+	affine screen_object_placement(const affine& camera, const std::array<int, 3>& screen, const affine& own);
 
 	// Where the game camera wants to be, as its scripts' procedure 444 solves it each frame (0x485810
 	// with the stages 0x483F90, 0x4840A0 and 0x4847D0), and what the mechanics that moves the camera

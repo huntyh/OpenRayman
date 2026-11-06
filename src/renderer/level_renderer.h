@@ -56,6 +56,9 @@ namespace openrayman
 			std::optional<std::size_t> sector; // whose lights shine on it; found from where it is if not set
 			std::optional<std::size_t> morph_mesh;
 			std::uint8_t morph_amount = 0;
+			// Drawn by the game's screen pass (procedure 409: the intro's Ubisoft logo, the menu
+			// butterfly), not lit by the level: see lights_for.
+			bool screen = false;
 		};
 
 		// What to draw of the actors this frame. Parts naming a mesh that wasn't loaded are skipped.
