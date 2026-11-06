@@ -1,4 +1,5 @@
 add_executable(openrayman_tests
+	save_tests.cc
 	main.cc
 	binary_reader_tests.cc
 	checksum_tests.cc
@@ -27,7 +28,7 @@ function(ortool_check name expected)
 endfunction()
 
 ortool_check(help
-	e8fbd3073253d50c1efabec6fc9cf62158b09ecd3fefc1952b04e8a7c4de375a
+	f64e25e55f0e1b9792cfff44e914254bb498f61d50dcd2e0278eff9197cd2b25
 	help)
 ortool_check(level_learn_10
 	489746cf2620b2de2776894f6ba725e6d3edce4258767693b1a9a0b64ec9539d

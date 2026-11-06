@@ -110,12 +110,13 @@ scripts in another behaviour, e.g. `--behaviour 4:1` for The Woods of Light's fl
 Gameplay (The Woods of Light first):
 
 ```
-openrayman --game "<Rayman 2 folder>" --level Learn_10 [--start new|portal] [--story-bits 1095,1143]
+openrayman --game "<Rayman 2 folder>" --level Learn_10 [--start new|portal] [--save 1|2|3] [--story-bits 1095,1143]
             [--keys <name:from-to,...>] [--camera x,y,z,yaw,pitch]
 ```
 
-`--start new` starts a first visit (Rayman at the hand-over, the tutorial cage waiting); without
-it the start is as if the level were reached from the Hall of Doors. `--story-bits` sets a save's
+`--save 1` (or 2/3) restores an installed slot at level load and takes precedence over `--start`.
+Without `--save`, `--start new` starts a first visit (Rayman at the hand-over, the tutorial cage
+waiting); the default starts as if the level were reached from the Hall of Doors. `--story-bits` sets a save's
 story bits at load, `--keys` holds keys on schedule as in `ortool run`, and `--camera-log <file>`
 writes the camera's position every tick as CSV. Without `--camera` it plays seen through the
 game's camera.
