@@ -24,6 +24,11 @@
 #                  as `ortool sound` takes it), channel, the actor it sounds from
 #   music.txt      the music theme playing, its segment index and the one prepared next
 #                  (0x4B95B8..), segment resource ids (bank:index)
+#   slots.txt      the 50 screen-text slots (0x4E1080, 0x1C each: +0 text pointer, +0x10 alpha,
+#                  +0x13 ramp flags): a slot as it gets text, its alpha and flags as they change,
+#                  with the text (the Lum and cage counters are slots 15 and 16)
+#   vars.txt       with --vars: chosen script variables of chosen actors, every frame they change,
+#                  plus each one's thought counter (3D data +0x100) and behaviour
 #   audio.txt      how loud the sound output is every 50 ms (RMS and peak, dBFS; r2audio.py, needs
 #                  `pip install soundcard`): set against sound.txt and music.txt, it gives the game's
 #                  mix. Mute other programs while recording
@@ -42,7 +47,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import r2live as live  # noqa: E402
 
-TOPICS = ("session", "story", "rayman", "actors", "camera", "generated", "text", "sound", "music", "audio")
+TOPICS = ("session", "story", "rayman", "actors", "camera", "generated", "text", "sound", "music", "slots", "vars", "audio")
 
 LEVEL_NAME = 0x500381     # the level being played or loaded (0x404DA0), a character array
 PENDING_LEVEL = 0x50039F  # the next level asked for (0x4054D0), empty when none
@@ -54,6 +59,7 @@ VOICES = 0x4B7470         # first sound record (0x451B60); +0x34 next, +0x20 act
                           # +0xC channel, +0x10 event, +0x1C resource, +0x28 request serial
 BANKS = 0x514D50          # loaded banks: +0x3C next, +4 number, +0x24 tables (+4 events, +8 count,
                           # +0xC resources, +0x10 count; 0x20 and 0x5C bytes each)
+SLOTS = 0x4E1080          # 50 screen-text slots of 0x1C bytes (0x465A50, drawn by 0x465C10)
 THEME = 0x4B95B8          # active; +0x14 theme, +0x20 repeat state, +0x2C index, +0x38 prepared index,
                           # +0x40 asked theme (0x459760, 0x4595D0)
 
@@ -120,8 +126,9 @@ def actors_of(m, world):
 
 
 class recorder:
-	def __init__(self, m, folder, topics):
+	def __init__(self, m, folder, topics, watched=()):
 		self.m = m
+		self.watched = watched  # (actor index, [(variable name, offset, kind)])
 		self.files = {t: open(os.path.join(folder, f"{t}.txt"), "a", encoding="utf-8") for t in topics}
 		self.level = 0
 		self.started = time.monotonic()  # wall-clock seconds since recording began: never resets
@@ -144,6 +151,8 @@ class recorder:
 		self.music_last = None
 		self.banks = None
 		self.banks_built = -1e9
+		self.slots = {}
+		self.vars = {}
 
 	def say(self, topic, line):
 		f = self.files.get(topic)
@@ -192,6 +201,51 @@ class recorder:
 			self.poll_sound()
 		if "music" in self.files:
 			self.poll_music()
+		if "slots" in self.files:
+			self.poll_slots()
+		if "vars" in self.files and self.watched:
+			self.poll_vars()
+
+	def poll_slots(self):
+		m = self.m
+		table = m.read(SLOTS, 50 * 0x1C)
+		if not table:
+			return
+		for i in range(50):
+			text, alpha, flags = struct.unpack_from("<I", table, i * 0x1C)[0], table[i * 0x1C + 0x10], table[i * 0x1C + 0x13]
+			now = (text, alpha, flags)
+			if self.slots.get(i, (0, 0, 0)) != now:
+				words = c_string(m, text, 48) if text else ""
+				self.say("slots", f"slot {i}: alpha {alpha} flags 0x{flags:02X}" + (f" text '{words}'" if text else " no text"))
+				self.slots[i] = now
+
+	def poll_vars(self):
+		m = self.m
+		children = actors_of(m, dynamic_world(m))
+		for index, variables in self.watched:
+			if index >= len(children):
+				continue
+			so = children[index]
+			actor = m.u32(so + 4) if m.u32(so) == 2 else 0
+			mind = mind_of(m, actor)
+			memory = m.u32(mind + 0xC) if mind else 0
+			if not memory:
+				continue
+			data = m.u32(actor)
+			counter = m.read(data + 0x100, 2) if data else None
+			values = [f"thought {struct.unpack('<H', counter)[0] if counter else '?'}", f"behaviour {behaviour_of(m, actor)[0]}"]
+			for name, offset, kind in variables:
+				if kind == "f":
+					v = m.f32s(memory + offset, 1)[0]
+					values.append(f"{name} {v:.2f}")
+				elif kind == "i":
+					values.append(f"{name} {struct.unpack('<i', struct.pack('<I', m.u32(memory + offset)))[0]}")
+				else:
+					values.append(f"{name} {m.u8(memory + offset)}")
+			line = ", ".join(values)
+			if self.vars.get(index) != line:
+				self.say("vars", f"actor {index} at {position(m, so)}: {line}")
+				self.vars[index] = line
 
 	def node_name(self, so):
 		if so == self.rayman:
@@ -435,7 +489,16 @@ def main():
 	parser.add_argument("folder", help="where the files go (created if missing; appended to)")
 	parser.add_argument("--only", default=",".join(TOPICS), help="topics, comma separated: " + ", ".join(TOPICS))
 	parser.add_argument("--process", default="Rayman2.exe")
+	parser.add_argument("--vars", default="", help="actor:name@offset:kind,... with offsets from `ortool brain` "
+		"(kind b byte, f float, i int); actor = the actors.txt index, e.g. 3:var27@72:f,3:var36@151:b")
 	args = parser.parse_args()
+	watched = {}
+	for item in filter(None, args.vars.split(",")):
+		actor, rest = item.split(":", 1)
+		name, rest = rest.split("@", 1)
+		offset, kind = rest.split(":", 1)
+		watched.setdefault(int(actor), []).append((name, int(offset, 0), kind))
+	watched = sorted(watched.items())
 	topics = [t for t in args.only.split(",") if t in TOPICS]
 	if "session" not in topics:
 		topics.insert(0, "session")
@@ -447,7 +510,7 @@ def main():
 		if not pid:
 			time.sleep(1)
 	m = live.game_memory(pid)
-	r = recorder(m, args.folder, topics)
+	r = recorder(m, args.folder, topics, watched)
 	r.say("session", f"recording {', '.join(topics)} from {args.process} (pid {pid})")
 	print(f"recording into {args.folder}; Ctrl+C stops", flush=True)
 	meter = None
