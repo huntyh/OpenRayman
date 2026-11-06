@@ -302,9 +302,9 @@ namespace openrayman
 				float area = std::min(1.0f, (4.0f / 3.0f) * height / width);
 				r.x = 320.0f + (r.x - 320.0f) * area;
 				r.w *= area;
-				// Ours: three quarters of the game's size about the same centre, so the 192x96
+				// Ours: 0.6 of the game's size about the same centre, so the 192x96
 				// picture looks less blurry (user request, 2026-11-06).
-				constexpr float smaller = 0.75f;
+				constexpr float smaller = 0.6f;
 				r.x += r.w * (1 - smaller) * 0.5f; r.y += r.h * (1 - smaller) * 0.5f;
 				r.w *= smaller; r.h *= smaller;
 				quad(texture, false, r.x, r.y, r.w, r.h, {1, 1, 1, std::clamp(tiles.front().second[2] / 255.0f, 0.0f, 1.0f)}, 0, 1);

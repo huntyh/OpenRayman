@@ -1581,6 +1581,10 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 		try
 		{
 			game::value v = vm.get_variable(self, index);
+			// ORTOOL_FLOATS=1: real variables too (bar heights, fades), to two decimals.
+			static const bool floats = std::getenv("ORTOOL_FLOATS") != nullptr;
+			if(floats && v.is_real())
+				return std::format("{:.2f}", v.as_float());
 			if(v.type != game::value_type::integer)
 				return {};
 			std::int32_t n = v.as_int();
