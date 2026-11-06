@@ -5,6 +5,8 @@
 #include <openrayman/game/screen_text.h>
 
 #include <algorithm>
+#include <format>
+#include <array>
 #include <cmath>
 #include <cstddef>
 
@@ -36,6 +38,7 @@ namespace openrayman
 	dialog_renderer::~dialog_renderer()
 	{
 		for(auto [path, texture] : m_textures) if(texture) glDeleteTextures(1, &texture);
+		for(auto [key, texture] : m_joined) if(texture) glDeleteTextures(1, &texture);
 		glDeleteTextures(1, &m_white); glDeleteBuffers(1, &m_vbo);
 		glDeleteVertexArrays(1, &m_vao); glDeleteProgram(m_program);
 	}
@@ -72,11 +75,9 @@ namespace openrayman
 		return it->second;
 	}
 
-	GLuint dialog_renderer::texture_for(const texture_info& info)
+	std::optional<gf_texture> dialog_renderer::decode(const texture_info& info)
 	{
 		std::string path = info.cnt_path();
-		auto [it, inserted] = m_textures.try_emplace(path, 0);
-		if(!inserted) return it->second;
 		for(const auto& archive : m_archives)
 			if(const auto* entry = archive->find(path))
 			{
@@ -86,15 +87,130 @@ namespace openrayman
 					if(info.flags & texture_flag::color_key)
 						for(std::size_t i = 0; i < image.rgba.size(); i += 4)
 							if(image.rgba[i] < 8 && image.rgba[i + 1] < 8 && image.rgba[i + 2] < 8) image.rgba[i + 3] = 0;
-					it->second = gl::create_texture(image.width, image.height, image.rgba);
-					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+					return image;
 				}
 				catch(const std::exception& e) { SDL_Log("Dialog texture %s: %s", path.c_str(), e.what()); }
 				break;
 			}
+		return std::nullopt;
+	}
+
+	GLuint dialog_renderer::texture_for(const texture_info& info)
+	{
+		auto [it, inserted] = m_textures.try_emplace(info.cnt_path(), 0);
+		if(!inserted) return it->second;
+		if(auto image = decode(info))
+		{
+			it->second = gl::create_texture(image->width, image->height, image->rgba);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		}
+		return it->second;
+	}
+
+	namespace
+	{
+		// Catmull-Rom weights for a sample at fraction t between taps 1 and 2 of four.
+		std::array<float, 4> catmull_rom(float t)
+		{
+			float t2 = t * t, t3 = t2 * t;
+			return {(-t3 + 2 * t2 - t) * 0.5f, (3 * t3 - 5 * t2 + 2) * 0.5f, (-3 * t3 + 4 * t2 + t) * 0.5f, (t3 - t2) * 0.5f};
+		}
+
+		// Enlarge premultiplied RGBA floats `scale` times along one axis with Catmull-Rom; taps
+		// past the edge repeat the edge texel.
+		std::vector<float> enlarge(const std::vector<float>& in, int w, int h, int scale, bool along_x)
+		{
+			int ow = along_x ? w * scale : w, oh = along_x ? h : h * scale;
+			int n = along_x ? w : h, across_count = along_x ? h : w;
+			std::vector<float> out(std::size_t(ow) * std::size_t(oh) * 4);
+			for(int o = 0; o < n * scale; o++)
+			{
+				float at = (float(o) + 0.5f) / float(scale) - 0.5f;
+				int i = int(std::floor(at));
+				auto weight = catmull_rom(at - float(i));
+				for(int across = 0; across < across_count; across++)
+					for(int c = 0; c < 4; c++)
+					{
+						float sum = 0;
+						for(int k = 0; k < 4; k++)
+						{
+							int j = std::clamp(i - 1 + k, 0, n - 1);
+							int x = along_x ? j : across, y = along_x ? across : j;
+							sum += weight[std::size_t(k)] * in[(std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4 + std::size_t(c)];
+						}
+						int x = along_x ? o : across, y = along_x ? across : o;
+						out[(std::size_t(y) * std::size_t(ow) + std::size_t(x)) * 4 + std::size_t(c)] = sum;
+					}
+			}
+			return out;
+		}
+	}
+
+	GLuint dialog_renderer::joined_tiles(std::span<const game::particles::screen_image> tiles)
+	{
+		// 0x4658B0 draws each tile as its own quad, so the filtering stops at every tile edge and
+		// the joins show; and the whole picture is only 6 x 32 by 3 x 32 texels. Ours puts the
+		// tiles together into one picture and enlarges it with a smooth cut-out edge, like the
+		// screen objects' edges (docs/IMPROVEMENTS.md). Built once per set of tiles.
+		std::string key;
+		for(const auto& tile : tiles) key += std::format("{}:{:x},", tile.slot, tile.material);
+		auto [it, inserted] = m_joined.try_emplace(key, 0);
+		if(!inserted) return it->second;
+		std::vector<std::pair<int, gf_texture>> images;
+		for(const auto& tile : tiles)
+		{
+			auto material = location(tile.material);
+			auto visual = material ? m_memory.follow(*material) : std::nullopt;
+			if(!visual) return 0;
+			auto info = read_visual_material(m_memory, *visual);
+			auto image = info.texture ? decode(*info.texture) : std::nullopt;
+			if(!image) return 0;
+			// Every tile must be the same size to join them.
+			if(!images.empty() && (image->width != images.front().second.width || image->height != images.front().second.height))
+				return 0;
+			images.emplace_back(tile.slot - 100, std::move(*image));
+		}
+		if(images.empty()) return 0;
+		int tw = int(images.front().second.width), th = int(images.front().second.height);
+		int w = tw * 6, h = th * 3;
+		// Premultiplied, so the transparent texels' black doesn't bleed into the edge.
+		std::vector<float> joined(std::size_t(w) * std::size_t(h) * 4, 0.0f);
+		for(const auto& [index, image] : images)
+		{
+			int left = index / 3 * tw, top = index % 3 * th;
+			for(int y = 0; y < th; y++)
+				for(int x = 0; x < tw; x++)
+				{
+					const std::uint8_t* p = &image.rgba[(std::size_t(y) * std::size_t(tw) + std::size_t(x)) * 4];
+					float a = p[3] / 255.0f;
+					float* q = &joined[(std::size_t(top + y) * std::size_t(w) + std::size_t(left + x)) * 4];
+					for(int c = 0; c < 3; c++) q[c] = p[c] / 255.0f * a;
+					q[3] = a;
+				}
+		}
+		constexpr int scale = 8;
+		auto big = enlarge(enlarge(joined, w, h, scale, true), w * scale, h, scale, false);
+		std::vector<std::uint8_t> rgba(big.size());
+		// The edge: a smoothstep about one and a half enlarged texels wide around half alpha.
+		constexpr float edge = 1.5f / scale;
+		for(std::size_t i = 0; i < big.size(); i += 4)
+		{
+			float a = std::clamp(big[i + 3], 0.0f, 1.0f);
+			float t = std::clamp((a - 0.5f + edge) / (2 * edge), 0.0f, 1.0f);
+			float shown = t * t * (3 - 2 * t);
+			for(std::size_t c = 0; c < 3; c++)
+				rgba[i + c] = std::uint8_t(std::clamp(a > 0.001f ? big[i + c] / a : 0.0f, 0.0f, 1.0f) * 255.0f + 0.5f);
+			rgba[i + 3] = std::uint8_t(shown * 255.0f + 0.5f);
+		}
+		it->second = gl::create_texture(std::uint32_t(w * scale), std::uint32_t(h * scale), rgba);
+		glGenerateMipmap(GL_TEXTURE_2D);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 		return it->second;
 	}
 
@@ -166,8 +282,33 @@ namespace openrayman
 				(box.second[0] - box.first[0]) * 6.4f, (box.second[1] - box.first[1]) * 4.8f};
 			quad(m_white, false, r.x, r.y, r.w, r.h, {0,0,0,std::clamp(box.alpha / 255.0f, 0.0f, 1.0f)}, 0, 1);
 		}
+		// The tiled title picture (slots 100..117) is drawn as one joined picture when it can be.
+		std::vector<game::particles::screen_image> tiles;
 		for(const auto& image : images)
-			try
+			if(image.centred && image.slot >= 100 && image.slot < 118) tiles.push_back(image);
+		if(!tiles.empty())
+		{
+			if(GLuint texture = joined_tiles(tiles))
+			{
+				float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+				for(const auto& tile : tiles)
+				{
+					int column = (tile.slot - 100) / 3, row = (tile.slot - 100) % 3;
+					float tw = tile.second[0] - tile.first[0], th = tile.second[1] - tile.first[1];
+					x0 = std::min(x0, tile.first[0] - column * tw); y0 = std::min(y0, tile.first[1] - row * th);
+					x1 = std::max(x1, tile.first[0] + (6 - column) * tw); y1 = std::max(y1, tile.first[1] + (3 - row) * th);
+				}
+				SDL_FRect r{x0 * 6.4f, y0 * 4.8f, (x1 - x0) * 6.4f, (y1 - y0) * 4.8f};
+				float area = std::min(1.0f, (4.0f / 3.0f) * height / width);
+				r.x = 320.0f + (r.x - 320.0f) * area;
+				r.w *= area;
+				quad(texture, false, r.x, r.y, r.w, r.h, {1, 1, 1, std::clamp(tiles.front().second[2] / 255.0f, 0.0f, 1.0f)}, 0, 1);
+			}
+			else tiles.clear();
+		}
+		for(const auto& image : images)
+			if(!tiles.empty() && image.centred && image.slot >= 100 && image.slot < 118) continue;
+			else try
 			{
 				if(auto material = location(image.material))
 					if(auto visual = m_memory.follow(*material))
@@ -240,7 +381,7 @@ namespace openrayman
 					float y1 = (std::trunc(dialog.y) + item.y + offset + glyph_height + dialog.pulse) * 0.48f;
 					// 0x429670 passes white at the upper corners and the slot colour
 					// at the lower corners to GLI_DRV_vSendSpriteToClipWithCol.
-					SDL_FColor top{1, 1, 1, tint[3]}, bottom{tint[0], tint[1], tint[2], tint[3]};
+					SDL_FColor top{1, 1, 1, tint[3] * dialog.alpha}, bottom{tint[0], tint[1], tint[2], tint[3] * dialog.alpha};
 					SDL_Vertex v[] = {{{x0,y0},top,{0,0}}, {{x1,y0},top,{1,0}}, {{x1,y1},bottom,{1,1}},
 						{{x0,y0},top,{0,0}}, {{x1,y1},bottom,{1,1}}, {{x0,y1},bottom,{0,1}}};
 					append(g->texture, false, v);
@@ -296,8 +437,10 @@ namespace openrayman
 						{
 							const auto& p = g->object.vertices[element.triangles[t][c]];
 							const auto& uv = element.uvs[element.uv_triangles[t][c]];
+							SDL_FColor colour = glyph_tint ? *glyph_tint : g->colours[element.triangles[t][c]];
+							colour.a *= dialog.alpha; // the text actor's own fade
 							vertices.push_back({{x + (item.x + item.advance * 0.5f + p[0] * item.scale) * unit,
-								y + (item.y - p[2] * item.scale) * unit}, glyph_tint ? *glyph_tint : g->colours[element.triangles[t][c]], {uv[0], 1 - uv[1]}});
+								y + (item.y - p[2] * item.scale) * unit}, colour, {uv[0], 1 - uv[1]}});
 						}
 					if(!vertices.empty()) append(g->texture, element.material && element.material->texture && (element.material->texture->flags & texture_flag::additive), vertices);
 				}

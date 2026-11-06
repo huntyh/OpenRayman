@@ -59,6 +59,11 @@ namespace openrayman::game
 		// How many slots currently hold a string.
 		std::size_t used() const;
 
+		// 0x465C10's alpha ramps, once per frame: flag 0x01 lifts the alpha by 200 a second up to
+		// 255, flag 0x02 lowers it to 0, each clearing itself at the end. Slots with no text or
+		// alpha 0 are skipped, as in the exe.
+		void step(float seconds);
+
 		// Drops everything, like 0x465A20 does when a level loads.
 		void clear();
 

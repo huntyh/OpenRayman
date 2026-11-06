@@ -105,3 +105,28 @@ TEST_CASE("screen slot size and punctuation follow the executable")
 	CHECK(screen_slot_punctuation_offset(39, m.height) == -10);
 	CHECK(screen_slot_punctuation_offset('A', m.height) == 0);
 }
+
+TEST_CASE("screen slot alpha ramps move 200 a second, truncated like the executable")
+{
+	using namespace openrayman::game;
+	screen_text text;
+	REQUIRE(text.set(0, 0, 0, "fade", 0));
+	// Mode 2 (what 2) starts the ramp in and lifts a zero alpha to 1 so the slot is not skipped.
+	text.set_field(0, 2, 0);
+	CHECK(text.at(0).alpha == 1);
+	text.step(1.0f / 60);
+	CHECK(text.at(0).alpha == 4); // 1 + 3.33, truncated
+	for(int i = 0; i < 200; i++) text.step(1.0f / 60);
+	CHECK(text.at(0).alpha == 255);
+	CHECK((text.at(0).flags & screen_text::alpha_in) == 0);
+	text.set_field(0, 3, 0);
+	text.step(1.0f / 60);
+	CHECK(text.at(0).alpha == 251); // 255 - 3.33, truncated
+	for(int i = 0; i < 200; i++) text.step(1.0f / 60);
+	CHECK(text.at(0).alpha == 0);
+	CHECK((text.at(0).flags & screen_text::alpha_out) == 0);
+	// A slot at alpha 0 is skipped: a ramp in set without mode 2's lift does nothing.
+	text.set_field(0, 0, 0);
+	text.step(1.0f / 60);
+	CHECK(text.at(0).alpha == 0);
+}

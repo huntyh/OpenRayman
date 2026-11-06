@@ -35,6 +35,9 @@ namespace openrayman::game
 		// Slot sprites use a white-to-tint gradient; pulse expands both vertical edges.
 		std::optional<std::array<float, 4>> tint;
 		float pulse = 0;
+		// The text actor's own transparency (procedures 11/12 on its super object): its script
+		// fades each narration box in and out.
+		float alpha = 1;
 	};
 
 	struct dialog_glyph

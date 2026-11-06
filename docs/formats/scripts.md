@@ -442,6 +442,16 @@ material exists, but 0x429820 uses its own black material; the supplied material
 the rectangle's colour or opacity. Scripts renew it while it is visible.
 Where this came from: own analysis of the executable; no reference implementation was used.
 
+**Text boxes fade themselves.** The text actor template (Fix 04/00 +0x15CA8) has its own AI
+model (in Jail_10 at 0d/00 +0x5242C, 3 variables): behaviour 0 waits for custom bit 28, switches
+transparency on (procedure 11(1)) and moves to behaviour 1, which raises var2 by
+var1 × function 62 / 16 a frame up to var0, writing it with procedure 12; custom bit 29 starts
+behaviour 2, which lowers it the same way and takes the actor out (139) at 0. The narrator
+(Jail_10 node 6) sets bits 28 and 29 with procedure 174 on its event codes 10 and 2/3, and its
+codes 300..399 set the speed (var1). So the renderer only has to apply the text actor's super
+object transparency (draw flag 8 at +0x2C clear, level at +0x38). Own analysis of the scripts
+(`ortool brain Jail_10 04/00+0x15CA8`).
+
 Procedure 393 (0x470F20, shared with 392 and 394) evaluates one argument and calls 0x416D70
 on the object at the calling actor's +0x1C. It writes mode 1 to +0x38, the low byte of the
 argument to +0x39, zero to +0x3A, and floating-point zero to +0x3C. The 600-tick first-visit

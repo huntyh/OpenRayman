@@ -123,6 +123,37 @@ namespace openrayman::game
 		return count;
 	}
 
+	void screen_text::step(float seconds)
+	{
+		for(slot& s : m_slots)
+		{
+			if(!s.used || s.alpha == 0)
+				continue;
+			// The exe truncates alpha - seconds * (-200 or 200) to an integer (0x49CBD0/0x49CBD4,
+			// frame time 0x4B9B04), so at 60 Hz the fade in steps by 3 and the fade out by 4.
+			if(s.flags & alpha_in)
+			{
+				int a = int(float(s.alpha) + seconds * 200.0f);
+				if(a > 254)
+				{
+					a = 255;
+					s.flags &= std::uint8_t(~alpha_in);
+				}
+				s.alpha = std::uint8_t(a);
+			}
+			else if(s.flags & alpha_out)
+			{
+				int a = int(float(s.alpha) - seconds * 200.0f);
+				if(a < 1)
+				{
+					a = 0;
+					s.flags &= std::uint8_t(~alpha_out);
+				}
+				s.alpha = std::uint8_t(a);
+			}
+		}
+	}
+
 	void screen_text::clear()
 	{
 		for(slot& s : m_slots)

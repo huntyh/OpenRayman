@@ -2,6 +2,7 @@
 // GNU General Public License, version 3. See LICENSE_openrayman for the full license.
 #pragma once
 
+#include <openrayman/gf_texture.h>
 #include <SDL3/SDL.h>
 #include <renderer/gl.h>
 #include <openrayman/actor.h>
@@ -40,6 +41,9 @@ namespace openrayman
 		font& font_for(std::uint32_t actor);
 		const glyph* glyph_for(font& f, int index);
 		GLuint texture_for(const texture_info& info);
+		std::optional<gf_texture> decode(const texture_info& info);
+		// Ours: the tiled title picture (effect kinds 170/171) joined into one enlarged texture.
+		GLuint joined_tiles(std::span<const game::particles::screen_image> tiles);
 		const memory_image& m_memory;
 		std::span<const std::unique_ptr<cnt_archive>> m_archives;
 		GLuint m_program = 0, m_vao = 0, m_vbo = 0, m_white = 0;
@@ -48,5 +52,6 @@ namespace openrayman
 		void append(GLuint texture, bool additive, std::span<const SDL_Vertex> vertices);
 		std::map<std::uint32_t, font> m_fonts;
 		std::map<std::string, GLuint> m_textures;
+		std::map<std::string, GLuint> m_joined;
 	};
 }

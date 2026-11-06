@@ -346,7 +346,17 @@ namespace openrayman::game
 			// Cue strings can contain only controls; they have no characters to draw.
 			const std::string& text = actor->second.visible.text;
 			if(!text.empty())
-				result.push_back(actor->second.visible);
+			{
+				dialog_text shown = actor->second.visible;
+				// Draw flag 8 at +0x2C clear = transparent, at the level in +0x38 (0x472450 cases
+				// 0xB/0xC). The template's script ramps it (0d/00 +0x5242C in Jail_10).
+				std::uint32_t so = actor->first;
+				auto& m = vm.memory();
+				if(m.contains(so + 0x2C, 0x10) && !(m.u32(so + 0x2C) & 8))
+					shown.alpha = std::clamp(m.f32(so + 0x38) / 255.0f, 0.0f, 1.0f);
+				if(shown.alpha > 0)
+					result.push_back(std::move(shown));
+			}
 			++actor;
 		}
 		return result;

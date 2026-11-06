@@ -132,7 +132,10 @@ Called from the frame update at 0x460670 (after the world, 0x4658B0 and the scre
 For each slot with a non-zero text pointer it:
 
 - runs the alpha ramps: flag 0x01 lifts the alpha towards 255 and clears itself at the top, flag
-  0x02 lowers it towards 0 the same way;
+  0x02 lowers it towards 0 the same way. The step is the frame time (0x4B9B04, seconds) times 200
+  (constants -200 at 0x49CBD0, 200 at 0x49CBD4), subtracted from the byte and truncated by ftol,
+  so at 60 frames a second a fade in climbs 3 a frame and a fade out drops 4; slots at alpha 0 are
+  skipped entirely, which is why setter mode 2 lifts a zero alpha to 1 (own analysis, capstone);
 - if flag 0x08 is set, it asks 0x465E30 for the string's bounding box and lays the text out with
   the shake phase folded in;
 - then draws the string with 0x4660B0.

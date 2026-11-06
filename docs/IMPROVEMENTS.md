@@ -11,7 +11,7 @@ of them off may come later.
 
 | What | The game | OpenRayman | Since |
 | --- | --- | --- | --- |
-| Tiled title picture | Kinds 170/171 (the intro's Rayman 2 logo) are placed in percent of the whole viewport, so a wide screen would stretch them | Kept in the centred 4:3 area, like the menu text | 3 |
+| Tiled title picture | Kinds 170/171 (the intro's Rayman 2 logo) are placed in percent of the whole viewport, so a wide screen would stretch them | Kept in the centred 4:3 area, like the menu text. The game draws the 18 tiles (32x32 each, 192x96 in all) as separate quads, so the joins show; ours joins them into one picture, enlarges it 8x (Catmull-Rom) and redraws the cut-out edge about one pixel wide (user request, 2026-11-06) | 3 |
 | Screen-object edges | The intro's Ubisoft logo (256x64 cut-out textures stretched over the screen) has staircase edges | Screen objects are blended, and where their texture's alpha jumps between texels the magnified edge is redrawn about one pixel wide (shader `u_sharpen`); soft gradients stay as they are (user idea, 2026-11-06) | 3 |
 | Character shadows | At most 10, and only for actors whose scripts switch them on (the Globox kids have none) | Every actor with a shadow gets one | 2c |
 | See-through leaves | Hard, jagged cut-out edges | Soft edges: texture colour bled into the see-through texels, a solid core drawn first, back-to-front sorting per triangle | 2c |
