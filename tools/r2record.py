@@ -30,6 +30,9 @@
 #   vars.txt       with --vars: chosen script variables of actors picked by their AI model (its
 #                  behaviour/variable counts), every frame they change,
 #                  plus each one's thought counter (3D data +0x100) and behaviour
+#   order.txt      the active world's actors in the order the exe runs them (0x40AA10/0x40A7C0),
+#                  each as its AI model's behaviour/variable counts (or "Rayman", "-" for none),
+#                  whenever that order changes; the inactive world's count beside it
 #   audio.txt      how loud the sound output is every 50 ms (RMS and peak, dBFS; r2audio.py, needs
 #                  `pip install soundcard`): set against sound.txt and music.txt, it gives the game's
 #                  mix. Mute other programs while recording
@@ -48,7 +51,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import r2live as live  # noqa: E402
 
-TOPICS = ("session", "story", "rayman", "actors", "camera", "generated", "text", "sound", "music", "slots", "vars", "audio")
+TOPICS = ("session", "story", "rayman", "actors", "camera", "generated", "text", "sound", "music", "slots", "vars", "order", "audio")
 
 LEVEL_NAME = 0x500381     # the level being played or loaded (0x404DA0), a character array
 PENDING_LEVEL = 0x50039F  # the next level asked for (0x4054D0), empty when none
@@ -60,6 +63,7 @@ VOICES = 0x4B7470         # first sound record (0x451B60); +0x34 next, +0x20 act
                           # +0xC channel, +0x10 event, +0x1C resource, +0x28 request serial
 BANKS = 0x514D50          # loaded banks: +0x3C next, +4 number, +0x24 tables (+4 events, +8 count,
                           # +0xC resources, +0x10 count; 0x20 and 0x5C bytes each)
+INACTIVE_WORLD = 0x500FC4  # -> the inactive world super object (0x40B620 wakes actors out of it)
 SLOTS = 0x4E1080          # 50 screen-text slots of 0x1C bytes (0x465A50, drawn by 0x465C10)
 THEME = 0x4B95B8          # active; +0x14 theme, +0x20 repeat state, +0x2C index, +0x38 prepared index,
                           # +0x40 asked theme (0x459760, 0x4595D0)
@@ -166,6 +170,7 @@ class recorder:
 		self.banks_built = -1e9
 		self.slots = {}
 		self.vars = {}
+		self.order = None
 
 	def say(self, topic, line):
 		f = self.files.get(topic)
@@ -216,8 +221,25 @@ class recorder:
 			self.poll_music()
 		if "slots" in self.files:
 			self.poll_slots()
+		if "order" in self.files:
+			self.poll_order()
 		if "vars" in self.files and self.watched:
 			self.poll_vars()
+
+	def poll_order(self):
+		m = self.m
+		names = []
+		for so in actors_of(m, dynamic_world(m)):
+			if so == self.rayman:
+				names.append("Rayman")
+				continue
+			actor = m.u32(so + 4) if m.u32(so) == 2 else 0
+			names.append(model_signature(m, actor) or "-")
+		inactive = actors_of(m, m.u32(INACTIVE_WORLD))
+		line = " ".join(names) + f" | inactive {len(inactive)}"
+		if line != self.order:
+			self.say("order", line)
+			self.order = line
 
 	def poll_slots(self):
 		m = self.m

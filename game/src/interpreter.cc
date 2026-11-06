@@ -840,6 +840,8 @@ namespace openrayman::game
 
 	void interpreter::write_place(std::uint32_t self, const place& p, const value& v)
 	{
+		if(on_write && p.what != place::kind::field)
+			on_write(self, p.slot.address, v);
 		switch(p.what)
 		{
 		case place::kind::variable:

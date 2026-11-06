@@ -1614,6 +1614,10 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 			auto it = watched_last.find(key);
 			if(it != watched_last.end() && it->second != text)
 				std::cout << std::format("             {} var{} {} -> {}\n", label, index, it->second, text);
+			// ORTOOL_INITIAL=1: each variable's value the first time it is seen.
+			static const bool initial = std::getenv("ORTOOL_INITIAL") != nullptr;
+			if(initial && it == watched_last.end())
+				std::cout << std::format("             {} var{} starts {}\n", label, index, text);
 			watched_last[key] = text;
 		}
 	};
@@ -1634,8 +1638,35 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	// ORTOOL_COST=1: which actors' scripts take the most time over the run.
 	std::map<std::uint32_t, std::int64_t> costs;
 	if(std::getenv("ORTOOL_COST")) vm.think_costs = &costs;
+	// ORTOOL_WRITES=node:offset,offset,...: every script write to those variables of that node
+	// (byte offsets into its variable buffer, as `ortool brain` lists them), with the tick, the
+	// actor whose script wrote it and the last script node run.
+	int tick_now = 0;
+	if(const char* writes = std::getenv("ORTOOL_WRITES"))
+	{
+		int node = std::atoi(writes);
+		std::uint32_t so = 0;
+		for(const auto& [s, n] : node_of)
+			if(int(n) == node) so = s;
+		std::uint32_t actor = so ? vm.actor_of(so) : 0;
+		std::uint32_t mind = actor ? memory.u32(memory.u32(actor + 0x0C)) : 0;
+		std::uint32_t block = mind ? memory.u32(mind + 0x0C) : 0;
+		std::uint32_t buffer = block ? memory.u32(block + 8) : 0;
+		std::vector<std::uint32_t> offsets;
+		for(const char* p = std::strchr(writes, ':'); p && *p; p = std::strchr(p, ','))
+			offsets.push_back(std::uint32_t(std::atoi(++p)));
+		if(buffer)
+			vm.on_write = [&, buffer, offsets, node](std::uint32_t self, std::uint32_t address, const game::value& v) {
+				if(address < buffer || std::ranges::find(offsets, address - buffer) == offsets.end())
+					return;
+				auto writer = node_of.find(self);
+				std::cout << std::format("tick {:>4}: node {} offset {} := {} ({:.2f}) by {} at node 0x{:08X}\n", tick_now, node, address - buffer,
+					std::int32_t(v.word()), v.as_float(), writer != node_of.end() ? std::format("node {}", writer->second) : std::format("0x{:X}", self), vm.last_node());
+			};
+	}
 	for(int f = 0; f < frames; f++)
 	{
+		tick_now = f;
 		if(auto placed = places.find(f); placed != places.end())
 		{
 			const auto* place_at = &placed->second;
@@ -1668,6 +1699,14 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 		{
 			throw format_error(std::format("tick {}, outside the actors' scripts (last node 0x{:08X}): {}", f, vm.last_node(), e.what()));
 		}
+		// ORTOOL_ACTION=<hex offset in Fix block 06/00>: that input action's counter every tick
+		// (+0x0C; 1 on the press tick), as `ortool input` lists them, e.g. CB4.
+		if(const char* action = std::getenv("ORTOOL_ACTION"))
+			if(const auto* block = files.memory.find(block_id{ 6, 0 }))
+			{
+				std::uint32_t at = block->base + std::uint32_t(std::strtoul(action, nullptr, 16));
+				std::cout << std::format("tick {:>4}: input action +0x{} counter {}\n", f, action, memory.read<std::int32_t>(at + 0x0C));
+			}
 		// ORTOOL_VARS=node:i,j,...: those designer variables of the node after the first tick.
 		if(const char* vars = std::getenv("ORTOOL_VARS"); vars && f == 1)
 		{
