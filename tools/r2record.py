@@ -530,7 +530,10 @@ class recorder:
 			return None
 		data = m.u32(actor)
 		behaviour, reflex = behaviour_of(m, actor)
-		return (behaviour, reflex, m.u32(data + 4) if data else 0, m.u32(so + 0x30), m.u32(m.u32(actor + 4) + 0x24))
+		standard = m.u32(actor + 4)
+		# Standard game +0x29 (bit 1 thinks, bit 2 drawn, bit 0 out of the world) and the parent
+		# super object (+0x1C: the active world 0x500FD0, the inactive one 0x500FC4, or a sector).
+		return (behaviour, reflex, m.u32(data + 4) if data else 0, m.u32(so + 0x30), m.u32(standard + 0x24), m.u8(standard + 0x29), m.u32(so + 0x1C))
 
 	def list_actors(self):
 		m = self.m
@@ -541,7 +544,7 @@ class recorder:
 			if state is None:
 				continue
 			self.actors[so] = (i, state)
-			self.say("actors", f"actor {i} so 0x{so:08X} at {position(m, so)}: behaviour {state[0]} state 0x{state[2]:X} flags 0x{state[3]:X} custom 0x{state[4]:08X}")
+			self.say("actors", f"actor {i} so 0x{so:08X} at {position(m, so)}: behaviour {state[0]} state 0x{state[2]:X} flags 0x{state[3]:X} custom 0x{state[4]:08X} standard 0x{state[5]:02X} parent 0x{state[6]:08X}")
 
 	def poll_actors(self):
 		m = self.m
@@ -562,6 +565,10 @@ class recorder:
 				parts.append("frozen (bit 14)" if now[4] & 0x2000 else "unfrozen (bit 14)")
 			if now[4] != last[4]:
 				parts.append(f"custom 0x{last[4]:08X}->0x{now[4]:08X}")
+			if now[5] != last[5]:
+				parts.append(f"standard 0x{last[5]:02X}->0x{now[5]:02X}")
+			if now[6] != last[6]:
+				parts.append(f"parent 0x{last[6]:08X}->0x{now[6]:08X}")
 			self.say("actors", f"actor {i} at {position(m, so)}: " + ", ".join(parts))
 			self.actors[so] = (i, now)
 
