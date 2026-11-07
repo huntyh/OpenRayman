@@ -180,7 +180,10 @@ from a sector's sky material counts as infinitely far.
 Behind everything the game clears the screen with the background colour of the first fog light in
 the camera's sector (0x40AD00 packs it and hands it to the screen clear; Learn_10's is teal). A
 sector without a fog light leaves the colour as it was, so the intro's cave keeps the valley's dark
-blue (ours showed its default light blue there). On top
+blue (ours showed its default light blue there). Level start clears it to black (0x403730 and
+0x4032A0 call 0x421620 with 0; the colour lives at 0x4A721C), so Jail_20's cell and cage sectors,
+which have no fog light, show black through the gaps at the top of the pirate ship's cages. Our
+light-blue default looked like light bleeding through them (#34). On top
 of that each sector can name a **sky material** (+0x80): in Learn_10 the 11 open-air sectors all
 point to the same one, `foret_sky_txy`, white swirling clouds on cyan that scroll slowly (0.002 per
 frame). How the game maps it onto the sky wasn't found yet; OpenRayman draws it on a dome around the

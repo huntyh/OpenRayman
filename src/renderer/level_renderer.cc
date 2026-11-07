@@ -932,6 +932,10 @@ namespace openrayman
 		const light* fog = s ? m_lights.fog(*s) : nullptr;
 		if(fog)
 			m_background = glm::vec3(fog->background[0], fog->background[1], fog->background[2]);
+		// Level start (0x403730, 0x4032A0 -> 0x421620) clears it to black, so a level whose first
+		// sectors have no fog light shows black through gaps (Jail_20's cages, not a light blue).
+		if(!m_background)
+			m_background = glm::vec3(0.0f);
 		return m_background;
 	}
 
