@@ -1171,7 +1171,9 @@ namespace openrayman
 		auto visible = [&](std::size_t sector) {
 			const bool sky = std::ranges::find(m_backdrop_skies, sector) != m_backdrop_skies.end();
 			if(sky_pass) return sky && drawn(sector);
-			return backdrop_pass ? is_backdrop(sector) : !sky && !is_backdrop(sector) && drawn(sector);
+			// The backdrop shows only where the game would draw its sector (the camera sector's
+			// +0x24 list), so it stays out of views where the game doesn't show it.
+			return backdrop_pass ? is_backdrop(sector) && drawn(sector) : !sky && !is_backdrop(sector) && drawn(sector);
 		};
 		auto draw_batches = [&, this](std::span<const batch> batches, blend mode) {
 			for(const batch& b : batches)
