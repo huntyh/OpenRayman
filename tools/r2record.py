@@ -19,6 +19,7 @@
 #   text.txt       text boxes (function 158's text actors, 30 slots at 0x4FF8C0): made by whom,
 #                  the events their text returns (/E<n>:, Murfy's page end is 9), how far the reveal
 #                  got, and when they go
+#   text_draw.txt  text draw inputs and frame-sampled renderer state while text is visible
 #   texts.txt      once: the current language's string table (id: text), to read text ids by
 #   sound.txt      voices as they start and end (0x4B7470 list): event id (bank << 16 | index,
 #                  as `ortool sound` takes it), channel, the actor it sounds from
@@ -51,7 +52,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import r2live as live  # noqa: E402
 
-TOPICS = ("session", "story", "rayman", "actors", "camera", "generated", "text", "sound", "music", "slots", "vars", "order", "audio")
+TOPICS = ("session", "story", "rayman", "actors", "camera", "generated", "text", "text_draw", "sound", "music", "slots", "vars", "order", "audio")
 
 LEVEL_NAME = 0x500381     # the level being played or loaded (0x404DA0), a character array
 PENDING_LEVEL = 0x50039F  # the next level asked for (0x4054D0), empty when none
@@ -164,6 +165,7 @@ class recorder:
 		self.camera_sampled = -1e9
 		self.generated = {}
 		self.texts = {}
+		self.text_draw_last = {}
 		self.voices = {}
 		self.music_last = None
 		self.banks = None
@@ -216,6 +218,8 @@ class recorder:
 			self.poll_generated()
 		if "text" in self.files:
 			self.poll_text()
+		if "text_draw" in self.files:
+			self.poll_text_draw()
 		if "sound" in self.files:
 			self.poll_sound()
 		if "music" in self.files:
@@ -360,6 +364,72 @@ class recorder:
 		for i in self.texts.keys() - now.keys():
 			self.say("text", f"slot {i} gone (reveal reached {self.texts[i][2]}, last event {self.texts[i][1]})")
 		self.texts = now
+
+	def poll_text_draw(self):
+		m = self.m
+		actors = m.read(TEXT_ACTORS, 30 * 4)
+		slots = m.read(SLOTS, 50 * 0x1C)
+		if not actors or len(actors) != 120 or not slots or len(slots) != 50 * 0x1C:
+			return
+		active = [(i, so) for i, so in enumerate(struct.unpack("<30I", actors)) if so]
+		visible = any(struct.unpack_from("<I", slots, i * 0x1C)[0] and slots[i * 0x1C + 0x10] for i in range(50))
+		if not active and not visible:
+			self.text_draw_last.clear()
+			return
+
+		def emit(key, value):
+			if self.text_draw_last.get(key) != value:
+				self.say("text_draw", f"{key}: {value}")
+				self.text_draw_last[key] = value
+
+		def raw(at, size):
+			data = m.read(at, size) if at else None
+			return data.hex() if data and len(data) == size else "unreadable"
+
+		def floats(at, count):
+			data = m.read(at, count * 4) if at and count else None
+			return repr(struct.unpack(f"<{count}f", data)) if data and len(data) == count * 4 else ("()" if count == 0 else "unreadable")
+
+		for i in (15, 16, 26):
+			data = slots[i * 0x1C:(i + 1) * 0x1C]
+			ptr = struct.unpack_from("<I", data)[0]
+			x, y, size = struct.unpack_from("<3f", data, 4)
+			colour = struct.unpack_from("<I", data, 0x18)[0]
+			emit(f"screen slot {i}", f"raw {data.hex()} text@0x{ptr:08X} {c_string(m, ptr, 4096)!r} x {x!r} y {y!r} size {size!r} alpha {data[0x10]} pulse {data[0x12]} flags 0x{data[0x13]:02X} colour 0x{colour:08X}")
+
+		font = m.u32(0x4A727C)
+		data = m.u32(font) if font else 0
+		initial = m.u32(data + 0x10) if data else 0
+		entries = m.u32(initial + 4) if initial else 0
+		physical = [m.u32(entries + i * 0x14 + 4) if entries else 0 for i in (29, 33, 233, 433, 633)]
+		emit("font", f"actor 0x{font:08X} data 0x{data:08X} list 0x{initial:08X} entries 0x{entries:08X} physical 29,33,233,433,633: " + " ".join(f"0x{p:08X}" for p in physical))
+		emit("widths 0..255", floats(0x4FF940, 256))
+		emit("defaults width,height,scale", floats(0x49F798, 3))
+		count = m.u32(0x4A6BFC)
+		# The scale array ends at the text actor pointer table; reject corrupt counts.
+		emit("scales", f"count {count} values " + (floats(0x4FF7E0, count) if count <= 56 else "unreadable (count exceeds 56)"))
+		camera = m.u32(0x50054C)
+		context = m.u32(0x5036AC)
+		viewport = m.u32(context) if context else 0
+		emit("camera", f"pointer 0x{camera:08X} angles {floats(camera + 0x64, 2) if camera else 'unreadable'} focal,projection {floats(camera + 0x74, 3) if camera else 'unreadable'} centre {floats(camera + 0x84, 2) if camera else 'unreadable'} viewport height,width {m.u32(0x5004DC)},{m.u32(0x5004E0)} renderer viewport 0x{viewport:08X} scales {floats(viewport + 8, 2) if viewport else 'unreadable'} language {m.u8(LANGUAGE)}")
+		actor_keys = set()
+		for i, so in active:
+			key = f"text actor {i}"
+			actor_keys.add(key)
+			child = m.u32(so + 8)
+			children, seen = [], set()
+			while child and child not in seen and len(seen) < 1024:
+				seen.add(child)
+				children.append(f"0x{child:08X} physical 0x{m.u32(child + 4):08X} transform {raw(child + 0x20, 0x58)}")
+				child = m.u32(child + 0x14)
+			emit(key, f"S 0x{so:08X} transform {raw(so + 0x20, 0x58)} flags {raw(so + 0x2C, 4)} alpha {raw(so + 0x38, 4)} children [" + "; ".join(children) + "]" + (" (truncated or cycle)" if child else ""))
+		for key in list(self.text_draw_last):
+			if key.startswith("text actor ") and key not in actor_keys:
+				self.say("text_draw", f"{key}: gone")
+				del self.text_draw_last[key]
+		# Polling cannot stop inside 0x42AA30/0x42D520/0x42D680. This shared context
+		# may belong to a different draw; it cannot establish a narration glyph's colour.
+		emit("renderer frame sample (not draw-synchronized)", f"R 0x{context:08X} flags +C,+10 {raw(context + 0xC, 8) if context else 'unreadable'} material 0x{m.u32(context + 0x2D3B8) if context else 0:08X} ambient,diffuse {floats(context + 0x2D2C4, 8) if context else 'unreadable'} light RGBA {floats(context + 0x14C14, 16) if context else 'unreadable'} packed colours " + (" ".join(raw(context + 0x9C78 + 0x10 * i, 4) for i in range(4)) if context else "unreadable") + f" luminosity {floats(0x4A0488, 1)} modes " + " ".join(raw(at, 1) for at in (0x4B98E8, 0x4B98EC, 0x4B98F0)))
 
 	def poll_sound(self):
 		m = self.m
