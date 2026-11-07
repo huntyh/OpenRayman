@@ -77,6 +77,19 @@ is set, else its own) as a queued move (0x432D30), which clears the speed unless
 
 ## What we do differently (for now)
 
+The resolver's initial search direction is not simply the current floor triangle's normal:
+when end flag 0x4000 supplies a nonzero contact normal and end flag 0x10 is clear,
+0x43B63C uses that normal; otherwise it uses world up. At 0x43B6B7 it removes the
+component of the proposed displacement along that direction for the search. This is only
+one stage of the resolver, not a complete movement rule. Own inspection of the installed
+Rayman2.exe with capstone, 2026-11-08.
+
+At 0x436A30 speed is the difference of the target position at +0xD4 and the reference
+position at +0x7C, divided by the step time. The contact response at 0x437E60 can
+modify that reference position before this calculation, so the final displacement from
+the actor's original position is not always the speed-producing displacement. Own
+inspection of the installed executable and capstone at 0x436A30, 2026-11-08.
+
 - The flag 0x20 resolver (0x431A10 -> 0x43B360) projects the proposed displacement onto a
   previously reported contact plane while searching for contacts, then resolves the actual
   contacts and recomputes speed (0x436A30). Ours approximates a sloped floor contact with gravity

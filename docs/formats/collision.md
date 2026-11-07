@@ -50,6 +50,13 @@ Confirmed in the game (Learn_10, by comparing the collision overlay with what Ra
 
 ## Actor zones and ledges
 
+The 0x43B360 resolver gathers contacts in multiple searches and passes them through
+further selection and correction routines, including 0x436610 and 0x43FA40. Its
+contact selection is therefore not equivalent to choosing the highest of several
+vertical point casts. This observation alone does not establish the complete slide
+response. Provenance: own inspection of the installed Rayman2.exe, including capstone
+at 0x43B360, 2026-11-08; no executable code was copied.
+
 An actor's kind-1 zone list (collide set +8) holds spheres (element kind 7; entry: radius, game
 material, u16 vertex index, a word 5 for zones in use, 2 for the others). Their materials' collide
 flags say what each is: Rayman's body 0x4001 (radius 0.8, centred 0.8 up), water sensor 0x4000,
