@@ -2187,6 +2187,7 @@ namespace openrayman::game
 					result = c.index == 199 ? hit->normal : hit->point;
 			}
 			out = value_of(result);
+			c.vm.cast_ignore_mask = 0x40;
 			return c.args;
 		}
 
@@ -4412,6 +4413,52 @@ namespace openrayman::game
 			return result;
 		}
 
+		// 82 (0x467770, case 0x46778D): clear the next cast's object ignore mask.
+		std::uint32_t clear_cast_ignore_mask(call& c)
+		{
+			c.vm.cast_ignore_mask = 0;
+			return c.args;
+		}
+
+		// 313/315 (0x46BD40, cases 0x46BDFE/0x46BE72): view size and origin.
+		std::uint32_t set_view_size_or_origin(call& c)
+		{
+			value view, a, b;
+			next_arg(c, view); next_arg(c, a); next_arg(c, b);
+			auto& settings = c.vm.views[view.as_int() == 1 ? 1 : 0];
+			if(c.index == 313)
+			{
+				settings.width = std::clamp(a.as_int(), 0, 100);
+				settings.height = std::clamp(b.as_int(), 0, 100);
+			}
+			else
+			{
+				settings.x = std::int32_t(a.word());
+				settings.y = std::int32_t(b.word());
+			}
+			return c.args;
+		}
+
+		// 347 (0x46F830, case 0x46FA47): select analog movement actions.
+		std::uint32_t set_analog_actions(call& c)
+		{
+			for(auto& action : c.vm.movement.analog_actions)
+			{
+				value v;
+				next_arg(c, v);
+				action = v.word();
+			}
+			return c.args;
+		}
+
+		// 418 (0x471A50): the exe re-acquires its pads after a cutscene (pad state passes 0x42E1E0 and
+		// 0x42E220). Ours reads the keyboard's real state every tick, so there is nothing to re-acquire;
+		// clearing held keys here would make a key held through the cutscene's end look released.
+		std::uint32_t reacquire_input(call& c)
+		{
+			return c.args;
+		}
+
 		// 314 (0x46BD40 -> 0x404E70): set a view's top, left, bottom, right bounds.
 		std::uint32_t set_view_bounds(call& c)
 		{
@@ -5468,6 +5515,11 @@ namespace openrayman::game
 		vm.on_procedure(157, place_self);
 		vm.on_procedure(136, turn_by);
 		vm.on_procedure(81, start_over);
+		vm.on_procedure(82, clear_cast_ignore_mask);
+		vm.on_procedure(313, set_view_size_or_origin);
+		vm.on_procedure(315, set_view_size_or_origin);
+		vm.on_procedure(347, set_analog_actions);
+		vm.on_procedure(418, reacquire_input);
 		for(std::uint32_t i : { 76, 77, 78 })
 			vm.on_procedure(i, loop_procedure);
 		for(std::uint32_t i = 34; i <= 37; i++)
