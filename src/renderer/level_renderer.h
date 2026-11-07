@@ -168,6 +168,7 @@ namespace openrayman
 		{
 			std::vector<GLuint> textures;
 			std::vector<float> ends;
+			blend mode = blend::none; // includes later frames when the first is invisible
 		};
 
 		struct gpu_texture

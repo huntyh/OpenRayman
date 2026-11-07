@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <format>
 #include <renderer/level_renderer.h>
+#include <renderer/backdrop.h>
 #include <openrayman/game/profiler.h>
 
 #include <openrayman/gf_texture.h>
@@ -600,7 +601,12 @@ namespace openrayman
 		float end = 0;
 		for(const texture_frame& frame : material.frames)
 		{
-			GLuint id = texture_for(frame.texture, archives, stats).id;
+			const auto texture = texture_for(frame.texture, archives, stats);
+			const GLuint id = texture.id;
+			if(texture.mode == blend::additive)
+				animation.mode = blend::additive;
+			else if(animation.mode == blend::none && (texture.mode == blend::alpha || (frame.texture.flags & texture_flag::alpha)))
+				animation.mode = blend::alpha;
 			animation.textures.push_back(id ? id : m_white);
 			end += std::max(frame.duration, 0.0f);
 			animation.ends.push_back(end);
@@ -672,6 +678,10 @@ namespace openrayman
 					if(!texture.id)
 						texture = { m_white, blend::none };
 					animation = animation_for(*element.material, archives, stats);
+					// Invisible first frames (inv_nz) must not put an entire lightning/cloud
+					// animation in the opaque pass. Its later frames need their soft alpha.
+					if(animation >= 0 && texture.mode == blend::none)
+						texture.mode = m_animations[std::size_t(animation)].mode;
 					scroll = element.material->scroll;
 				}
 				std::vector<vertex>& out = triangles[{ texture.mode, texture.id, animation, scroll, colors, faces }];
@@ -969,28 +979,17 @@ namespace openrayman
 
 	void level_renderer::set_backdrop(const std::string& level)
 	{
-		struct recipe
-		{
-			const char* level;
-			std::vector<std::size_t> sectors;
-			std::vector<std::size_t> skies; // ordinary IPO sky shells that must precede far scenery
-			glm::vec3 anchor;
-			float parallax;
-		};
-		// Own inspection of Jail_10: virtual sector 7, IPO node 82, mountain/valley cards.
-		// Anchor at 90 s into the scripted intro, preserving the ship reveal's composition.
-		static const recipe recipes[] = { { "Jail_10", { 7 }, { 2, 3, 4 }, { -101.584f, 139.372f, 541.117f }, 0.1f } };
 		m_backdrop_sectors.clear();
 		m_backdrop_skies.clear();
 		const char* enabled = std::getenv("OPENRAYMAN_BACKDROP");
 		if(enabled && std::strcmp(enabled, "0") == 0)
 			return;
-		for(const auto& r : recipes)
+		for(const auto& r : backdrop_recipes)
 		{
 			if(level != r.level) continue;
-			m_backdrop_sectors = r.sectors;
-			m_backdrop_skies = r.skies;
-			m_backdrop_anchor = r.anchor;
+			m_backdrop_sectors.assign(r.sectors.begin(), r.sectors.end());
+			m_backdrop_skies.assign(r.skies.begin(), r.skies.end());
+			m_backdrop_anchor = { r.anchor[0], r.anchor[1], r.anchor[2] };
 			m_backdrop_parallax = r.parallax;
 			if(const char* value = std::getenv("OPENRAYMAN_BACKDROP_PARALLAX"))
 			{
@@ -1279,7 +1278,9 @@ namespace openrayman
 			far_camera[3] = glm::vec4(far_eye, 1);
 			const glm::mat4 far_vp = projection * glm::inverse(far_camera);
 			glUniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(far_vp));
-			glUniform3fv(m_u_camera, 1, glm::value_ptr(far_eye));
+			// A scripted flash measures depth from the real eye. Parallax must not
+			// change its coverage on the distant scenery relative to the sky/world.
+			glUniform3fv(m_u_camera, 1, glm::value_ptr(fog_override ? eye : far_eye));
 			draw_static_pass(far_eye);
 			glDepthMask(GL_TRUE);
 			glClear(GL_DEPTH_BUFFER_BIT);

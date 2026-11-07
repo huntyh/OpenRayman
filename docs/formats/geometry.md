@@ -204,3 +204,17 @@ the count says.
   by eye; the name "look at" matches what Raymap calls this field.
 - The Rayman 2 PC field offsets and sizes: own analysis, by following pointers with
   `ortool peek` and checking counts against array sizes, then verified over all 70 levels.
+
+### Animated textures choose their blending from every frame
+
+An animated material's first frame can be invisible (`inv_nz`) while later frames are soft
+(`foudre_aaa`, `beach_sky*_aaa`): Jail_10's sky cards cycle like "5 s invisible, 0.05 s foudre2,
+0.2 s invisible, 0.02 s foudre", which is its lightning. Blending must come from all frames: taking it
+from the first one alone put the whole animation in the opaque pass, so the lightning frames showed as
+hard white patches. No Jail_10 script switches lights during the strike (procedures 104..114 and
+388..390, handlers 0x468E90 and 0x470B20, are never called); the white full-screen fog at 6.1..6.7 s is
+the logo's transition (actor 4, message 30), not the lightning. The crack the intro camera leaves is
+sector 0's IPO node 17 (rock), not part of the backdrop.
+
+Where this came from: own inspection of the Jail_10 materials and scripts and the exe handlers named
+above (Sol, 2026-11-07), screenshots before and after at the same camera and time.
