@@ -42,7 +42,7 @@ are kept as the game has them, since changing their timing could change gameplay
 
 | What | The game | OpenRayman | Since |
 | --- | --- | --- | --- |
-| 3D sound | Each sound's distance from the listener is turned into volume and panning by the sound DLL (0x40A0A0, not traced further) | A stand-in falloff: full within 8 units, silent at 30, named after `SXD_DIST_SATUR`/`SXD_DIST_FADE` in `Snd_Cpa.ini`; panning from the angle to the listener (docs/formats/sound.md) | 3d |
+| 3D sound | Each sound's distance from the listener is turned into volume and panning by the sound DLL (0x40A0A0, not traced further) | The exe's own distance curve (0x459C90/0x459D30, `Snd_Cpa.ini` saturation 8, fade 30: full volume within 8 units, then linear, held at 77 beyond 30; ae1c155); panning from the angle to the listener is still ours (docs/formats/sound.md) | 3d |
 | Sound loops | Loop points from the sample's decoder DLL | Whole samples loop when the (tentative) +0x30 flag is set; some seam clicks remain | 3d |
 | Music themes | The theme player sequences a theme's segments and transitions between them | The same player, driven by the sectors' entry lists and the scripts; the first 12 segments of the woods' theme switch within 0.02 s of the recorded game (`OPENRAYMAN_MUSIC_LOG=1` logs each) | 3d |
 

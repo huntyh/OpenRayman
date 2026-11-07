@@ -131,10 +131,11 @@ Dated details of everything above, and the user's look-by-look feedback, are in
 
 - 3c leftovers (the slope's acceleration), the dialog text's size and padding, the HUD counters
 - The menu's scenery and the name screen (Phase 4), the intro's rest before Jail_10
-- Sound: theme fades, loudness by distance, music and effect levels
+- Sound: theme fades, music and effect levels (loudness by distance follows the exe since ae1c155)
 - The game's camera: the "turning refused" icon, the exe's orbit search around obstacles
-- Unported exe pieces: script handlers Learn_10 still calls, particle kinds
-- Flying actors bobbing where the game's hover, F1's glossary, an optional modern camera
+- Unported exe pieces: particle kinds (the handlers Learn_10 called are ported)
+- The pirate ship (Jail_20): the chute's walls and end cutscene, the slide's dust
+- F1's glossary with the pause menu (Phase 4), an optional modern camera
 
 ## Phase 4: the whole game
 
