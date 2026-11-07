@@ -166,8 +166,14 @@ coverage values clamped when installed. Scripts can change the values each frame
 itself does not interpolate them. Sector changes do not clear the override; screen objects temporarily
 disable it (0x45CC80). The screen-clear colour still comes from the camera sector's fog light
 (0x40AD00), not the override colour. Level initialization clears the enable and saved flags
-(0x403730). OpenRayman currently renders the near/far coverage but does not apply the override's
-infinite distance for object culling.
+(0x403730). With a fog on, 0x42AF70 (reached from 0x45CDD0 for every drawn physical object)
+skips an object whose bounding-sphere centre (physical object +8: centre xyz, radius) lies at or past
+the fog's infinite distance from the camera, by straight-line distance. Sector fogs use 50000, so only
+the override matters: Jail_10's white flash at the start of the intro's pan (node 4, message 30,
+~6.1 s: near 0, far 50, infinite 300) leaves out the far sky shells and clouds, so the screen clear's
+dark blue shows behind white rocks, as in the real game (user screenshot, 2026-11-07). OpenRayman
+carries each object's centre per vertex and discards culled objects in the shader; the sky dome drawn
+from a sector's sky material counts as infinitely far.
 
 ## Sky
 

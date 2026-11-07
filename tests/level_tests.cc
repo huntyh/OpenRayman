@@ -3142,3 +3142,21 @@ TEST_CASE("sector wake uses eligibility, fresh entry and moving-head order")
 	f.vm.update_activation(actors);
 	CHECK_FALSE(f.vm.active(target));
 }
+
+TEST_CASE("real data: static objects carry their bounding-sphere centre (0x42AF70 culling)")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto data = game_data::locate(*dir);
+	REQUIRE(data);
+	auto files = load_level_files(*data, "Jail_10");
+	scene tree(files.memory, read_level_header(files));
+	std::size_t with = 0, total = 0;
+	for(const auto& placed : static_geometry(files.memory, tree))
+	{
+		total++;
+		if(placed.object.bounding_centre) with++;
+	}
+	CHECK(total > 0);
+	CHECK(with == total);
+}
