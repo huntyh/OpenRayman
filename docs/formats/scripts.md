@@ -712,3 +712,14 @@ identify the observations, not source code to copy.
   the target's standard-game capabilities +0x1C; 112 tests a low-byte bit number
   (0..31). Function 239 (0x47A150) reads the primary dynamics motion vector +0x54;
   without dynamics its native result is real zero.
+
+- Procedure 82 (0x467770, case 0x46778D) clears the segment cast object-ignore mask;
+  functions 198/199/201 restore it to 0x40 after casting. Own analysis of Rayman2.exe.
+- Procedure 313 (0x46BD40, case 0x46BDFE) sets view width and height percentages,
+  clamped to 0..100. Own analysis of Rayman2.exe.
+- Procedure 315 (0x46BD40, case 0x46BE72) sets the view's raw base offsets.
+  Own analysis of Rayman2.exe.
+- Procedure 347 (0x46F830, case 0x46FA47) selects the analog movement actions.
+  Own analysis of Rayman2.exe.
+- Procedure 418 (0x471A50) reacquires the pads after a cutscene (pad state passes 0x42E1E0,
+  0x42E220); ours reads the real key state every tick, so it does nothing. Own analysis of Rayman2.exe.
