@@ -146,6 +146,29 @@ driver, `GliVd1vf.dll`, which builds a Glide fog table: 64 entries indexed by W,
 as above (0x10007BA0). Using straight-line distance instead gave slightly too much fog away from the
 middle of the screen.
 
+## Script fog override
+
+Own analysis of Rayman2.exe: procedure table 0x4A43E0 entries 42..47 all call
+0x468B90. Their arguments are evaluated immediately, and write global override values:
+
+| Procedure | Arguments and effect |
+| --- | --- |
+| 42 | One value: enable when nonzero (a float is truncated first; other values use the low byte). |
+| 43 | One packed colour: its four bytes are percentages, clamped to 100 and divided by 100 (0x482F80). Function 76 packs three percentage channels. |
+| 44 | Near, far, and infinite distances, in that order. |
+| 45 | Near and far coverage, in units of 0..255. |
+| 46 | Restore the saved override values and enabled flag, if a snapshot exists, then discard it. |
+| 47 | Save the override values and flag only if there is no saved snapshot already. |
+
+When enabled, 0x44B740 installs the globals through 0x424010; 0x44AE80 then enables
+that same fog for every sector instead of selecting a sector light. Near/far are ordered and the
+coverage values clamped when installed. Scripts can change the values each frame, but the engine
+itself does not interpolate them. Sector changes do not clear the override; screen objects temporarily
+disable it (0x45CC80). The screen-clear colour still comes from the camera sector's fog light
+(0x40AD00), not the override colour. Level initialization clears the enable and saved flags
+(0x403730). OpenRayman currently renders the near/far coverage but does not apply the override's
+infinite distance for object culling.
+
 ## Sky
 
 Behind everything the game clears the screen with the background colour of the first fog light in

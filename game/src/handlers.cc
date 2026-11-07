@@ -83,6 +83,45 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// Procedures 42..47 (0x468B90): a global fog override and one saved snapshot.
+		std::uint32_t fog_override(call& c)
+		{
+			auto& fog = c.vm.fog_override();
+			value v;
+			switch(c.index)
+			{
+			case 42:
+				next_arg(c, v);
+				fog.enabled = v.is_real() ? v.as_int() != 0 : (v.word() & 0xff) != 0;
+				break;
+			case 43:
+				next_arg(c, v);
+				for(int i = 0; i < 4; ++i)
+					fog.colour[i] = float(std::min(100u, (v.word() >> (i * 8)) & 0xff)) / 100.0f;
+				break;
+			case 44:
+				next_arg(c, v); fog.near = v.as_float();
+				next_arg(c, v); fog.far = v.as_float();
+				next_arg(c, v); fog.infinite = v.as_float();
+				break;
+			case 45:
+				next_arg(c, v); fog.near_blend = v.as_float();
+				next_arg(c, v); fog.far_blend = v.as_float();
+				break;
+			case 46:
+				if(c.vm.saved_fog_override())
+				{
+					fog = *c.vm.saved_fog_override();
+					c.vm.saved_fog_override().reset();
+				}
+				break;
+			case 47:
+				if(!c.vm.saved_fog_override()) c.vm.saved_fog_override() = fog;
+				break;
+			}
+			return c.args;
+		}
+
 		// --- Conditions --------------------------------------------------------------------------
 
 		// 0..3 (0x489B40): and, or (short-circuit: the second argument is skipped when it can't
@@ -5734,6 +5773,7 @@ namespace openrayman::game
 			vm.on_procedure(i, gauge);
 		for(std::uint32_t i : { 396, 397, 398 })
 			vm.on_procedure(i, capabilities);
+		for(std::uint32_t i = 42; i <= 47; ++i) vm.on_procedure(i, fog_override);
 		vm.on_procedure(200, teleport);
 		vm.on_procedure(393, select_colour_set);
 		vm.on_procedure(409, place_screen_object);
