@@ -37,6 +37,8 @@ namespace openrayman
 			layout(location = 2) in vec3 a_normal;
 			layout(location = 3) in vec4 a_uv_bounds;
 			layout(location = 4) in vec4 a_color; // the game's lights summed, worked out at load (static geometry)
+			layout(location = 5) in vec4 a_cull;  // xyz: the object's bounding-sphere centre; w 1 when known
+			uniform float u_fog_infinite;
 			uniform mat4 u_view_projection;
 			uniform mat4 u_model;
 			uniform vec3 u_camera;
@@ -67,6 +69,7 @@ namespace openrayman
 			flat out vec4 v_uv_bounds;
 			out vec4 v_light;
 			out float v_distance;
+			flat out float v_culled;
 			void main()
 			{
 				vec4 world = u_model * vec4(a_position, 1.0);
@@ -109,6 +112,11 @@ namespace openrayman
 				v_uv = a_uv;
 				v_uv_bounds = a_uv_bounds;
 				v_distance = dot(world.xyz - u_camera, u_camera_forward);
+				// 0x42AF70: with a fog on, an object whose bounding-sphere centre lies at or past the
+				// fog's infinite distance from the camera isn't drawn at all (straight-line distance).
+				v_culled = 0.0;
+				if(u_fog_infinite > 0.0 && a_cull.w > 0.5)
+					v_culled = distance((u_model * vec4(a_cull.xyz, 1.0)).xyz, u_camera) >= u_fog_infinite ? 1.0 : 0.0;
 				gl_Position = u_view_projection * world;
 			}
 		)";
@@ -118,6 +126,7 @@ namespace openrayman
 			in vec2 v_uv;
 			in vec4 v_light;
 			in float v_distance;
+			flat in float v_culled;
 			flat in vec4 v_uv_bounds;
 			out vec4 o_color;
 			uniform sampler2D u_texture;
@@ -171,6 +180,8 @@ namespace openrayman
 				vec4 texel = textureGrad(u_texture, uv + u_uv_offset, uv_dx, uv_dy);
 				if(u_sharpen > 0.5)
 					texel.a = sharpened(texel.a, v_uv);
+				if(v_culled > 0.5)
+					discard;
 				float alpha = texel.a * (u_light_alpha > 0.5 ? v_light.a : 1.0) * u_part_alpha;
 				if(alpha < u_alpha_cut)
 					discard;
@@ -205,6 +216,7 @@ namespace openrayman
 			glm::vec4 uv_bounds{ -1e6f, -1e6f, 1e6f, 1e6f }; // min u, v, max u, v: see the fragment shader
 			glm::vec4 color{ 1.0f };                          // the game's light on this corner
 			std::uint32_t source_index = 0;
+			glm::vec4 cull{ 0.0f };                           // bounding-sphere centre (xyz), w 1 when known
 		};
 
 		// The copy of the texture a triangle's UVs stay within, per axis, or no bounds if they cross
@@ -392,6 +404,8 @@ namespace openrayman
 			glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(vertex), reinterpret_cast<void*>(offsetof(vertex, uv_bounds)));
 			glEnableVertexAttribArray(4);
 			glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(vertex), reinterpret_cast<void*>(offsetof(vertex, color)));
+			glEnableVertexAttribArray(5);
+			glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, sizeof(vertex), reinterpret_cast<void*>(offsetof(vertex, cull)));
 			glBindVertexArray(0);
 		};
 		vertex_layout(m_vao, m_vbo);
@@ -658,6 +672,12 @@ namespace openrayman
 		auto add = [&](const geometric_object& object, const affine& world, by_texture& triangles, std::vector<sprite_instance>& sprites,
 			std::span<const light* const> lit) {
 			stats.meshes++;
+			glm::vec4 cull_centre(0.0f);
+			if(object.bounding_centre)
+			{
+				vec3 c = world.apply(*object.bounding_centre);
+				cull_centre = glm::vec4(c[0], c[1], c[2], 1.0f);
+			}
 			for(const triangle_element& element : object.elements)
 			{
 				gpu_texture texture{ m_white, blend::none };
@@ -712,7 +732,7 @@ namespace openrayman
 							rgba sum = light_at(lit, light_target::scenery, p, { turned.x, turned.y, turned.z });
 							color = glm::vec4(sum[0], sum[1], sum[2], sum[3]);
 						}
-						out.push_back({ position, uvs[k], glm::vec3(n[0], n[1], n[2]), bounds, color, index });
+						out.push_back({ position, uvs[k], glm::vec3(n[0], n[1], n[2]), bounds, color, index, cull_centre });
 					}
 					stats.triangles++;
 				}
@@ -1083,8 +1103,10 @@ namespace openrayman
 		use_fog(m_camera_sector);
 
 		// The sky first, behind everything: the camera's sector's, unlit and unfogged, centred on the
-		// camera so it never comes nearer.
-		if(m_lighting)
+		// camera so it never comes nearer. It counts as infinitely far, so a fog override's infinite
+		// distance hides it like any far object (the real game shows only the background colour
+		// during Jail_10's big flash).
+		if(m_lighting && !(fog_override && fog_infinite > 0))
 		{
 			auto s = m_camera_sector;
 			auto sky = s ? m_skies.find(*s) : m_skies.end();

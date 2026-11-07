@@ -88,6 +88,10 @@ namespace openrayman
 		std::vector<colour_set> colour_sets; // from the visual set, for actor meshes
 		// Cards that turn towards the camera. They lie flat in their own YZ plane and face +X.
 		look_at look = look_at::none;
+		// The physical object's bounding-sphere centre (physical object +8 -> centre, radius), in
+		// the object's own frame. The exe skips an object whose centre lies at or past a fog's
+		// "infinite" distance from the camera (0x42AF70). Filled by whoever knows the physical object.
+		std::optional<vec3> bounding_centre;
 	};
 
 	// Reads a visual material: colours, texture, animated frames, scrolling. Throws format_error.
@@ -105,6 +109,9 @@ namespace openrayman
 
 	// Every saved colour set and its LODs on a physical object's visual set.
 	std::vector<colour_set> physical_object_colour_sets(const memory_image& memory, const memory_location& physical);
+
+	// A physical object's bounding-sphere centre (+8 points at centre xyz and radius), if it has one.
+	std::optional<vec3> physical_object_bounding_centre(const memory_image& memory, const memory_location& physical);
 
 	// Reads a transform (0x58 bytes) from memory.
 	transform read_transform(const memory_image& memory, const memory_location& at);

@@ -327,7 +327,11 @@ namespace openrayman
 				if(auto at = ipo_geometry(memory, *node.data))
 					// Exe 0x45C210 / 0x45C360: bit 2 suppresses this object's draw, but
 					// children are still visited. Keep its geometry for inspection and collision.
+				{
 					result.push_back({ index, world, read_geometric_object(memory, *at), !(node.draw_flags & 0x2) });
+					if(auto physical = memory.follow(*node.data))
+						result.back().object.bounding_centre = physical_object_bounding_centre(memory, *physical);
+				}
 			}
 			for(std::size_t child : node.children)
 				self(self, child, world);
@@ -355,6 +359,20 @@ namespace openrayman
 			return std::nullopt;
 		auto list = memory.follow(*visual_set + 0x0C);
 		return list ? memory.follow(*list) : std::nullopt;
+	}
+
+	std::optional<vec3> physical_object_bounding_centre(const memory_image& memory, const memory_location& physical)
+	{
+		// 0x45CDD0 -> 0x4194B0: the physical object's +8 is the bounding volume, centre first.
+		auto sphere = memory.follow(physical + 8);
+		if(!sphere)
+			return std::nullopt;
+		binary_reader r = reader_at(*sphere, 16);
+		vec3 centre{ r.f32(), r.f32(), r.f32() };
+		for(float v : centre)
+			if(!std::isfinite(v))
+				return std::nullopt;
+		return centre;
 	}
 
 	std::vector<colour_set> physical_object_colour_sets(const memory_image& memory, const memory_location& physical)

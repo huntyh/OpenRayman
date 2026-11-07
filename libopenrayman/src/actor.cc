@@ -204,6 +204,7 @@ namespace openrayman
 					set.mesh_physical_at.push_back(*object.physical_object);
 					set.meshes.push_back(read_geometric_object(memory, *at));
 					set.meshes.back().colour_sets = physical_object_colour_sets(memory, *object.physical_object);
+					set.meshes.back().bounding_centre = physical_object_bounding_centre(memory, *object.physical_object);
 					found = set.mesh_physical_at.end() - 1;
 				}
 				mesh = std::size_t(found - set.mesh_physical_at.begin());
