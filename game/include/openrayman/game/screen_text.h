@@ -2,11 +2,17 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
+namespace openrayman { struct level_files; }
+
 namespace openrayman::game
 {
+	// The font actor loaded into 0x4A727C by 0x403730.
+	std::uint32_t screen_slot_font_actor(const openrayman::level_files& files);
+	std::optional<int> screen_slot_glyph_index(std::uint8_t byte, int offset = 0);
 	struct screen_text_metrics { int advance, height, line_height, space; };
 	// Slot dimensions and punctuation positioning from 0x465DD0 / 0x4660B0.
 	screen_text_metrics screen_slot_metrics(float size);

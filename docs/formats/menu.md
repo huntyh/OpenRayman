@@ -1,5 +1,9 @@
 # The main menu
 
+See [text.md](text.md) for the 2026-11-07 comparison of dialog/narration and
+menu/HUD paths, corrected screen-camera projection, font-root loading, inline
+texture-bank selection, and the remaining colour/spacing live reads.
+
 The game's front end. Unlike most engines of its time, Rayman 2 does not draw its menus with a
 separate UI system: the menu is an ordinary OpenSpace level (`World/Levels/Menu`) with scenery,
 actors and AI scripts, and the engine adds a screen-space text layer on top. This note records what
@@ -384,6 +388,13 @@ before rasterization. The examined glyphs in ranges 0, 200, 400 and 600 have bla
 range 800 has white ambient. This is own
 analysis of the GOG executable and Fix data, 2026-11-02; matching the finished colours and positioning
 by eye against the game remains open.
+
+Further own analysis of 0x409060, 0x409500, 0x409B20 and 0x409BB0 (2026-11-06): the
+character position is the accumulated previous advances plus half its own width times scale.
+The `/-w` and `/-z` commands populate global width and scale tables respectively. The current
+dialog layout follows this rule, but the intro counter's observed spacing remains unexplained.
+The renderer already doubles saved vertex colours; applying the material ambient and diffuse terms
+in an experiment did not remove the pink narration gradient. Its cause remains unverified.
 
 - Own analysis of the retail GOG install (`Rayman2.exe`, timestamp 1999-10-15 23:19:39) and of the
   game files, on 2026-10-30.

@@ -1751,7 +1751,7 @@ TEST_CASE("dialog layout measures the whole block and reveals only its prefix")
 	CHECK_FALSE(layout.glyphs[2].revealed);
 }
 
-TEST_CASE("screen text inline colours retain the glyph and change the tint")
+TEST_CASE("screen text inline colours select a texture bank and gradient")
 {
 	game::dialog_text text;
 	text.screen = true;
@@ -1766,7 +1766,23 @@ TEST_CASE("screen text inline colours retain the glyph and change the tint")
 	CHECK(layout.glyphs[2].screen_colour == 400);
 	CHECK(layout.glyphs[3].screen_colour == 400);
 	CHECK(layout.glyphs[4].screen_colour == 600);
-	CHECK(layout.glyphs[1].index == *game::dialog_glyph_index('B'));
+	CHECK(layout.glyphs[1].index == *game::dialog_glyph_index('B') + 200);
+	CHECK(layout.glyphs[3].index == *game::dialog_glyph_index('D') + 999);
+}
+
+TEST_CASE("dialog screen projection uses the fixed camera and reciprocal depth")
+{
+	// Derived independently from 0x422940 / 0x422AB0: unproject through the fixed
+	// camera, then project its result. Screen text must not use the world camera's FOV.
+	auto p = game::project_dialog_screen(60.9f, 850.9f, 16.9f);
+	CHECK(p.x == doctest::Approx(42.8346457));
+	CHECK(p.y == doctest::Approx(405.354331));
+	CHECK(p.unit_x == doctest::Approx(50.3937008));
+	CHECK(p.unit_y == doctest::Approx(55.8500014));
+	auto centre = game::project_dialog_screen(500, 500, 32);
+	CHECK(centre.x == doctest::Approx(320));
+	CHECK(centre.y == doctest::Approx(240));
+	CHECK(centre.unit_x > p.unit_x);
 }
 
 TEST_CASE("real data: dialog template glyph objects")
@@ -1778,6 +1794,7 @@ TEST_CASE("real data: dialog template glyph objects")
 	auto files = load_level_files(*game, "Learn_10");
 	auto block = files.memory.find({4, 0});
 	REQUIRE(block != nullptr);
+	CHECK(game::screen_slot_font_actor(files) == block->base + 0x15ca8);
 	auto data = files.memory.follow({block, 0x15ca8});
 	REQUIRE(data.has_value());
 	auto list = files.memory.follow(*data + 0x10);

@@ -364,7 +364,7 @@ namespace openrayman
 				// thousandths of the viewport, independent of camera depth.
 				auto layout = game::layout_dialog(dialog);
 				auto& font = font_for(dialog.template_actor);
-				float left = layout.centred ? (1000.0f - layout.width) * 0.5f : std::trunc(dialog.x);
+				float left = layout.centred ? (1000.0f - layout.width) * 0.5f : dialog.x;
 				int glyph_height = game::screen_slot_metrics(dialog.z).height;
 				for(const auto& item : layout.glyphs)
 				{
@@ -380,37 +380,45 @@ namespace openrayman
 					float slot_width = std::min(1.0f, (4.0f / 3.0f) * height / width);
 					float x0 = 320.0f + ((left + item.x) * 0.64f - 320.0f) * slot_width;
 					float x1 = x0 + item.advance * 0.64f * slot_width;
-					float y0 = (std::trunc(dialog.y) + item.y + offset - dialog.pulse) * 0.48f;
-					float y1 = (std::trunc(dialog.y) + item.y + offset + glyph_height + dialog.pulse) * 0.48f;
+					// 0x4660B0 retains the slot's floating-point coordinates on both axes.
+					float y0 = (dialog.y + item.y + offset - dialog.pulse) * 0.48f;
+					float y1 = (dialog.y + item.y + offset + glyph_height + dialog.pulse) * 0.48f;
 					// 0x429670 passes white at the upper corners and the slot colour
 					// at the lower corners to GLI_DRV_vSendSpriteToClipWithCol.
 					SDL_FColor top{1, 1, 1, tint[3] * dialog.alpha}, bottom{tint[0], tint[1], tint[2], tint[3] * dialog.alpha};
+					// 0x4660B0 disables the gradient for texture-list offsets >= 800.
+					if(item.index - *game::screen_slot_glyph_index(item.byte) >= 800) bottom = top;
 					SDL_Vertex v[] = {{{x0,y0},top,{0,0}}, {{x1,y0},top,{1,0}}, {{x1,y1},bottom,{1,1}},
 						{{x0,y0},top,{0,0}}, {{x1,y1},bottom,{1,1}}, {{x0,y1},bottom,{0,1}}};
 					append(g->texture, false, v);
 				}
 				continue;
 			}
-			float x, y, unit;
+			float x, y, unit_x, unit_y;
 			if(dialog.screen)
 			{
-				x = std::trunc(dialog.x) * 0.64f;
-				y = std::trunc(dialog.y) * 0.48f;
-				// 0x422940 uses reciprocal screen depth. The final glyph magnification is
-				// provisional pending a matched capture from the original renderer.
-				float depth = std::abs(std::trunc(dialog.z)) * 0.001f;
-				unit = 150.0f * projection[1][1] * depth / (0.1f * (1.0f + depth));
+				// 0x475680 uses the dedicated 0x4052C0 camera, independent of world FOV.
+				auto p = game::project_dialog_screen(dialog.x, dialog.y, dialog.z);
+				x = p.x; y = p.y; unit_x = p.unit_x; unit_y = p.unit_y;
 			}
 			else
 			{
 				glm::vec4 p = view_projection * glm::vec4(dialog.x, dialog.y, dialog.z, 1);
 				if(p.w <= 0) continue;
 				x = (p.x / p.w + 1) * 320; y = (1 - p.y / p.w) * 240;
-				unit = 240.0f * projection[1][1] / p.w;
+				unit_x = unit_y = 240.0f * projection[1][1] / p.w;
 			}
 			auto layout = game::layout_dialog(dialog);
-			if(layout.centred) x = (dialog.screen ? 320 : x) - layout.width * unit * 0.5f;
-			else if(dialog.screen && dialog.creator) x += 4.0f; // provisional dialog inset, reference pixels
+			if(layout.centred) x = (dialog.screen ? 320 : x) - layout.width * unit_x * 0.5f;
+			if(dialog.screen)
+			{
+				// 0x419A30 draws glyph objects and 0x4660B0 slots in the same viewport.
+				// Keep both in our centred 4:3 text area: mixed mappings closed the gap
+				// between the intro's narration colon and its separate slot-26 counter.
+				float text_area = std::min(1.0f, (4.0f / 3.0f) * height / width);
+				x = 320 + (x - 320) * text_area;
+				unit_x *= text_area;
+			}
 			auto& font = font_for(dialog.template_actor);
 			std::optional<SDL_FColor> tint;
 			if(dialog.tint)
@@ -442,8 +450,8 @@ namespace openrayman
 							const auto& uv = element.uvs[element.uv_triangles[t][c]];
 							SDL_FColor colour = glyph_tint ? *glyph_tint : g->colours[element.triangles[t][c]];
 							colour.a *= dialog.alpha; // the text actor's own fade
-							vertices.push_back({{x + (item.x + item.advance * 0.5f + p[0] * item.scale) * unit,
-								y + (item.y - p[2] * item.scale) * unit}, colour, {uv[0], 1 - uv[1]}});
+							vertices.push_back({{x + (item.x + item.advance * 0.5f + p[0] * item.scale) * unit_x,
+								y + (item.y - p[2] * item.scale) * unit_y}, colour, {uv[0], 1 - uv[1]}});
 						}
 					if(!vertices.empty()) append(g->texture, element.material && element.material->texture && (element.material->texture->flags & texture_flag::additive), vertices);
 				}

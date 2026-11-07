@@ -168,6 +168,7 @@ namespace
 		std::unique_ptr<level_renderer> level;
 		std::unique_ptr<memory_image> dialog_memory;
 		std::unique_ptr<dialog_renderer> dialog_overlay;
+		std::uint32_t screen_font_actor = 0;
 		std::size_t level_index = 0;
 		std::string start_level = "Learn_10"; // --level <name>
 		level_renderer::statistics level_stats;
@@ -1429,6 +1430,7 @@ namespace
 			if(a.playing && a.tick < settle_ticks && a.camera_super_object)
 				run_scripts(a, double(settle_ticks - a.tick) / 60.0);
 			update_actors(a);
+			a.screen_font_actor = game::screen_slot_font_actor(files);
 			a.dialog_memory = std::make_unique<memory_image>(std::move(files.memory));
 			a.dialog_overlay = std::make_unique<dialog_renderer>(*a.dialog_memory, a.archives, a.api);
 			SDL_Log("%s: %zu meshes, %zu triangles, %zu textures (%zu missing), %llu ms", levels[index].c_str(),
@@ -1630,37 +1632,36 @@ namespace
 				auto dialogs = game::visible_dialogs(*a.vm);
 				// Screen slots are the separate menu/HUD text path (0x465C10). Their
 				// text IDs are resolved by the script handlers before reaching here.
-				if(a.dialog_memory)
-					if(const auto* fix = a.dialog_memory->find({4, 0}))
-						for(const auto& slot : a.vm->screen_text().all())
-							if(slot.used && slot.alpha && !slot.text.empty())
+				if(a.screen_font_actor)
+					for(const auto& slot : a.vm->screen_text().all())
+						if(slot.used && slot.alpha && !slot.text.empty())
+						{
+							game::dialog_text text;
+							text.prepared = slot.text;
+							text.revealed = int(slot.text.size());
+							text.template_actor = a.screen_font_actor;
+							// 0x465DD0 computes one shared advance from the slot size.
+							auto metrics = game::screen_slot_metrics(slot.size);
+							text.widths.fill(float(metrics.advance));
+							text.widths[0] = float(metrics.space);
+							text.default_scale = 1;
+							text.line_height = float(metrics.line_height);
+							text.screen = true;
+							text.x = slot.x; text.y = slot.y; text.z = slot.size;
+							// 0x4660B0: the colour mode picks the tint (0/1 blue, 2 red, 3 yellow, as
+							// the /O codes), the slot's alpha fades it (the menu greys entries out at 90),
+							// and the pulse changes both vertical edges by sin(5 t) * 7 slot units.
+							std::array<float, 4> tint{110 / 255.0f, 190 / 255.0f, 1, slot.alpha / 255.0f};
+							if(slot.flags & game::screen_text::colour_set)
 							{
-								game::dialog_text text;
-								text.prepared = slot.text;
-								text.revealed = int(slot.text.size());
-								text.template_actor = fix->base + 0x15ca8;
-								// 0x465DD0 computes one shared advance from the slot size.
-								auto metrics = game::screen_slot_metrics(slot.size);
-								text.widths.fill(float(metrics.advance));
-								text.widths[0] = float(metrics.space);
-								text.default_scale = 1;
-								text.line_height = float(metrics.line_height);
-								text.screen = true;
-								text.x = slot.x; text.y = slot.y; text.z = slot.size;
-								// 0x4660B0: the colour mode picks the tint (0/1 blue, 2 red, 3 yellow, as
-								// the /O codes), the slot's alpha fades it (the menu greys entries out at 90),
-								// and the pulse changes both vertical edges by sin(5 t) * 7 slot units.
-								std::array<float, 4> tint{110 / 255.0f, 190 / 255.0f, 1, slot.alpha / 255.0f};
-								if(slot.flags & game::screen_text::colour_set)
-								{
-									if(slot.colour == 2) tint = {250 / 255.0f, 70 / 255.0f, 70 / 255.0f, tint[3]};
-									else if(slot.colour == 3) tint = {1, 1, 120 / 255.0f, tint[3]};
-								}
-								text.tint = tint;
-								if(slot.wobble)
-									text.pulse = std::sin(float(a.vm->clock()) / 1000.0f * 5.0f) * 7.0f;
-								dialogs.push_back(std::move(text));
+								if(slot.colour == 2) tint = {250 / 255.0f, 70 / 255.0f, 70 / 255.0f, tint[3]};
+								else if(slot.colour == 3) tint = {1, 1, 120 / 255.0f, tint[3]};
 							}
+							text.tint = tint;
+							if(slot.wobble)
+								text.pulse = std::sin(float(a.vm->clock()) / 1000.0f * 5.0f) * 7.0f;
+							dialogs.push_back(std::move(text));
+						}
 				const auto& boxes = a.vm->particles().screen_rectangles();
 				// The gauges (kind 120) are painted before the images (0x460670, then 0x460600).
 				std::vector<game::particles::screen_image> images = a.vm->particles().screen_bar_images();
