@@ -1407,6 +1407,12 @@ namespace openrayman
 					glm::vec3 face = glm::cross(b - a, d - a);
 					if(glm::length(face) < 1e-8f || std::abs(glm::normalize(face).z) < 0.3f)
 						continue; // walls catch no shadow
+					// The blob is mapped by X and Y only, so a big slope that merely reaches the
+					// ground's height somewhere would show it where it passes above (or below) the
+					// actor. Its plane must be near the ground under the blob's centre.
+					const float plane_z = a.z - (face.x * (c.x - a.x) + face.y * (c.y - a.y)) / face.z;
+					if(std::abs(plane_z - at.z) > 0.75f)
+						continue;
 					glm::vec3 lift = glm::normalize(face.z < 0 ? -face : face) * 0.02f;
 					for(const glm::vec3* p : { &a, &b, &d })
 						quads.push_back({ *p + lift, uv(*p), n, bounds });
