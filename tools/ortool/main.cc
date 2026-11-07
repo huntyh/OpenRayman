@@ -1937,6 +1937,9 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 				{
 					std::uint32_t data = memory.u32(memory.u32(tree.node(*trace).at.address() + 4));
 					std::cout << std::format("tick {:>4}: at {:.2f} {:.2f} {:.2f}", f, p->m[0][3], p->m[1][3], p->m[2][3]);
+					if(std::getenv("ORTOOL_TRANSFORMS"))
+						std::cout << std::format(", scale {:.9g}, axes [{:.6g} {:.6g} {:.6g}; {:.6g} {:.6g} {:.6g}; {:.6g} {:.6g} {:.6g}]",
+							p->uniform_scale(), p->m[0][0], p->m[1][0], p->m[2][0], p->m[0][1], p->m[1][1], p->m[2][1], p->m[0][2], p->m[1][2], p->m[2][2]);
 					if(every != 30 && data && memory.contains(data + game::data_3d::playback_rate, 1))
 						std::cout << std::format(", animation clock {} ms at rate {}", memory.u32(data + 0xC0), memory.u8(data + game::data_3d::playback_rate));
 					std::cout << "\n";

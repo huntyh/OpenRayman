@@ -728,11 +728,11 @@ namespace openrayman::game
 			else if(!(flags & 0x1) && (flags & 0x2))
 			{
 				m.write<std::uint8_t>(standard + 0x29, flags & ~0x7);
-				c.vm.remove(target, false);
-				// 0x4061B0 moves it to the inactive world. The script that switched itself off
+				// 0x4061B0 leaves world membership intact (rec_jail20_3, node 14).
+				// The activity bits stop updates; spatial sleep can unlink it later.
+				// The script that switched itself off
 				// goes on with its next node (case 0x55 returns normally): Jail_20's pirate runs
 				// procedure_85(me) and then procedure_69(behaviour 1) in the same rule.
-				std::erase(c.vm.run_order, target);
 			}
 			return c.args;
 		}
@@ -4524,21 +4524,24 @@ namespace openrayman::game
 			};
 			place(transform_of(c.vm, so));
 			// 0x432DA0: an actor with dynamics gets the position in the dynamics' own matrices too
-			// (+0xD0 and +0x78, and +0x288/+0x2E0 with flag 4), and the world transform is copied
-			// from +0xD0, unless flag 0x80. Otherwise its next mechanics step starts from where it
-			// was and the move only shows a tick later (a revisit's Rayman flashed at the new-game
-			// spot before reaching the portal).
+			// (+0xD0 and +0x78, and +0x288/+0x2E0 with flag 4), unless flag 0x80.
+			// The exe maintains full dynamics matrices on every movement/turn; our mechanics
+			// instead uses the super object's current matrix. Synchronize that authoritative
+			// frame into the dynamics caches, rather than copying their stale saved axes back
+			// over the actor (Jail_20's combined Globox actor otherwise collapses to zero scale).
 			if(std::uint32_t base = dynamics_base(c, so, 0x2E0 + 0x58); base && !(m.u8(base + 0xC) & 0x80))
 			{
-				place(base + 0xD0);
-				place(base + 0x78);
-				if(std::uint32_t t = transform_of(c.vm, so); t && m.contains(t, 0x58))
-					for(std::uint32_t i = 0; i < 0x58; i += 4)
-						m.write<std::uint32_t>(t + i, m.u32(base + 0xD0 + i));
+				auto sync = [&](std::uint32_t offset) {
+					if(std::uint32_t t = transform_of(c.vm, so); t && m.contains(t, 0x58))
+						for(std::uint32_t i = 0; i < 0x58; i += 4)
+							m.write<std::uint32_t>(base + offset + i, m.u32(t + i));
+				};
+				sync(0xD0);
+				sync(0x78);
 				if(m.u8(base + 0xC) & 4)
 				{
-					place(base + 0x288);
-					place(base + 0x2E0);
+					sync(0x288);
+					sync(0x2E0);
 				}
 			}
 			// 0x432DA0: the dynamics forgets the speed it had (base +0x3C and +0x6C), so a held

@@ -202,3 +202,12 @@ too. The recorder read the glyph actors' local transforms as object bytes; r2rec
 pointers and reads the viewport scales from the rendering device (0x420450, device list 0x506B20), so a
 new recording is needed for per-glyph colour questions. The engine gained `--window-size WxH` and
 `--place x,y,z,yaw` for captures at a recording's resolution and position.
+
+## Jail_20 widescreen padding correction (2026-11-07)
+
+The centered 4:3 mapping described above has been superseded: both generated
+text and screen slots now use the full common viewport, matching 0x419A30.
+Keeping both mappings alike still preserves the intro counter gap, and also
+aligns dialogue text with its full-viewport box and portrait. ID 504 has no
+/c command; its anchor is (140,850,16). See [jail20-handover.md](jail20-handover.md)
+for the recording transforms, draw-flag investigation and provenance.
