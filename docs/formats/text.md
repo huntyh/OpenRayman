@@ -182,3 +182,11 @@ examined exe, not saved-data addresses):
 The normal polling tools cannot guarantee sampling inside a glyph draw. If they
 only provide frame snapshots, collect items 1..5 first and keep item 6 explicitly
 unsettled; arbitrary samples of this shared context cannot prove narration colour.
+
+Use `python tools/r2record.py <folder> --only text,text_draw` to write
+`text_draw.txt` alongside the text events. It samples only while a text actor or
+screen slot is present and visible. Renderer context values are frame snapshots,
+not samples inside 0x42AA30/0x42D520/0x42D680; the reused context cannot establish
+a narration or highlighted glyph's colour without a draw-time breakpoint. Scale
+counts over 56 are reported but not read, because the actor table follows the array.
+Record screenshot frame/time and display settings separately.
