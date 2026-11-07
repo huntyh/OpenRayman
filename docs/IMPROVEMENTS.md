@@ -17,6 +17,7 @@ of them off may come later.
 | Character shadows | At most 10, and only for actors whose scripts switch them on (the Globox kids have none) | Every actor with a shadow gets one | 2c |
 | See-through leaves | Hard, jagged cut-out edges | Soft edges: texture colour bled into the see-through texels, a solid core drawn first, back-to-front sorting per triangle | 2c |
 | Sky | Jumps when the camera moves up and down (a parallax glitch, visible when Rayman jumps) | Stays put | 2c |
+| Jail_10 far backdrop | The mountain/valley scenery behind the pirate ship is nearby geometry | Optional 3D skybox pass for sector 7, with one tenth of the camera translation about the scripted camera at 90 seconds. Sky, backdrop, then normal scenery with cleared depth; lighting/fog retained and collision unchanged. Default on only in Jail_10; `OPENRAYMAN_BACKDROP=0` disables it, `OPENRAYMAN_BACKDROP_PARALLAX=0..1` tunes translation (default 0.1). | 4 |
 | Texture filtering | Plain bilinear | Anisotropic filtering where the GPU has it | 2c |
 | Colour depth | Textures drawn in 16-bit colour (the usual setting, `GLI_Mode ... x 16` in ubi.ini): banding and blocky gradients | The textures' full 24/32-bit colour from the files (the water looks much better for it, user 2026-11-02) | 2a |
 | Soft-edged effects | The Voodoo renderer (GliVd1vf.dll) alpha-tests cut-outs at 192 of 255, so soft edges like the water splash's come out hard and pixelated | Real alpha blending: effect textures marked `_aaa` always blend with their own alpha | 3c |

@@ -126,6 +126,8 @@ namespace openrayman
 		// The game's luminosity setting: 0.5 is neutral, higher is brighter.
 		void set_luminosity(float luminosity) { m_luminosity = luminosity; }
 		float luminosity() const { return m_luminosity; }
+		// Select the optional, draw-only far scenery recipe for this level (empty for all others).
+		void set_backdrop(const std::string& level);
 
 	private:
 		// Drawn in this order: solid surfaces first, then see-through ones over them.
@@ -271,6 +273,10 @@ namespace openrayman
 		bool m_lighting = true;
 		float m_luminosity = 0.5f;
 		level_lights m_lights;
+		std::vector<std::size_t> m_backdrop_sectors;
+		std::vector<std::size_t> m_backdrop_skies;
+		glm::vec3 m_backdrop_anchor{ 0 };
+		float m_backdrop_parallax = 0.1f;
 		// The camera's sector, kept from frame to frame as the exe does (level_lights::follow), and
 		// the sectors drawn while the camera is in it: itself and its +0x24 list (0x44B2E0).
 		mutable std::optional<std::size_t> m_camera_sector;
