@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <optional>
 #include <span>
 #include <set>
 #include <string>
@@ -181,6 +182,16 @@ namespace openrayman::game
 		game::screen_text& screen_text() { return m_screen_text; }
 		const game::screen_text& screen_text() const { return m_screen_text; }
 		// World view boundaries in thousandths, as set by procedure 314 (0x46BD40).
+		struct fog_state
+		{
+			bool enabled = false;
+			std::array<float, 4> colour{};
+			float near = 0, far = 0, infinite = 0, near_blend = 0, far_blend = 0;
+		};
+		fog_state& fog_override() { return m_fog_override; }
+		const fog_state& fog_override() const { return m_fog_override; }
+		std::optional<fog_state>& saved_fog_override() { return m_saved_fog_override; }
+
 		struct view_bounds { int top = 0, left = 0, bottom = 1000, right = 1000; };
 		view_bounds& world_view_bounds() { return m_world_view_bounds; }
 		const view_bounds& world_view_bounds() const { return m_world_view_bounds; }
@@ -419,6 +430,8 @@ namespace openrayman::game
 		std::uint32_t m_frame_ms = 16;
 		game::particles m_particles;
 		game::screen_text m_screen_text;
+		fog_state m_fog_override;
+		std::optional<fog_state> m_saved_fog_override;
 		view_bounds m_world_view_bounds;
 		world_collision m_world;
 		std::map<std::uint32_t, moving_support> m_supports;

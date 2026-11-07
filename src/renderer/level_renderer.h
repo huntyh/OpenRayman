@@ -110,7 +110,7 @@ namespace openrayman
 		void set_time(double seconds) { m_time = seconds; }
 
 		// Sprites turn to face the camera, so this needs the view on its own.
-		void draw(const glm::mat4& view, const glm::mat4& projection) const;
+		void draw(const glm::mat4& view, const glm::mat4& projection, const light* fog_override = nullptr, float fog_infinite = 0) const;
 
 		// Keep each triangle's texture lookups inside the copy of the texture it uses (on by
 		// default), or not, for comparing edge seams.
@@ -229,7 +229,7 @@ namespace openrayman
 		GLint m_u_camera = -1, m_u_camera_forward = -1, m_u_lighting = -1;
 		GLint m_u_light_count = -1, m_u_light_kind = -1, m_u_light_vector = -1, m_u_light_color = -1, m_u_light_range = -1;
 		GLint m_u_material_ambient = -1, m_u_material_diffuse = -1, m_u_luminosity = -1, m_u_light_alpha = -1;
-		GLint m_u_fog_color = -1, m_u_fog = -1, m_u_additive = -1;
+		GLint m_u_fog_color = -1, m_u_fog = -1, m_u_fog_infinite = -1, m_u_additive = -1;
 		GLuint m_vao = 0, m_vbo = 0;
 		GLuint m_sprite_vao = 0, m_sprite_vbo = 0; // rebuilt every frame
 		std::vector<sprite_instance> m_sprites;     // of the static geometry, in world space

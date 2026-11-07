@@ -124,6 +124,7 @@ namespace openrayman
 			uniform float u_edge_clamp;
 			uniform vec2 u_uv_offset; // scrolling textures (water, mist, clouds)
 			uniform vec4 u_fog_color;
+			uniform float u_fog_infinite;
 			uniform vec4 u_fog;       // near, far, how much fog covers at near and at far (0..1)
 			uniform float u_additive; // additive surfaces fade out in fog instead of taking its colour
 			uniform float u_light_alpha; // see-through surfaces: the lights' alpha counts
@@ -176,6 +177,7 @@ namespace openrayman
 				if(u_fog.y > u_fog.x)
 				{
 					float fog = mix(u_fog.z, u_fog.w, clamp((v_distance - u_fog.x) / (u_fog.y - u_fog.x), 0.0, 1.0));
+					if(u_fog_infinite > 0.0 && v_distance > u_fog_infinite) fog = 1.0;
 					color = u_additive > 0.5 ? color * (1.0 - fog) : mix(color, u_fog_color.rgb, fog);
 				}
 				o_color = vec4(color, u_alpha_cut > 0.25 ? 1.0 : alpha);
@@ -369,6 +371,7 @@ namespace openrayman
 		m_u_light_alpha = glGetUniformLocation(m_program, "u_light_alpha");
 		m_u_fog_color = glGetUniformLocation(m_program, "u_fog_color");
 		m_u_fog = glGetUniformLocation(m_program, "u_fog");
+		m_u_fog_infinite = glGetUniformLocation(m_program, "u_fog_infinite");
 		m_u_additive = glGetUniformLocation(m_program, "u_additive");
 		glUseProgram(m_program);
 		glUniform1i(glGetUniformLocation(m_program, "u_texture"), 0);
@@ -983,7 +986,7 @@ namespace openrayman
 			m_drawn_sectors[s] = true;
 	}
 
-	void level_renderer::draw(const glm::mat4& view, const glm::mat4& projection) const
+	void level_renderer::draw(const glm::mat4& view, const glm::mat4& projection, const light* fog_override, float fog_infinite) const
 	{
 		glEnable(GL_DEPTH_TEST);
 		glDisable(GL_CULL_FACE); // which faces are double sided isn't decoded yet
@@ -1022,12 +1025,13 @@ namespace openrayman
 		// (0x44B1B0) the exe sets the first fog light of that sector's own list, or none (0x44AE80).
 		// So from the cave the valley outside is fogged, though the cave has no fog. The camera's
 		// sector gives the background (and, here, what has no sector of its own).
+		glUniform1f(m_u_fog_infinite, fog_override ? fog_infinite : 0.0f);
 		std::optional<std::size_t> fogged = no_sector; // what the fog uniforms hold now
 		auto use_fog = [&](std::optional<std::size_t> sector) {
 			if(sector == fogged)
 				return;
 			fogged = sector;
-			const light* fog = m_lighting && sector && *sector < m_lights.sectors.size() ? m_lights.fog(*sector) : nullptr;
+			const light* fog = m_lighting ? (fog_override ? fog_override : (sector && *sector < m_lights.sectors.size() ? m_lights.fog(*sector) : nullptr)) : nullptr;
 			if(!fog)
 			{
 				glUniform4f(m_u_fog, 0, 0, 0, 0);
@@ -1337,7 +1341,15 @@ namespace openrayman
 				glUniform1i(m_u_lighting, m_lighting ? (is_level ? 1 : 2) : 0);
 				glUniform1f(m_u_part_alpha, is_level ? 1.0f : parts[d.part].alpha);
 				if(!is_level)
-					use_lights(part_light[d.part]), use_fog(part_sector[d.part]);
+					{
+					use_lights(part_light[d.part]);
+					use_fog(part_sector[d.part]);
+					if(parts[d.part].screen)
+					{
+						glUniform4f(m_u_fog, 0, 0, 0, 0);
+						fogged = no_sector;
+					}
+				}
 				else
 					glUniform1f(m_u_sharpen, 0.0f);
 			}

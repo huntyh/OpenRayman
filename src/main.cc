@@ -1619,7 +1619,19 @@ namespace
 			{
 				game::profiler::scope timed(game::profiler::zone::draw);
 				begin_gpu_timer(a);
-				a.level->draw(view, projection);
+				light override_light;
+				const light* override_fog = nullptr;
+				if(a.vm && a.vm->fog_override().enabled)
+				{
+					const auto& fog = a.vm->fog_override();
+					override_light.color = fog.colour;
+					override_light.near = std::min(fog.near, fog.far);
+					override_light.far = std::max(fog.near, fog.far);
+					override_light.fog_near_blend = std::clamp(fog.near_blend, 0.0f, 255.0f) / 255.0f;
+					override_light.fog_far_blend = std::clamp(fog.far_blend, 0.0f, 255.0f) / 255.0f;
+					override_fog = &override_light;
+				}
+				a.level->draw(view, projection, override_fog, override_fog ? std::max(a.vm->fog_override().infinite, override_light.far) : 0.0f);
 				end_gpu_timer(a);
 			}
 			if(a.scripts)
