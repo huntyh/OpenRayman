@@ -965,7 +965,10 @@ namespace
 			std::size_t first_part = parts.size();
 			try
 			{
-				pose_actor(actor, a.bank, frame, parts);
+				const channel_positions empty;
+				const auto& positions = a.vm && a.scripts && i < a.super_object_at.size()
+					? a.vm->placed_channels(a.super_object_at[i]) : empty;
+				pose_actor(actor, a.bank, frame, parts, positions);
 			}
 			catch(const std::exception&)
 			{
@@ -1754,7 +1757,8 @@ namespace
 			auto* bytes = static_cast<std::uint8_t*>(surface->pixels);
 			for(int i = 3; i < w * h * 4; i += 4)
 				bytes[i] = 255;
-			SDL_SaveBMP(surface, a.screenshot->string().c_str());
+			if(!SDL_SaveBMP(surface, a.screenshot->string().c_str()))
+				SDL_Log("Could not save screenshot: %s", SDL_GetError());
 			SDL_DestroySurface(surface);
 		}
 

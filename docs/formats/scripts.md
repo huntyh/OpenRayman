@@ -739,3 +739,76 @@ identify the observations, not source code to copy.
   Own analysis of Rayman2.exe.
 - Procedure 418 (0x471A50) reacquires the pads after a cutscene (pad state passes 0x42E1E0,
   0x42E220); ours reads the real key state every tick, so it does nothing. Own analysis of Rayman2.exe.
+
+## Placing animation parts and testing zone contact (218, 19/20)
+
+Procedure **218** (`0x46AB20`, argument branch `0x46AFF0`, position write
+`0x46B846`, shared tail `0x46B8B4`) takes a vector, an unsigned-byte channel
+number and flags. Channel 255 skips the remaining argument without evaluating it.
+With flag bit 0 clear, the vector is a point in the target actor's frame; with
+bit 0 set it is already a world point. The chosen part keeps its global rotation
+and scale and takes the new position. The exe stamps the part's super object
+`+0x28`, rebuilds its local transform from its parent (`0x45C030`), refreshes
+children (`0x45C170`) and sets 3D data `+0xFC` to 1. Missing parts do nothing;
+this procedure does not move the actor or submit a dynamics displacement.
+
+A script channel number is the animation channel's **ID**, the signed 16-bit
+field at channel `+2`, rather than its index in the animation array. `0x41A400`
+copies this ID into its cached channel records; `0x40F2C0` builds the 20-byte
+entries at 3D data `+0x90` using those IDs and links parents using hierarchy
+IDs. `0x41A610` reads channel `+2` again to select the table entry while posing.
+Entry `+0` points to the transform-bearing super object. Entry `+4` is an
+optional visible super object: show/hide (`0x4195A0`, procedures 102/103) prefers
+that pointer and falls back to `+0`. Placement and position queries use `+0`
+unconditionally. These are distinct operations, not contradictory field layouts.
+
+OpenRayman poses from the animation bank rather than allocating these runtime
+part objects. The interpreter therefore records per-actor channel-ID world
+positions and the tick on which each actor's placements were made. Only the
+current tick's placements reach `pose_actor`; an unplaced next tick restores
+the normal animation. Posing resolves parents first, replaces only each placed
+channel's world translation, then composes children from that world matrix.
+Hidden parent channels still carry their children. An explicit child placement
+wins over its parent's translation. The renderer passes the current placements
+for the actor; reset/removal clears them. If a native part table exists, 218
+also writes its selected part's global position and frame stamp. With no table,
+only IDs present in the actor's current animation are accepted.
+
+Learn_31 node 8 stores a history of head positions and places channels 3..8 at
+positions from 3, 6, 9, 12, 15 and 18 ticks earlier. Thus its six trailing segments
+can follow a moving head independently of the bank animation. Rayman's own
+scripts also use 218 with actor-local points for channels 2 and 3.
+
+Conditions **19/20** (`0x489EE0`, branch `0x48A012`) take actor A, an unsigned-byte
+zone/channel number, actor B and a 16-bit surface mask. `0x40D350` requests
+collision **kind 2** from `0x40D290`: selector 0 (condition 19) reads A's
+collision-set list using zone number minus one and A's global frame; selector 1
+(condition 20) reads the channel number directly from A's `+0x90` table,
+including channel zero. For selector 1, geometry may come from the fallback
+entry at channel +0x8000 when the original part lacks type bits 0x18, but the
+frame remains the original part's global matrix. `0x444790` selects the kind-2
+geometry slot at `+8` (kind 0 is `+4`, kind 1 is `+0`, kind 3 is `+0xC`).
+
+`0x40CFA0` requires B's standard-game `+0x29` bit 0x4, tests B's enabled kind-2
+zones and collision-bearing active parts, and accepts an overlapping element
+only if its collide-material surface flags contain every mask bit. Mask zero
+ignores material flags. The element's game material leads through `+0xC` to
+the collide material, whose flags are the u16 at `+2` (`0x42DB70`, `0x42DB30`,
+`0x42DE00`, `0x42DDD0`). A missing zone or actor returns false. The mutual
+custom-bit 0x8 / collision-set `+0x42` bit 0x40 exclusions belong to the sector
+walk in `0x40CD30` (procedure 22); the direct two-actor `0x40D350` call does not
+apply that walk's exclusions. Both conditions reuse our existing sphere/sphere
+and sphere/box overlap helpers; the pre-existing box/box omission remains an
+implementation limitation. Node 8's contact reflex uses condition 19 with zone
+1 and mask 1, then sends Rayman collision events through procedures 232..234.
+
+### Where this came from
+
+Own reading of the Ghidra exports of Rayman2.exe at `0x46AB20`, `0x489EE0`,
+`0x40D350`, `0x40D290`, `0x40CFA0`, `0x40CD30`, `0x4195A0`, `0x4194B0`,
+`0x4194C0`, `0x42DE30`, `0x444790`, `0x41A400`, `0x40F2C0`, `0x41A610` and
+`0x40E0D0`, prompted by a DeepSeek reading in `build/helpers/learn31_missing.md`.
+The pointer distinction and ID mapping were checked independently against those
+functions, and behavior was checked with synthetic tests and the real Learn_31
+scripts (six distinct current-tick positions for channels 3..8). No decompiled
+code copied. Codex, 2026-11-07.

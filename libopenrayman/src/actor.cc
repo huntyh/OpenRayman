@@ -216,7 +216,8 @@ namespace openrayman
 	// How many frames a looping animation takes to glide into its start (see pose()).
 	constexpr double loop_seam_frames = 4;
 
-	void pose_actor(const actor_set::entry& actor, const animation_bank& bank, double frame, std::vector<posed_part>& out)
+	void pose_actor(const actor_set::entry& actor, const animation_bank& bank, double frame, std::vector<posed_part>& out,
+		const channel_positions& positions)
 	{
 		auto add = [&](std::size_t object, const affine& world) {
 			if(object >= actor.meshes.size() || !actor.meshes[object])
@@ -237,23 +238,30 @@ namespace openrayman
 			return;
 		}
 		std::vector<channel_pose> channels = pose(bank, *actor.animation, frame, actor.loops ? loop_seam_frames : 0);
+		std::vector<affine> worlds(channels.size());
+		std::vector<std::uint8_t> visited(channels.size());
+		// Resolve parents first, including hidden channels. A placed parent carries its children
+		// with it, while each child's own placement can replace its final world position.
+		auto resolve = [&](auto&& resolve, std::size_t c) -> affine {
+			if(visited[c] == 2) return worlds[c];
+			if(visited[c] == 1) return actor.world; // malformed hierarchy cycle
+			visited[c] = 1;
+			affine parent = channels[c].parent ? resolve(resolve, *channels[c].parent) : actor.world;
+			worlds[c] = parent * channels[c].local;
+			if(auto p = positions.find(channels[c].id); p != positions.end())
+				for(std::size_t axis = 0; axis < 3; ++axis) worlds[c].m[axis][3] = p->second[axis];
+			visited[c] = 2;
+			return worlds[c];
+		};
 		for(std::size_t c = 0; c < channels.size(); c++)
 		{
 			if(!channels[c].object)
 				continue;
-			// Chain up through parent channels; a channel count bounds the walk against cycles.
-			affine local = channels[c].local;
-			std::optional<std::size_t> parent = channels[c].parent;
-			for(std::size_t steps = 0; parent && steps < channels.size(); steps++)
-			{
-				local = channels[*parent].local * local;
-				parent = channels[*parent].parent;
-			}
 			std::size_t object = *channels[c].object;
 			if(channels[c].morph && channels[c].morph->amount >= 100)
 				object = channels[c].morph->target;
 			const auto before = out.size();
-			add(object, actor.world * local);
+			add(object, resolve(resolve, c));
 			if(channels[c].morph && channels[c].morph->amount < 100 && out.size() != before &&
 				channels[c].morph->target < actor.meshes.size() && actor.meshes[channels[c].morph->target])
 			{

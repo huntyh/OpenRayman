@@ -8,6 +8,7 @@
 #include <openrayman/scene.h>
 
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <vector>
 
@@ -103,7 +104,10 @@ namespace openrayman
 
 	// Appends an actor's parts at a frame of its current animation (see pose()). Actors without an
 	// animation show their first object, if they have one.
-	void pose_actor(const actor_set::entry& actor, const animation_bank& bank, double frame, std::vector<posed_part>& out);
+	// Script placements are world points keyed by channel id (not animation array index).
+	using channel_positions = std::map<std::int16_t, vec3>;
+	void pose_actor(const actor_set::entry& actor, const animation_bank& bank, double frame, std::vector<posed_part>& out,
+		const channel_positions& positions = {});
 
 	// Geometry of every actor in the dynamic world, posed at the first frame of its current
 	// animation.

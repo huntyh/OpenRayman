@@ -1037,6 +1037,175 @@ struct handler_fixture
 	bool condition(unsigned n, std::initializer_list<game::value> args = {}) { return invoke(node_type::condition, n, args).word() != 0; }
 };
 
+TEST_CASE("procedure 218 places only the transform part and expires on the next tick")
+{
+	handler_fixture f;
+	auto table = f.m.allocate(80), part = f.m.allocate(0x48), visible = f.m.allocate(0x48);
+	f.m.write(f.data + 0x90, table);
+	f.m.write(table + 40, part); f.m.write(table + 44, visible);
+	auto transform = f.m.allocate(0x58), visible_transform = f.m.allocate(0x58), actor_transform = f.m.allocate(0x58);
+	f.m.write(part + 0x24, transform); f.m.write(visible + 0x24, visible_transform); f.m.write(f.so + 0x24, actor_transform);
+	affine a; a.m[0][0] = 2; a.m[1][1] = 3; a.m[2][2] = 4; a.m[0][3] = 100;
+	game::set_global_placement(f.m, f.so, a);
+	game::set_global_placement(f.m, part, a);
+	f.procedure(218, {game::value::vector(1, 2, 3), f.integer(2), f.integer(0)});
+	REQUIRE(f.vm.placed_channels(f.so).contains(2));
+	CHECK(f.vm.placed_channels(f.so).at(2) == vec3{102, 6, 12});
+	CHECK(f.m.f32(transform + 4) == doctest::Approx(102));
+	CHECK(f.m.f32(transform + 0x34) == doctest::Approx(2));
+	CHECK(f.m.f32(visible_transform + 4) == 0);
+	CHECK(f.m.u8(f.data + 0xFC) == 1);
+	f.procedure(218, {game::value::vector(4, 5, 6), f.integer(2), f.integer(1)});
+	CHECK(f.vm.placed_channels(f.so).at(2) == vec3{4, 5, 6});
+	// Missing entries do not fall back to the actor or to the visible object.
+	f.procedure(218, {game::value::vector(9, 9, 9), f.integer(3), f.integer(1)});
+	CHECK(f.vm.placed_channels(f.so).size() == 1);
+	CHECK(f.m.f32(actor_transform + 4) == doctest::Approx(100));
+	// 255 skips the remaining argument without evaluating its function.
+	f.m.write<std::uint32_t>(f.script, 218); f.m.write<std::uint8_t>(f.script + 7, std::uint8_t(node_type::procedure));
+	f.m.write<std::uint32_t>(f.script + 16, 255); f.m.write<std::uint8_t>(f.script + 23, std::uint8_t(node_type::integer));
+	bool evaluated = false;
+	f.vm.on_function(1002, [&](game::call& c, game::value&) { evaluated = true; return c.args; });
+	game::value out; CHECK(f.vm.eval(f.so, f.script, out) == f.script + 32); CHECK_FALSE(evaluated);
+	f.vm.next_tick();
+	CHECK(f.vm.placed_channels(f.so).empty());
+	f.procedure(218, {game::value::vector(7, 8, 9), f.integer(2), f.integer(1)});
+	f.vm.reset_actor(f.so); CHECK(f.vm.placed_channels(f.so).empty());
+	// Identity and translation-only transforms ignore the saved matrix rows.
+	f.m.write<std::uint32_t>(actor_transform, 1);
+	f.procedure(218, {game::value::vector(1, 2, 3), f.integer(2), f.integer(0)});
+	CHECK(f.vm.placed_channels(f.so).at(2) == vec3{1, 2, 3});
+	f.m.write<std::uint32_t>(actor_transform, 2);
+	f.procedure(218, {game::value::vector(1, 2, 3), f.integer(2), f.integer(0)});
+	CHECK(f.vm.placed_channels(f.so).at(2) == vec3{101, 2, 3});
+	f.vm.remove(f.so); f.vm.restore(f.so); CHECK(f.vm.placed_channels(f.so).empty());
+}
+
+TEST_CASE("conditions 19 and 20 test kind-2 zones, material masks and the target's world flag")
+{
+	handler_fixture f;
+	auto make_zone = [&]() {
+		auto zone = f.m.allocate(0x30), vertices = f.m.allocate(12), kinds = f.m.allocate(2), elements = f.m.allocate(4);
+		auto element = f.m.allocate(8), sphere = f.m.allocate(12), material = f.m.allocate(16), collide = f.m.allocate(4);
+		f.m.write(zone, vertices); f.m.write(zone + 0x10, kinds); f.m.write(zone + 0x14, elements);
+		f.m.write<std::uint16_t>(zone + 0x2E, 1); f.m.write<std::uint16_t>(kinds, 7);
+		f.m.write(elements, element); f.m.write(element, sphere); f.m.write<std::uint16_t>(element + 4, 1);
+		f.m.write<float>(sphere, 1); f.m.write(sphere + 4, material); f.m.write(material + 0xC, collide);
+		f.m.write<std::uint16_t>(collide + 2, 5);
+		return std::pair{zone, collide};
+	};
+	auto [zone, collide] = make_zone();
+	auto head = f.m.allocate(12), link = f.m.allocate(8);
+	f.m.write(f.collision + 4, head); f.m.write(head, link); f.m.write<std::uint32_t>(head + 8, 1);
+	f.m.write(link + 4, zone); f.m.write<std::uint32_t>(f.collision + 0x34, 1);
+	auto other = f.m.allocate(0x48), actor = f.m.allocate(0x38), standard = f.m.allocate(0x34);
+	f.m.write<std::uint32_t>(other, 2); f.m.write(other + 4, actor); f.m.write(actor + 4, standard); f.m.write(actor + 0x14, f.collision);
+	auto ta = f.m.allocate(0x58), tb = f.m.allocate(0x58);
+	f.m.write(f.so + 0x24, ta); f.m.write(other + 0x24, tb);
+	affine identity; game::set_global_placement(f.m, f.so, identity); game::set_global_placement(f.m, other, identity);
+	auto test = [&](unsigned condition, int number, int mask) {
+		return f.condition(condition, {f.me(), f.integer(number), f.object(other), f.integer(mask)});
+	};
+	CHECK_FALSE(test(19, 1, 0));
+	f.m.write<std::uint8_t>(standard + 0x29, 4);
+	CHECK(test(19, 1, 0)); CHECK(test(19, 1, 5)); CHECK_FALSE(test(19, 1, 3));
+	CHECK_FALSE(test(19, 0, 0)); CHECK_FALSE(test(19, 2, 0));
+	f.m.write<std::uint32_t>(f.collision + 0x34, 2); CHECK_FALSE(test(19, 1, 0));
+	f.m.write<std::uint32_t>(f.collision + 0x34, 1);
+	f.m.write<float>(tb + 4, 3); CHECK_FALSE(test(19, 1, 0)); f.m.write<float>(tb + 4, 0);
+	// Selector 1 uses channel zero directly and geometry +8, not the kind-0 slot.
+	auto table = f.m.allocate(20), part = f.m.allocate(0x48), object = f.m.allocate(8), geometry = f.m.allocate(16);
+	f.m.write(f.data + 0x90, table); f.m.write(table, part); f.m.write<std::uint32_t>(part, 0x10);
+	f.m.write(part + 4, object); f.m.write(object + 4, geometry); f.m.write(geometry + 8, zone); f.m.write(part + 0x24, ta);
+	CHECK(test(20, 0, 1)); CHECK_FALSE(test(20, 1, 1));
+	// A fallback provides geometry, but the original channel still provides its frame.
+	auto large_table = f.m.allocate(0x8001 * 20);
+	auto fallback = f.m.allocate(0x48), far_frame = f.m.allocate(0x58);
+	f.m.write(f.data + 0x90, large_table); f.m.write(large_table, part);
+	f.m.write(large_table + 0x8000 * 20, fallback); f.m.write<std::uint32_t>(part, 0);
+	f.m.write(fallback + 4, object); f.m.write(fallback + 0x24, far_frame);
+	f.m.write<float>(far_frame + 4, 100);
+	CHECK(test(20, 0, 1));
+	// B may expose only a collision-bearing visible part, without a collision set.
+	f.m.write<std::uint32_t>(actor + 0x14, 0);
+	auto bdata = f.m.allocate(0x118), list = f.m.allocate(0x14), active_part = f.m.allocate(12);
+	f.m.write(actor, bdata); f.m.write(bdata + 0x10, list); f.m.write<std::uint8_t>(list + 0xE, 2);
+	f.m.write(bdata + 0x98, active_part); f.m.write(active_part + 4, part); f.m.write<std::uint32_t>(part, 0x10);
+	CHECK(test(19, 1, 1));
+	f.m.write<std::uint8_t>(list + 0xE, 0); CHECK_FALSE(test(19, 1, 1));
+	f.m.write<std::uint8_t>(list + 0xE, 2);
+	f.m.write<std::uint8_t>(standard + 0x29, 0); CHECK_FALSE(test(20, 0, 0));
+}
+
+TEST_CASE("real data: Learn_31 dust creature places six distinct trailing channels")
+{
+	auto dir = real_game_dir(); if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Learn_31");
+	auto header = read_level_header(files); scene tree(files.memory, header);
+	auto bank = read_animation_bank(files); game::live_memory m(files.memory);
+	auto rayman = header.placements.at(0).super_object.address();
+	game::interpreter vm(m, rayman); game::register_handlers(vm); game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files); vm.set_animations(&bank);
+	vm.set_world(game::world_collision(static_collision(files.memory, tree))); game::install_level_events(m, bank);
+	std::vector<std::uint32_t> actors;
+	for(const auto& node : tree.nodes()) if(node.type == super_object_type::actor) actors.push_back(node.at.address());
+	vm.set_actors(actors);
+	auto posed_actors = read_actors(files.memory, tree, bank);
+	for(const auto& actor : posed_actors.actors) game::set_global_placement(m, tree.node(actor.node).at.address(), actor.world);
+	for(auto bit : game::revisit_story_bits) REQUIRE(vm.set_story_bit(actors, bit));
+	auto creature = tree.node(8).at.address();
+	game::input keys(m, read_input_actions(files));
+	bool placed = false, distinct = false;
+	for(int tick = 0; tick < 600; ++tick)
+	{
+		auto head = game::global_placement(m, creature); REQUIRE(head);
+		game::write_transform(m, rayman, {head->m[0][3] + 5, head->m[1][3], head->m[2][3]}, {1,0,0,0,1,0,0,0,1});
+		keys.step(); game::step(vm, actors);
+		auto standard = m.u32(vm.actor_of(creature) + 4);
+		m.write<std::uint32_t>(standard + 0x24, m.u32(standard + 0x24) & ~0x800u); // in view
+		const auto& positions = vm.placed_channels(creature);
+		if(positions.size() != 6) continue;
+		placed = true;
+		std::set<vec3> unique;
+		for(std::int16_t channel = 3; channel <= 8; ++channel)
+		{
+			REQUIRE(positions.contains(channel)); unique.insert(positions.at(channel));
+		}
+		if(tick > 60 && unique.size() == 6)
+		{
+			distinct = true;
+			// Exercise the same bank pose path used by main.cc, not just the stored placements.
+			auto entry = std::ranges::find(posed_actors.actors, std::size_t(8), &actor_set::entry::node);
+			REQUIRE(entry != posed_actors.actors.end());
+			auto actor = *entry;
+			auto state = m.u32(m.u32(vm.actor_of(creature)) + 4), reference = m.u32(state + 4);
+			actor.animation = m.read<std::uint16_t>(reference + 0x18);
+			actor.world = *game::global_placement(m, creature);
+			std::vector<posed_part> rendered;
+			pose_actor(actor, bank, 0, rendered, positions);
+			auto channels = pose(bank, *actor.animation, 0);
+			for(const auto& [channel, position] : positions)
+			{
+				auto found = std::ranges::find(channels, channel, &channel_pose::id);
+				REQUIRE(found != channels.end()); REQUIRE(found->object);
+				auto mesh = actor.meshes.at(*found->object); REQUIRE(mesh);
+				CHECK(std::ranges::any_of(rendered, [&](const auto& part) {
+					return part.mesh == *mesh && std::abs(part.world.m[0][3] - position[0]) < 0.0001f
+						&& std::abs(part.world.m[1][3] - position[1]) < 0.0001f && std::abs(part.world.m[2][3] - position[2]) < 0.0001f;
+				}));
+			}
+			break;
+		}
+	}
+	CHECK(placed); CHECK(distinct);
+	for(const auto& [missing, count] : vm.missing)
+	{
+		CHECK_FALSE((std::string(missing.first) == "procedure" && missing.second == 218));
+		CHECK_FALSE((std::string(missing.first) == "condition" && missing.second == 19));
+	}
+}
+
 TEST_CASE("handler census: object and collision flags preserve neighboring bits")
 {
 	handler_fixture f;
@@ -1647,7 +1816,10 @@ TEST_CASE("homing ranks live actors only in the current and linked sectors")
 	m.write<std::uint32_t>(part_transform, 3);
 	m.write(part_transform + 4, vec3{ 5, 2, 0 });
 	for(std::uint32_t i = 0; i < 3; i++)
+	{
+		m.write<float>(part_transform + 0x10 + i * 16, 1);
 		m.write<float>(part_transform + 0x34 + i * 16, 1);
+	}
 	vm.eval(self, script, centre);
 	CHECK(centre.component(0) == doctest::Approx(1));
 	CHECK(centre.component(1) == doctest::Approx(-1.0f / 3));

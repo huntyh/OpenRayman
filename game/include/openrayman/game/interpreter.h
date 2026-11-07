@@ -1,6 +1,6 @@
 #pragma once
 
-#include <openrayman/animation.h>
+#include <openrayman/actor.h>
 #include <openrayman/light.h>
 #include <openrayman/game/camera.h>
 #include <openrayman/game/generated.h>
@@ -146,6 +146,20 @@ namespace openrayman::game
 		std::uint32_t clock() const { return m_clock; }
 		// Native frame counter 0x5003E4, used by condition 56.
 		std::uint32_t frame_number() const { return std::uint32_t(m_ticks); }
+		// Procedure 218 (0x46AB20): animation overwrites part placements on the next tick.
+		void place_channel(std::uint32_t actor, std::int16_t channel, const vec3& position)
+		{
+			auto& placed = m_channel_placements[actor];
+			if(placed.tick != m_ticks) placed.positions.clear();
+			placed.tick = m_ticks;
+			placed.positions[channel] = position;
+		}
+		const channel_positions& placed_channels(std::uint32_t actor) const
+		{
+			static const channel_positions empty;
+			auto p = m_channel_placements.find(actor);
+			return p != m_channel_placements.end() && p->second.tick == m_ticks ? p->second.positions : empty;
+		}
 		// Call once per tick (1/60 s), before the actors think.
 		void next_tick()
 		{
@@ -427,6 +441,8 @@ namespace openrayman::game
 		generated_actors m_generated;
 		std::vector<sound_request> m_sounds;
 		std::uint64_t m_ticks = 0;
+		struct channel_placement { std::uint64_t tick = 0; channel_positions positions; };
+		std::map<std::uint32_t, channel_placement> m_channel_placements;
 		std::uint32_t m_frame_ms = 16;
 		game::particles m_particles;
 		game::screen_text m_screen_text;
