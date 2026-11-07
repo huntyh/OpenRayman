@@ -5,6 +5,41 @@ image; offsets are from the start of each structure. See [gpt.md](gpt.md) for th
 
 ## From the sector tree to triangles
 
+### Jail_10 far scenery selection (renderer improvement)
+
+Virtual sector **7**, scene node **81** (`05/02 +0x4608`, sector data
+`+0x5AC5C`), contains one IPO, node **82** (`05/02 +0x470C`, IPO data
+`+0x5BA3C`). Its 31 vertices and seven material elements form the mountain and
+valley backdrop at box `(-280.5,-106.0,465.8)..(163.1,324.7,598.0)`.
+Textures are `mount1_nz` through `mount4_nz`, `vallee_bord1`, `vallee_bord2`,
+and `vallee_fond1`. These are static triangles (including textured cut-outs),
+with no look-at mode, sprites or actors in the sector. Sector 1/node 19 is
+the pirate ship; sector 5/node 37 is water; sector 6 contains the low islands
+and vegetation of the earlier sea passage. Those remain in the normal pass.
+Sectors 2/node 21 and 3/node 23 are ordinary IPO sky shells, both using
+`beach_sky2_txy` (at ship height and sea height respectively). With the recipe
+enabled, visible sky shells draw first with the real view, then depth is cleared
+before the far scenery. Otherwise these opaque shells would cover the backdrop
+after its depth reset. They retain their sector fog and visibility rules.
+Sector 4's cloud and lightning quads (`inv_nz`, `foudre_aaa`, `beach_sky3_aaa`)
+join that initial sky pass too, with their transparency sorted from the real
+eye and clipped by the sky shells before clearing depth.
+
+The optional renderer recipe selects sector 7 regardless of camera-sector
+visibility and draws it after sky, from `anchor + (eye-anchor)*f`, before
+clearing depth for normal scenery. The anchor is the scripted camera at 90 seconds
+`(-101.584,139.372,541.117)`, and `f=0.1`. This is our deliberate improvement,
+not a newly discovered original-engine flag; see [IMPROVEMENTS](../IMPROVEMENTS.md).
+
+Where this came from: own inspection of the installed PC Jail_10 using
+`ortool lights`, `scene` and `obj`, exported object bounds/material names,
+and renderer screenshots (Codex, 2026-11-07). No external implementation used;
+exports and screenshots kept in the system temporary directory.
+The intro camera positions were sampled with `--start new --time 95
+--camera-log <temporary CSV>`: at 76 s `(-156.81,310.65,547.46)`, 80 s
+`(-144.60,282.15,547.38)`, 85 s `(-123.59,210.78,544.49)`, 90 s
+`(-101.58,139.37,541.12)`, 95 s `(-57.41,79.60,539.92)`.
+
 ```
 father sector
 └─ sector                      super object type 0x04

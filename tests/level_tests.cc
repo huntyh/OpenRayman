@@ -39,6 +39,37 @@
 
 using namespace openrayman;
 
+TEST_CASE("real data: Jail_10 far backdrop sector contains only static mountain scenery")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto data = game_data::locate(*dir);
+	REQUIRE(data);
+	auto files = load_level_files(*data, "Jail_10");
+	const auto header = read_level_header(files);
+	scene tree(files.memory, header);
+	const auto lights = read_lights(files.memory, tree);
+	REQUIRE(lights.sectors.size() == 9);
+	CHECK(lights.sectors[7].node == 81);
+	CHECK(lights.sectors[7].is_virtual);
+	std::size_t objects = 0;
+	for(const auto& placed : static_geometry(files.memory, tree))
+	{
+		if(lights.sector_of(tree, placed.node) != 7) continue;
+		++objects;
+		CHECK(placed.node == 82);
+		CHECK(placed.visible);
+		CHECK(placed.object.look == look_at::none);
+		CHECK(placed.object.sprites.empty());
+		CHECK(placed.object.vertices.size() == 31);
+		CHECK(placed.object.elements.size() == 7);
+	}
+	CHECK(objects == 1);
+	for(std::size_t i = 0; i < tree.nodes().size(); ++i)
+		if(tree.node(i).type == super_object_type::actor)
+			CHECK(lights.sector_of(tree, i) != 7);
+}
+
 TEST_CASE("real data: Jail_20 cell hides its white panel and selects blue beam meshes")
 {
 	auto dir = real_game_dir();

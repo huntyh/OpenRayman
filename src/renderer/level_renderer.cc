@@ -423,6 +423,8 @@ namespace openrayman
 		m_see_through.clear();
 		m_see_through_triangles.clear();
 		m_camera_sector.reset();
+		m_backdrop_sectors.clear();
+		m_backdrop_skies.clear();
 		m_background.reset();
 		m_sprites.clear();
 		m_effect_materials.clear();
@@ -965,6 +967,42 @@ namespace openrayman
 		return out;
 	}
 
+	void level_renderer::set_backdrop(const std::string& level)
+	{
+		struct recipe
+		{
+			const char* level;
+			std::vector<std::size_t> sectors;
+			std::vector<std::size_t> skies; // ordinary IPO sky shells that must precede far scenery
+			glm::vec3 anchor;
+			float parallax;
+		};
+		// Own inspection of Jail_10: virtual sector 7, IPO node 82, mountain/valley cards.
+		// Anchor at 90 s into the scripted intro, preserving the ship reveal's composition.
+		static const recipe recipes[] = { { "Jail_10", { 7 }, { 2, 3, 4 }, { -101.584f, 139.372f, 541.117f }, 0.1f } };
+		m_backdrop_sectors.clear();
+		m_backdrop_skies.clear();
+		const char* enabled = std::getenv("OPENRAYMAN_BACKDROP");
+		if(enabled && std::strcmp(enabled, "0") == 0)
+			return;
+		for(const auto& r : recipes)
+		{
+			if(level != r.level) continue;
+			m_backdrop_sectors = r.sectors;
+			m_backdrop_skies = r.skies;
+			m_backdrop_anchor = r.anchor;
+			m_backdrop_parallax = r.parallax;
+			if(const char* value = std::getenv("OPENRAYMAN_BACKDROP_PARALLAX"))
+			{
+				char* end = nullptr;
+				const float f = std::strtof(value, &end);
+				if(end != value && *end == '\0' && std::isfinite(f) && f >= 0 && f <= 1)
+					m_backdrop_parallax = f;
+			}
+			break;
+		}
+	}
+
 	void level_renderer::follow_camera(const glm::vec3& eye) const
 	{
 		auto was = m_camera_sector;
@@ -1125,10 +1163,20 @@ namespace openrayman
 			glCullFace(GL_BACK);
 			glFrontFace(faces == cull::keep_positive ? GL_CCW : GL_CW);
 		};
+		bool backdrop_pass = false;
+		bool sky_pass = false;
+		auto is_backdrop = [&](std::size_t sector) {
+			return std::ranges::find(m_backdrop_sectors, sector) != m_backdrop_sectors.end();
+		};
+		auto visible = [&](std::size_t sector) {
+			const bool sky = std::ranges::find(m_backdrop_skies, sector) != m_backdrop_skies.end();
+			if(sky_pass) return sky && drawn(sector);
+			return backdrop_pass ? is_backdrop(sector) : !sky && !is_backdrop(sector) && drawn(sector);
+		};
 		auto draw_batches = [&, this](std::span<const batch> batches, blend mode) {
 			for(const batch& b : batches)
 			{
-				if(b.mode != mode || !drawn(b.sector))
+				if(b.mode != mode || !visible(b.sector))
 					continue;
 				if(b.sector != no_sector)
 					use_fog(b.sector);
@@ -1187,6 +1235,58 @@ namespace openrayman
 			}
 			glBufferSubData(GL_ARRAY_BUFFER, GLintptr(source.first * sizeof(vertex)), GLsizeiptr(source.vertices.size()), blended.data());
 		};
+		// Sky was drawn above. These static-only recipes keep the same materials,
+		// fog, lighting and cut-out cores as normal scenery, with their own depth.
+		if(!m_backdrop_sectors.empty())
+		{
+			auto draw_static_pass = [&](const glm::vec3& pass_eye) {
+				glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(identity));
+				glUniform1i(m_u_lighting, m_lighting ? 1 : 0);
+				set_blend(blend::none);
+				draw_batches(m_batches, blend::none);
+				glUniform1f(m_u_alpha_cut, 0.9f);
+				glUniform1f(m_u_light_alpha, 1.0f);
+				for(const auto& s : m_see_through)
+					if(m_solid_cores.contains(s.b.texture))
+						draw_batches(std::span(&s.b, 1), blend::alpha);
+				std::vector<const see_through_triangle*> order;
+				for(const auto& t : m_see_through_triangles)
+					if(visible(m_see_through[t.object].b.sector)) order.push_back(&t);
+				std::ranges::stable_sort(order, [&](const auto* a, const auto* b) {
+					return glm::length(a->centre - pass_eye) > glm::length(b->centre - pass_eye);
+				});
+				for(const auto* t : order)
+				{
+					batch b = m_see_through[t->object].b;
+					b.first = t->first;
+					b.count = 3;
+					set_blend(b.mode);
+					draw_batches(std::span(&b, 1), b.mode);
+				}
+			};
+			// Jail_10's IPO sky shells and cloud/lightning cards precede the backdrop.
+			// Retain sky-shell depth while drawing clouds so the shell still clips them.
+			sky_pass = true;
+			draw_static_pass(eye);
+			glDepthMask(GL_TRUE);
+			glClear(GL_DEPTH_BUFFER_BIT);
+			sky_pass = false;
+			backdrop_pass = true;
+			const glm::vec3 far_eye = m_backdrop_anchor + (eye - m_backdrop_anchor) * m_backdrop_parallax;
+			glm::mat4 far_camera = camera;
+			far_camera[3] = glm::vec4(far_eye, 1);
+			const glm::mat4 far_vp = projection * glm::inverse(far_camera);
+			glUniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(far_vp));
+			glUniform3fv(m_u_camera, 1, glm::value_ptr(far_eye));
+			draw_static_pass(far_eye);
+			glDepthMask(GL_TRUE);
+			glClear(GL_DEPTH_BUFFER_BIT);
+			glUniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(view_projection));
+			glUniform3fv(m_u_camera, 1, glm::value_ptr(eye));
+			backdrop_pass = false;
+			use_fog(m_camera_sector);
+		}
+
 		// Solid surfaces first, the level's and the actors'.
 		blend current = blend::none;
 		set_blend(current);
@@ -1316,7 +1416,7 @@ namespace openrayman
 		};
 		std::vector<see_through_draw> order;
 		for(const see_through_triangle& t : m_see_through_triangles)
-			if(drawn(m_see_through[t.object].b.sector))
+			if(visible(m_see_through[t.object].b.sector))
 				order.push_back({ glm::length(t.centre - eye), &m_see_through[t.object].b, level, t.first, m_see_through[t.object].b.mode });
 		for(std::size_t i = 0; i < parts.size(); i++)
 		{

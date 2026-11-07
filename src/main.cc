@@ -1232,6 +1232,7 @@ namespace
 				}
 			}
 			a.level_stats = a.level->load(geometry, a.actors.meshes, a.archives, std::move(lights), sectors, shadow_material);
+			a.level->set_backdrop(levels[index]);
 
 			// The materials scripts draw particles with (procedure 503's game materials).
 			std::map<std::uint32_t, visual_material> effect_materials;
