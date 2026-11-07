@@ -1932,6 +1932,9 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 					std::cout << std::format("tick {:>4}: dynamics flags 0x{:X} end 0x{:X}, proposed {:.2f} {:.2f} {:.2f}, speed {:.2f} {:.2f} {:.2f}, gravity {:.2f}, coefficient {:.3f}\n",
 						f, memory.u32(base + 8), memory.u32(base + 0xC), memory.f32(base + 0x30), memory.f32(base + 0x34), memory.f32(base + 0x38),
 						memory.f32(base + 0x3C), memory.f32(base + 0x40), memory.f32(base + 0x44), memory.f32(base + 0x10), memory.f32(base + 0x174));
+				if(auto p = game::global_placement(memory, traced_super))
+					std::cout << std::format("tick {:>4}: facing -Y {:.3f} {:.3f} {:.3f}, stick (field 11) {:.3f} {:.3f} {:.3f} length {:.1f}\n", f,
+						-p->m[0][1], -p->m[1][1], -p->m[2][1], vm.movement.vector[0], vm.movement.vector[1], vm.movement.vector[2], vm.movement.real_a);
 		}
 		if(traced)
 		{

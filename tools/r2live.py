@@ -294,8 +294,15 @@ def snapshot(m, variables, contacts=False, zones=False, camera=False, generated=
 		s["speed"] = fmt(m.f32s(base + 0x3C, 3))
 		s["inertia"] = fmt(m.f32s(base + 0x154, 3))
 		s["limit"] = fmt(m.f32s(base + 0x178, 3))
+		# The second inertia (procedure 292's factors, used with end flag 0x20000) and the contact coefficient.
+		s["inertia2"] = fmt(m.f32s(base + 0x168, 4))
 		if contacts:
 			s.update(contact_report(m, base))
+	# The movement input globals procedure 346 fills (fields 11..16): the stick vector, the key
+	# axes, and the eased length, raw length and turn angle.
+	keys = m.u32(0x4B9B74)
+	h, v = keys & 0xFFFF, keys >> 16
+	s["stick"] = fmt(m.f32s(0x4B9B68, 3)) + f" keys {h - 0x10000 if h & 0x8000 else h} {v - 0x10000 if v & 0x8000 else v} lengths " + fmt(m.f32s(0x4B9B78, 3))
 	if zones:
 		s.update(active_zones(m, actor))
 	if generated:

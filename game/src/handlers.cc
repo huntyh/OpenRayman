@@ -2707,9 +2707,12 @@ namespace openrayman::game
 				}
 				value axis;
 				next_arg(c, axis);
-				// Rodrigues' rotation by -angle (the exe builds the quaternion from -angle/2).
+				// Rodrigues' rotation by +angle, counterclockwise about the axis: the exe builds the
+				// quaternion from -angle/2 (0x47C350 case 0xB9), but multiplies the vector by its matrix
+				// from the left (row vector), the inverse rotation. Rayman's slide checks it: with
+				// var67 = +44 his body ends up 44 degrees counterclockwise of his speed (live log).
 				vec3 k = normalised(vec_of(axis));
-				float angle = -degrees.as_float() * 0.0174533f, cs = std::cos(angle), sn = std::sin(angle);
+				float angle = degrees.as_float() * 0.0174533f, cs = std::cos(angle), sn = std::sin(angle);
 				vec3 kxv = cross(k, va);
 				float kv = dot(k, va);
 				out = value::vector(va[0] * cs + kxv[0] * sn + k[0] * kv * (1 - cs), va[1] * cs + kxv[1] * sn + k[1] * kv * (1 - cs),
