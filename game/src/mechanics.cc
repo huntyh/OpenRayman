@@ -1108,10 +1108,12 @@ namespace openrayman::game
 		}
 		if((flags & 0x20) && (m.u32(b + base::end_flags) & 0x20000))
 		{
+			// 0x43DF70 passes both through 0x4370A0, which always applies 1 - (1 - k)^4 (its flag
+			// only adds the frame-time pow): the slide's 0.65 keeps 98.5% of the sideways speed.
 			vec factors = read_vec(m, b + 0x168);
 			float contact = corrected_factor(m.f32(b + 0x174));
 			for(float& f : factors)
-				f *= contact;
+				f = corrected_factor(f) * contact;
 			inertia(factors);
 		}
 		// Gravity (0x43DF40): from last tick's vertical speed, g in units per second squared, down.
@@ -1320,6 +1322,13 @@ namespace openrayman::game
 		if(slope_move)
 			for(int i = 0; i < 3; i++)
 				speed[std::size_t(i)] = slope_displacement[std::size_t(i)] / dt;
+		// Followed a sloped floor down while sliding (second inertia on, end flag 0x20000): the
+		// descent stays in the speed. Zeroing it here once a bump in the Jail_20 chute lifted
+		// Rayman left his move pointing away from the slope every tick after, so gravity never
+		// reached the slope again and the slide stopped speeding up (the real one keeps a
+		// vertical speed of about -5 and gains about 11 units/s each second, r2live).
+		else if(landed && gravity && (flags & 0x20) && (m.u32(b + base::end_flags) & 0x20000) && ground.normal[2] < 0.999f && target[2] < current[2] + carried[2])
+			speed[2] = (target[2] - current[2]) / dt;
 		else if(landed)
 			speed[2] = carried[2] / dt;
 		if(vm)
