@@ -224,3 +224,15 @@ functions. The gravity formula, the mechanics copy (0x435B80, read in full), the
 state change and procedure 263's float conversion (0x4825B0) were checked by hand against the
 disassembly. The rest, marked by address above, follows the helper's notes and has not been
 checked again.
+
+## Initial floor settling (2026-11-07)
+
+The Jail_20 recording settles Rayman before the scene freezes mechanics. Our
+point cast previously stopped short of the nearby floor on that first step,
+leaving a second descent at hand-over. An external placement (end mask 0x80)
+now permits nearby support within the existing follow-down distance when
+descending. Rim probes select a support triangle; its plane is evaluated at
+the actor origin, preventing the rim height from lifting him on a slope.
+This improves our disc approximation rather than implementing the original
+sphere solver. See [jail20-handover.md](jail20-handover.md) for measurements,
+original procedure 159 behavior, and provenance.

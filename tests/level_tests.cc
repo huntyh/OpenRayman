@@ -1104,6 +1104,32 @@ struct handler_fixture
 	bool condition(unsigned n, std::initializer_list<game::value> args = {}) { return invoke(node_type::condition, n, args).word() != 0; }
 };
 
+TEST_CASE("procedure 200 preserves a turned scaled actor when dynamics caches are stale")
+{
+	handler_fixture f;
+	auto base = f.m.allocate(0x338), transform = f.m.allocate(0x58);
+	f.m.write(f.dynamics, base);
+	f.m.write(f.so + 0x24, transform);
+	f.m.write<std::uint32_t>(base + 0xC, 4);
+	affine before;
+	before.m[0][0] = 0; before.m[1][0] = 2;
+	before.m[0][1] = -3; before.m[1][1] = 0; before.m[2][2] = 4;
+	game::set_global_placement(f.m, f.so, before);
+	f.m.write<float>(base + 0x3C, 12);
+	f.procedure(200, {f.me(), game::value::vector(10, 20, 30)});
+	auto after = game::global_placement(f.m, f.so);
+	REQUIRE(after);
+	CHECK(after->apply({1, 1, 1}) == vec3{7, 22, 34});
+	CHECK(f.m.f32(base + 0x3C) == 0);
+	for(auto offset : {0x78u, 0xD0u, 0x288u, 0x2E0u})
+	{
+		CHECK(f.m.f32(base + offset + 4) == 10);
+		CHECK(f.m.f32(base + offset + 0x38) == 2);
+		CHECK(f.m.f32(base + offset + 0x40) == -3);
+		CHECK(f.m.f32(base + offset + 0x54) == 4);
+	}
+}
+
 TEST_CASE("procedure 218 places only the transform part and expires on the next tick")
 {
 	handler_fixture f;
@@ -3163,7 +3189,7 @@ TEST_CASE("real data: static objects carry their bounding-sphere centre (0x42AF7
 
 TEST_CASE("real data: Jail_20 cell scene: the pirate carrying Globox wakes and walks in on cue")
 {
-	// The user's recording of the real game (2026-11-07): the pirate (actor 5 there, node 7 here)
+	// The user's recording of the real game (2026-11-07): the combined actor (actor 5 there, node 7 here)
 	// leaves behaviour 0 at once, changes state at 16.0 s and steps into the cell at 24.4 s,
 	// reaching (709.071, 130.369). It switches itself off first (procedure_85(me), which must not
 	// end the rule) and the director's cue 1301/1410 switches it back on (procedure 84 relinks it
@@ -3200,4 +3226,51 @@ TEST_CASE("real data: Jail_20 cell scene: the pirate carrying Globox wakes and w
 	REQUIRE(at);
 	CHECK(at->m[0][3] == doctest::Approx(709.071f).epsilon(0.001));
 	CHECK(at->m[1][3] == doctest::Approx(130.369f).epsilon(0.001));
+	CHECK(at->uniform_scale() == doctest::Approx(1));
+
+	// rec_jail20_3: Rayman settles at load, before the scene freezes mechanics;
+	// handing back control does not cause another descent.
+	auto settled = game::global_placement(m, rayman);
+	REQUIRE(settled);
+	CHECK(settled->m[2][3] == doctest::Approx(455.482f).epsilon(0.00001));
+	for(int tick = 1240; tick < 5750; ++tick)
+		game::step(vm, actors);
+	auto handed_back = game::global_placement(m, rayman);
+	REQUIRE(handed_back);
+	CHECK(handed_back->m[2][3] == doctest::Approx(settled->m[2][3]).epsilon(0.000001));
+	CHECK(vm.active(rayman));
+	CHECK_FALSE((m.u32(rayman + 0x30) & 2) != 0);
+	CHECK(handed_back->uniform_scale() == doctest::Approx(1));
+
+	// 0x4061B0 clears activity, but leaves the actor in the active world's list.
+	// The original renderer's 0x20 last-draw bit is absent in this headless VM.
+	auto cell_globox = tree.node(14).at.address();
+	auto standard = m.u32(vm.actor_of(cell_globox) + 4);
+	CHECK((m.u8(standard + 0x29) & 0x0F) == 0x08);
+	CHECK_FALSE(vm.active(cell_globox));
+	CHECK_FALSE(vm.removed(cell_globox));
+	CHECK(std::ranges::find(vm.run_order, cell_globox) != vm.run_order.end());
+
+	// The visible gameplay Globox uses the combined actor's other AI model (3/12),
+	// not the switched-off cutscene model (2/16). Its object bank contains Globox.
+	CHECK(vm.active(pirate));
+	CHECK_FALSE((m.u32(pirate + 0x30) & 2) != 0);
+	auto drawable = read_actors(files.memory, tree, bank);
+	auto body = std::ranges::find(drawable.actors, std::size_t(7), &actor_set::entry::node);
+	REQUIRE(body != drawable.actors.end());
+	bool globox_skin = false;
+	for(const auto& mesh : body->meshes)
+		if(mesh)
+			for(const auto& element : drawable.meshes[*mesh].elements)
+				if(element.material && element.material->texture)
+					globox_skin |= element.material->texture->name.find("globo_peau") != std::string::npos;
+	CHECK(globox_skin);
+	auto live_state = m.u32(m.u32(vm.actor_of(pirate)) + 4);
+	auto reference = m.u32(live_state + 4);
+	body->animation = m.read<std::uint16_t>(reference + 0x18);
+	body->world = *game::global_placement(m, pirate);
+	CHECK(body->world.uniform_scale() == doctest::Approx(1));
+	std::vector<posed_part> visible_parts;
+	pose_actor(*body, bank, 76.5, visible_parts);
+	CHECK(visible_parts.size() == 11);
 }

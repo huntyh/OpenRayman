@@ -893,7 +893,8 @@ namespace openrayman::game
 		// End flag 0x80: the transform was set from outside. The dynamics takes it as it is, drops its
 		// speed and clears the flag (0x431AD0). Left set, it also blocks turns (procedure 136,
 		// 0x432EE0); the level data starts Rayman with it.
-		if(std::uint32_t end = m.u32(b + base::end_flags); end & 0x80)
+		const bool external_placement = (m.u32(b + base::end_flags) & 0x80) != 0;
+		if(std::uint32_t end = m.u32(b + base::end_flags); external_placement)
 		{
 			m.write<std::uint32_t>(b + base::end_flags, end & ~0x80u);
 			write_vec(m, b + base::speed, vec{});
@@ -1258,7 +1259,10 @@ namespace openrayman::game
 			float top = std::max(current[2] + carried[2], target[2]) + climb_up;
 			// Following the floor down is for walking; a move up (a jump) leaves it (the exe only
 			// refuses moves into a surface).
-			float bottom = target[2] - (was_grounded && target[2] <= current[2] + carried[2] ? follow_down : 0.0f);
+			// Resolve a newly installed placement against nearby support too. A downward
+			// point cast alone can leave an actor just above the floor when its scripts
+			// freeze mechanics immediately afterwards (Jail_20's first scene).
+			float bottom = target[2] - ((was_grounded || external_placement) && target[2] <= current[2] + carried[2] ? follow_down : 0.0f);
 			// The actor's feet cover a small circle: the highest floor under any of nine points of it.
 			std::optional<world_collision::surface_hit> floor;
 			float floor_x = 0, floor_y = 0;
@@ -1289,7 +1293,9 @@ namespace openrayman::game
 					slope_move = true;
 				}
 				else
-					target[2] = floor->height;
+					// The rim probes choose support, but its plane must be evaluated at the
+					// actor's origin. Using the highest rim height lifts actors on slopes.
+					target[2] = floor->height - ((target[0] - floor_x) * floor->normal[0] + (target[1] - floor_y) * floor->normal[1]) / floor->normal[2];
 				ground = *floor;
 				landed = true;
 			}

@@ -376,10 +376,9 @@ namespace openrayman
 					else if(item.screen_colour == 200) tint = {250/255.0f, 70/255.0f, 70/255.0f, tint[3]};
 					else if(item.screen_colour == 400) tint = {1, 1, 120/255.0f, tint[3]};
 					float offset = float(game::screen_slot_punctuation_offset(item.byte, glyph_height));
-					// Keep the slot layer in a centred 4:3 area at wide window sizes.
-					float slot_width = std::min(1.0f, (4.0f / 3.0f) * height / width);
-					float x0 = 320.0f + ((left + item.x) * 0.64f - 320.0f) * slot_width;
-					float x1 = x0 + item.advance * 0.64f * slot_width;
+					// 0x419A30 uses the same viewport as glyph text, boxes and portraits.
+					float x0 = (left + item.x) * 0.64f;
+					float x1 = x0 + item.advance * 0.64f;
 					// 0x4660B0 retains the slot's floating-point coordinates on both axes.
 					float y0 = (dialog.y + item.y + offset - dialog.pulse) * 0.48f;
 					float y1 = (dialog.y + item.y + offset + glyph_height + dialog.pulse) * 0.48f;
@@ -410,15 +409,6 @@ namespace openrayman
 			}
 			auto layout = game::layout_dialog(dialog);
 			if(layout.centred) x = (dialog.screen ? 320 : x) - layout.width * unit_x * 0.5f;
-			if(dialog.screen)
-			{
-				// 0x419A30 draws glyph objects and 0x4660B0 slots in the same viewport.
-				// Keep both in our centred 4:3 text area: mixed mappings closed the gap
-				// between the intro's narration colon and its separate slot-26 counter.
-				float text_area = std::min(1.0f, (4.0f / 3.0f) * height / width);
-				x = 320 + (x - 320) * text_area;
-				unit_x *= text_area;
-			}
 			auto& font = font_for(dialog.template_actor);
 			std::optional<SDL_FColor> tint;
 			if(dialog.tint)

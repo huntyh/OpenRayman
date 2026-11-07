@@ -303,13 +303,19 @@ bit 1 means "active"; the frame loop (0x40AB90) runs only active actors. Procedu
 tears down its animation links and sounds and, if it is in the world (bit 0 clear) and active,
 clears bits 0..2. The Globox kids' director switches its stand-in Rayman (node 41) off at the
 start and at the hand-back. 0x405FA0 relinks the super object from the inactive world (0x500FC4)
-into the active one (0x500FD0), at its head when standard +0x28 is set, else at its tail; 85 moves
-it back. Ours keeps that list as `interpreter::run_order`, so 84 adds the actor there (it thinks
-from then on, even outside Rayman's wake region) and 85 takes it out. Neither ends the running
+into the active one (0x500FD0), at its head when standard +0x28 is set, else at its tail.
+**Correction, 2026-11-07:** 85 does not move it back: 0x4061B0 contains no world-list
+relink. The user's `rec_jail20_3` confirms node 14 stays under the active root with flags
+0x28 until spatial sleeping later. Ours keeps that list as `interpreter::run_order`;
+84 adds the actor there and 85 retains membership, clearing the activity bits only.
+Neither ends the running
 script: the handler's case 0x55 returns the next node normally, so an actor that runs
 `procedure_85(me)` carries on with the rest of the rule. Jail_20's pirate carrying Globox (node 7)
 does exactly that in its behaviour 0 (85 on itself, then `procedure_69(behaviour 1)`); stopping
-there kept it in behaviour 0 forever and the cell scene had no Globox (#36). **Condition 76**
+there kept it in behaviour 0 forever and the cell scene had no Globox (#36).
+The combined node-7 actor also supplies the gameplay Globox after node 14 is switched off;
+its different AI model and the teleport-matrix fix are documented in
+[jail20-handover.md](jail20-handover.md). **Condition 76**
 (0x48B920 → 0x40B250) is the matching test: the actor's super object hangs under the active world
 (directly or one level down) and its standard game +0x29 has bit 4. Jail_20's director (node 8)
 switches an actor on with 84 when 76 says it isn't, before sending it a cue: dialog `/e` cue 1301..1399
