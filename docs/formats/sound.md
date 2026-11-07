@@ -500,3 +500,16 @@ for it, measured with the volume options at maximum.
 
 Open: the transition DLL's fade; group selection; the intro's theme (comes with the intro). These rules come from our reading of 0x459460, 0x4595D0, 0x459670 and 0x459800
 and the run4 recording.
+
+## Distance volume
+
+The sound DLL's distance-to-volume callback reaches 0x459C90 / 0x459D30 in Rayman2.exe. With
+Snd_Cpa.ini's saturation 8 and fade 30 the curve is 127 at 8 units and below, falls linearly towards a
+zero at 8 x saturation (64), and stops falling at the fade distance: beyond 30 units a sound keeps
+volume 77 (127 x (64 - 30) / (64 - 8), in 16.16 fixed point). A fade below the saturation removes the
+hold. Our earlier stand-in went silent at 30, which hid far sounds such as the Jail_10 intro
+counter's click (event 0x008A0000, bank 138 event 0, procedure 115). Panning and the listener remain
+our approximation. Code: game/sound_placement.h.
+
+Where this came from: own reading of the exe at those addresses (Sol, 2026-11-07), prompted by the
+user hearing the counter click in the real game and not in ours.

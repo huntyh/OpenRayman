@@ -190,3 +190,15 @@ not samples inside 0x42AA30/0x42D520/0x42D680; the reused context cannot establi
 a narration or highlighted glyph's colour without a draw-time breakpoint. Scale
 counts over 56 are reported but not read, because the actor table follows the array.
 Record screenshot frame/time and display settings separately.
+
+## The 2026-11-07 recording
+
+The user's recording (Menu, Jail_10 intro, Jail_20, Learn_10's kids scene, 1600x1200) confirms the
+counter's layout (slot 26 at 700,620, size 20) and its click (see sound.md). Rechecking 0x466153..0x466179:
+its outputs are distinct (+0x20 height, +0x24 advance, +0x30 line height, +0x34 a second advance), so
+no size change follows; drawn size 18 is 38x45 slot units, size 20 is 42x50 (pinned in tests). The user
+compared the narration: "Look what the pirates have done to our world" is lavender in the real game
+too. The recorder read the glyph actors' local transforms as object bytes; r2record now follows those
+pointers and reads the viewport scales from the rendering device (0x420450, device list 0x506B20), so a
+new recording is needed for per-glyph colour questions. The engine gained `--window-size WxH` and
+`--place x,y,z,yaw` for captures at a recording's resolution and position.
