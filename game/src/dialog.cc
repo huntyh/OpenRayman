@@ -1,11 +1,13 @@
 // OpenRayman is free software: you can redistribute it and/or modify it under the terms of the
 // GNU General Public License, version 3. See LICENSE_openrayman for the full license.
 #include <openrayman/game/dialog.h>
+#include <openrayman/game/screen_text.h>
 #include <openrayman/game/interpreter.h>
 #include <openrayman/pointer_stream.h>
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <cstdio>
 #include <map>
@@ -13,6 +15,20 @@
 
 namespace openrayman::game
 {
+	dialog_screen_projection project_dialog_screen(float x, float y, float depth)
+	{
+		// 0x475680 truncates the position, then 0x422940 unprojects with reciprocal depth.
+		// The -1 at 0x49C490 makes distance = focal_length * (1 + d) / d. On projection
+		// this pulls the anchor towards the centre by 1/(1+d). The viewport scale is
+		// 1/3200 (0x420520), and the fixed camera angles are 1.5 and 1.125 (0x4052C0).
+		float d = std::trunc(depth) * 0.001f;
+		float reciprocal = 1.0f / (1.0f + d);
+		return {320 + (std::trunc(x) * 0.64f - 320) * reciprocal,
+			240 + (std::trunc(y) * 0.48f - 240) * reciprocal,
+			3200 * d * reciprocal,
+			2400 * std::tan(0.75f) / std::tan(0.5625f) * d * reciprocal};
+	}
+
 	std::optional<int> dialog_glyph_index(std::uint8_t byte, int offset)
 	{
 		if(byte < 0x20) return std::nullopt;
@@ -44,7 +60,8 @@ namespace openrayman::game
 					{
 						if(n == 0 || n == 200 || n == 400 || n == 600) screen_colour = n;
 					}
-					else offset = n;
+					// 0x4660B0 uses /O for both the texture-list offset and gradient colour.
+					offset = n;
 					break;
 				case 'c': result.centred = true; break;
 				case 'l': result.width = std::max(result.width, x); x = 0; y += height; break;
@@ -53,7 +70,7 @@ namespace openrayman::game
 				continue;
 			}
 			auto byte = static_cast<std::uint8_t>(text[i++]);
-			auto base = dialog_glyph_index(byte);
+			auto base = dialog.screen && dialog.tint ? screen_slot_glyph_index(byte) : dialog_glyph_index(byte);
 			float size = scale != 0 ? scale : dialog.scales.empty() ? 1.0f : dialog.scales[std::size_t(count) % dialog.scales.size()];
 			if(base)
 			{

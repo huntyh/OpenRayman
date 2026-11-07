@@ -20,6 +20,10 @@ namespace openrayman::game
 	// Object-list index selected by the dialog renderer (0x409720), before bounds checking.
 	std::optional<int> dialog_glyph_index(std::uint8_t byte, int offset = 0);
 
+	struct dialog_screen_projection { float x, y, unit_x, unit_y; };
+	// Dedicated screen camera, in 640x480 reference pixels (0x4052C0 / 0x475680).
+	dialog_screen_projection project_dialog_screen(float x, float y, float depth);
+
 	struct dialog_text
 	{
 		std::string text;

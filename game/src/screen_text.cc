@@ -1,9 +1,30 @@
 #include <openrayman/game/screen_text.h>
+#include <openrayman/pointer_stream.h>
 
 #include <cmath>
 
 namespace openrayman::game
 {
+	std::optional<int> screen_slot_glyph_index(std::uint8_t byte, int offset)
+	{
+		// 0x465D40 / 0x4660B0: uppercase ASCII, then shift bytes strictly above A0.
+		// The dialog-object path (0x409720) instead shifts A0 itself as well.
+		if(byte < 0x20) return std::nullopt;
+		if(byte >= 'a' && byte <= 'z') byte -= 0x20;
+		return int(byte) - (byte > 0xa0 ? 0x40 : 0x20) + offset;
+	}
+
+	std::uint32_t screen_slot_font_actor(const openrayman::level_files& files)
+	{
+		// 0x403730 reads this root after the level's animation arrays. The final
+		// 16 bytes are font actor, material, mode and sound event. 0x424E90 follows
+		// the font's initial object list. The root resolves into Fix, but is in level GPT.
+		pointer_stream level(files.level_gpt, files.level_gpt_table, files.memory, 1);
+		level.skip_to(files.level_gpt.size() - 16);
+		auto actor = level.pointer();
+		return actor ? actor->address() : 0;
+	}
+
 	screen_text_metrics screen_slot_metrics(float size)
 	{
 		float d = size - 15.0f;
