@@ -566,6 +566,9 @@ namespace openrayman::game
 		auto update = [&](std::uint32_t self, bool player = false) {
 			const auto actor = vm.actor_of(self);
 			const auto standard = actor ? m.u32(actor + 4) : 0;
+			// 0x40AA10/0x40A7C0 require active-world membership (mask 4), not just an
+			// enabled brain. A script may rely on sector wake for its entire horizontal
+			// range: Bast_20's piranhas only compare Rayman's height before catching him.
 			if(!standard || !vm.active(self, player) || m.u32(standard + 0x18) == vm.frame_number()) return;
 			think(self);
 			advance(self);
