@@ -34,6 +34,7 @@ of them off may come later.
 | Particles | At most 150 at a time, and 35 new ones a frame | Room for 2000 | 3b |
 | Random numbers | A table of pre-made numbers read in turn | Any uniform source | 3c |
 | Ticks and frame rate | 60 ticks per second | The same 60 ticks per second; drawing runs at any frame rate, smoothed between ticks | 3b |
+| The menu's "Site Rayman2" entry | Procedure 369 hands the level's string `http://www.rayman2.com/` to `ShellExecuteA`, and that address has not worked for years (the shipped `.text` copy has the call NOPped out anyway, see docs/formats/menu.md) | Any URL procedure 369 asks to open becomes `https://github.com/huntyh/OpenRayman`, opened with the desktop's default browser (`SDL_OpenURL`); the engine logs which address it opens | 3c |
 
 Not changed yet, candidates for later: the every-2/4/8/16-frames checks in scripts (keywords 2 to 5)
 are kept as the game has them, since changing their timing could change gameplay.

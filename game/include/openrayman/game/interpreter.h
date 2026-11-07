@@ -114,6 +114,10 @@ namespace openrayman::game
 		// When set, called for every script write to a designer variable: the actor thinking, the
 		// variable's address and the value (a debugging aid, `ORTOOL_WRITES`).
 		std::function<void(std::uint32_t self, std::uint32_t address, const value& v)> on_write;
+		// Procedure 369 (0x470210): a script asks the desktop shell to open a string — in practice
+		// the Menu level's "Site Rayman2" entry, whose argument is a URL. Only the engine can open
+		// one (SDL_OpenURL), so game/ hands the resolved string out; unset, nothing happens.
+		std::function<void(const std::string& url)> on_open_url;
 		// The order step() runs the level's actors in, rebuilt when the main actor changes sector
 		// (see step(): 0x40B290 / 0x40B620's relink), and the sector it was built for.
 		std::vector<std::uint32_t> run_order;

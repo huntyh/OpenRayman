@@ -184,6 +184,28 @@ The strings sit in the level's data, not in the exe. In `Menu.sna` block `0d/01`
 So the menu's text is written in these codes inside the level the same way a level's own text is.
 The `cheat active` line confirms it: the menu shows status lines, not only buttons.
 
+The `http://www.rayman2.com/` record is the **Site Rayman2** entry's target. Node 6 runs it from
+the rule at `0d/01 +0x4A7C` — behaviour 2, guarded by input action 9 (`+0xB4C`: Enter, Space or pad
+button 10) — in the branch `var17 == 4`, i.e. when the cursor sits on entry 4 of the six the menu
+types (ids 0x166, 0x167, 0x16D, 0x168, 0x16A, 0x16B: New game, Load, Delete, Options, Site Rayman2,
+Exit; "The boot flow" above). The statement is `procedure_369("http://www.rayman2.com/")`, and
+procedure 369 is the level scripts' only way to ask the desktop to open something.
+
+Procedure 369 (`0x470210`) checks its node's own parameter is `0x171`, evaluates its single
+argument, resolves it through 0x4829D0 — the same helper 505 uses, so the argument may be a string
+or a text id — and calls `ShellExecuteA(nullptr, nullptr, string, nullptr, nullptr, 0)`
+(`SHELL32.dll`, import slot 0x49C220; the strings are ours to read, nothing here is copied). The
+shipped executable carries this function **twice**: at 0x470210 in `.text`, where the call is
+replaced by NOPs, and byte-identical at 0x587210 in the `.extra` section (`0x117000..0x1B3000`, the
+section the entry point 0x5FCC0 also lives in), where the six pushes and the call are intact. So the
+entry is dead twice over: the address is gone, and the copy the procedure table names no longer
+calls the shell.
+
+OpenRayman implements 369 as an engine hook (the `game/` library has no SDL): the handler resolves
+the argument and hands it to `interpreter::on_open_url`, which `src/main.cc` points at
+`SDL_OpenURL`. Any URL a script asks for opens `https://github.com/huntyh/OpenRayman` instead — a
+deliberate difference, listed in `docs/IMPROVEMENTS.md`.
+
 **But most of the menu's labels are not strings at all.** The calls that set them up pass an *id*
 (type 0x24) rather than a text value, and the exe resolves both through the same helper (0x4829D0):
 a text value's pointer, or 0x494C70 for an id. That function indexes the game's string table, and
@@ -411,6 +433,10 @@ in an experiment did not remove the pink narration gradient. Its cause remains u
   (0x465A20, 0x465A50, 0x465AA0, 0x465BE0, 0x465C10, 0x4660B0, 0x465E30, 0x424E90).
 - The menu's own strings and the actor names: the decoded `Menu.sna` (block `0d/01`, base
   0x7920020) read with the project's own mask decoder.
+- Procedure 369 and the Site Rayman2 entry: own analysis — the rule and node from `ortool brain Menu
+  <node>`, the procedure table entry at 0x4A43E0 + 369 × 8, capstone 5.0.7 disassembly of 0x470210
+  and of its duplicate at 0x587210, and pefile for the `ShellExecuteA` import slot 0x49C220 and the
+  `.extra` section's bounds (2026-11-08).
 - Nothing here was taken from Raymap, Rayman2Lib or any other project; no game data is included.
 
 ### View aspect

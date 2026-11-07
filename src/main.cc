@@ -1320,6 +1320,14 @@ namespace
 			openrayman::game::register_handlers(*a.vm);
 			openrayman::game::register_dialog_handlers(*a.vm);
 			openrayman::game::set_dialog_resolver(*a.vm, files);
+			// Procedure 369: a script asks for a string to be opened (the Menu level's Site entry).
+			// The scripts still name the dead 1999 address; we open the project page instead, and
+			// say so, because a browser opening by itself can look like something went wrong.
+			a.vm->on_open_url = [](const std::string& url) {
+				SDL_Log("Opening %s", url.c_str());
+				if(!SDL_OpenURL(url.c_str()))
+					SDL_Log("Could not open %s: %s", url.c_str(), SDL_GetError());
+			};
 			a.vm->save_folder = openrayman::game::save_root().string();
 			a.vm->set_world(openrayman::game::world_collision(std::move(collision)));
 			a.vm->set_animations(&a.bank);

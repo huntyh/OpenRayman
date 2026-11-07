@@ -4703,6 +4703,32 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 369 (0x470210): hand a string to the desktop shell. The exe checks that the node's own
+		// parameter is 0x171, evaluates its single argument, asks 0x4829D0 for the bytes (a text
+		// value's pointer, or a text id in the current language's table) and calls ShellExecuteA
+		// with the string. In the copy the procedure table names the call is replaced by NOPs; the
+		// byte-identical copy in the executable's .extra section (0x587210) still has it. Only the
+		// Menu level uses it, for its "Site Rayman2" entry, whose string is, by length field, the
+		// record at 0x7949380.
+		// The address that string names is dead, so OpenRayman opens the project page instead: a
+		// deliberate difference, planned to offer the user the page as the menu's Site entry
+		// (docs/IMPROVEMENTS.md).
+		std::uint32_t open_url(call& c)
+		{
+			value target;
+			next_arg(c, target);
+			std::string text = text_of(c.vm, target);
+			if(text.empty())
+				return c.args;
+			std::string_view open = text;
+			// A URL (anything with a scheme) names the 1999 address the menu was built with.
+			if(open.find("://") != std::string_view::npos)
+				open = "https://github.com/huntyh/OpenRayman";
+			if(c.vm.on_open_url)
+				c.vm.on_open_url(std::string(open));
+			return c.args;
+		}
+
 		// 433 (0x46A890): turn to face a horizontal direction (up stays (0,0,1); forward is -Y).
 		std::uint32_t face_horizontal(call& c)
 		{
@@ -5916,6 +5942,8 @@ namespace openrayman::game
 		vm.on_procedure(505, text_slot_set);
 		vm.on_procedure(506, text_slot_field);
 		vm.on_procedure(507, text_slot_put);
+		// 369 (0x470210): open a string with the desktop shell (the Menu level's Site entry).
+		vm.on_procedure(369, open_url);
 		for(std::uint32_t i : { 176, 182, 188, 194, 201, 207, 280 })
 			vm.on_procedure(i, set_dynamics_vector);
 		vm.on_procedure(70, change_behaviours);
