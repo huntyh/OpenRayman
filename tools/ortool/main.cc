@@ -1838,7 +1838,9 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 				std::cout << std::format("tick {:>4}: input action +0x{} counter {}\n", f, action, memory.read<std::int32_t>(at + 0x0C));
 			}
 		// ORTOOL_VARS=node:i,j,...: those designer variables of the node after the first tick.
-		if(const char* vars = std::getenv("ORTOOL_VARS"); vars && f == 1)
+		// ORTOOL_VARS=node:a,b,... prints those variables at tick 1, and with ORTOOL_VARS_EVERY=n every n ticks.
+		static const int vars_every = std::getenv("ORTOOL_VARS_EVERY") ? std::max(1, std::atoi(std::getenv("ORTOOL_VARS_EVERY"))) : 0;
+		if(const char* vars = std::getenv("ORTOOL_VARS"); vars && (f == 1 || (vars_every && f % vars_every == 0)))
 		{
 			int node = std::atoi(vars);
 			for(const char* p = std::strchr(vars, ':'); p && *p; p = std::strchr(p, ','))
@@ -1848,7 +1850,8 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 				for(const auto& [s, n] : node_of)
 					if(int(n) == node) so = s;
 				auto v = vm.get_variable(so, std::uint32_t(index));
-				std::cout << std::format("node {} var{}: type {} word {} ({:.3f})\n", node, index, int(v.type), std::int32_t(v.word()), v.as_float());
+				std::cout << std::format("tick {:>4}: node {} var{}: type {} word {} ({:.3f}; {:.3f} {:.3f} {:.3f})\n", f, node, index, int(v.type),
+					std::int32_t(v.word()), v.as_float(), v.component(0), v.component(1), v.component(2));
 			}
 		}
 		// The sounds the scripts and animations asked for this tick (ORTOOL_SOUNDS=1 lists them).
@@ -1918,6 +1921,17 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 				std::cout << std::format("tick {:>4}: contacts at {:.4f} {:.4f} {:.4f}, word 0x{:X}, support 0x{:X}\n", f,
 					p->m[0][3], p->m[1][3], p->m[2][3], report ? memory.u32(report + 4) : 0,
 					base && memory.contains(base + 0x284, 4) ? memory.u32(base + 0x284) : 0);
+			}
+			// ORTOOL_DYNAMICS=n: every n ticks, the traced actor's dynamics flags, end flags, proposed
+			// speed (+0x30), speed (+0x3C), gravity (+0x10) and contact coefficient (+0x174).
+			if(const char* every = std::getenv("ORTOOL_DYNAMICS"); traced && every && f % std::max(1, std::atoi(every)) == 0)
+			{
+				std::uint32_t dynamics = memory.u32(traced + 8);
+				std::uint32_t base = dynamics ? memory.u32(dynamics) : 0;
+				if(base && memory.contains(base, 0x178))
+					std::cout << std::format("tick {:>4}: dynamics flags 0x{:X} end 0x{:X}, proposed {:.2f} {:.2f} {:.2f}, speed {:.2f} {:.2f} {:.2f}, gravity {:.2f}, coefficient {:.3f}\n",
+						f, memory.u32(base + 8), memory.u32(base + 0xC), memory.f32(base + 0x30), memory.f32(base + 0x34), memory.f32(base + 0x38),
+						memory.f32(base + 0x3C), memory.f32(base + 0x40), memory.f32(base + 0x44), memory.f32(base + 0x10), memory.f32(base + 0x174));
 		}
 		if(traced)
 		{

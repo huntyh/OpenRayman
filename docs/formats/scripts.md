@@ -467,7 +467,12 @@ These waypoint and graph findings are own analysis of Rayman2.exe with GPT-6.1 T
 B become two of its axes, picked by a mode (tables 0x46A848, 0x46A860; 0x445F20 splits a
 transform into its X, Y, Z rows): A becomes -Y, -Y, Z, Z, X, X and B becomes Z, X, -Y, X, Z, -Y for
 modes 0 to 5. A zero vector keeps the current axis. A stays exact, the third axis is the cross
-product of the other two, and B is rebuilt from them (the mode 5 case at 0x46A086). Procedures 176
+product of the other two, and B is rebuilt from them (the mode 5 case at 0x46A086). Procedure 172
+is the same code (case 0xAC) with a fourth argument, a point in the actor's own axes: the
+transform maps it to the world before and after the turn and the position moves by the
+difference, so the actor turns about that point (0x4449A0, then 0x4465C0/0x446590 read and write
+the position). Rayman's slide (behaviour 38) turns every tick about a point 0.9 above his feet,
+towards a direction at most 50 degrees off his speed that the stick picks. Procedures 176
 and 182 set a speed at dynamics +0x24, in the actor's own axes (176) or the world's (182, bit 0x4000
 of +8). Node type 30 is a sound event: procedure 115 with one is a sound request (the invisible
 actors 31 and 32 of Learn_10 only play ambient sounds).

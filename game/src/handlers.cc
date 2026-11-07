@@ -4747,10 +4747,12 @@ namespace openrayman::game
 		std::uint32_t orient_from_vectors(call& c)
 		{
 			std::uint32_t self = c.vm.target(c.self, true);
-			value va, vb, vmode;
+			value va, vb, vmode, vpivot;
 			next_arg(c, va);
 			next_arg(c, vb);
 			next_arg(c, vmode);
+			if(c.index == 172)
+				next_arg(c, vpivot);
 			std::uint32_t t = transform_of(c.vm, self);
 			std::uint32_t mode = std::uint32_t(vmode.as_int());
 			if(!t || mode > 5)
@@ -4775,7 +4777,26 @@ namespace openrayman::game
 			};
 			rebuild(third);
 			rebuild(b);
+			// 172 (the same code, case 0xAC): a point in the actor's own axes keeps its place in the
+			// world while the actor turns, so the actor moves by the difference (Rayman's slide turns
+			// about a point 0.9 above his feet).
+			auto pivot_offset = [&] {
+				vec3 p = vec_of(vpivot), out{};
+				for(int k = 0; k < 3; k++)
+				{
+					vec3 axis = read3(m, t + 0x34 + std::uint32_t(k) * 12);
+					for(int i = 0; i < 3; i++)
+						out[std::size_t(i)] += p[std::size_t(k)] * axis[std::size_t(i)];
+				}
+				return out;
+			};
+			vec3 before = c.index == 172 ? pivot_offset() : vec3{};
 			set_axes(m, t, axes[0], axes[1], axes[2]);
+			if(c.index == 172)
+			{
+				vec3 after = pivot_offset(), at = read3(m, t + 4);
+				write3(m, t + 4, { at[0] + before[0] - after[0], at[1] + before[1] - after[1], at[2] + before[2] - after[2] });
+			}
 			return c.args;
 		}
 
@@ -5935,6 +5956,7 @@ namespace openrayman::game
 		vm.on_condition(76, actor_in_world);
 		vm.on_procedure(433, face_horizontal);
 		vm.on_procedure(171, orient_from_vectors);
+		vm.on_procedure(172, orient_from_vectors);
 		vm.on_procedure(503, start_effect);
 		vm.on_procedure(161, face_direction);
 		for(std::uint32_t i : { 163, 164, 165 })
