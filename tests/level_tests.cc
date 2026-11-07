@@ -1,4 +1,5 @@
 #include "test_util.h"
+#include "../src/renderer/backdrop.h"
 
 #include <openrayman/actor.h>
 #include <openrayman/animation.h>
@@ -65,9 +66,75 @@ TEST_CASE("real data: Jail_10 far backdrop sector contains only static mountain 
 		CHECK(placed.object.elements.size() == 7);
 	}
 	CHECK(objects == 1);
+	// The crack the intro camera emerges from remains real foreground rock.
+	const auto geometry = static_geometry(files.memory, tree);
+	const auto crack = std::ranges::find(geometry, 17u, &placed_geometry::node);
+	REQUIRE(crack != geometry.end());
+	CHECK(lights.sector_of(tree, crack->node) == 0);
+	CHECK(crack->object.vertices.size() == 22);
+	CHECK(crack->object.elements.size() == 2);
 	for(std::size_t i = 0; i < tree.nodes().size(); ++i)
 		if(tree.node(i).type == super_object_type::actor)
 			CHECK(lights.sector_of(tree, i) != 7);
+}
+
+TEST_CASE("real data: Jail_20 backdrop recipe excludes the chute and solid scenery")
+{
+	const auto recipe = std::ranges::find(backdrop_recipes, std::string_view("Jail_20"), &backdrop_recipe::level);
+	REQUIRE(recipe != std::end(backdrop_recipes));
+	REQUIRE(recipe->sectors.size() == 1);
+	CHECK(recipe->sectors[0] == 0);
+	CHECK(recipe->skies.empty()); // the sky shell shares sector 0 with the mountains
+	CHECK(recipe->anchor[0] == doctest::Approx(393.22f));
+	CHECK(recipe->anchor[1] == doctest::Approx(321.303f));
+	CHECK(recipe->anchor[2] == doctest::Approx(275.931f));
+	CHECK(recipe->parallax == doctest::Approx(0.1f));
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto data = game_data::locate(*dir);
+	REQUIRE(data);
+	auto files = load_level_files(*data, "Jail_20");
+	scene tree(files.memory, read_level_header(files));
+	const auto lights = read_lights(files.memory, tree);
+	REQUIRE(lights.sectors.size() == 14);
+	CHECK(lights.sectors[0].node == 34);
+	std::vector<std::size_t> nodes;
+	for(const auto& placed : static_geometry(files.memory, tree))
+	{
+		if(lights.sector_of(tree, placed.node) != 0) continue;
+		nodes.push_back(placed.node);
+		CHECK(placed.visible);
+		CHECK(placed.object.look == look_at::none);
+		CHECK(placed.object.sprites.empty());
+		const auto& ipo = tree.node(placed.node);
+		REQUIRE(ipo.data);
+		const auto physical = files.memory.follow(*ipo.data);
+		REQUIRE(physical);
+		CHECK_FALSE(files.memory.follow(*physical + 4)); // no collision set on either object
+		if(placed.node == 35)
+		{
+			CHECK(placed.object.vertices.size() == 11);
+			CHECK(placed.object.elements.size() == 1);
+		}
+		else
+		{
+			CHECK(placed.node == 36);
+			CHECK(placed.object.vertices.size() == 27);
+			CHECK(placed.object.elements.size() == 7);
+			for(const auto& e : placed.object.elements)
+			{
+				REQUIRE(e.material);
+				REQUIRE(e.material->texture);
+				CHECK(e.material->texture->name.starts_with("textures_vallee\\"));
+			}
+		}
+	}
+	CHECK(nodes == std::vector<std::size_t>{ 35, 36 });
+	// The trigger/exit remains in ordinary sector 12; the landing actors likewise
+	// still draw normally even when their live sector is the backdrop's sector 0.
+	CHECK(lights.sector_at(recipe->anchor) == 12);
+	CHECK(lights.sector_of(tree, 58) == 8);
+	CHECK(lights.sector_of(tree, 13) == std::nullopt); // actors live in the dynamic tree
 }
 
 TEST_CASE("real data: Jail_20 cell hides its white panel and selects blue beam meshes")

@@ -935,7 +935,36 @@ static int cmd_mesh(const fs::path& folder, const std::string& name, const std::
 			std::cout << "\n";
 		}
 	for(const triangle_element& e : mesh.elements)
+	{
 		std::cout << std::format("  triangles {}: {}\n", e.triangles.size(), describe(e.material));
+		if(std::getenv("ORTOOL_MESH_DETAILS"))
+		{
+			auto texture = [](const texture_info& t) {
+				std::cout << std::format("    texture {} +0x{:X}: {}x{}, flags 0x{:X}, tiling 0x{:02X}, {}\n",
+					t.at.block->id.to_string(), t.at.offset, t.width, t.height, t.flags, t.tiling, t.name);
+			};
+			if(e.material)
+			{
+				if(e.material->texture) texture(*e.material->texture);
+				for(const auto& f : e.material->frames)
+				{
+					std::cout << std::format("    frame duration {} seconds\n", f.duration);
+					texture(f.texture);
+				}
+			}
+			for(std::size_t t = 0; t < e.triangles.size(); ++t)
+			{
+				std::cout << "    triangle";
+				for(int k = 0; k < 3; ++k)
+				{
+					const auto& p = mesh.vertices[e.triangles[t][k]];
+					const auto& uv = e.uvs[e.uv_triangles[t][k]];
+					std::cout << std::format(" ({},{},{}) uv({},{})", p[0], p[1], p[2], uv[0], uv[1]);
+				}
+				std::cout << "\n";
+			}
+		}
+	}
 	for(const sprite& sp : mesh.sprites)
 		std::cout << std::format("  sprite at vertex {} half size {:.2f} x {:.2f}: {}\n", sp.vertex, sp.half_size[0], sp.half_size[1], describe(sp.material));
 	for(std::uint16_t t : mesh.skipped_types)
