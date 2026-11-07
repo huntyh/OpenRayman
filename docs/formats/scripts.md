@@ -302,7 +302,22 @@ bit 1 means "active"; the frame loop (0x40AB90) runs only active actors. Procedu
 0x405FA0) moves the actor into the dynamic world and sets bits 1 and 2. Procedure 85 (→ 0x4061B0)
 tears down its animation links and sounds and, if it is in the world (bit 0 clear) and active,
 clears bits 0..2. The Globox kids' director switches its stand-in Rayman (node 41) off at the
-start and at the hand-back. Procedure 139 on a placed actor (0x406220) sets bit 0 and, unless
+start and at the hand-back. 0x405FA0 relinks the super object from the inactive world (0x500FC4)
+into the active one (0x500FD0), at its head when standard +0x28 is set, else at its tail; 85 moves
+it back. Ours keeps that list as `interpreter::run_order`, so 84 adds the actor there (it thinks
+from then on, even outside Rayman's wake region) and 85 takes it out. Neither ends the running
+script: the handler's case 0x55 returns the next node normally, so an actor that runs
+`procedure_85(me)` carries on with the rest of the rule. Jail_20's pirate carrying Globox (node 7)
+does exactly that in its behaviour 0 (85 on itself, then `procedure_69(behaviour 1)`); stopping
+there kept it in behaviour 0 forever and the cell scene had no Globox (#36). **Condition 76**
+(0x48B920 → 0x40B250) is the matching test: the actor's super object hangs under the active world
+(directly or one level down) and its standard game +0x29 has bit 4. Jail_20's director (node 8)
+switches an actor on with 84 when 76 says it isn't, before sending it a cue: dialog `/e` cue 1301..1399
+picks actor `var0[n]`, 1400..1499 sends it message `cue - 1400` through procedure 6 (the maximum hit
+points, read back with function 46). Checked against the user's recording of the real game
+(2026-11-07): the pirate changes state at 16.0 s and steps into the cell at 24.4 s, reaching
+(709.071, 130.369), and ours now does the same within a tick or two. **Procedure 411** (0x4710C0 case
+0x19B, 0x45B9F0) takes an actor out of the screen-object pass that 409 put it in. Procedure 139 on a placed actor (0x406220) sets bit 0 and, unless
 type 5, bit 1, then for type 1 resets it (0x405E50 mode 4, whose 0x4132A0 puts it back in the
 world) unless its id matches one of the level's always actors (0x40BC80, list at 0x4A6B1C).
 

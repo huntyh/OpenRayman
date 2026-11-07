@@ -3160,3 +3160,44 @@ TEST_CASE("real data: static objects carry their bounding-sphere centre (0x42AF7
 	CHECK(total > 0);
 	CHECK(with == total);
 }
+
+TEST_CASE("real data: Jail_20 cell scene: the pirate carrying Globox wakes and walks in on cue")
+{
+	// The user's recording of the real game (2026-11-07): the pirate (actor 5 there, node 7 here)
+	// leaves behaviour 0 at once, changes state at 16.0 s and steps into the cell at 24.4 s,
+	// reaching (709.071, 130.369). It switches itself off first (procedure_85(me), which must not
+	// end the rule) and the director's cue 1301/1410 switches it back on (procedure 84 relinks it
+	// into the active world) and sends it message 10.
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto data = game_data::locate(*dir);
+	REQUIRE(data);
+	auto files = load_level_files(*data, "Jail_20");
+	auto header = read_level_header(files);
+	scene tree(files.memory, header);
+	auto bank = read_animation_bank(files);
+	game::live_memory m(files.memory);
+	auto rayman = header.placements.at(0).super_object.address();
+	game::interpreter vm(m, rayman);
+	game::register_handlers(vm);
+	game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
+	vm.set_animations(&bank);
+	game::install_level_events(m, bank);
+	std::vector<std::uint32_t> actors;
+	for(const auto& node : tree.nodes())
+		if(node.type == super_object_type::actor) actors.push_back(node.at.address());
+	vm.set_actors(actors);
+	for(const auto& e : read_actors(files.memory, tree, bank).actors)
+		game::set_global_placement(m, tree.node(e.node).at.address(), e.world);
+	for(auto bit : game::first_visit_story_bits) REQUIRE(vm.set_story_bit(actors, bit));
+	auto pirate = tree.node(7).at.address();
+	for(int tick = 0; tick < 1240; ++tick)
+		game::step(vm, actors);
+	CHECK(vm.active(pirate));
+	auto at = game::global_placement(m, pirate);
+	REQUIRE(at);
+	CHECK(at->m[0][3] == doctest::Approx(709.071f).epsilon(0.001));
+	CHECK(at->m[1][3] == doctest::Approx(130.369f).epsilon(0.001));
+}

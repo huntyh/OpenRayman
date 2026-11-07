@@ -715,13 +715,24 @@ namespace openrayman::game
 			{
 				m.write<std::uint8_t>(standard + 0x29, flags | 0x6);
 				c.vm.restore(target);
+				// 0x405FA0 relinks the super object into the active world (0x500FD0), at its head
+				// when standard +0x28 is set, else at its tail: it thinks from now on even outside
+				// Rayman's wake region (Jail_20's director wakes the pirate carrying Globox this way).
+				auto& order = c.vm.run_order;
+				if(std::ranges::find(order, target) == order.end())
+				{
+					if(m.u8(standard + 0x28)) order.insert(order.begin(), target);
+					else order.push_back(target);
+				}
 			}
 			else if(!(flags & 0x1) && (flags & 0x2))
 			{
 				m.write<std::uint8_t>(standard + 0x29, flags & ~0x7);
 				c.vm.remove(target, false);
-				if(target == c.self)
-					c.vm.signal(3);
+				// 0x4061B0 moves it to the inactive world. The script that switched itself off
+				// goes on with its next node (case 0x55 returns normally): Jail_20's pirate runs
+				// procedure_85(me) and then procedure_69(behaviour 1) in the same rule.
+				std::erase(c.vm.run_order, target);
 			}
 			return c.args;
 		}
@@ -4465,7 +4476,9 @@ namespace openrayman::game
 			value who;
 			next_arg(c, who);
 			std::uint32_t so = super_object_value(c.vm, who);
-			result = so && c.vm.active(so);
+			// Our active-world list is run_order (the wake pass and procedure 84 fill it).
+			const auto& order = c.vm.run_order;
+			result = so && c.vm.active(so) && std::ranges::find(order, so) != order.end();
 			return c.args;
 		}
 
