@@ -1450,14 +1450,15 @@ namespace openrayman::game
 		// The other kinds read the 20-byte-entry table at the 3D data's +0x90 (an entry's object
 		// gives the 3D object, the entry's +0x24 the frame); an entry without byte +0 bits 3 and 4
 		// comes from the second half of the table (index + 0x8000).
-		std::uint32_t find_zone_with_frame(interpreter& vm, std::uint32_t owner, std::uint32_t kind, std::uint32_t number, std::uint32_t& frame)
+		std::uint32_t find_zone_with_frame(interpreter& vm, std::uint32_t owner, std::uint32_t kind, std::uint32_t number, std::uint32_t& frame,
+			std::uint32_t collision_kind = 0)
 		{
 			frame = 0;
-			if(number == 0)
+			if(kind == 0 && number == 0)
 				return 0;
 			if(kind == 0)
 			{
-				std::uint32_t zone = find_zone(vm, owner, 0, number - 1);
+				std::uint32_t zone = find_zone(vm, owner, collision_kind, number - 1);
 				if(zone)
 					frame = transform_of(vm, owner);
 				return zone;
@@ -1475,6 +1476,7 @@ namespace openrayman::game
 			std::uint32_t entry = entry_at(number & 0xFF);
 			if(!entry)
 				return 0;
+			frame = safe_u32(m, entry + 0x24);
 			if(!(m.contains(entry) && (m.u8(entry) & 0x18)))
 			{
 				entry = entry_at((number + 0x8000) & 0xFFFF);
@@ -1486,10 +1488,12 @@ namespace openrayman::game
 			std::uint32_t target = object ? safe_u32(m, object + 4) : 0;
 			std::uint32_t zone = 0;
 			if(target)
-				zone = kind == 1 ? safe_u32(m, target) : kind == 2 ? safe_u32(m, target + 0xC) : safe_u32(m, target + 8);
+			{
+				static constexpr std::uint32_t offsets[] = { 4, 0, 8, 12 }; // 0x444790
+				zone = collision_kind < 4 ? safe_u32(m, target + offsets[collision_kind]) : 0;
+			}
 			if(!zone)
 				return 0;
-			frame = safe_u32(m, entry + 0x24);
 			return zone;
 		}
 
@@ -2836,15 +2840,19 @@ namespace openrayman::game
 			return shapes;
 		}
 
-		// A point in a transform's own axes, put into the world (the matrix at +0x34 carries the scale).
+		// 0x444800: apply a point transform. Type 1 is identity, 2 translation only,
+		// 3 rotation (+0x10), 4 rotation/scale (+0x34).
 		vec3 touch_world(live_memory& m, std::uint32_t t, const vec3& p)
 		{
 			if(!t || !m.contains(t, 0x58))
 				return p;
+			if(m.u32(t) == 1) return p;
 			vec3 out = read3(m, t + 4);
+			if(m.u32(t) == 2) return {out[0] + p[0], out[1] + p[1], out[2] + p[2]};
+			const std::uint32_t axes = m.u32(t) == 3 ? 0x10 : 0x34;
 			for(int i = 0; i < 3; i++)
 			{
-				vec3 axis = read3(m, t + 0x34 + std::uint32_t(i) * 12);
+				vec3 axis = read3(m, t + axes + std::uint32_t(i) * 12);
 				for(int j = 0; j < 3; j++)
 					out[std::size_t(j)] += p[std::size_t(i)] * axis[std::size_t(j)];
 			}
@@ -3075,6 +3083,102 @@ namespace openrayman::game
 				squared += d * d;
 			}
 			return squared < radius * radius;
+		}
+
+		// 19/20 (0x489EE0, case 0x48A012 -> 0x40D350/0x40CFA0): zone of A touches B.
+		// Selector 0 uses A's kind-2 collision list; selector 1 uses its channel's geometry.
+		std::uint32_t zone_touches_actor(call& c, bool& result)
+		{
+			value owner, number, other, mask;
+			next_arg(c, owner); next_arg(c, number); next_arg(c, other); next_arg(c, mask);
+			result = false;
+			auto a = super_object_value(c.vm, owner), b = super_object_value(c.vm, other);
+			if(!a || !b || c.vm.removed(b)) return c.args;
+			auto& m = c.vm.memory();
+			auto standard = actor_part(c.vm, b, actor_field::standard_game);
+			if(!standard || !m.contains(standard + 0x29) || !(m.u8(standard + 0x29) & 4)) return c.args;
+			std::uint32_t frame = 0;
+			auto zone = find_zone_with_frame(c.vm, a, c.index == 20 ? 1 : 0, std::uint8_t(number.as_int()), frame, 2);
+			auto source = touch_shapes(m, zone);
+			const auto bits = std::uint16_t(mask.as_int());
+			auto overlaps = [&](std::uint32_t target_zone, std::uint32_t target_frame) {
+				for(const auto& target : touch_shapes(m, target_zone))
+				{
+					auto material = target.material && target.material != 0xFFFFFFFF ? safe_u32(m, target.material + 0xC) : 0;
+					if(bits && (!material || material == 0xFFFFFFFF || (safe_u16(m, material + 2) & bits) != bits)) continue;
+					for(const auto& shape : source)
+						if(touch_overlap(m, shape, frame, target, target_frame)) return true;
+				}
+				return false;
+			};
+			auto set = collision_set(c.vm, b);
+			auto head = set ? safe_u32(m, set + 4) : 0;
+			for(std::uint32_t i = 0; i < (head ? safe_u32(m, head + 8) : 0); ++i)
+				if(overlaps(find_zone(c.vm, b, 2, i), transform_of(c.vm, b)))
+				{
+					result = true;
+					return c.args;
+				}
+			// 0x40CFA0 also visits B's active part list, selecting the visible object at +4
+			// when present. Its geometry's +8 is the kind-2 zone (0x4194B0).
+			auto data = actor_part(c.vm, b, actor_field::data_3d);
+			auto list = data ? safe_u32(m, data + 0x10) : 0;
+			if(list && m.contains(list + 0xE) && (m.u8(list + 0xE) & 2))
+				for(auto entry = safe_u32(m, data + 0x98); entry; entry = safe_u32(m, entry + 8))
+				{
+					auto part = safe_u32(m, entry + 4);
+					if(!part) part = safe_u32(m, entry);
+					if(!(safe_u32(m, part) & 0x18)) continue;
+					auto object = safe_u32(m, part + 4), geometry = object ? safe_u32(m, object + 4) : 0;
+					if(geometry && overlaps(safe_u32(m, geometry + 8), safe_u32(m, part + 0x24)))
+					{
+						result = true;
+						break;
+					}
+				}
+			return c.args;
+		}
+
+		// 218 (0x46AB20, 0x46AFF0/0x46B846, tail 0x46B8B4): place a channel at a point.
+		std::uint32_t place_animation_part(call& c)
+		{
+			auto self = c.vm.target(c.self, true);
+			value point, channel, flags;
+			next_arg(c, point); next_arg(c, channel);
+			auto id = std::uint8_t(channel.as_int());
+			if(id == 0xFF) return c.vm.skip(c.args);
+			next_arg(c, flags);
+			auto& m = c.vm.memory();
+			auto data = actor_part(c.vm, self, actor_field::data_3d);
+			if(!data) return c.args;
+			auto table = safe_u32(m, data + 0x90);
+			auto part = table ? safe_u32(m, table + std::uint32_t(id) * 20) : 0;
+			// We pose from the animation bank instead of allocating the exe's part super objects.
+			// Accept an existing bank channel when that runtime table has not been built.
+			if(!part)
+			{
+				if(table) return c.args;
+				auto state = safe_u32(m, data + 4), reference = state ? safe_u32(m, state + 4) : 0;
+				const auto* bank = c.vm.animations();
+				auto index = reference ? safe_u16(m, reference + 0x18) : 0xFFFF;
+				if(!bank || index >= bank->animations.size()) return c.args;
+				const auto& animation = bank->animations[index];
+				bool found = false;
+				for(std::size_t i = 0; i < animation.channels && animation.start_channels + i < bank->channels.size(); ++i)
+					found |= bank->channels[animation.start_channels + i].id == id;
+				if(!found) return c.args;
+			}
+			vec3 world = vec_of(point);
+			if(!(flags.word() & 1)) world = touch_world(m, transform_of(c.vm, self), world);
+			c.vm.place_channel(self, id, world);
+			auto transform = part ? safe_u32(m, part + 0x24) : 0;
+			if(transform && m.contains(transform, 0x58))
+			{
+				write3(m, transform + 4, world);
+				m.write(part + 0x28, c.vm.frame_number());
+			}
+			if(m.contains(data + 0xFC)) m.write<std::uint8_t>(data + 0xFC, 1);
+			return c.args;
 		}
 
 		// 22 (0x468180 case 0x16 -> 0x4837A0 -> 0x40CCA0): fill the list with the actors that zone n
@@ -5256,8 +5360,9 @@ namespace openrayman::game
 		}
 
 		// 102, 103 (0x468B10 -> 0x4195A0): hide (102) or show (103) one part of the actor, or all of
-		// them for 0xFFFF. Parts: 3D data +0x90, count +0x94, 0x14 bytes each: super object at +4 (+0
-		// when that is null), the flag kept at +0x11; hiding clears bits 0, 1 and 7 of the part's
+		// them for 0xFFFF. Parts: 3D data +0x90, count +0x94, 0x14 bytes each: transform object at +0;
+		// show/hide prefers the visible object at +4, falling back to +0 (0x4195A0). The flag is
+		// kept at +0x11; hiding clears bits 0, 1 and 7 of the part's
 		// super object flags (+0x30), showing sets them.
 		std::uint32_t show_parts(call& c)
 		{
@@ -5678,6 +5783,9 @@ namespace openrayman::game
 		vm.on_function(49, list_function);
 		vm.on_function(50, list_function);
 		vm.on_procedure(22, touching_actors);
+		vm.on_condition(19, zone_touches_actor);
+		vm.on_condition(20, zone_touches_actor);
+		vm.on_procedure(218, place_animation_part);
 		for(std::uint32_t i = 232; i <= 234; i++)
 			vm.on_procedure(i, write_collision_event);
 		for(std::uint32_t i = 205; i <= 207; i++)

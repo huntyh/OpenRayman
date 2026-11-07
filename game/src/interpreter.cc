@@ -139,6 +139,7 @@ namespace openrayman::game
 	void interpreter::remove(std::uint32_t self, bool mark_removed)
 	{
 		m_removed.insert(self);
+		m_channel_placements.erase(self);
 		m_screen_objects.erase(self);
 		auto actor = actor_of(self);
 		auto standard = actor ? m_memory.u32(actor + 4) : 0;
@@ -1424,6 +1425,7 @@ namespace openrayman::game
 
 	void interpreter::reset_actor(std::uint32_t self)
 	{
+		m_channel_placements.erase(self);
 		std::uint32_t actor = actor_of(self);
 		if(!actor)
 			return;

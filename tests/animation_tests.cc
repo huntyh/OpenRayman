@@ -113,6 +113,47 @@ TEST_CASE("pose: morphs match channel and whole frame")
 	CHECK_FALSE(parts[0].morph_mesh);
 }
 
+TEST_CASE("pose: world channel placements preserve axes and carry hidden parents' children")
+{
+	auto bank = two_keyframe_bank();
+	bank.animations[0].channels = 3;
+	bank.channels[0].id = 12; // child comes before its parent in the array
+	for(std::int16_t id : { 21, 37 })
+	{
+		auto channel = bank.channels[0];
+		channel.id = id;
+		bank.channels.push_back(channel);
+	}
+	bank.hierarchies = { {12, 21}, {21, 37} };
+	for(auto& frame : bank.frames) frame.hierarchy_count = 2;
+	actor_set::entry actor;
+	actor.animation = 0;
+	actor.world.m[0][3] = 100;
+	actor.meshes.resize(6); actor.scales.resize(6); actor.meshes[5] = 0;
+	std::vector<posed_part> normal, placed;
+	pose_actor(actor, bank, 1, normal);
+	pose_actor(actor, bank, 1, placed, {{21, {10, 20, 30}}});
+	REQUIRE(normal.size() == 3); REQUIRE(placed.size() == 3);
+	for(int axis = 0; axis < 3; ++axis)
+	{
+		CHECK(placed[1].world.m[axis][3] == doctest::Approx(vec3{10, 20, 30}[axis]));
+		CHECK(placed[0].world.m[axis][3] - placed[1].world.m[axis][3] ==
+			doctest::Approx(normal[0].world.m[axis][3] - normal[1].world.m[axis][3]));
+		for(int column = 0; column < 3; ++column)
+			CHECK(placed[0].world.m[axis][column] == doctest::Approx(normal[0].world.m[axis][column]));
+	}
+	// A child override is absolute even when its parent was also moved.
+	placed.clear();
+	pose_actor(actor, bank, 1, placed, {{21, {10, 20, 30}}, {12, {-4, -5, -6}}});
+	CHECK(placed[0].world.m[0][3] == doctest::Approx(-4));
+	// Hide the parent's object only; it must still carry the child.
+	bank.objects.push_back({2, 5}); bank.ntto_choices.push_back(1); bank.channels[1].ntto = 1;
+	placed.clear();
+	pose_actor(actor, bank, 1, placed, {{21, {10, 20, 30}}});
+	REQUIRE(placed.size() == 2);
+	CHECK(placed[0].world.m[0][3] == doctest::Approx(10 + normal[0].world.m[0][3] - normal[1].world.m[0][3]));
+}
+
 TEST_CASE("pose: parent changes hold local keys, including loop blends")
 {
 	auto bank = two_keyframe_bank();
