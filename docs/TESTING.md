@@ -86,8 +86,9 @@ Drawn frozen in the first frame of their current animation. Near the start of Th
 
 ## Round 3: seams and the warp swirl
 
-- [ ] The warp swirl in front of the stone faces out of the stone (checked in round 2), and now has
-      no line across its middle and no seams along its top and bottom edges
+- [x] The warp swirl in front of the stone faces out of the stone (checked in round 2), and now has
+      no line across its middle and no seams along its top and bottom edges. The real game shows
+      those lines, so this is one of our improvements (docs/IMPROVEMENTS.md; user 2026-11-07)
 - [ ] Places where two textures meet show the change of texture, like the real game, but no thin
       bright or dark line along the edge. Compare a few spots with the game
 - [ ] The painted jungle walls with sky above them: no thin line running through the sky from the
