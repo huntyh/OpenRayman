@@ -1334,7 +1334,7 @@ namespace
 				if(a.carried_story)
 					a.vm->set_story_words(fix_actors, *a.carried_story);
 				else if(!menu && !a.save_slot)
-					for(std::uint32_t bit : a.new_game ? std::span<const std::uint32_t>(openrayman::game::first_visit_story_bits) : std::span<const std::uint32_t>(openrayman::game::revisit_story_bits))
+					for(std::uint32_t bit : openrayman::game::start_story_bits(levels[index], a.new_game))
 						a.vm->set_story_bit(fix_actors, bit);
 				a.carried_story.reset();
 				a.fix_actors = fix_actors;

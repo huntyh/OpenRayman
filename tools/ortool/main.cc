@@ -1502,7 +1502,7 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 		fix_actors.push_back(placed.super_object.address());
 	const char* start = std::getenv("ORTOOL_START");
 	bool first_visit = start && std::string_view(start) == "new";
-	for(std::uint32_t bit : first_visit ? std::span<const std::uint32_t>(game::first_visit_story_bits) : std::span<const std::uint32_t>(game::revisit_story_bits))
+	for(std::uint32_t bit : game::start_story_bits(name, first_visit))
 		vm.set_story_bit(fix_actors, bit);
 	// ORTOOL_STORY_BITS=a,b: explicit story input, also useful with ORTOOL_START=new
 	// to test the level's own removal rules without the interim revisit snapshot.

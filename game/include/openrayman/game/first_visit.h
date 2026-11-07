@@ -49,6 +49,20 @@ namespace openrayman::game
 		840, 841, 1089, 1091, 1092, 1133, 1175, 1176, 1177, 1396, 1397, 1398, 1399, 1400,
 	};
 
+	// The bits a start in this level stands in for. The pirate ship (Jail_10, Jail_20) comes before
+	// any of them: a new game sets 1089 only when Jail_20's cell scene hands Rayman over (r2record,
+	// 90.9 s), and the scene's director lets Enter skip it only once 1089 (or 1188) is set. With the
+	// Learn_10 bits preset there, Enter skipped the scene and lost Rayman and Globox (user, 2026-11-07).
+	inline std::span<const std::uint32_t> start_story_bits(std::string_view level, bool new_game)
+	{
+		auto is = [&](std::string_view name) {
+			return std::ranges::equal(level, name, [](unsigned char x, unsigned char y) { return std::tolower(x) == std::tolower(y); });
+		};
+		if(new_game && (is("Jail_10") || is("Jail_20")))
+			return {};
+		return new_game ? std::span<const std::uint32_t>(first_visit_story_bits) : std::span<const std::uint32_t>(revisit_story_bits);
+	}
+
 	// Temporary completed-level snapshot until saves are read. These are scene node numbers, not
 	// save-file IDs. It approximates the requested finished scene; the full save/load mechanism
 	// for its other actors is not yet established. Lum bits 1396..1400 and cage bits 840/841
