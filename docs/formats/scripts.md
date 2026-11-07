@@ -812,3 +812,44 @@ The pointer distinction and ID mapping were checked independently against those
 functions, and behavior was checked with synthetic tests and the real Learn_31
 scripts (six distinct current-tick positions for channels 3..8). No decompiled
 code copied. Codex, 2026-11-07.
+
+
+## Procedure 79: return after the death animation
+
+Procedures **79..82** share **0x467770**, as confirmed directly from the procedure
+table at **0x4A43E0** (8-byte entries). They are unrelated to conditions 79..102
+at `0x48B380`. The previously implemented siblings retain their meanings:
+**80** reinstalls current-state mechanics; **81** resets the running intelligence's
+schedule/actions and stops/restarts its script; **82** clears the cast ignore mask.
+
+**79** calls **0x406490**: reset the saved player/camera return transforms to
+identity (`0x4447E0`), clear the saved-placement byte at **0x500FAB**, stop the
+sound playback group (`0x453080`), and request game mode **8** (`0x404BF0`).
+It does not change behaviour, clear a dynamics flag, or interrupt the current
+script. Our handler records a return request and a host sound-stop request.
+The next game step consumes the return before running another frame of actors.
+
+The return path with health remaining is **0x403150 -> 0x406600**, resetting the
+world with mode **4**. **0x406620** resets standard types 0/1/2 and present types
+3/5; absent types 3/5 and other types retain their absence. Eligible actors regain
+their initial placement, brain behaviours, reset-level-4 variables, state, draw
+flags and opacity; persistent variables and custom-bit-31 health survive.
+**0x412F20 -> 0x435B70/0x435AC0** clears transient dynamics while retaining the
+block kind/contact allocation. Generated actors and movement/animation caches
+are cleared, then sector activation is rebuilt at the restored position.
+The current runtime keeps its monotonic tick clock across this return.
+
+Bast_20's piranha capture illustrates why this matters: held behaviour 9/10 is
+followed by event 50's death/return behaviour **21**. Its finished animation runs
+macro 7, which requests procedure 79 while health remains. Without the return,
+Rayman and the fish remain in their terminal/capture loops. The full kill chain,
+including the separate collision-sector error that prevented ordinary falls,
+is recorded in [collision.md](collision.md#bast_20-piranhas-falling-through-the-pond-capture-and-return).
+
+### Where this came from
+
+Own reading of the local GOG Rayman2.exe at the table and addresses above, plus
+`0x4132A0`, `0x418340` and the installed Rayman/Bast_20 scripts. The helper's
+suggested `0x48B380` address was checked and rejected. Verified with synthetic
+procedure/query tests and real Bast_20 capture, fall, rim-walk and return tests.
+No decompiled code copied. Codex, 2026-11-07.

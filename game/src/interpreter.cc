@@ -340,6 +340,26 @@ namespace openrayman::game
 		return best;
 	}
 
+	std::vector<std::uint32_t> interpreter::collision_sectors(std::uint32_t self) const
+	{
+		std::vector<std::uint32_t> sectors;
+		auto placement = global_placement(m_memory, self);
+		if(!placement) return sectors;
+		auto owner = m_actor_sectors.find(self);
+		auto sector = owner != m_actor_sectors.end() ? owner->second
+			: sector_at({ placement->m[0][3], placement->m[1][3], placement->m[2][3] });
+		if(!sector) return sectors;
+		sectors.push_back(sector);
+		auto actor = actor_of(self), set = actor ? m_memory.u32(actor + 0x14) : 0;
+		if(set && (m_memory.u8(set + 0x42) & 0x20)) return sectors; // 0x4179A0: own sector only
+		auto data = m_memory.u32(sector + 4);
+		auto entry = m_memory.u32(data + 0x30), count = m_memory.u32(data + 0x38);
+		// 0x494610: the current sector and its collision list, not the drawn-with list.
+		for(std::uint32_t n = 0; entry && n < count; ++n, entry = m_memory.u32(entry + 4))
+			sectors.push_back(m_memory.u32(entry));
+		return sectors;
+	}
+
 	void interpreter::initialize_native_check(std::uint32_t self)
 	{
 		// 0x404550 runs startup probes for custom bit 25 before variables are restored (0x466A60).
@@ -1499,6 +1519,55 @@ namespace openrayman::game
 					m_memory.write<std::uint8_t>(current + offset + i, m_memory.u8(initial + offset + i));
 			}
 		}
+	}
+
+	void interpreter::restart_level()
+	{
+		// 0x403150 takes the mode-4 path (0x406600) while Rayman still has health;
+		// 0x406620 resets types 0/1/2, and types 3/5 only while they are present.
+		// Persistent designer variables and custom-bit-31 health survive reset_actor.
+		restart_requested = false;
+		for(auto self : m_generated.alive())
+		{
+			remove(self);
+			m_generated.release(self);
+		}
+		for(auto self : m_actors)
+		{
+			auto actor = actor_of(self), standard = actor ? m_memory.u32(actor + 4) : 0;
+			if(!standard) continue;
+			auto type = m_memory.u32(standard + 0x14);
+			auto flags = m_memory.u8(standard + 0x29);
+			if(type > 2 && !((type == 3 || type == 5) && !(flags & 1))) continue;
+			reset_actor(self);
+			restore(self);
+			m_memory.write<std::uint8_t>(standard + 0x29, (flags & ~5u) | 2u);
+			m_memory.write<std::uint32_t>(standard + 0x18, 0);
+			auto data = m_memory.u32(actor);
+			if(data && m_memory.contains(data, 0x103))
+			{
+				// 0x418340 restores the initial draw flags and transparency too.
+				m_memory.write<std::uint32_t>(self + 0x2C, m_memory.u32(data + 0xE4));
+				m_memory.write<std::uint32_t>(data + 0xE8, m_memory.u32(data + 0xE4));
+				m_memory.write<float>(self + 0x38, float(m_memory.u8(data + 0x102)));
+			}
+			reset_dynamics(m_memory, actor);
+			reinstall_state_mechanics(m_memory, actor);
+			auto collision = m_memory.u32(actor + 0x14);
+			if(collision && m_memory.contains(collision, 0x66)) m_memory.write<std::uint8_t>(collision + 0x65, 0);
+		}
+		m_wake_sectors.clear();
+		m_sector_members.clear();
+		m_actor_sectors.clear();
+		run_order.clear();
+		run_order_source = 0;
+		m_supports.clear();
+		m_surface_cache = {};
+		m_channel_placements.clear();
+		m_screen_objects.clear();
+		m_camera_motion = {};
+		m_sounds.clear();
+		if(m_animations) install_level_events(m_memory, *m_animations);
 	}
 
 	void interpreter::think(std::uint32_t self)

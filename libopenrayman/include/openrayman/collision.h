@@ -38,6 +38,7 @@ namespace openrayman
 		bool has_material = false;   // whether its game material has a collide material at all
 		std::uint32_t material = 0;  // its game material's address, 0 when it has none
 		std::size_t node = 0;        // the super object it belongs to, in the scene
+		std::uint32_t sector = 0;    // owning sector super object; 0 for unscoped/actor geometry
 	};
 
 	// The geometric object a physical object collides with: its collide set's fourth slot (+0xC).

@@ -2820,6 +2820,127 @@ TEST_CASE("real data: Bast_20 piranhas only catch Rayman in their wake region")
 	}
 }
 
+TEST_CASE("real data: Bast_20 pond capture completes the death and return route")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto data = game_data::locate(*dir);
+	REQUIRE(data);
+	auto files = load_level_files(*data, "Bast_20");
+	auto header = read_level_header(files);
+	scene tree(files.memory, header);
+	auto bank = read_animation_bank(files);
+	auto brains = read_brains(files.memory, tree);
+	auto ray_brain = std::ranges::find(brains.actors, 114, &actor_brain::node);
+	REQUIRE(ray_brain != brains.actors.end());
+	const auto& ray_model = brains.model(*ray_brain);
+	game::live_memory m(files.memory);
+	auto rayman = header.placements.at(0).super_object.address();
+	game::interpreter vm(m, rayman);
+	game::register_handlers(vm);
+	game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
+	vm.set_animations(&bank);
+	game::install_level_events(m, bank);
+	std::vector<std::uint32_t> actors;
+	for(const auto& node : tree.nodes())
+		if(node.type == super_object_type::actor) actors.push_back(node.at.address());
+	vm.set_actors(actors);
+	for(const auto& e : read_actors(files.memory, tree, bank).actors)
+		game::set_global_placement(m, tree.node(e.node).at.address(), e.world);
+	for(auto bit : game::revisit_story_bits) REQUIRE(vm.set_story_bit(actors, bit));
+	auto fish = tree.node(24).at.address(), fish_actor = vm.actor_of(fish);
+	auto fish_data = m.u32(fish_actor);
+	auto home = game::global_placement(m, fish);
+	REQUIRE(home);
+	auto ray_actor = vm.actor_of(rayman), standard = m.u32(ray_actor + 4);
+	auto mind = m.u32(m.u32(ray_actor + 0xC)), normal = m.u32(mind + 4);
+	auto collision = m.u32(ray_actor + 0x14);
+	game::input keys(m, read_input_actions(files));
+	for(int tick = 0; tick < 120; ++tick) { keys.step(); game::step(vm, actors); }
+	bool fall = false, rim = false;
+	SUBCASE("placement below the trigger") {}
+	SUBCASE("falling from above the pond") { fall = true; }
+	SUBCASE("walking off the reported rim") { fall = true; rim = true; }
+	game::write_transform(m, rayman, { fall ? 132.8f : 118.0f, rim ? 47.8f : (fall ? 60.0f : 67.0f), fall ? -51.7f : -57.0f },
+		{ -1, 0, 0, 0, -1, 0, 0, 0, 1 });
+	if(fall)
+	{
+		// Isolate playing from the unrelated portal-arrival script: its ordinary
+		// var8=0 hand-over reinstalls idle/falling mechanics through behaviour 9.
+		vm.set_variable(rayman, 8, game::value::integer(0));
+		vm.change_behaviour(normal, ray_model.behaviours[9].at.address(), true);
+		vm.change_behaviour(m.u32(mind + 8), ray_model.reflexes[13].at.address(), true);
+	}
+	const auto* fix_states = files.memory.find({ 0x04, 0x00 });
+	REQUIRE(fix_states);
+	const auto return_state = memory_location{ fix_states, 0x7338 }.address();
+	bool caught = false, held = false, dying = false, returned = false;
+	int capture_tick = -1, return_tick = -1;
+	for(int tick = 0; tick < 420; ++tick)
+	{
+		keys.set_key(0xCB, rim && !caught); // Left, towards the pond through the game's input/camera path
+		keys.step();
+		game::step(vm, actors);
+		auto behaviour = m.u32(normal + 8);
+		if(!caught && vm.get_variable(rayman, 8).as_int() == 9)
+		{
+			caught = true; capture_tick = tick;
+			CHECK(game::global_placement(m, rayman)->m[2][3] == doctest::Approx(-57.8498f));
+			CHECK(m.f32(fish + 0x38) == 255);
+		}
+		held |= caught && (behaviour == ray_model.behaviours[9].at.address() || behaviour == ray_model.behaviours[10].at.address());
+		if(behaviour == ray_model.behaviours[21].at.address())
+		{
+			dying = true;
+			CHECK(vm.get_variable(rayman, 68).as_int() == 52);
+			CHECK(m.u8(standard + 0x21) == 10); // the first event's damage: 12 - 2
+			CHECK(m.u32(m.u32(ray_actor) + game::data_3d::requested_state) == return_state);
+		}
+		if(vm.restart_requested)
+		{
+			returned = true; return_tick = tick;
+			CHECK(dying);
+			CHECK(m.u8(collision + 0x64) == 50);
+			break;
+		}
+	}
+	INFO("fall ", fall, " rim ", rim, " capture tick ", capture_tick, " return tick ", return_tick);
+	auto final_position = game::global_placement(m, rayman);
+	INFO("position ", final_position->m[0][3], ",", final_position->m[1][3], ",", final_position->m[2][3],
+		" var8 ", vm.get_variable(rayman, 8).as_int(), " var9 ", vm.get_variable(rayman, 9).as_int(),
+		" normal ", m.u32(normal + 8), " state ", m.u32(m.u32(ray_actor) + 4));
+	CHECK(caught); CHECK(held); CHECK(dying); CHECK(returned);
+	if(returned) CHECK(return_tick - capture_tick <= 101);
+	if(returned)
+	{
+		keys.set_key(0xCB, false); keys.step(); game::step(vm, actors);
+		CHECK_FALSE(vm.restart_requested);
+		CHECK(m.u32(normal + 8) != ray_model.behaviours[21].at.address());
+		CHECK(game::global_placement(m, fish)->m[0][3] == doctest::Approx(home->m[0][3]));
+		CHECK(game::global_placement(m, fish)->m[1][3] == doctest::Approx(home->m[1][3]));
+		CHECK(m.u32(fish_data + 4) == m.u32(fish_data));
+		CHECK(vm.generated().alive().empty());
+	}
+	for(const auto& [handler, count] : vm.missing)
+		CHECK_FALSE((std::string_view(handler.first) == "procedure" && handler.second == 79));
+}
+
+TEST_CASE("procedure 79 requests a deferred return and its 0x467770 siblings exist")
+{
+	handler_fixture f;
+	CHECK_FALSE(f.vm.restart_requested);
+	f.procedure(79, {});
+	CHECK(f.vm.restart_requested);
+	CHECK(f.vm.stop_sounds_requested);
+	f.procedure(80, {});
+	f.procedure(81, {});
+	f.vm.cast_ignore_mask = 0x40;
+	f.procedure(82, {});
+	CHECK(f.vm.cast_ignore_mask == 0);
+}
+
 TEST_CASE("handler census: procedure 139 writes placed actor removal flags")
 {
 	handler_fixture f;

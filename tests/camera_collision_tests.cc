@@ -7,6 +7,39 @@
 
 using namespace openrayman;
 
+TEST_CASE("collision query views exclude scenery outside the collision sector list")
+{
+	collision_triangle ground, decorative, wall, water;
+	ground.corners = { vec3{ -5, -5, 0 }, vec3{ 5, -5, 0 }, vec3{ 0, 5, 0 } };
+	ground.normal = { 0, 0, 1 }; ground.sector = 10;
+	decorative = ground; decorative.sector = 20;
+	for(auto& v : decorative.corners) v[2] = 2;
+	wall.corners = { vec3{ 0, -5, -5 }, vec3{ 0, 5, -5 }, vec3{ 0, 0, 5 } };
+	wall.normal = { 1, 0, 0 }; wall.sector = 20;
+	water = decorative; water.flags = surface::water;
+	for(auto& v : water.corners) v[2] = 1;
+	game::world_collision world({ ground, decorative, wall, water });
+	const std::uint32_t own[] = { 10 }, neighbours[] = { 10, 20 };
+	auto scoped = world.in_sectors(own);
+	REQUIRE(world.floor_at(1, 0, 3, -1));
+	CHECK(world.floor_at(1, 0, 3, -1)->height == 2);
+	REQUIRE(scoped.floor_at(1, 0, 3, -1));
+	CHECK(scoped.floor_at(1, 0, 3, -1)->height == 0);
+	CHECK_FALSE(scoped.water_at(1, 0, 3, -1));
+	CHECK_FALSE(scoped.first_hit({ 1, 0, 1 }, { -1, 0, 1 }));
+	CHECK(scoped.wall_push(0.1f, 0, 0.5f, 1.5f, 0.5f) == std::array<float, 2>{0, 0});
+	CHECK_FALSE(scoped.sphere_touch({ 0.1f, 0, 1 }, 0.5f, 0));
+	auto joined = world.in_sectors(neighbours);
+	CHECK(joined.floor_at(1, 0, 3, -1)->height == 2);
+	CHECK(joined.water_at(1, 0, 3, -1).has_value());
+	CHECK(joined.first_hit({ 1, 0, 1 }, { -1, 0, 1 }).has_value());
+	CHECK(joined.wall_push(0.1f, 0, 0.5f, 1.5f, 0.5f)[0] > 0);
+	CHECK(joined.sphere_touch({ 0.1f, 0, 1 }, 0.5f, 0).has_value());
+	// Selecting a view must not change the original or an earlier view.
+	CHECK(scoped.floor_at(1, 0, 3, -1)->height == 0);
+	CHECK(world.floor_at(1, 0, 3, -1)->height == 2);
+}
+
 TEST_CASE("screen objects unproject the viewport centre in camera space")
 {
 	affine camera;

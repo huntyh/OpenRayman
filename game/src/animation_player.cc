@@ -455,6 +455,7 @@ namespace openrayman::game
 	void step(interpreter& vm, std::span<const std::uint32_t> super_objects, const step_error& on_error)
 	{
 		profiler::add(profiler::counter::ticks);
+		if(vm.restart_requested) vm.restart_level();
 		vm.next_tick();
 		live_memory& m = vm.memory();
 		// Cameras (actors with a camera object, actor +0x10) think after everyone else, so what

@@ -7,6 +7,8 @@
 #include <functional>
 #include <cstdint>
 #include <map>
+#include <memory>
+#include <span>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -21,7 +23,10 @@ namespace openrayman::game
 		world_collision() = default;
 		explicit world_collision(std::vector<collision_triangle> triangles, bool actor_geometry = false);
 
-		bool empty() const { return m_triangles.empty(); }
+		bool empty() const { return m_geometry->triangles.empty(); }
+		// Cheap query view: the executable gathers scenery only from the mover's
+		// sector and its collision neighbours (+0x30), 0x494610. Geometry stays shared.
+		world_collision in_sectors(std::span<const std::uint32_t> sectors) const;
 
 		// A surface the actor met: the floor it stands on (floor_at) or the water around it
 		// (water_at). height is the surface's Z at the point asked about.
@@ -82,9 +87,15 @@ namespace openrayman::game
 		const std::vector<std::uint32_t>& under(float x, float y) const;
 
 		static constexpr float cell = 4.0f;
-		std::vector<collision_triangle> m_triangles;
+		struct geometry
+		{
+			std::vector<collision_triangle> triangles;
+			std::map<std::pair<int, int>, std::vector<std::uint32_t>> cells;
+		};
+		std::shared_ptr<const geometry> m_geometry = std::make_shared<geometry>();
+		std::vector<std::uint32_t> m_sectors; // empty: unrestricted (tools and synthetic worlds)
+		bool accepts(const collision_triangle& triangle) const;
 		bool m_actor_geometry = false;
-		std::map<std::pair<int, int>, std::vector<std::uint32_t>> m_cells;
 	};
 
 	class interpreter;
@@ -124,5 +135,7 @@ namespace openrayman::game
 	// the scripts read back (dynamics base +0x3C) and the contact word they test (conditions 27..32).
 	// Procedure 80 (0x467770): reinstall the current state mechanics, even unchanged.
 	void reinstall_state_mechanics(live_memory& memory, std::uint32_t actor);
+	// 0x412F20 -> 0x435B70/0x435AC0: clear live motion at a world reset.
+	void reset_dynamics(live_memory& memory, std::uint32_t actor);
 	void move_actor(live_memory& memory, std::uint32_t super_object, std::uint32_t actor, double ms, const world_collision& world, interpreter* vm = nullptr);
 }
