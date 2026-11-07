@@ -39,6 +39,46 @@
 
 using namespace openrayman;
 
+TEST_CASE("real data: Jail_20 cell hides its white panel and selects blue beam meshes")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto game = game_data::locate(*dir);
+	REQUIRE(game);
+	auto files = load_level_files(*game, "Jail_20");
+	auto header = read_level_header(files);
+	scene tree(files.memory, header);
+	auto geometry = static_geometry(files.memory, tree);
+	for(std::size_t node : { 44u, 45u, 46u })
+	{
+		auto found = std::ranges::find(geometry, node, &placed_geometry::node);
+		REQUIRE(found != geometry.end());
+		CHECK(found->visible == (node == 45));
+	}
+	// The actual beams are node 9; its startup script replaces Fix's red beam list.
+	game::live_memory memory(files.memory);
+	const auto self = tree.node(9).at.address();
+	game::interpreter vm(memory, self);
+	game::register_handlers(vm);
+	vm.think(self);
+	const auto data = memory.u32(memory.u32(self + 4));
+	const auto* block = files.memory.find({ 0x04, 0x01 });
+	REQUIRE(block);
+	memory_location list{ block, 0x3EE0 };
+	CHECK(memory.u32(data + 0x10) == list.address());
+	auto objects = read_object_list(files.memory, list);
+	REQUIRE_FALSE(objects.empty());
+	REQUIRE(objects[0].physical_object);
+	auto mesh_at = physical_object_geometry(files.memory, *objects[0].physical_object);
+	REQUIRE(mesh_at);
+	auto mesh = read_geometric_object(files.memory, *mesh_at);
+	REQUIRE(mesh.elements.size() == 2);
+	REQUIRE(mesh.elements[0].material);
+	REQUIRE(mesh.elements[0].material->texture);
+	CHECK(mesh.elements[0].material->texture->name == "effets_speciaux\\faisc2_txy_adnzw.tga");
+	CHECK((mesh.elements[0].material->texture->flags & 0x20) != 0);
+}
+
 TEST_CASE("real data: Ubisoft arc saved vertex colours follow its physical object")
 {
 	auto dir = real_game_dir();

@@ -325,7 +325,9 @@ namespace openrayman
 			if(node.type == super_object_type::ipo && node.data)
 			{
 				if(auto at = ipo_geometry(memory, *node.data))
-					result.push_back({ index, world, read_geometric_object(memory, *at) });
+					// Exe 0x45C210 / 0x45C360: bit 2 suppresses this object's draw, but
+					// children are still visited. Keep its geometry for inspection and collision.
+					result.push_back({ index, world, read_geometric_object(memory, *at), !(node.draw_flags & 0x2) });
 			}
 			for(std::size_t child : node.children)
 				self(self, child, world);

@@ -30,6 +30,21 @@ run they're drawn without their chains. `ortool anim` prints what an animation s
 optional scale (3 floats), +0x04 physical object (the same structure static geometry uses, see
 [geometry.md](geometry.md)), then three small values.
 
+Procedure 94 selects an object list by writing 3D data +0x10 (exe 0x468730, case
+0x5E). Placed actors must follow this selection as generated actors already do.
+In Jail_20, node 9's startup rule (`0d/01 +0xEF60`) selects `04/01 +0x3EE0`, replacing
+the saved Fix list `04/00 +0x1578C`. Its first physical object (`05/02 +0x4D1B8`)
+shows mesh `05/01 +0x62D5D4`: crossed beam strips using `faisc2_txy_adnzw.tga`
+and `faisc_centre_txy_ad.tga`, both additive (texture flag 0x20). The saved list uses
+the red turret-beam textures; the selected list uses blue beams. These are animated
+actor meshes, not particle effects, and no blue vertex tint or texture animation is
+needed. The cell is in Jail_20; Jail_10 is the preceding exterior intro scene.
+OpenRayman preloads the placed actors' saved lists and script type-31 references,
+then updates their mesh/scale selection when +0x10 changes.
+Where this came from: own analysis of the exe, the node 9 script, pointer walks with
+`ortool peek` / `mesh`, and before/after screenshots (outside the repository), Codex,
+2026-11-07. No executable code copied.
+
 **Animation reference** (0x20 bytes): u16 frames, u8 speed, u8 channels, events pointer, 3 floats,
 morph data pointer, +0x18 u16 **animation index**, u8 number of events, u8 transition, u32 unknown.
 The frame and channel counts repeat the animation's own, which makes a good consistency check; the

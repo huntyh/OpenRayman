@@ -743,6 +743,9 @@ namespace openrayman
 		for(std::size_t g = 0; g < geometry.size(); g++)
 		{
 			const placed_geometry& placed = geometry[g];
+			// Exe 0x45C360: hidden IPOs still exist (e.g. Jail_20's white doorway quad).
+			if(!placed.visible)
+				continue;
 			if(placed.object.look != look_at::none)
 			{
 				cards.push_back(g);
