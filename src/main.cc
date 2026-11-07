@@ -904,7 +904,11 @@ namespace
 	{
 		if(a.vm->removed(super_object))
 			return true;
-		return a.live->contains(super_object + 0x30, 4) && (a.live->u32(super_object + 0x30) & 0x2);
+		if(a.live->contains(super_object + 0x30, 4) && (a.live->u32(super_object + 0x30) & 0x2))
+			return true;
+		// World actor visibility (0x45C450) requires standard +0x29 bit 4, maintained by
+		// the wake/sleep pass. Screen objects use the separate 0x45CC80/0x45CA30 pass.
+		return !a.vm->screen_objects().contains(super_object) && !a.vm->active(super_object);
 	}
 
 	void update_actors(app& a)

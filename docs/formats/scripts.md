@@ -187,6 +187,22 @@ active head; static actors join its tail. Successful wakes set +0x29 mask 0x04; 
 wakes also set custom bit 0x800 at +0x24. This is the out-of-view bit subsequently
 maintained by the visibility pass (0x45C450), not an unconditional brain-enable flag.
 
+**Drawing sleeping actors.** The world actor visibility routine 0x45C450 returns immediately
+unless standard +0x29 mask 0x04 is set. Thus actors in the inactive world are not drawn with
+their saved or stale poses. This does not mean all distant actors disappear: the current sector's
+wake list and the always-wake and detached lists above can keep actors active beyond Rayman's
+own sector. Screen objects have a separate pass, 0x45CC80 -> 0x45CA30, which does not apply
+that active-bit test. OpenRayman applies the world test to actor parts and shadows, leaving
+screen objects to their separate pass. Own analysis of the local GOG executable, 0x44B1B0,
+0x45C450, 0x40B4C0, 0x40B410 and 0x45CC80/0x45CA30 (2026-11-07).
+
+Learn_31 node 8 illustrates why: its saved Z axis is tilted; with Rayman at (-159, 381, 22),
+the node wakes and its script calls procedure 433 (0x46A890), making Z (0, 0, 1) by tick 2.
+With Rayman at the level start, it remains inactive with the saved tilt. For a nonzero horizontal
+direction, 0x46A890 and our handler agree on -Y forward and world Z up. The exe falls back to
+the old axes for a zero horizontal direction, while our handler currently leaves the transform
+alone in that case; this difference does not affect the observed call.
+
 Freshness includes first entry. Otherwise 0x40B290 stamps the old sector and its wake
 sectors at data +0x7E with the low byte of frame 0x5003E4; 0x40B620 compares that stamp.
 Sectors shared by the old and new wake regions are not fresh. 0x40B410 clears mask 0x04

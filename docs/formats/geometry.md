@@ -87,6 +87,12 @@ fully: flames, sparks, chain links, the rings and eyes of Lums (505 meshes). Eve
 flat along X, and no other value occurs. Drawn fixed, the cards vanish edge-on and overlap each
 other, which is how the missing mushrooms near the Learn_10 start were found.
 
+Own data inspection: Learn_31 node 8's dust body and two eyes are sprite elements in geometric
+objects 05/02 +0x70DB8, +0x70FB0 and +0x70AF4. All three have look-at mode 0; their sprite
+rendering is distinct from the geometric-object look-at modes above. Its saved transform has a
+tilted Z axis (approximately -0.291, 0.802, 0.522). Once it wakes near Rayman, its script sets
+the Z axis upright; the inactive actor is not drawn by the executable (see scripts.md).
+
 **Element, type 1 (indexed triangles)**:
 
 | Offset | Field |
