@@ -760,6 +760,11 @@ namespace
 			openrayman::game::step(*a.vm, a.thinkers, [](std::uint32_t self, const std::exception& e) {
 				SDL_Log("Script error, actor 0x%08X: %s", self, e.what());
 			});
+			if(std::exchange(a.vm->stop_sounds_requested, false))
+			{
+				if(a.sounds) a.sounds->stop_all();
+				a.sound_sources.clear();
+			}
 			// A level change waits for the frame to finish (change_requested_level).
 			if(a.vm->quit_requested || !a.vm->level_request.empty())
 			{
@@ -955,6 +960,10 @@ namespace
 					{
 						std::uint8_t rate = a.live->u8(data + openrayman::game::data_3d::playback_rate);
 						frame = (a.live->u32(data + 0xC0) + a.script_clock * 1000.0) * (rate ? rate : (speed ? speed : 30)) / 1000.0;
+						// 0x40E800 holds the last frame for the script pass, including
+						// self-looping states. Extrapolating here wrapped the fish early.
+						if(a.live->u8(data + openrayman::game::data_3d::reached_end))
+							frame = a.live->read<std::uint16_t>(data + openrayman::game::data_3d::frame);
 					}
 					// A state that moves on to another holds its last frame until the next tick switches.
 					std::uint16_t frames = a.bank.animations[*actor.animation].frames;

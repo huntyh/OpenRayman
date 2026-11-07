@@ -154,7 +154,7 @@ he swims (macro 64, behaviour 9 with var8 = 8, then behaviour 5). Our cast only 
 solid triangles (water and 0x8000 let it through): the cast also tries actors, but only those with
 standard game +0x29 bit 4, which our engine never sets.
 
-### Bast_20 piranhas: a script height test limited by sector activation
+### Bast_20 piranhas: falling through the pond, capture and return
 
 Bast_20 has **no** static collision triangles with water bit 0x4000 or hazard bit 0x0400; the
 physical-object triangle survey (including actor objects) has neither flag either. Its piranhas
@@ -163,7 +163,7 @@ States 0/1/2 use animations 384/385/386; state 1 is the capture animation. Their
 their initial Z minus 0.5, **-56.7498**, as the trigger height. Behaviour 1 compares only Rayman's
 position Z with that height. There is no XY box, collision report, water depth cast or story-bit
 test in this rule. On a match it moves the fish to Rayman's XY, starts state 1, places Rayman at
-Z **-57.8498**, sets his var8 to 9 and switches his normal behaviour to **9** and reflex to **0**.
+Z **-57.8498**, sets his var8 to 9 and switches his normal behaviour to **9** and reflex to **1**.
 Behaviour 2 subsequently sends damage event 50 (priority 10, amount 2) about every three seconds.
 The Rayman macro-36/64 route through water contact and behaviour 14 is separate from this capture.
 
@@ -186,6 +186,59 @@ and activation/contact traces to be checked with `ortool run`.
 Provenance: our own inspection of every placed Bast_20 actor brain, the installed level's triangle
 materials and sector lists, the local GOG executable at the addresses above, and headless runs
 plus the regression in `tests/level_tests.cc`. No executable code or game assets were copied.
+
+
+The visual pond plane is **IPO node 196**, under **sector node 195** (index 23).
+Its two unflagged collision triangles lie at **Z -55.8561**. The sector's box has
+zero height; its presence in a drawn-with list does not make it collision scenery
+for the surrounding pond. The movement gatherer `0x494610` visits the mover's
+current sector and its **+0x30 collision-neighbour list**, excluding virtual
+sectors (`0x44C2C0`). `0x4948A0` also skips branches with super-object flag 1.
+Searching all static triangles together incorrectly made this decorative plane
+solid: Rayman stopped above the fish's trigger. Static triangles now retain their
+owning sector, and movement queries use a shared-geometry view restricted to the
+current sector and its collision neighbours. No water flag or special Bast_20
+height override is needed: Rayman falls through the visual surface to the trigger.
+
+The capture's behaviour switch is normal **9**, reflex **1**, confirmed against
+`0x469580` and `0x469640`. Rayman runs the var8=9 arm of behaviour 9, installs the
+held state and enters behaviour **10**. The fish's first event **50** then takes
+him through reflex macro 16 to behaviour **14**. That behaviour reads the event
+and damage, subtracts **2 health** (12 -> 10 at the default start), and, with health
+remaining, selects mode **52**, requested state **Fix 04/00 +0x7338**, and behaviour
+**21**. This is the death/return sequence, not an indefinitely swimming mode.
+When its animation completes, macro 7 calls **procedure 79** if no return actor
+is supplied. The missing procedure left this sequence and the fish running forever.
+Procedure 79 now requests the between-frame return/reset (see scripts.md).
+
+The fish's startup `procedure_11(1)` enables transparency; `procedure_12(0)` hides
+it. It does **not** start state 1. Capture makes it opaque and selects state 1,
+animation **385**: seven animated fish roots with seven child channels. All three
+states' +0x20 after pointers really are self-links. Neither capture nor damage
+behaviour requests state 2/animation 386. The actor origin stays at the victim's
+XY and Z -57.2498 during capture; movement within the shoal is in the animation.
+The return restores its home and initial state. The renderer also honours the
+player's held last frame on self-loops (`0x40E800`); extrapolating beyond that frame
+used to wrap the displayed pose before the next animation pass.
+
+The regression next to the wake-region test exercises below-trigger placement,
+a fall from `(132.8,60,-51.7)`, and walking off the reported rim
+`(132.8,47.8,-51.7)` through ordinary game input. After a 120-tick startup, these
+capture at relative ticks **0 / 44 / 43** and request return at **99 / 144 / 144**.
+All enter the held and death routes, and the following frame restores the fish.
+The playing cases use Rayman's normal var8=0 hand-over before the fall, isolating
+this hazard from the separate level-arrival script.
+
+#### Where this came from
+
+Own reading of the installed Bast_20 scene, sector lists, brains, state/transition
+links and animation poses; the local GOG executable's procedure table at
+`0x4A43E0`, `0x467770`, `0x406490`, `0x404BF0`, `0x403150`, `0x406600`,
+`0x406620`, `0x469580`, `0x469640`, `0x494610`, `0x4948A0` and `0x44C2C0`.
+Checked with headless before/after traces and real-data game-step regressions.
+The earlier helper report was independently checked: its procedure 79 address,
+67/68 labels, startup-state interpretation and missing-after-link inference were
+incorrect. No decompiled code or game assets copied. Codex, 2026-11-07.
 
 The table above is the confirmed set; the other bits are still unknown.
 

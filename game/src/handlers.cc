@@ -4303,6 +4303,15 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 79 (0x467770 -> 0x406490 -> 0x404BF0): return without saved actor/camera
+		// transforms, by requesting game mode 8. The world reset runs between frames.
+		std::uint32_t restart_level(call& c)
+		{
+			c.vm.restart_requested = true;
+			c.vm.stop_sounds_requested = true;
+			return c.args;
+		}
+
 		// 157 (0x46AB20, case 0x9D -> 0x46B864): put the actor itself at a position: its transform,
 		// and the dynamics forgets its speed (0x432D30; the exe queues the move for the mechanics).
 		// Rayman's ledge grab (macro 3) puts him at the hanging point this way.
@@ -5659,6 +5668,7 @@ namespace openrayman::game
 		vm.on_procedure(157, place_self);
 		vm.on_procedure(136, turn_by);
 		vm.on_procedure(81, start_over);
+		vm.on_procedure(79, restart_level);
 		vm.on_procedure(82, clear_cast_ignore_mask);
 		vm.on_procedure(313, set_view_size_or_origin);
 		vm.on_procedure(315, set_view_size_or_origin);

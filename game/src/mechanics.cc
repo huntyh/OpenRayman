@@ -221,11 +221,13 @@ namespace openrayman::game
 	}
 
 	world_collision::world_collision(std::vector<collision_triangle> triangles, bool actor_geometry)
-		: m_triangles(std::move(triangles)), m_actor_geometry(actor_geometry)
+		: m_actor_geometry(actor_geometry)
 	{
-		for(std::uint32_t i = 0; i < m_triangles.size(); i++)
+		auto storage = std::make_shared<geometry>();
+		storage->triangles = std::move(triangles);
+		for(std::uint32_t i = 0; i < storage->triangles.size(); i++)
 		{
-			const collision_triangle& t = m_triangles[i];
+			const collision_triangle& t = storage->triangles[i];
 			float lo[2], hi[2];
 			for(int a = 0; a < 2; a++)
 			{
@@ -234,21 +236,34 @@ namespace openrayman::game
 			}
 			for(int x = int(std::floor(lo[0] / cell)); x <= int(std::floor(hi[0] / cell)); x++)
 				for(int y = int(std::floor(lo[1] / cell)); y <= int(std::floor(hi[1] / cell)); y++)
-					m_cells[{ x, y }].push_back(i);
+					storage->cells[{ x, y }].push_back(i);
 		}
+		m_geometry = std::move(storage);
+	}
+
+	world_collision world_collision::in_sectors(std::span<const std::uint32_t> sectors) const
+	{
+		auto view = *this;
+		view.m_sectors.assign(sectors.begin(), sectors.end());
+		return view;
+	}
+
+	bool world_collision::accepts(const collision_triangle& triangle) const
+	{
+		return !triangle.sector || m_sectors.empty() || std::ranges::find(m_sectors, triangle.sector) != m_sectors.end();
 	}
 
 	std::optional<world_collision::surface_hit> world_collision::floor_at(float x, float y, float top, float bottom) const
 	{
-		return highest_surface(m_triangles, under(x, y), x, y, top, bottom, [](const collision_triangle& t) {
-			return t.normal[2] >= floor_normal && !(t.flags & surface::no_contact); // walls, water, 0x8000
+		return highest_surface(m_geometry->triangles, under(x, y), x, y, top, bottom, [this](const collision_triangle& t) {
+			return accepts(t) && t.normal[2] >= floor_normal && !(t.flags & surface::no_contact); // walls, water, 0x8000
 		}, false, m_actor_geometry);
 	}
 
 	std::optional<world_collision::surface_hit> world_collision::ceiling_at(float x, float y, float top, float bottom) const
 	{
-		return highest_surface(m_triangles, under(x, y), x, y, top, bottom, [](const collision_triangle& t) {
-			return t.normal[2] <= -floor_normal && !(t.flags & surface::no_contact);
+		return highest_surface(m_geometry->triangles, under(x, y), x, y, top, bottom, [this](const collision_triangle& t) {
+			return accepts(t) && t.normal[2] <= -floor_normal && !(t.flags & surface::no_contact);
 		}, true);
 	}
 
@@ -264,7 +279,7 @@ namespace openrayman::game
 		const int y0 = int(std::floor(std::min(start[1], end[1]) / cell)), y1 = int(std::floor(std::max(start[1], end[1]) / cell));
 		for(int x = x0; x <= x1; x++)
 			for(int y = y0; y <= y1; y++)
-				if(auto found = m_cells.find({ x, y }); found != m_cells.end())
+				if(auto found = m_geometry->cells.find({ x, y }); found != m_geometry->cells.end())
 					tried.insert(tried.end(), found->second.begin(), found->second.end());
 		std::sort(tried.begin(), tried.end());
 		tried.erase(std::unique(tried.begin(), tried.end()), tried.end());
@@ -272,8 +287,8 @@ namespace openrayman::game
 		float nearest = 1.0f;
 		for(std::uint32_t i : tried)
 		{
-			const collision_triangle& t = m_triangles[i];
-			if((t.flags & surface::no_contact) || (any_of && !(t.flags & any_of)))
+			const collision_triangle& t = m_geometry->triangles[i];
+			if(!accepts(t) || (t.flags & surface::no_contact) || (any_of && !(t.flags & any_of)))
 				continue;
 			const vec e1 = { t.corners[1][0] - t.corners[0][0], t.corners[1][1] - t.corners[0][1], t.corners[1][2] - t.corners[0][2] };
 			const vec e2 = { t.corners[2][0] - t.corners[0][0], t.corners[2][1] - t.corners[0][1], t.corners[2][2] - t.corners[0][2] };
@@ -359,13 +374,13 @@ namespace openrayman::game
 		for(int x = int(std::floor((centre[0] - radius) / cell)); x <= int(std::floor((centre[0] + radius) / cell)); x++)
 			for(int y = int(std::floor((centre[1] - radius) / cell)); y <= int(std::floor((centre[1] + radius) / cell)); y++)
 			{
-				auto it = m_cells.find({ x, y });
-				if(it == m_cells.end())
+				auto it = m_geometry->cells.find({ x, y });
+				if(it == m_geometry->cells.end())
 					continue;
 				for(std::uint32_t i : it->second)
 				{
-					const collision_triangle& t = m_triangles[i];
-					if((t.flags & flags) != flags || (t.flags & surface::no_contact))
+					const collision_triangle& t = m_geometry->triangles[i];
+					if(!accepts(t) || (t.flags & flags) != flags || (t.flags & surface::no_contact))
 						continue;
 					vec q = closest_on_triangle(centre, t.corners[0], t.corners[1], t.corners[2]);
 					// Surfaces are one-sided: only a sphere on the front of one touches it, so a probe
@@ -385,7 +400,7 @@ namespace openrayman::game
 
 	std::array<float, 3> world_collision::slide_sphere(const std::array<float, 3>& start, const std::array<float, 3>& end, float radius) const
 	{
-		if(m_triangles.empty() || radius <= 0)
+		if(m_geometry->triangles.empty() || radius <= 0)
 			return end;
 		// The solid triangles near the whole movement.
 		std::vector<std::uint32_t> near;
@@ -398,11 +413,11 @@ namespace openrayman::game
 			}
 			for(int x = int(std::floor(lo[0] / cell)); x <= int(std::floor(hi[0] / cell)); x++)
 				for(int y = int(std::floor(lo[1] / cell)); y <= int(std::floor(hi[1] / cell)); y++)
-					if(auto it = m_cells.find({ x, y }); it != m_cells.end())
+					if(auto it = m_geometry->cells.find({ x, y }); it != m_geometry->cells.end())
 						near.insert(near.end(), it->second.begin(), it->second.end());
 			std::ranges::sort(near);
 			near.erase(std::unique(near.begin(), near.end()), near.end());
-			std::erase_if(near, [&](std::uint32_t i) { return (m_triangles[i].flags & surface::no_contact) != 0; });
+			std::erase_if(near, [&](std::uint32_t i) { return !accepts(m_geometry->triangles[i]) || (m_geometry->triangles[i].flags & surface::no_contact) != 0; });
 		}
 		if(near.empty())
 			return end;
@@ -411,7 +426,7 @@ namespace openrayman::game
 			float deepest = 0;
 			for(std::uint32_t i : near)
 			{
-				const collision_triangle& t = m_triangles[i];
+				const collision_triangle& t = m_geometry->triangles[i];
 				vec q = closest_on_triangle(p, t.corners[0], t.corners[1], t.corners[2]);
 				vec d = vsub(p, q);
 				float l = vlen(d);
@@ -498,16 +513,16 @@ namespace openrayman::game
 	{
 		// Water triangles are flat surfaces (0x4000); a steep one is a waterfall's wall, not a pond
 		// (0x437E60 compares the actor's Z with the water entry's own height, 0x4B72D4).
-		return highest_surface(m_triangles, under(x, y), x, y, top, bottom, [](const collision_triangle& t) {
-			return (t.flags & surface::water) && std::abs(t.normal[2]) >= floor_normal;
+		return highest_surface(m_geometry->triangles, under(x, y), x, y, top, bottom, [this](const collision_triangle& t) {
+			return accepts(t) && (t.flags & surface::water) && std::abs(t.normal[2]) >= floor_normal;
 		});
 	}
 
 	const std::vector<std::uint32_t>& world_collision::under(float x, float y) const
 	{
 		static const std::vector<std::uint32_t> none;
-		auto found = m_cells.find({ int(std::floor(x / cell)), int(std::floor(y / cell)) });
-		return found == m_cells.end() ? none : found->second;
+		auto found = m_geometry->cells.find({ int(std::floor(x / cell)), int(std::floor(y / cell)) });
+		return found == m_geometry->cells.end() ? none : found->second;
 	}
 
 	std::array<float, 2> world_collision::wall_push(float x, float y, float bottom, float top, float radius) const
@@ -519,8 +534,8 @@ namespace openrayman::game
 		for(int cx = int(std::floor((x - radius) / cell)); cx <= int(std::floor((x + radius) / cell)); cx++)
 			for(int cy = int(std::floor((y - radius) / cell)); cy <= int(std::floor((y + radius) / cell)); cy++)
 			{
-				auto found = m_cells.find({ cx, cy });
-				if(found != m_cells.end())
+				auto found = m_geometry->cells.find({ cx, cy });
+				if(found != m_geometry->cells.end())
 					walls.insert(walls.end(), found->second.begin(), found->second.end());
 			}
 		std::sort(walls.begin(), walls.end());
@@ -532,8 +547,8 @@ namespace openrayman::game
 			bool pushed = false;
 			for(std::uint32_t i : walls)
 			{
-				const collision_triangle& t = m_triangles[i];
-				if(std::abs(t.normal[2]) >= floor_normal || (t.flags & surface::no_contact))
+				const collision_triangle& t = m_geometry->triangles[i];
+				if(!accepts(t) || std::abs(t.normal[2]) >= floor_normal || (t.flags & surface::no_contact))
 					continue; // floors, ceilings, and water (actors swim through it) or surfaces without contact
 				std::vector<vec> slice = height_slice(t, bottom, top);
 				if(slice.size() < 2)
@@ -820,6 +835,27 @@ namespace openrayman::game
 		return out;
 	}
 
+	void reset_dynamics(live_memory& m, std::uint32_t actor)
+	{
+		if(!actor || !m.contains(actor, 12)) return;
+		auto dynamics = m.u32(actor + 8);
+		auto b = dynamics && m.contains(dynamics, 4) ? m.u32(dynamics) : 0;
+		if(!b || !m.contains(b, 0x154)) return;
+		const auto old = m.u32(b + base::end_flags);
+		const auto report = m.u32(b + base::contacts);
+		const std::uint32_t bytes = old & 4 ? 0x338 : old & 2 ? 0x1DC : 0x154;
+		if(!m.contains(b, bytes)) return;
+		// The executable retains the block kind and contact-report allocation; speeds,
+		// imposed motion and state-specific flags must not carry into the respawn.
+		for(std::uint32_t i = 0; i < bytes; i += 4) m.write<std::uint32_t>(b + i, 0);
+		m.write<std::uint32_t>(b + base::end_flags, (old & 0x4400F) | 0x80);
+		m.write<std::uint8_t>(b + 0x14C, 1);
+		if(old & 0x4000) m.write<std::uint32_t>(b + base::contacts, report);
+		if(old & 2) m.write<float>(b + 0x164, 1);
+		if(report && m.contains(report, contacts_size))
+			for(std::uint32_t i = 0; i < contacts_size; i += 4) m.write<std::uint32_t>(report + i, 0);
+	}
+
 	void reinstall_state_mechanics(live_memory& m, std::uint32_t actor)
 	{
 		if(!actor || !m.contains(actor, 12)) return;
@@ -830,8 +866,9 @@ namespace openrayman::game
 		if(b && mech && m.contains(b, base::size) && m.contains(mech, 0x3C)) install_mechanics(m, b, mech);
 	}
 
-	void move_actor(live_memory& m, std::uint32_t super_object, std::uint32_t actor, double ms, const world_collision& world, interpreter* vm)
+	void move_actor(live_memory& m, std::uint32_t super_object, std::uint32_t actor, double ms, const world_collision& all_sectors, interpreter* vm)
 	{
+		const auto world = vm ? all_sectors.in_sectors(vm->collision_sectors(super_object)) : all_sectors;
 		std::uint32_t dynamics = m.u32(actor + 8);
 		std::uint32_t b = dynamics && m.contains(dynamics, 4) ? m.u32(dynamics) : 0;
 		if(!b || !m.contains(b, base::size) || ms <= 0)

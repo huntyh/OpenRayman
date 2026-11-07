@@ -131,6 +131,8 @@ namespace openrayman
 			// from them (0x494610 via 0x44C2C0), e.g. the Learn_10 waterfall.
 			if(node.type == super_object_type::sector && node.data && reader_at(*node.data + 0x7C, 1).u8() != 0)
 				return;
+			// 0x4948A0 excludes a branch with super-object flag 1 from static contacts.
+			if(node.draw_flags & 1) return;
 			affine world = node.matrix ? parent * affine::from(read_transform(memory, *node.matrix)) : parent;
 			if(node.type == super_object_type::ipo && node.data)
 			{
@@ -142,6 +144,13 @@ namespace openrayman
 				self(self, child, world);
 		};
 		visit(visit, tree.father_sector(), affine{});
+		for(auto& triangle : result)
+			for(auto owner = tree.node(triangle.node).parent; owner; owner = tree.node(*owner).parent)
+				if(tree.node(*owner).type == super_object_type::sector)
+				{
+					triangle.sector = tree.node(*owner).at.address();
+					break;
+				}
 		return result;
 	}
 }

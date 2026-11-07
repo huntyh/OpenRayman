@@ -192,6 +192,7 @@ namespace openrayman::game
 		// without any.
 		std::int32_t ground_sound_type(std::uint32_t super_object) const;
 		std::vector<sound_request> take_sounds() { return std::exchange(m_sounds, {}); }
+		bool stop_sounds_requested = false; // 0x406490: stop the playback group on return
 		// The on-screen text the scripts fill (procedures 505..507), still to be drawn.
 		game::screen_text& screen_text() { return m_screen_text; }
 		const game::screen_text& screen_text() const { return m_screen_text; }
@@ -253,6 +254,7 @@ namespace openrayman::game
 		// Spatial query used by script handlers. The activation pass separately retains ordered
 		// sector membership and follows live positions with sector neighbours and priorities.
 		std::uint32_t sector_at(const std::array<float, 3>& position) const;
+		std::vector<std::uint32_t> collision_sectors(std::uint32_t self) const;
 		// Procedures 76/77's counted loops (the exe keeps one stack for all scripts, 0x4E9420..).
 		struct loop_frame { std::int32_t count; std::uint32_t body; };
 		std::vector<loop_frame> loops;
@@ -263,6 +265,9 @@ namespace openrayman::game
 		// Procedures 86/87 (0x4054D0): the level the scripts asked to go to, for the engine to load
 		// after the tick; `level_request_flag` is true for 86 (what the exe does with it isn't read).
 		bool quit_requested = false; // procedure 101: host closes after the current tick
+		bool restart_requested = false; // procedure 79, 0x406490: game mode 8
+		// Consume the return request between frames (0x403150 -> 0x406600, mode 4).
+		void restart_level();
 		std::string level_request;
 		bool level_request_flag = false;
 		// Function 252: the language index (the low byte of 0x500FA8, from ubi.ini at start-up).
