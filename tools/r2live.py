@@ -292,6 +292,8 @@ def snapshot(m, variables, contacts=False, zones=False, camera=False, generated=
 		s["imposed"] = fmt(m.f32s(base + 0x24, 3))
 		s["proposed"] = fmt(m.f32s(base + 0x30, 3))
 		s["speed"] = fmt(m.f32s(base + 0x3C, 3))
+		# The gravity in use (+0x10; Rayman's slide sets it every tick with procedure 263).
+		s["gravity"] = fmt(m.f32s(base + 0x10, 1))
 		s["inertia"] = fmt(m.f32s(base + 0x154, 3))
 		s["limit"] = fmt(m.f32s(base + 0x178, 3))
 		# The second inertia (procedure 292's factors, used with end flag 0x20000) and the contact coefficient.
