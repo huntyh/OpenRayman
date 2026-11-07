@@ -2543,6 +2543,80 @@ TEST_CASE("real data: sector wake delays the kids and story removal prevents the
 	}
 }
 
+TEST_CASE("real data: Bast_20 piranhas only catch Rayman in their wake region")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto data = game_data::locate(*dir);
+	REQUIRE(data);
+	auto files = load_level_files(*data, "Bast_20");
+	auto header = read_level_header(files);
+	scene tree(files.memory, header);
+	auto bank = read_animation_bank(files);
+	game::live_memory m(files.memory);
+	auto rayman = header.placements.at(0).super_object.address();
+	game::interpreter vm(m, rayman);
+	game::register_handlers(vm);
+	game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+	auto triangles = static_collision(files.memory, tree);
+	// This level's piranha script supplies the hazard, not a water/kill triangle.
+	CHECK(std::ranges::none_of(triangles, [](const auto& t) { return (t.flags & 0x4400) != 0; }));
+	vm.set_world(game::world_collision(std::move(triangles)));
+	vm.set_animations(&bank);
+	game::install_level_events(m, bank);
+	std::vector<std::uint32_t> actors;
+	for(const auto& node : tree.nodes())
+		if(node.type == super_object_type::actor) actors.push_back(node.at.address());
+	vm.set_actors(actors);
+	for(const auto& e : read_actors(files.memory, tree, bank).actors)
+		game::set_global_placement(m, tree.node(e.node).at.address(), e.world);
+	for(auto bit : game::revisit_story_bits) REQUIRE(vm.set_story_bit(actors, bit));
+	bool pond = false, unfiltered = false;
+	SUBCASE("falling near the reported camera does not wake the distant piranhas") {}
+	SUBCASE("the actual pond still catches Rayman") { pond = true; }
+	SUBCASE("running the sleeping script reproduces the remote mid-air capture") { unfiltered = true; }
+	game::write_transform(m, rayman, { pond ? 118.0f : 13.0f, 67, -57 }, { 0, 1, 0, -1, 0, 0, 0, 0, 1 });
+	auto fish = tree.node(24).at.address(), fish_actor = vm.actor_of(fish);
+	auto fish_standard = m.u32(fish_actor + 4), fish_data = m.u32(fish_actor);
+	auto fish_state = m.u32(fish_data + 4);
+	auto ray_actor = vm.actor_of(rayman);
+	auto contacts = m.u32(m.u32(m.u32(ray_actor + 8)) + 0x150);
+	REQUIRE(contacts);
+	game::input keys(m, read_input_actions(files));
+	bool caught = false;
+	for(int tick = 0; tick < 90; ++tick)
+	{
+		keys.step();
+		game::step(vm, actors);
+		if(unfiltered)
+		{
+			// Negative control: the pre-activation scheduler ran every placed actor.
+			// Node 24 tests only Z; 0x40B620/0x40B4C0 must supply its spatial gate.
+			vm.think(fish);
+		}
+		CHECK((m.u32(contacts + 4) & 0x40) == 0);
+		if(m.u32(fish_data + 4) != fish_state)
+		{
+			caught = true;
+			CHECK(vm.get_variable(rayman, 8).as_int() == 9);
+			CHECK(game::global_placement(m, rayman)->m[2][3] == doctest::Approx(-57.8498f));
+			break;
+		}
+		if(!pond && !unfiltered)
+		{
+			CHECK_FALSE(vm.active(fish));
+			CHECK(m.u32(fish_standard + 0x18) == 0);
+		}
+	}
+	CHECK(caught == (pond || unfiltered));
+	if(!pond && !unfiltered)
+	{
+		CHECK(vm.get_variable(rayman, 9).as_int() != 28); // the scripted capture mode
+		CHECK(game::global_placement(m, rayman)->m[2][3] < -61);
+	}
+}
+
 TEST_CASE("handler census: procedure 139 writes placed actor removal flags")
 {
 	handler_fixture f;

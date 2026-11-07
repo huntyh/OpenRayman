@@ -154,6 +154,39 @@ he swims (macro 64, behaviour 9 with var8 = 8, then behaviour 5). Our cast only 
 solid triangles (water and 0x8000 let it through): the cast also tries actors, but only those with
 standard game +0x29 bit 4, which our engine never sets.
 
+### Bast_20 piranhas: a script height test limited by sector activation
+
+Bast_20 has **no** static collision triangles with water bit 0x4000 or hazard bit 0x0400; the
+physical-object triangle survey (including actor objects) has neither flag either. Its piranhas
+are placed actor **24**, model `0d/01 +0x19CDC`, initially at `(117.8558,65.6949,-56.2498)`.
+States 0/1/2 use animations 384/385/386; state 1 is the capture animation. Their startup saves
+their initial Z minus 0.5, **-56.7498**, as the trigger height. Behaviour 1 compares only Rayman's
+position Z with that height. There is no XY box, collision report, water depth cast or story-bit
+test in this rule. On a match it moves the fish to Rayman's XY, starts state 1, places Rayman at
+Z **-57.8498**, sets his var8 to 9 and switches his normal behaviour to **9** and reflex to **0**.
+Behaviour 2 subsequently sends damage event 50 (priority 10, amount 2) about every three seconds.
+The Rayman macro-36/64 route through water contact and behaviour 14 is separate from this capture.
+
+The missing horizontal restriction comes from the actor frame's **sector wake gate**, not from
+collision geometry. Node 24 belongs to sector node **163** (sector index 13, the pond at roughly
+`(109,55,-61)..(152,80,9)`). The reported camera `(8.2,72.9,-57.7)` is in sector node **199**
+(index 25), whose wake region does not include the fish. The executable wakes only the actor
+lists of Rayman's current sector and its +0x3C list (0x40B7B0 -> 0x40B620 -> 0x40B4C0);
+the ordinary frame passes require standard-game +0x29 mask **4** (0x40AA10, 0x40A7C0).
+Running an enabled brain while it is spatially asleep makes this Z-only hazard catch Rayman
+anywhere below the pond's height, including while falling in the distant entrance chamber.
+
+The general activation rule is already implemented in commit `fa7e7c3`. A real-data regression
+checks a fall at `(13,67,-57)` (no capture, landing near Z -61.529), a capture at `(118,67,-57)`
+in the actual pond, and a negative control which directly runs the sleeping fish script at the
+entrance and reproduces the remote capture. All three have **no water-contact bit**. Existing
+`ORTOOL_PLACE=x,y,z,yaw@tick`, `ORTOOL_CONTACTS=1` and `ORTOOL_WAKE=1` allow the same locations
+and activation/contact traces to be checked with `ortool run`.
+
+Provenance: our own inspection of every placed Bast_20 actor brain, the installed level's triangle
+materials and sector lists, the local GOG executable at the addresses above, and headless runs
+plus the regression in `tests/level_tests.cc`. No executable code or game assets were copied.
+
 The table above is the confirmed set; the other bits are still unknown.
 
 ## Ceilings
