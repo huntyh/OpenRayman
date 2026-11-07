@@ -26,6 +26,7 @@
 #include <openrayman/game/live_memory.h>
 #include <openrayman/game/profiler.h>
 #include <openrayman/game/sound_slots.h>
+#include <openrayman/game/sound_placement.h>
 #include <openrayman/animation.h>
 #include <openrayman/brain.h>
 #include <openrayman/cnt_archive.h>
@@ -44,6 +45,7 @@
 #include <bit>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <format>
@@ -180,6 +182,7 @@ namespace
 		actor_set actors;
 		double animation_time = 0;        // seconds; --time <seconds> starts there
 		std::optional<double> start_time;
+		std::optional<std::array<float, 4>> start_place; // --place x,y,z,yaw: reproducible scene captures
 		bool animating = true;            // F3 pauses
 		// The game's scripts, run on a live copy of the level's memory at the game's 60 ticks per
 		// second. G switches them off (actors then keep their saved states).
@@ -617,9 +620,8 @@ namespace
 		}
 	}
 
-	// How loud a sound from an actor is where the camera listens, and from which side. A stand-in
-	// until the sound DLL's own falloff is read: full within 8 units, silent at 30 (Snd_Cpa.ini's
-	// SXD_DIST_SATUR=8 and SXD_DIST_FADE=30, by their names), panned by the camera's right.
+	// 0x459D30 supplies the distance curve. Panning and the camera listener remain
+	// approximations of the sound DLL's listener/position callbacks.
 	std::pair<float, float> sound_placement(const app& a, std::uint32_t source)
 	{
 		auto placed = a.live ? openrayman::game::global_placement(*a.live, source) : std::nullopt;
@@ -627,7 +629,7 @@ namespace
 			return { 1.0f, 0.0f };
 		glm::vec3 to = glm::vec3(placed->m[0][3], placed->m[1][3], placed->m[2][3]) - a.camera.position;
 		float distance = glm::length(to);
-		float gain = std::clamp((30.0f - distance) / (30.0f - 8.0f), 0.0f, 1.0f);
+		float gain = game::sound_distance_volume(distance) / 127.0f;
 		glm::vec3 right = glm::cross(a.camera.forward(), glm::vec3(0, 0, 1));
 		float pan = distance > 1e-3f && glm::length(right) > 1e-4f ? 0.8f * glm::dot(to / distance, glm::normalize(right)) : 0.0f;
 		return { gain, pan };
@@ -1469,6 +1471,12 @@ namespace
 				a.actor_note = "playing: keys go to the game, Tab to fly";
 			}
 			a.chose_view = true;
+			if(a.start_place && a.vm)
+			{
+				const auto& p = *a.start_place;
+				float angle = p[3] * 0.01745329252f, c = std::cos(angle), s = std::sin(angle);
+				game::write_transform(*a.live, a.vm->main_actor(), {p[0], p[1], p[2]}, {-s,c,0,-c,-s,0,0,0,1});
+			}
 			// --time: let the scripts run up to then, so screenshots show what they picked.
 			a.silent_run = true;
 			run_scripts(a, a.animation_time);
@@ -1805,7 +1813,15 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 	}
 
 	auto a = std::make_unique<app>();
-	a->window = SDL_CreateWindow("OpenRayman", 1280, 720, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+	int window_width = 1280, window_height = 720;
+	for(int n = 1; n + 1 < argc; ++n)
+		if(std::string_view(argv[n]) == "--window-size")
+		{
+			int w = 0, h = 0;
+			if(std::sscanf(argv[n + 1], "%dx%d", &w, &h) == 2 && w > 0 && h > 0)
+			{ window_width = w; window_height = h; }
+		}
+	a->window = SDL_CreateWindow("OpenRayman", window_width, window_height, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
 	if(!a->window || !create_context(*a))
 	{
 		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "OpenRayman",
@@ -1935,6 +1951,12 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 		}
 		else if(arg == "--time") // seconds into the actors' animations, for screenshots
 			a->start_time = std::strtod(argv[n + 1], nullptr);
+		else if(arg == "--place")
+		{
+			std::array<float, 4> p{};
+			if(std::sscanf(argv[n + 1], "%f,%f,%f,%f", &p[0], &p[1], &p[2], &p[3]) == 4)
+				a->start_place = p;
+		}
 		else if(arg == "--lighting") // on (default) or off: the game's lights and fog, or a plain light; L in the viewer
 			a->level->set_lighting(std::string(argv[n + 1]) != "off");
 		else if(arg == "--luminosity") // the game's luminosity setting (0.5 neutral); F6/F7 in the viewer

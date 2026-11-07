@@ -1,4 +1,5 @@
 #include <openrayman/game/screen_text.h>
+#include <openrayman/game/sound_placement.h>
 
 #include <doctest/doctest.h>
 
@@ -108,6 +109,24 @@ TEST_CASE("screen slot size and punctuation follow the executable")
 	CHECK(screen_slot_punctuation_offset(',', m.height) == 20);
 	CHECK(screen_slot_punctuation_offset(39, m.height) == -10);
 	CHECK(screen_slot_punctuation_offset('A', m.height) == 0);
+	// User's 2026-11-07 live recording: HUD size 18, intro counter size 20.
+	auto hud = screen_slot_metrics(18);
+	CHECK(hud.advance == 38); CHECK(hud.height == 45); CHECK(hud.line_height == 58);
+	auto intro = screen_slot_metrics(20);
+	CHECK(intro.advance == 42); CHECK(intro.height == 50); CHECK(intro.line_height == 66);
+}
+
+TEST_CASE("sound distance fade holds its endpoint instead of muting the intro counter")
+{
+	using openrayman::game::sound_distance_volume;
+	CHECK(sound_distance_volume(0) == 127);
+	CHECK(sound_distance_volume(8) == 127);
+	CHECK(sound_distance_volume(16) == 108);
+	CHECK(sound_distance_volume(30) == 77);
+	CHECK(sound_distance_volume(64) == 77);
+	CHECK(sound_distance_volume(1000) == 77);
+	CHECK(sound_distance_volume(64, 8, 64) == 0);
+	CHECK(sound_distance_volume(1000, 8, 4) == 0);
 }
 
 TEST_CASE("screen slot alpha ramps move 200 a second, truncated like the executable")

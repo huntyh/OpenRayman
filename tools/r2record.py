@@ -411,7 +411,12 @@ class recorder:
 		camera = m.u32(0x50054C)
 		context = m.u32(0x5036AC)
 		viewport = m.u32(context) if context else 0
-		emit("camera", f"pointer 0x{camera:08X} angles {floats(camera + 0x64, 2) if camera else 'unreadable'} focal,projection {floats(camera + 0x74, 3) if camera else 'unreadable'} centre {floats(camera + 0x84, 2) if camera else 'unreadable'} viewport height,width {m.u32(0x5004DC)},{m.u32(0x5004E0)} renderer viewport 0x{viewport:08X} scales {floats(viewport + 8, 2) if viewport else 'unreadable'} language {m.u8(LANGUAGE)}")
+		# R[0] is the currently drawn viewport, whose +8/+C are integer dimensions.
+		# 0x420450 selects the rendering device by the high bits of its display ID;
+		# 0x420520 initializes that device's floating-point scales at +8/+C.
+		display = m.u32(0x500454) & 0xffff
+		device = m.u32(0x506B20 + (display >> 4) * 4) if display >> 4 < 16 else 0
+		emit("camera", f"pointer 0x{camera:08X} angles {floats(camera + 0x64, 2) if camera else 'unreadable'} focal,projection {floats(camera + 0x74, 3) if camera else 'unreadable'} centre {floats(camera + 0x84, 2) if camera else 'unreadable'} viewport height,width {m.u32(0x5004DC)},{m.u32(0x5004E0)} renderer viewport 0x{viewport:08X} device 0x{device:08X} scales {floats(device + 8, 2) if device else 'unreadable'} language {m.u8(LANGUAGE)}")
 		actor_keys = set()
 		for i, so in active:
 			key = f"text actor {i}"
@@ -420,9 +425,11 @@ class recorder:
 			children, seen = [], set()
 			while child and child not in seen and len(seen) < 1024:
 				seen.add(child)
-				children.append(f"0x{child:08X} physical 0x{m.u32(child + 4):08X} transform {raw(child + 0x20, 0x58)}")
+				transform = m.u32(child + 0x20)
+				children.append(f"0x{child:08X} physical 0x{m.u32(child + 4):08X} transform@0x{transform:08X} {raw(transform, 0x58)}")
 				child = m.u32(child + 0x14)
-			emit(key, f"S 0x{so:08X} transform {raw(so + 0x20, 0x58)} flags {raw(so + 0x2C, 4)} alpha {raw(so + 0x38, 4)} children [" + "; ".join(children) + "]" + (" (truncated or cycle)" if child else ""))
+			transform = m.u32(so + 0x20)
+			emit(key, f"S 0x{so:08X} transform@0x{transform:08X} {raw(transform, 0x58)} flags {raw(so + 0x2C, 4)} alpha {raw(so + 0x38, 4)} children [" + "; ".join(children) + "]" + (" (truncated or cycle)" if child else ""))
 		for key in list(self.text_draw_last):
 			if key.startswith("text actor ") and key not in actor_keys:
 				self.say("text_draw", f"{key}: gone")

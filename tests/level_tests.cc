@@ -2095,6 +2095,44 @@ TEST_CASE("dialog screen projection uses the fixed camera and reciprocal depth")
 	CHECK(centre.unit_x > p.unit_x);
 }
 
+TEST_CASE("real data: intro counter increments request the click and keep the recorded slot layout")
+{
+	auto dir = real_game_dir(); if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Jail_10");
+	auto header = read_level_header(files);
+	game::live_memory m(files.memory);
+	const auto rayman = header.placements.at(0).super_object.address();
+	game::interpreter vm(m, rayman);
+	game::register_handlers(vm); game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+	game::apply_sound_slots(m, *data, "Jail_10");
+	const auto* templates = files.memory.find({4, 1}); REQUIRE(templates);
+	const auto counter = vm.generated().create(m, templates->base + 0x680, rayman, {0,0,0}, vm.clock());
+	REQUIRE(counter);
+	const int values[] = {700,620,20,2,3,18900,0,0,255,0};
+	for(unsigned i = 0; i < 10; ++i) vm.set_variable(counter, i, game::value::integer(values[i]));
+	const auto standard = m.u32(vm.actor_of(counter) + 4);
+	m.write<std::uint32_t>(standard + 0x24, m.u32(standard + 0x24) | (1u << 27));
+	bool clicked = false;
+	for(int tick = 0; tick < 10; ++tick)
+	{
+		vm.next_tick(); vm.think(counter);
+		for(const auto& sound : vm.take_sounds())
+		{
+			CHECK(sound.event == 0x008A0000);
+			CHECK(sound.source == counter);
+			CHECK(sound.procedure == 115);
+			clicked = true;
+		}
+	}
+	CHECK(clicked);
+	CHECK(vm.get_variable(counter, 5).as_int() > 18900);
+	const auto& slot = vm.screen_text().at(26);
+	CHECK(slot.used); CHECK(slot.x == 700); CHECK(slot.y == 620); CHECK(slot.size == 20);
+	CHECK(slot.flags == 0); CHECK(slot.colour == 0);
+}
+
 TEST_CASE("real data: dialog template glyph objects")
 {
 	auto dir = real_game_dir();
@@ -2139,6 +2177,27 @@ TEST_CASE("real data: dialog template glyph objects")
 	auto colour_data = files.memory.follow(*colours + 4);
 	REQUIRE(colour_data);
 	CHECK(files.memory.read_u32(*colour_data) == 0x00BB00FF);
+	// The live font pointers at 0x4A727C / entries 33,233,433,633 (2026-11-07)
+	// select these same objects. All four palettes share a material, so a frame
+	// sample naming that material does not identify the palette being drawn.
+	const saved_vertex_colour first_colours[] = {
+		{125,94,201,255}, {96,5,33,255}, {255,187,60,255}, {125,94,201,255}
+	};
+	for(unsigned bank = 0; bank < 4; ++bank)
+	{
+		const auto& physical = objects[33 + bank * 200].physical_object;
+		REQUIRE(physical);
+		auto sets = physical_object_colour_sets(files.memory, *physical);
+		REQUIRE(sets.size() == 1); REQUIRE(sets[0].size() == 1); REQUIRE(sets[0][0].size() == 4);
+		CHECK(sets[0][0][0] == first_colours[bank]);
+		auto at = physical_object_geometry(files.memory, *physical); REQUIRE(at);
+		auto mesh = read_geometric_object(files.memory, *at);
+		REQUIRE(mesh.elements.size() == 1); REQUIRE(mesh.elements[0].material);
+		const auto& material = *mesh.elements[0].material;
+		CHECK(material.at == glyph.elements[0].material->at);
+		CHECK((material.ambient == rgba{0,0,0,1}));
+		CHECK((material.diffuse == rgba{1,1,1,1}));
+	}
 }
 
 TEST_CASE("real data: input actions follow the keys")
