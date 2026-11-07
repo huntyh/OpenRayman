@@ -129,6 +129,7 @@ namespace openrayman
 		std::size_t node = 0; // the super object, in the scene
 		affine world;
 		geometric_object object;
+		bool visible = true; // super object +0x30 bit 0x2 suppresses this object's draw
 	};
 
 	// All static geometry: every instantiated physical object in the sector tree, with the

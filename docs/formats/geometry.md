@@ -46,6 +46,15 @@ stream).
 
 **IPO data**: +0x00 physical object.
 
+**Hidden scenery**: super object +0x30 bit 0x2 suppresses drawing that object;
+its children are still visited. This applies to IPOs as well as actors. Geometry remains
+available for collision and inspection. Jail_20 node 44 (`05/02 +0xE2C`, physical object
+`+0xFB74`, mesh `+0xFBB0`) is a hidden, untextured white quad across the cell doorway;
+drawing it covers the real laser actor. Node 46 is hidden too. OpenRayman preserves the
+meshes but skips their rendering. Where this came from: own analysis of Rayman2.exe
+0x45C210, 0x45C360 and 0x45CA30, checked with `ortool scene`, `mesh`, `peek` and
+before/after renders, Codex, 2026-11-07. No executable code copied.
+
 **Physical object**: +0x00 visual set, +0x04 collision set (see [collision.md](collision.md)).
 
 **Visual set**: +0x00 u32 type (0 = levels of detail), +0x04 u32 number of levels, +0x08 their

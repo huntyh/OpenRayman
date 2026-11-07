@@ -223,6 +223,8 @@ namespace
 			std::map<std::uint32_t, std::pair<std::vector<std::optional<std::size_t>>, std::vector<std::optional<vec3>>>> lists;
 		};
 		std::vector<generated_look> generated_looks;
+		decltype(generated_look::lists) scene_object_lists;
+		std::vector<std::uint32_t> selected_object_lists;
 		std::vector<std::optional<std::size_t>> generated_entry; // per pool slot
 		bool scripts = true;
 		double script_clock = 0;                 // seconds not yet run as ticks
@@ -913,10 +915,24 @@ namespace
 		std::vector<std::uint8_t> part_colour_set;
 		for(std::size_t i = 0; i < a.actors.actors.size(); i++)
 		{
-			const actor_set::entry& actor = a.actors.actors[i];
+			actor_set::entry& actor = a.actors.actors[i];
 			// Taken out of the world by its scripts.
 			if(a.vm && a.scripts && i < a.super_object_at.size() && hidden(a, a.super_object_at[i]))
 				continue;
+			if(a.vm && a.scripts && i < a.selected_object_lists.size() && i < a.actor_at.size())
+			{
+				// Procedure 94 (exe 0x468730, case 0x5E) selects the list at 3D data +0x10.
+				// Jail_20 node 9 replaces the saved red laser meshes with blue ones at startup.
+				std::uint32_t data = a.live->u32(a.actor_at[i]);
+				std::uint32_t list = data ? a.live->u32(data + 0x10) : 0;
+				if(list != a.selected_object_lists[i])
+					if(auto found = a.scene_object_lists.find(list); found != a.scene_object_lists.end())
+					{
+						actor.meshes = found->second.first;
+						actor.scales = found->second.second;
+						a.selected_object_lists[i] = list;
+					}
+			}
 			double frame = 0;
 			if(actor.animation && *actor.animation < a.bank.animations.size())
 			{
@@ -1148,6 +1164,26 @@ namespace
 				};
 				for(const auto& [key, model] : brains.models)
 					each_script(model, find_models);
+				// Placed actors can change object lists too, not only generated templates.
+				a.scene_object_lists.clear();
+				a.selected_object_lists.assign(a.actors.actors.size(), 0);
+				auto cache_list = [&](const memory_location& list) {
+					if(a.scene_object_lists.contains(list.address()))
+						return;
+					auto& [meshes, scales] = a.scene_object_lists[list.address()];
+					add_meshes(a.actors, files.memory, read_object_list(files.memory, list), meshes, scales);
+				};
+				for(const auto& actor : a.actors.actors)
+					if(auto data = files.memory.follow(*tree.node(actor.node).data))
+						for(std::uint32_t off : { 0x0Cu, 0x10u })
+							if(auto list = files.memory.follow(*data + off))
+								cache_list(*list);
+				for(const auto& [key, model] : brains.models)
+					each_script(model, [&](const script& sc) {
+						for(const script_node& n : sc.nodes)
+							if(n.type == std::uint8_t(node_type::reference_31) && n.target)
+								cache_list(*n.target);
+					});
 				for(const memory_location& at : models)
 				{
 					try
