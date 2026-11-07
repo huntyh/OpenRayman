@@ -182,7 +182,8 @@ namespace
 		actor_set actors;
 		double animation_time = 0;        // seconds; --time <seconds> starts there
 		std::optional<double> start_time;
-		std::optional<std::array<float, 4>> start_place; // --place x,y,z,yaw: reproducible scene captures
+		std::optional<std::array<float, 4>> start_place; // --place x,y,z,yaw[@seconds]: reproducible scene captures
+		long start_place_tick = 0; // the tick --place applies at (0: before the first)
 		bool animating = true;            // F3 pauses
 		// The game's scripts, run on a live copy of the level's memory at the game's 60 ticks per
 		// second. G switches them off (actors then keep their saved states).
@@ -712,6 +713,15 @@ namespace
 		}
 	}
 
+	// --place: Rayman at x, y, z turned by yaw degrees (at load, or at a later tick with @seconds,
+	// e.g. after a level's opening scene has let go of him).
+	void place_main_actor(app& a)
+	{
+		const auto& p = *a.start_place;
+		float angle = p[3] * 0.01745329252f, c = std::cos(angle), s = std::sin(angle);
+		game::write_transform(*a.live, a.vm->main_actor(), {p[0], p[1], p[2]}, {-s,c,0,-c,-s,0,0,0,1});
+	}
+
 	void run_ticks(app& a, double seconds)
 	{
 		if(!a.vm || !a.scripts)
@@ -759,6 +769,8 @@ namespace
 				a.input->step();
 			}
 			a.tick++;
+			if(a.start_place && a.start_place_tick > 0 && a.tick == a.start_place_tick)
+				place_main_actor(a);
 			openrayman::game::step(*a.vm, a.thinkers, [](std::uint32_t self, const std::exception& e) {
 				SDL_Log("Script error, actor 0x%08X: %s", self, e.what());
 			});
@@ -1471,12 +1483,8 @@ namespace
 				a.actor_note = "playing: keys go to the game, Tab to fly";
 			}
 			a.chose_view = true;
-			if(a.start_place && a.vm)
-			{
-				const auto& p = *a.start_place;
-				float angle = p[3] * 0.01745329252f, c = std::cos(angle), s = std::sin(angle);
-				game::write_transform(*a.live, a.vm->main_actor(), {p[0], p[1], p[2]}, {-s,c,0,-c,-s,0,0,0,1});
-			}
+			if(a.start_place && a.vm && a.start_place_tick == 0)
+				place_main_actor(a);
 			// --time: let the scripts run up to then, so screenshots show what they picked.
 			a.silent_run = true;
 			run_scripts(a, a.animation_time);
@@ -1954,8 +1962,13 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 		else if(arg == "--place")
 		{
 			std::array<float, 4> p{};
-			if(std::sscanf(argv[n + 1], "%f,%f,%f,%f", &p[0], &p[1], &p[2], &p[3]) == 4)
+			float at = 0;
+			int read = std::sscanf(argv[n + 1], "%f,%f,%f,%f@%f", &p[0], &p[1], &p[2], &p[3], &at);
+			if(read >= 4)
+			{
 				a->start_place = p;
+				a->start_place_tick = read == 5 ? long(at * 60.0f + 0.5f) : 0;
+			}
 		}
 		else if(arg == "--lighting") // on (default) or off: the game's lights and fog, or a plain light; L in the viewer
 			a->level->set_lighting(std::string(argv[n + 1]) != "off");

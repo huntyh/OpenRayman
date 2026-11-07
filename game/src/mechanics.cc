@@ -883,6 +883,13 @@ namespace openrayman::game
 		std::uint32_t mech = s && m.contains(s, state_mechanics + 4) ? m.u32(s + state_mechanics) : 0;
 		if(mech && mech != m.u32(b + current_mechanics) && m.contains(mech, 0x3C))
 			install_mechanics(m, b, mech);
+		// 0x431AD0 begins every tick, before it decides the actor is idle, by dropping last tick's
+		// contacts (end flag 0x4000: report word = (word & 0x80) << 9). An actor that stands still
+		// is no longer "on the ground" because it once was: Jail_20's falling Globox (node 13,
+		// state +0x6C30) lands on condition 27 and turned invisible in mid-air after his chute slide.
+		if(m.u32(b + base::end_flags) & 0x4000)
+			if(std::uint32_t report = m.u32(b + base::contacts); report && m.contains(report + 4, 4))
+				m.write<std::uint32_t>(report + 4, (m.u32(report + 4) & 0x80) << 9);
 		// End flag 0x80: the transform was set from outside. The dynamics takes it as it is, drops its
 		// speed and clears the flag (0x431AD0). Left set, it also blocks turns (procedure 136,
 		// 0x432EE0); the level data starts Rayman with it.
