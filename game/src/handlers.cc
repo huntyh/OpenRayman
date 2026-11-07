@@ -4457,6 +4457,29 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 76 (0x48B920 -> 0x40B250): the actor is in the world and awake: its super object hangs
+		// under the dynamic world (directly or one level down) and its standard game +0x29 has
+		// bit 4. No actor answers false. Jail_20's pirates test it on the actor they carry.
+		std::uint32_t actor_in_world(call& c, bool& result)
+		{
+			value who;
+			next_arg(c, who);
+			std::uint32_t so = super_object_value(c.vm, who);
+			result = so && c.vm.active(so);
+			return c.args;
+		}
+
+		// 411 (0x4710C0, case 0x19B): take the actor out of the screen-object pass again
+		// (0x45B9F0, the counterpart of 409's 0x45B9B0). The exe also points the actor's object
+		// back at the main actor's (0x42DB20); our screen objects keep no other state.
+		std::uint32_t remove_screen_object(call& c)
+		{
+			std::uint32_t self = c.vm.target(c.self, true);
+			if(self)
+				c.vm.screen_objects().erase(self);
+			return c.args;
+		}
+
 		// 409 (0x4710C0, case 0x199): register the actor in the persistent screen-object pass.
 		std::uint32_t place_screen_object(call& c)
 		{
@@ -5895,6 +5918,8 @@ namespace openrayman::game
 		vm.on_procedure(200, teleport);
 		vm.on_procedure(393, select_colour_set);
 		vm.on_procedure(409, place_screen_object);
+		vm.on_procedure(411, remove_screen_object);
+		vm.on_condition(76, actor_in_world);
 		vm.on_procedure(433, face_horizontal);
 		vm.on_procedure(171, orient_from_vectors);
 		vm.on_procedure(503, start_effect);
