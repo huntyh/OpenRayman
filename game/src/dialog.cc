@@ -310,6 +310,26 @@ namespace openrayman::game
 		return std::nullopt;
 	}
 
+	namespace
+	{
+		constexpr std::int32_t site_entry_id = 0x16A;
+
+		// The NUL-terminated string a table's entry points at.
+		std::optional<std::string> resolve_text(live_memory& memory, std::uint32_t table, std::int32_t index)
+		{
+			if(!table || !memory.contains(table + std::uint32_t(index) * 4, 4)) return std::nullopt;
+			std::uint32_t p = memory.u32(table + std::uint32_t(index) * 4);
+			std::string text;
+			while(p && memory.contains(p) && text.size() < 65536)
+			{
+				char c = char(memory.u8(p++));
+				if(!c) return text;
+				text.push_back(c);
+			}
+			return std::nullopt;
+		}
+	}
+
 	dialog_resolver make_dialog_resolver(live_memory& memory, const level_files& files, unsigned language)
 	{
 		// Fix loader 0x402960 reads these roots from its GPT; 0x494C70 selects the table.
@@ -324,6 +344,23 @@ namespace openrayman::game
 		return [&memory, general, common, count](std::int32_t id) -> std::optional<std::string>
 		{
 			if(id < 0 || (id < 20000 && std::uint32_t(id) >= count)) return std::nullopt;
+			// The main menu's "Site Rayman2" entry (id 0x16A, docs/formats/menu.md) names us and our
+			// version instead, the way Ray2Fix renames it; it opens the project page (procedure 369).
+			// The text's leading format codes (/o200: and the like) are kept.
+			if(id == site_entry_id)
+			{
+				auto text = resolve_text(memory, general, id);
+				// Only the site entry ("Site Rayman2" in every language) is renamed.
+				if(!text || text->find("Rayman") == std::string::npos) return text;
+				std::size_t start = 0;
+				while(start < text->size() && (*text)[start] == '/')
+				{
+					std::size_t colon = text->find(':', start);
+					if(colon == std::string::npos) break;
+					start = colon + 1;
+				}
+				return text->substr(0, start) + "OpenRayman " OPENRAYMAN_VERSION;
+			}
 			std::uint32_t index = id >= 20000 ? std::uint32_t(id - 20000) : std::uint32_t(id);
 			std::uint32_t table = id >= 20000 ? common : general;
 			if(index > 100000 || !table || !memory.contains(table + index * 4, 4)) return std::nullopt;

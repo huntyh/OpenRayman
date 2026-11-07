@@ -14,6 +14,7 @@ add_executable(openrayman_tests
 )
 target_link_libraries(openrayman_tests PRIVATE openrayman::lib openrayman::game doctest::doctest)
 openrayman_warnings(openrayman_tests)
+target_compile_definitions(openrayman_tests PRIVATE OPENRAYMAN_TEST_VERSION="${PROJECT_VERSION}")
 
 # Tests against a real installation run when OPENRAYMAN_GAME_DIR is set, and are skipped otherwise.
 add_test(NAME openrayman_tests COMMAND openrayman_tests)

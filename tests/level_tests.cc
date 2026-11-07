@@ -2046,6 +2046,10 @@ TEST_CASE("real data: English dialog table")
 		CHECK(actual == sum);
 	}
 	CHECK_FALSE(resolve(666).has_value());
+	// The main menu's "Site Rayman2" entry (id 0x16A) names us instead, its format codes kept.
+	auto site = resolve(0x16A);
+	REQUIRE(site.has_value());
+	CHECK(site->ends_with("OpenRayman " OPENRAYMAN_TEST_VERSION));
 	game::interpreter vm(memory, 0);
 	game::register_dialog_handlers(vm);
 	game::set_dialog_resolver(vm, files);
