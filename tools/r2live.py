@@ -432,6 +432,29 @@ def watch_story(m, say):
 		last = bits
 
 
+FRAME_COUNTER = 0x5003E4  # advanced with the clock (0x409DD0); standard +0x18 holds it once an actor is updated (0x40A5C0)
+DYNAMIC_WORLD = 0x500FD0  # its children are the actors the moving pass (0x40AA10) and the world walk (0x40A7C0) update
+
+
+def update_order(m, limit=12):
+	# The dynamic world's children in list order (first child +8, next sibling +0x14): super object, '*' when its
+	# standard block's moving byte (+0x28) is set, its update stamp (+0x18) minus the frame counter (0 = updated this
+	# frame, -1 = last frame), and its position. Read between frames, so it shows the order the next frame will use.
+	frame = m.u32(FRAME_COUNTER)
+	so = m.u32(m.u32(DYNAMIC_WORLD) + 8)
+	items = []
+	while so and len(items) < limit:
+		actor = m.u32(so + 4)
+		standard = m.u32(actor + 4) if actor else 0
+		moving = "*" if standard and m.u8(standard + 0x28) else ""
+		stamp = (m.u32(standard + 0x18) - frame) if standard else 0
+		placed = m.u32(so + 0x24)
+		at = m.f32s(placed + 4, 3) if placed else (float("nan"),) * 3
+		items.append(f"{so:X}{moving}[{stamp:+d}]({at[0]:.0f},{at[1]:.0f},{at[2]:.0f})")
+		so = m.u32(so + 0x14)
+	return " ".join(items)
+
+
 def main():
 	parser = argparse.ArgumentParser(description="Watch Rayman in the running Rayman2.exe (read-only).")
 	parser.add_argument("--vars", default="", help="script variable indexes, comma separated")
@@ -446,6 +469,7 @@ def main():
 	parser.add_argument("--story-only", action="store_true", help="log only the story bits, each change with the clock and Rayman's position (for a whole playthrough)")
 	parser.add_argument("--generated", action="store_true", help="also the generated actors (Rayman's shots): slot, maker, position, state, timers")
 	parser.add_argument("--parts", action="store_true", help="log animation frame and Rayman's part positions")
+	parser.add_argument("--order", action="store_true", help="also the frame counter (0x5003E4) and the dynamic world's actors in update order (0x500FD0): super object, moving byte +0x28 (*), update stamp +0x18 relative to the counter, position")
 	args = parser.parse_args()
 	variables = [int(v) for v in args.vars.split(",") if v.strip()]
 	quiet = set(f for f in args.quiet.split(",") if f)
@@ -498,6 +522,9 @@ def main():
 						removed = sorted(last_story - bits)
 						say(f"t {clock:>9}: story bits" + (f" +{' +'.join(map(str, added))}" if added else "") + (f" -{' -'.join(map(str, removed))}" if removed else ""))
 					last_story = bits
+			if args.order:
+				now["frame"] = str(m.u32(FRAME_COUNTER))
+				now["order"] = update_order(m)
 			last_clock = clock
 			changed = {k: v for k, v in now.items() if last.get(k) != v}
 			if any(k not in quiet for k in changed):
