@@ -652,8 +652,14 @@ namespace
 		return true;
 	}
 
-	// 0x459D30 supplies the distance curve, camera_hears the sector gate. Panning and the camera
-	// listener remain approximations of the sound DLL's listener/position callbacks.
+	// 0x459D30 / 0x459D80 supply the distance curve, camera_hears the sector gate. An actor may carry
+	// its own pair of distances (actor +0x2C: saturation, fade, 16.16), which 0x415930 (the actor
+	// sound type's +0x5C callback) hands on through 0x451F30 (info flag 0x10); the wave DLL's
+	// _SND_fn_vParam3Dto2D (WAVMWBVR 0x1000B1E0) then uses them instead of Snd_Cpa.ini's 8 and 30.
+	// Most carry a fade past 8 x saturation, so their sound does fall to nothing: the Jail_20 chute
+	// fan (node 29: 8 and 80) is silent beyond 64 units, out of the starting cell, where the default
+	// curve held it at 77/127 (user, 2026-11-08). Panning and the camera listener remain
+	// approximations of the DLL's listener callbacks.
 	std::pair<float, float> sound_placement(const app& a, std::uint32_t source)
 	{
 		auto placed = a.live ? openrayman::game::global_placement(*a.live, source) : std::nullopt;
@@ -663,7 +669,14 @@ namespace
 			return { 0.0f, 0.0f };
 		glm::vec3 to = glm::vec3(placed->m[0][3], placed->m[1][3], placed->m[2][3]) - a.camera.position;
 		float distance = glm::length(to);
-		float gain = game::sound_distance_volume(distance) / 127.0f;
+		float saturation = 8, fade = 30;
+		if(std::uint32_t actor = a.vm ? a.vm->actor_of(source) : 0; actor && a.live->contains(actor + 0x2C, 4))
+			if(std::uint32_t own = a.live->u32(actor + 0x2C); own && a.live->contains(own, 8))
+			{
+				saturation = float(std::int32_t(a.live->u32(own))) / 65536.0f;
+				fade = float(std::int32_t(a.live->u32(own + 4))) / 65536.0f;
+			}
+		float gain = game::sound_distance_volume(distance, saturation, fade) / 127.0f;
 		glm::vec3 right = glm::cross(a.camera.forward(), glm::vec3(0, 0, 1));
 		float pan = distance > 1e-3f && glm::length(right) > 1e-4f ? 0.8f * glm::dot(to / distance, glm::normalize(right)) : 0.0f;
 		return { gain, pan };
