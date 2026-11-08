@@ -14,6 +14,7 @@
 #include <renderer/gl.h>
 #include <renderer/dialog_renderer.h>
 #include <renderer/level_renderer.h>
+#include <game_trace.h>
 
 #include <openrayman/actor.h>
 #include <openrayman/game/saves.h>
@@ -184,6 +185,8 @@ namespace
 		std::optional<double> start_time;
 		std::optional<std::array<float, 4>> start_place; // --place x,y,z,yaw[@seconds]: reproducible scene captures
 		long start_place_tick = 0; // the tick --place applies at (0: before the first)
+		openrayman::game_trace trace; // OPENRAYMAN_TRACE=<file>: Rayman every tick, in r2live's format
+		std::string trace_vars; // --trace-vars
 		bool animating = true;            // F3 pauses
 		// The game's scripts, run on a live copy of the level's memory at the game's 60 ticks per
 		// second. G switches them off (actors then keep their saved states).
@@ -774,6 +777,15 @@ namespace
 			openrayman::game::step(*a.vm, a.thinkers, [](std::uint32_t self, const std::exception& e) {
 				SDL_Log("Script error, actor 0x%08X: %s", self, e.what());
 			});
+			if(a.trace.active() && a.vm)
+			{
+				std::string held;
+				if(a.input)
+					for(int k = 1; k < 256; k++)
+						if(a.input->key(std::uint8_t(k)))
+							held += (held.empty() ? "" : ",") + openrayman::key_name(std::uint16_t(k));
+				a.trace.tick(*a.live, a.vm->main_actor(), a.vm->clock(), held);
+			}
 			if(std::exchange(a.vm->stop_sounds_requested, false))
 			{
 				if(a.sounds) a.sounds->stop_all();
@@ -1363,6 +1375,7 @@ namespace
 			}
 			a.input.reset();
 			a.tick = 0;
+			a.trace.restart(levels[index]);
 			try
 			{
 				a.input = std::make_unique<openrayman::game::input>(*a.live, read_input_actions(files));
@@ -1968,6 +1981,10 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 		}
 		else if(arg == "--time") // seconds into the actors' animations, for screenshots
 			a->start_time = std::strtod(argv[n + 1], nullptr);
+		else if(arg == "--trace") // a file: Rayman every tick in r2live's format (docs/TESTING.md)
+			a->trace.open(argv[n + 1], a->trace_vars);
+		else if(arg == "--trace-vars") // script variables for --trace, e.g. 21,27,35 (before --trace)
+			a->trace_vars = argv[n + 1];
 		else if(arg == "--place")
 		{
 			std::array<float, 4> p{};

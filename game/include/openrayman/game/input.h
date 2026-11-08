@@ -23,6 +23,9 @@ namespace openrayman::game
 		// One 60 Hz tick.
 		void step();
 
+		// Whether a key (DirectInput scan code) is down this tick.
+		bool key(std::uint8_t scan_code) const { return m_now[scan_code]; }
+
 		// The address of action `index`, or 0 past the end.
 		std::uint32_t action(std::size_t index) const;
 

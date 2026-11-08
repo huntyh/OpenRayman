@@ -25,6 +25,20 @@ stored, never game data.
 Programs are in `build\windows-debug\bin`. Open PowerShell **in the OpenRayman folder** and type
 the path as shown below.
 
+## Recording a run of ours
+
+To show the agent exactly what happened in a run (for example Rayman getting out of the map), start the
+game with `--trace <file>`:
+
+```powershell
+.uild\windows-releasein\openrayman.exe --game "F:\Games\Rayman 2" --level Jail_20 --trace build\our_run.txt
+```
+
+Play as usual, then close the game. The file has Rayman's position, speed, contacts, behaviour, script
+variables 21, 27, 35 and 87 (`--trace-vars 21,27,35` before `--trace` picks others) and the keys you held,
+every tick, in the same format as `tools/r2live.py` writes for the real game. The two can be compared with
+`python tools/trace_compare.py <real log> <our log>`. A later level in the same run starts a new section.
+
 ## Textures
 
 Start `.\build\windows-debug\bin\openrayman.exe --game "F:\Games\Rayman 2"`, then press T for the

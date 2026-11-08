@@ -2,6 +2,7 @@
 
 add_executable(openrayman WIN32
 	main.cc
+	game_trace.cc
 	audio/music_player.cc
 	audio/sound_player.cc
 	renderer/gl.cc
