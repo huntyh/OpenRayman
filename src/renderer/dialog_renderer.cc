@@ -336,11 +336,24 @@ namespace openrayman
 							{
 								SDL_FRect r{image.first[0] * 6.4f, image.first[1] * 4.8f,
 									(image.second[0] - image.first[0]) * 6.4f, (image.second[1] - image.first[1]) * 4.8f};
+								// The exe places these in percent of the whole viewport, so a wide window
+								// stretches them. Ours keeps the place (the HUD spread across the screen, as
+								// the user prefers it, 2026-11-08) but the pictures' 4:3 proportions: each
+								// one is drawn narrower about the screen edge it is nearer to (Rayman's face and the
+								// health gauge on the left, the Lum and cage icons on the right). The tiled
+								// title keeps its centred 4:3 area; a picture across the whole width (a
+								// full-screen cover) stays as wide as the screen.
+								float area = std::min(1.0f, (4.0f / 3.0f) * height / width);
 								if(image.centred)
 								{
-									// Like the slot layer: a centred 4:3 area at wide window sizes.
-									float area = std::min(1.0f, (4.0f / 3.0f) * height / width);
 									r.x = 320.0f + (r.x - 320.0f) * area;
+									r.w *= area;
+								}
+								else if(image.first[0] > 0.5f || image.second[0] < 99.5f)
+								{
+									// About that edge, so pieces that touch (the gauge's fill and rest) still do.
+									float edge = r.x + r.w * 0.5f > 320.0f ? 640.0f : 0.0f;
+									r.x = edge + (r.x - edge) * area;
 									r.w *= area;
 								}
 								SDL_FColor colour{1,1,1,std::clamp(image.second[2] / 255.0f, 0.0f, 1.0f)};
@@ -378,12 +391,13 @@ namespace openrayman
 					float offset = float(game::screen_slot_punctuation_offset(item.byte, glyph_height));
 					// 0x4660B0 places slots in the whole viewport (the HUD counters sit at the
 					// screen's edge), but stretching the glyphs with it widens every letter at
-					// wide window sizes. Keep the slot's anchor (its centre when centred, else
-					// its left edge) where the exe puts it and draw the glyphs at 4:3 widths
-					// about it, as Ray2Fix shows them.
+					// wide window sizes. Ours draws them at 4:3 widths: centred text about the
+					// screen's centre (the menu), other text about the screen edge it is nearer to,
+					// like the HUD pictures, so the counters stay next to the Lum and cage icons.
 					float slot_width = std::min(1.0f, (4.0f / 3.0f) * height / width);
-					float anchor = layout.centred ? 500.0f : left;
-					float x0 = (anchor + (left + item.x - anchor) * slot_width) * 0.64f;
+					float block_middle = (left + layout.width * 0.5f) * 0.64f;
+					float anchor = layout.centred ? 320.0f : block_middle > 320.0f ? 640.0f : 0.0f;
+					float x0 = anchor + ((left + item.x) * 0.64f - anchor) * slot_width;
 					float x1 = x0 + item.advance * 0.64f * slot_width;
 					// 0x4660B0 retains the slot's floating-point coordinates on both axes.
 					float y0 = (dialog.y + item.y + offset - dialog.pulse) * 0.48f;
