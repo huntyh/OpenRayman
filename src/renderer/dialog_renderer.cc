@@ -430,9 +430,18 @@ namespace openrayman
 			auto layout = game::layout_dialog(dialog);
 			// 0x419A30 draws glyph objects in the whole viewport, like the slots: the text
 			// stays where the exe puts it (Globox's lines in their box), only its glyphs keep
-			// 4:3 widths at wide window sizes (Ray2Fix), about the same anchor as the slots.
+			// 4:3 widths at wide window sizes (Ray2Fix), about the same anchor as the slots. A line
+			// to one side keeps its start (the narration at the left edge); one that spans the
+			// middle keeps its middle, as the exe lays such text out to sit centred at 4:3 without
+			// the centred flag (Jail_10's PRESENTS under the logo; it slid left, user 2026-11-08).
 			if(dialog.screen)
-				unit_x *= std::min(1.0f, (4.0f / 3.0f) * height / width);
+			{
+				const float area = std::min(1.0f, (4.0f / 3.0f) * height / width);
+				const float full = layout.width * unit_x;
+				unit_x *= area;
+				if(!layout.centred && x < 320.0f && x + full > 320.0f)
+					x += full * (1.0f - area) * 0.5f;
+			}
 			if(layout.centred) x = (dialog.screen ? 320 : x) - layout.width * unit_x * 0.5f;
 			auto& font = font_for(dialog.template_actor);
 			std::optional<SDL_FColor> tint;
