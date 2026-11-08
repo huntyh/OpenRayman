@@ -126,6 +126,13 @@ namespace openrayman::game
 		// Sector wake pass (0x40B7B0), before the actor passes.
 		void update_activation(std::span<const std::uint32_t> actors);
 		bool active(std::uint32_t super_object, bool player = false) const;
+		// The sector super object an actor is in, as the wake pass follows it (0x4128D0: neighbours
+		// and priorities, not the smallest box); 0 before the first pass or outside every sector.
+		std::uint32_t actor_sector(std::uint32_t super_object) const
+		{
+			auto found = m_actor_sectors.find(super_object);
+			return found == m_actor_sectors.end() ? 0 : found->second;
+		}
 
 		// The engine's per-actor gate (0x412230) on the actor's custom bits (standard game +0x24)
 		// and flags (+0x29): whether its brain runs this frame, and whether its mechanics does.

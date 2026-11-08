@@ -639,10 +639,20 @@ namespace
 		return { gain, pan };
 	}
 
-	// The sector Rayman is in, by the lighting's rule (the smallest box that holds him). The exe
-	// finds it its own way (0x4128D0, 0x44BF80), not read yet.
+	// The sector Rayman is in, as the scripts' wake pass follows him (0x4128D0: the sector he was in
+	// and its neighbours, by priority), the same sector the exe keeps per actor. The lighting's
+	// smallest box that holds him is only the fallback before that pass has run. With the smallest
+	// box a jump into the Jail_20 chute came into it from the wrong sector, and the entry that starts
+	// the chute music (from node 42 only) was skipped (user, 2026-11-08).
 	std::optional<std::size_t> rayman_sector_now(const app& a)
 	{
+		if(a.vm)
+			if(std::uint32_t followed = a.vm->actor_sector(a.vm->main_actor()))
+			{
+				auto i = std::ranges::find(a.sound_sector_super_objects, followed);
+				if(i != a.sound_sector_super_objects.end())
+					return std::size_t(i - a.sound_sector_super_objects.begin());
+			}
 		auto placed = a.live && a.vm ? openrayman::game::global_placement(*a.live, a.vm->main_actor()) : std::nullopt;
 		if(!placed)
 			return std::nullopt;

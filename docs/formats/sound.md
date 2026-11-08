@@ -473,6 +473,8 @@ apart; recording: 29.5 s), switching at the end of the playing segment.
 
 Own analysis of the decompile and the run4 recording, 2026-11-02.
 
+Which sector the listener is in: the one the sector update (0x4128D0) follows from the sector it was in and its neighbours, by priority, the same per-actor sector that wakes actors (interpreter `actor_sector`), not the smallest box that holds him. Jail_20 has the case that tells them apart: sector 1 (node 37, the chute) starts the chute theme (0x00DE0001, 374:0) only when entered from sector 3 (node 42, around the grate). A jump onto the broken grate's lip puts Rayman in sector 2's smaller box (node 40) for a moment, so by the box rule he entered the chute from there and the music did not start (user, 2026-11-08); followed, he stays in node 42 and the music starts as in run4 (197.8 s). Own analysis with a key replay in the engine, 2026-11-08.
+
 ### Player status (2026-11-02)
 
 The player (`src/audio/sound_player.cc`, written by GPT-6.1 Terra from our task, reviewed here)
