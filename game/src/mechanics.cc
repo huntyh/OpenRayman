@@ -1282,7 +1282,14 @@ namespace openrayman::game
 			// Resolve a newly installed placement against nearby support too. A downward
 			// point cast alone can leave an actor just above the floor when its scripts
 			// freeze mechanics immediately afterwards (Jail_20's first scene).
-			float bottom = target[2] - ((was_grounded || external_placement) && target[2] <= current[2] + carried[2] ? follow_down : 0.0f);
+			// A take-off is a sudden gain in vertical speed over last tick's (a jump's +12), even when
+			// the move still goes down: jumping from the Jail_20 slide at -15 goes on at -3 in the real
+			// game (r2live, user recording 2026-11-08) and leaves the slope, which falls away faster.
+			// Following the floor down there snapped Rayman back onto it, the slide took him again
+			// and the jump fired a second time from a vertical speed of 0, launching him upward.
+			const bool taking_off = target[2] > current[2] + carried[2] ||
+				(dt > 0 && (target[2] - current[2] - carried[2]) / dt > m.f32(b + base::speed + 8) + 4.0f);
+			float bottom = target[2] - ((was_grounded || external_placement) && !taking_off ? follow_down : 0.0f);
 			// The actor's feet cover a small circle: the highest floor under any of nine points of it.
 			std::optional<world_collision::surface_hit> floor;
 			float floor_x = 0, floor_y = 0;
@@ -1302,7 +1309,7 @@ namespace openrayman::game
 			// at the actor's origin. On a slope going up the rim probe ahead touches the floor
 			// above the target while the origin's plane is still below it; landing on it there
 			// cancelled every take-off running uphill (Learn_10 by the start, user 2026-11-08).
-			if(floor && target[2] > current[2] + carried[2])
+			if(floor && taking_off)
 			{
 				const float at_origin = floor->height - ((target[0] - floor_x) * floor->normal[0] + (target[1] - floor_y) * floor->normal[1]) / floor->normal[2];
 				if(at_origin < target[2])
