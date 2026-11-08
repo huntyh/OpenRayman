@@ -212,6 +212,20 @@ scripts and the run4 recording independently confirm the closed height and sidew
 - **Procedure 157 is a move, not a teleport**: 0x432D30 queues it (flag 0x80000000, +0x6C) and the
   dynamics still collides it, so walls stop the hold at the wall joining the pillars. (The
   teleport 0x432DA0, procedure 200, resets both matrices and isn't collided.)
+- **Procedure 172's turn about a point is a move too**: 0x469CB0 (case 0xAC) turns the actor and
+  shifts it so the given point keeps its place, then 0x469C70 hands that to the dynamics through
+  0x4329B0 (unless end flag 0x80): base flag 0x20000000, the new axes at +0x128..+0x148, and the
+  shift (new position − target +0xD4) at +0x6C, which the next step collides. Unlike 0x432D30 it
+  keeps the speed. Rayman's slide turns this way every tick (about a point 0.9 above his feet).
+  Ours had written only the transform, so our mechanics took every slide tick for a teleport and
+  skipped the walls; Rayman then went through the overhanging lips at the top of the Jail_20
+  chute's sides and fell out. Live (r2live, 2026-11-08, no steering): the real slide is caught by
+  those lips (normals about (−0.1, 0.95, −0.3)) and loses its sideways speed in one tick (end flag
+  0x2000000 for that tick, 0x43B360's "a contact was resolved" bit), then slides back down; speed
+  caps at 40 (the limit), and it reaches the end trigger about 14 s after the slide starts.
+  *Where this came from: own analysis of the decompiled 0x469CB0/0x469C70/0x4329B0/0x43B360, checked
+  against the live slide; after the fix our no-input slide stays within about 8 units of the real
+  path and stops at the end trigger.*
 - **Walls that can be held** (base flag 0x40 without 0x10: resolver 0x43A260; mechanics such as
   @05/01 +0x601944 with flags 0x43, Rayman's behaviour 27, entered by macros 29/45 when a wall has
   collide flag 0x40 and function 201 finds another 0x40 surface opposite): the move loses its part

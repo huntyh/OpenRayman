@@ -4827,7 +4827,19 @@ namespace openrayman::game
 			if(c.index == 172)
 			{
 				vec3 after = pivot_offset(), at = read3(m, t + 4);
-				write3(m, t + 4, { at[0] + before[0] - after[0], at[1] + before[1] - after[1], at[2] + before[2] - after[2] });
+				vec3 moved{ at[0] + before[0] - after[0], at[1] + before[1] - after[1], at[2] + before[2] - after[2] };
+				write3(m, t + 4, moved);
+				// The exe hands the turn to the dynamics (0x469C70 -> 0x4329B0, unless end flag 0x80):
+				// base flag 0x20000000, the new axes at +0x128 and the shift as a move at +0x6C, which
+				// the next mechanics step collides like any other and which keeps the speed. So it is
+				// no teleport: record it as where the mechanics left the actor (+0x7C), or walls would
+				// stop pushing for that tick. Rayman's slide turns this way every tick, and without
+				// walls he went through the overhanging lip at the top of the Jail_20 chute's sides.
+				if(std::uint32_t base = dynamics_base(c, self, 0x88); base && !(m.u32(base + 0xC) & 0x80))
+				{
+					vec3 left = read3(m, base + 0x7C);
+					write3(m, base + 0x7C, { left[0] + moved[0] - at[0], left[1] + moved[1] - at[1], left[2] + moved[2] - at[2] });
+				}
 			}
 			return c.args;
 		}
