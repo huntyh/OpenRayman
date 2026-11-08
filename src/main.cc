@@ -716,6 +716,28 @@ namespace
 		}
 	}
 
+	// The same from the game camera, for ticks run before the first frame is drawn. The game draws
+	// a frame after every tick, also behind its loading and near-black covers; a wake marks the
+	// actors of a fresh sector out of view, and without a frame those that think only in view
+	// (custom bit 0x1000: Learn_10's portal, node 77) stayed asleep.
+	void update_game_camera_visibility(app& a)
+	{
+		if(!a.live || !a.camera_super_object || !a.window)
+			return;
+		auto placed = openrayman::game::global_placement(*a.live, a.camera_super_object);
+		if(!placed)
+			return;
+		int w = 0, h = 0;
+		SDL_GetWindowSizeInPixels(a.window, &w, &h);
+		glm::vec3 eye(placed->m[0][3], placed->m[1][3], placed->m[2][3]);
+		glm::vec3 back(-placed->m[0][1], -placed->m[1][1], -placed->m[2][1]);
+		glm::vec3 top(placed->m[0][2], placed->m[1][2], placed->m[2][2]);
+		if(w <= 0 || h <= 0 || glm::length(back) < 1e-4f || glm::length(top) < 1e-4f)
+			return;
+		glm::mat4 projection = glm::perspective(0.9f, float(w) / float(h), 0.1f, 2000.0f);
+		update_visibility(a, projection * glm::lookAt(eye, eye + glm::normalize(back), glm::normalize(top)));
+	}
+
 	// --place: Rayman at x, y, z turned by yaw degrees (at load, or at a later tick with @seconds,
 	// e.g. after a level's opening scene has let go of him).
 	void place_main_actor(app& a)
@@ -1517,21 +1539,23 @@ namespace
 			run_scripts(a, a.animation_time);
 			a.silent_run = false;
 			// The startup script requests a cut on its first tick; the camera lands on the second.
-			// Both run before the first frame.
+			// Both run before the first frame. A revisit takes longer: node 4 puts Rayman by the portal
+			// on the first tick, at full size beside the new-game spot, and the portal (node 77) takes
+			// him and shrinks him into itself (procedure 173) a few ticks later. The game hides this
+			// behind loading and node 4's near-black cover; ours runs on until he is shrunk, up to a
+			// second for a level without a portal. A save start (--save) arrives the same way. Each
+			// tick sees what the game camera sees, as a drawn frame would (the portal thinks only in view).
 			constexpr long settle_ticks = 4;
-			if(a.playing && a.tick < settle_ticks && a.camera_super_object)
-				run_scripts(a, double(settle_ticks - a.tick) / 60.0);
-			// A revisit takes longer: node 4 puts Rayman by the portal on the first tick, at full
-			// size beside the new-game spot, and the portal (node 77) only takes him and shrinks him
-			// into itself (procedure 173) at tick 12 to 15. The game hides this behind loading and
-			// node 4's near-black cover; ours runs on until he is shrunk, up to a second for a level
-			// without a portal. Fixed counts (4, then 13) left him visible there for a moment.
-			if(a.playing && !a.new_game && !a.save_slot && a.camera_super_object && a.vm)
+			if(a.playing && a.camera_super_object && a.vm)
 				while(a.tick < 60 && a.scripts)
 				{
-					auto p = openrayman::game::global_placement(*a.live, a.vm->main_actor());
-					if(!p || p->uniform_scale() < 0.5f)
-						break;
+					if(a.tick >= settle_ticks)
+					{
+						auto p = openrayman::game::global_placement(*a.live, a.vm->main_actor());
+						if(a.new_game || !p || p->uniform_scale() < 0.5f)
+							break;
+					}
+					update_game_camera_visibility(a);
 					run_scripts(a, 1.0 / 60.0);
 				}
 			update_actors(a);
