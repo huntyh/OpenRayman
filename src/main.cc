@@ -1498,12 +1498,13 @@ namespace
 			run_scripts(a, a.animation_time);
 			a.silent_run = false;
 			// The startup script requests a cut on its first tick; the camera lands on
-			// the second. A revisit takes four: node 4 puts Rayman by the portal on the first
-			// tick, which wakes the portal (node 77, asleep in another sector) on the second, and
-			// it pulls him in on the third. The game hides these behind loading and node 4's
-			// near-black cover; ours runs them before presenting the first frame (Rayman showed
+			// the second. A revisit takes longer: node 4 puts Rayman by the portal on the first
+			// tick, at full size beside the new-game spot, and the portal (node 77) only takes
+			// him at clock 200 ms (tick 12, measured; also so at 57dc5a1, which wrongly counted three),
+			// when it starts growing him out of itself. The game hides these behind loading and node
+			// 4's near-black cover; ours runs them before presenting the first frame (Rayman showed
 			// at the new-game spot for a moment).
-			constexpr long settle_ticks = 4;
+			const long settle_ticks = !a.new_game && !a.save_slot ? 13 : 4;
 			if(a.playing && a.tick < settle_ticks && a.camera_super_object)
 				run_scripts(a, double(settle_ticks - a.tick) / 60.0);
 			update_actors(a);
