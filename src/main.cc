@@ -1365,9 +1365,13 @@ namespace
 				// The menu starts from Fix's own state, as the game boots: no save is loaded yet.
 				bool menu = std::ranges::equal(levels[index], std::string_view("Menu"),
 					[](unsigned char x, unsigned char y) { return std::tolower(x) == std::tolower(y); });
+				// A level reached from another (Jail_20's fall into Learn_10) keeps the story the
+				// scripts left, plus what a start here stands in for: we skip Learn_10's intro and
+				// start where it hands over, and without the 1091 that intro sets its director kept
+				// the near-black cover up (user, 2026-11-08).
 				if(a.carried_story)
 					a.vm->set_story_words(fix_actors, *a.carried_story);
-				else if(!menu && !a.save_slot)
+				if(!menu && !a.save_slot)
 					for(std::uint32_t bit : openrayman::game::start_story_bits(levels[index], a.new_game))
 						a.vm->set_story_bit(fix_actors, bit);
 				a.carried_story.reset();
@@ -1512,16 +1516,24 @@ namespace
 			a.silent_run = true;
 			run_scripts(a, a.animation_time);
 			a.silent_run = false;
-			// The startup script requests a cut on its first tick; the camera lands on
-			// the second. A revisit takes longer: node 4 puts Rayman by the portal on the first
-			// tick, at full size beside the new-game spot, and the portal (node 77) only takes
-			// him at clock 200 ms (tick 12, measured; also so at 57dc5a1, which wrongly counted three),
-			// when it starts growing him out of itself. The game hides these behind loading and node
-			// 4's near-black cover; ours runs them before presenting the first frame (Rayman showed
-			// at the new-game spot for a moment).
-			const long settle_ticks = !a.new_game && !a.save_slot ? 13 : 4;
+			// The startup script requests a cut on its first tick; the camera lands on the second.
+			// Both run before the first frame.
+			constexpr long settle_ticks = 4;
 			if(a.playing && a.tick < settle_ticks && a.camera_super_object)
 				run_scripts(a, double(settle_ticks - a.tick) / 60.0);
+			// A revisit takes longer: node 4 puts Rayman by the portal on the first tick, at full
+			// size beside the new-game spot, and the portal (node 77) only takes him and shrinks him
+			// into itself (procedure 173) at tick 12 to 15. The game hides this behind loading and
+			// node 4's near-black cover; ours runs on until he is shrunk, up to a second for a level
+			// without a portal. Fixed counts (4, then 13) left him visible there for a moment.
+			if(a.playing && !a.new_game && !a.save_slot && a.camera_super_object && a.vm)
+				while(a.tick < 60 && a.scripts)
+				{
+					auto p = openrayman::game::global_placement(*a.live, a.vm->main_actor());
+					if(!p || p->uniform_scale() < 0.5f)
+						break;
+					run_scripts(a, 1.0 / 60.0);
+				}
 			update_actors(a);
 			a.screen_font_actor = game::screen_slot_font_actor(files);
 			a.dialog_memory = std::make_unique<memory_image>(std::move(files.memory));
