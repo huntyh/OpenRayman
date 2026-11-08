@@ -1501,8 +1501,9 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	for(const auto& placed : header.placements)
 		fix_actors.push_back(placed.super_object.address());
 	const char* start = std::getenv("ORTOOL_START");
-	bool first_visit = (start && std::string_view(start) == "new") || game::only_new_game(name);
-	for(std::uint32_t bit : game::start_story_bits(name, first_visit))
+	bool intro = start && std::string_view(start) == "intro";
+	bool first_visit = intro || (start && std::string_view(start) == "new") || game::only_new_game(name);
+	for(std::uint32_t bit : intro && !game::only_new_game(name) ? std::span<const std::uint32_t>(game::intro_story_bits) : game::start_story_bits(name, first_visit))
 		vm.set_story_bit(fix_actors, bit);
 	// ORTOOL_STORY_BITS=a,b: explicit story input, also useful with ORTOOL_START=new
 	// to test the level's own removal rules without the interim revisit snapshot.
@@ -1611,7 +1612,7 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 		}
 	}
 	// After the placements above, which would undo it.
-	if(first_visit && !header.placements.empty() && game::apply_first_visit_hand_over(memory, vm, tree, name, header.placements[0].super_object.address(), header.placements.size() > 1 ? header.placements[1].super_object.address() : 0))
+	if(first_visit && !intro && !header.placements.empty() && game::apply_first_visit_hand_over(memory, vm, tree, name, header.placements[0].super_object.address(), header.placements.size() > 1 ? header.placements[1].super_object.address() : 0))
 		std::cout << "first visit: Rayman placed where the intro hands him over, its director ended\n";
 	std::map<std::size_t, std::string> errors;
 	// With a camera trace: the camera actor (the one with a camera object at actor +0x10), so every

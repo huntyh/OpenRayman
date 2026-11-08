@@ -45,6 +45,8 @@ namespace openrayman::game
 	// its director keeps the intro's full-screen cover up, and without the others the tutorial
 	// cage hangs over the open trapdoor again (user, 2026-11-02).
 	inline constexpr std::uint32_t first_visit_story_bits[] = { 1089, 1091 };
+	// Recorded at Learn_10's load, before the director sets 1091.
+	inline constexpr std::uint32_t intro_story_bits[] = { 1027, 1028, 1059, 1060, 1089 };
 	inline constexpr std::uint32_t revisit_story_bits[] = {
 		840, 841, 1089, 1091, 1092, 1133, 1175, 1176, 1177, 1396, 1397, 1398, 1399, 1400,
 	};

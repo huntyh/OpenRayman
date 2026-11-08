@@ -202,6 +202,7 @@ namespace
 		std::vector<held_key> held_keys;
 		unsigned save_slot = 0; // --save 1..3: restore the installed slot at level load
 		bool new_game = false; // --start new: levels start as on a new game, not as reached from the hub
+		bool intro_start = false; // run the level's opening scene
 		std::vector<std::int32_t> story_bits; // --story-bits 1095,1143: more of a save's story, set at load
 		// The story-bit words a level change carries over (Fix stays loaded in the game), set when the
 		// scripts ask for another level (procedures 86/87) and used by the next load.
@@ -1433,7 +1434,7 @@ namespace
 				if(a.carried_story)
 					a.vm->set_story_words(fix_actors, *a.carried_story);
 				if(!menu && !a.save_slot)
-					for(std::uint32_t bit : openrayman::game::start_story_bits(levels[index], a.new_game))
+					for(std::uint32_t bit : a.intro_start && !openrayman::game::only_new_game(levels[index]) ? std::span<const std::uint32_t>(openrayman::game::intro_story_bits) : openrayman::game::start_story_bits(levels[index], a.new_game))
 						a.vm->set_story_bit(fix_actors, bit);
 				a.carried_story.reset();
 				a.fix_actors = fix_actors;
@@ -1506,7 +1507,7 @@ namespace
 			// to the hand-over plays what the game plays there.
 			a.rayman_sector = rayman_sector_now(a);
 			// A first visit starts where the level's intro cutscene hands Rayman over (first_visit.h).
-			if(a.new_game && !a.save_slot && !header.placements.empty())
+			if(a.new_game && !a.intro_start && !a.save_slot && !header.placements.empty())
 				openrayman::game::apply_first_visit_hand_over(*a.live, *a.vm, tree, levels[index], header.placements[0].super_object.address(), a.camera_super_object);
 			a.script_clock = 0;
 			a.animation_time = a.start_time.value_or(0.0);
@@ -2044,8 +2045,11 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 			}
 			a->save_slot = unsigned(slot[0] - '0');
 		}
-		else if(arg == "--start") // portal (default): as reached from the hub; new: as on a new game
-			a->new_game = std::string_view(argv[n + 1]) == "new";
+		else if(arg == "--start") // portal (default): as reached from the hub; new: as on a new game; intro: a new game that plays the level's opening scene (Learn_10, work in progress)
+		{
+			a->intro_start = std::string_view(argv[n + 1]) == "intro";
+			a->new_game = a->intro_start || std::string_view(argv[n + 1]) == "new";
+		}
 		else if(arg == "--story-bits") // comma-separated story bits to set at load, e.g. 1095,1143
 		{
 			std::string_view list = argv[n + 1];

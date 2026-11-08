@@ -212,6 +212,10 @@ scripts and the run4 recording independently confirm the closed height and sidew
 - **Procedure 157 is a move, not a teleport**: 0x432D30 queues it (flag 0x80000000, +0x6C) and the
   dynamics still collides it, so walls stop the hold at the wall joining the pillars. (The
   teleport 0x432DA0, procedure 200, resets both matrices and isn't collided.)
+
+  Where this came from: own analysis of the GOG executable at 0x432DA0 and the
+  Learn_10 director script (level offset 0d/01 +0x1443C), which uses procedure
+  200 when returning the stand-in's position to Rayman.
 - **Procedure 172's turn about a point is a move too**: 0x469CB0 (case 0xAC) turns the actor and
   shifts it so the given point keeps its place, then 0x469C70 hands that to the dynamics through
   0x4329B0 (unless end flag 0x80): base flag 0x20000000, the new axes at +0x128..+0x148, and the
