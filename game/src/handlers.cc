@@ -2649,6 +2649,36 @@ namespace openrayman::game
 			std::uint32_t data = actor ? safe_u32(m, actor) : 0;
 			std::uint32_t table = data ? safe_u32(m, data + 0x90) : 0;
 			std::uint32_t part = table ? safe_u32(m, table + index * 20) : 0;
+			// The executable materializes animated parts as super objects. Our runtime normally
+			// poses them on demand, so recover the world position when that table is absent.
+			if(!part && !table && c.index == 210 && data && c.vm.animations())
+			{
+				std::uint32_t state_at = safe_u32(m, data + data_3d::current_state);
+				std::uint32_t reference = state_at ? safe_u32(m, state_at + state::animation) : 0;
+				auto world = global_placement(m, so);
+				if(reference && m.contains(reference + 0x18, 2) && world)
+				{
+					std::uint16_t animation = m.read<std::uint16_t>(reference + 0x18);
+					if(animation < c.vm.animations()->animations.size())
+					{
+						auto channels = pose(*c.vm.animations(), animation, m.read<std::uint16_t>(data + data_3d::frame));
+						auto found = std::ranges::find(channels, std::int16_t(index), &channel_pose::id);
+						if(found != channels.end())
+						{
+							std::optional<std::size_t> current = std::size_t(found - channels.begin());
+							affine local;
+							for(std::size_t n = 0; current && *current < channels.size() && n < channels.size(); ++n)
+							{
+								local = channels[*current].local * local;
+								current = channels[*current].parent;
+							}
+							affine result = *world * local;
+							out = value::vector(result.m[0][3], result.m[1][3], result.m[2][3]);
+							return c.args;
+						}
+					}
+				}
+			}
 			if(part) so = part;
 			std::uint32_t transform = so ? safe_u32(m, so + (c.index == 211 ? 0x20 : 0x24)) : 0;
 			if(transform && m.contains(transform, 0x58))

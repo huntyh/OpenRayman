@@ -326,6 +326,12 @@ which the exe places by resetting the camera instead of moving it.
 
 ## Where this came from
 
+Jail_20's chute-end rig selects animation 354 and sends the world positions of its animation
+channels 1 and 0 to procedures 495 and 496. Own analysis of its node 2 scripts and the executable
+handlers 0x478AA0 (function 210, part world position) and 0x47EC20 (camera vectors), compared with
+the user's run4 recording. OpenRayman evaluates the animation pose on demand when the executable's
+part-object table is absent; it does not construct that table.
+
 Own analysis of `Rayman2.exe` with capstone, following the scripts from the level data. The
 addresses are the ones above:
 
