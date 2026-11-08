@@ -1155,6 +1155,8 @@ namespace
 			a.dialog_overlay.reset();
 			a.dialog_memory.reset();
 			Uint64 start = SDL_GetTicks();
+			if(openrayman::game::only_new_game(levels[index]))
+				a.new_game = true; // the pirate ship has no revisit (first_visit.h)
 			level_files files = load_level_files(*a.game, levels[index]);
 			level_header header = read_level_header(files);
 			scene tree(files.memory, header);

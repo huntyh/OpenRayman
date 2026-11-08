@@ -53,12 +53,23 @@ namespace openrayman::game
 	// any of them: a new game sets 1089 only when Jail_20's cell scene hands Rayman over (r2record,
 	// 90.9 s), and the scene's director lets Enter skip it only once 1089 (or 1188) is set. With the
 	// Learn_10 bits preset there, Enter skipped the scene and lost Rayman and Globox (user, 2026-11-07).
+	// The pirate ship (Jail_10, Jail_20) has no revisit in the game: whatever the start, it starts as
+	// a new game. A "revisit" start there preset 1089, so Enter skipped the pirate dragging Globox
+	// off and the music sequence after it broke (user, 2026-11-08).
+	inline bool only_new_game(std::string_view level)
+	{
+		auto is = [&](std::string_view name) {
+			return std::ranges::equal(level, name, [](unsigned char x, unsigned char y) { return std::tolower(x) == std::tolower(y); });
+		};
+		return is("Jail_10") || is("Jail_20");
+	}
+
 	inline std::span<const std::uint32_t> start_story_bits(std::string_view level, bool new_game)
 	{
 		auto is = [&](std::string_view name) {
 			return std::ranges::equal(level, name, [](unsigned char x, unsigned char y) { return std::tolower(x) == std::tolower(y); });
 		};
-		if(new_game && (is("Jail_10") || is("Jail_20")))
+		if(only_new_game(level))
 			return {};
 		return new_game ? std::span<const std::uint32_t>(first_visit_story_bits) : std::span<const std::uint32_t>(revisit_story_bits);
 	}
