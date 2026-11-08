@@ -143,6 +143,28 @@ turns into a ripple when it falls to the height at +0x3C, 0x10000000 is drawn fl
   streaming from Rayman into it. We take which perpendicular 0x4656E0 picks as the largest of the
   three plain ones (only the random disc's orientation depends on it).
 
+## Kind 30
+
+The Jail_20 grate's hit reflex calls this three times with material 05/02 +0x52910 and number 0,
+making three flashes without sparks. Each call
+starts a flash and, for a nonnegative number, that number truncated to an integer of sparks. All
+start at the point and use the supplied material; the vector does not affect this effect. Sizes
+are equal half-width and half-height, independently random for each particle:
+
+- Flash: flags 0x4500, stationary, size 0.5 to 0.8, shrinking 0.5 and fading 350 alpha per second.
+- Sparks: flags 0x3001, size 0.10 to 0.15, velocity independently -2 to 2 on world X and Y and
+  -0.2 to 3 on world Z; they fall under gravity and fade 260 alpha per second.
+
+The number is stored in each particle's life field, but these flags do not enable the timed-life
+test; fading and animated material completion determine when they disappear. They start at alpha
+255. The executable's integer loop assumes a nonnegative number; negative values cause its counter
+to wrap rather than representing a meaningful spark count.
+
+**Where this came from:** own analysis of Rayman2.exe, Ghidra case 0x1E at 0x463ECE and the
+disassembly through 0x463FD4, pool initialization at 0x4600C0, update at 0x461120 and expiry at
+0x4607E0. Constants at 0x49CB50, 0x49CA14, 0x49CB0C, 0x49CB2C, 0x49CB94, 0x49CB18,
+0x49CB58 and 0x49CB5C give those ranges. `ortool brain` identifies the grate's calls.
+
 ## Where this came from
 
 - Own analysis of `Rayman2.exe` with capstone: the spawner, the kind table, the pool, the per-frame

@@ -142,6 +142,17 @@ namespace openrayman::game
 			}
 			return;
 		}
+		if(kind == 30)
+		{
+			// 0x463ECE: a stationary flash and number sparks in world axes; the input vector is unused.
+			add(0x4500, point, {}, number, random(0.5f, 0.8f), material, now);
+			for(int i = 0; i < int(number) && m_particles.size() < capacity; ++i)
+			{
+				vec3 v = { random(-2, 2), random(-2, 2), random(-0.2f, 3.0f) };
+				add(0x3001, point, v, number, random(0.1f, 0.15f), material, now);
+			}
+			return;
+		}
 		if(kind == 9)
 		{
 			// 0x463569: a burst at the point: a flash that shrinks (0x500) and fades fast (0x4000),
