@@ -1174,11 +1174,17 @@ namespace openrayman
 		// Rayman's face through the back of his head).
 		static const bool no_cull = std::getenv("OPENRAYMAN_NO_CULL") != nullptr;
 		cull culled = cull::none;
+		// A mirrored part (negative determinant: Rayman's left shoe is the right one with a
+		// negative scale) turns its triangles' winding over on screen, so the side kept swaps.
+		bool mirrored = false, culled_mirrored = false;
 		glDisable(GL_CULL_FACE);
 		auto use_cull = [&](cull faces) {
-			if(no_cull || faces == culled)
+			if(mirrored && faces != cull::none)
+				faces = faces == cull::keep_positive ? cull::keep_negative : cull::keep_positive;
+			if(no_cull || (faces == culled && mirrored == culled_mirrored))
 				return;
 			culled = faces;
+			culled_mirrored = mirrored;
 			if(faces == cull::none)
 			{
 				glDisable(GL_CULL_FACE);
@@ -1187,6 +1193,10 @@ namespace openrayman
 			glEnable(GL_CULL_FACE);
 			glCullFace(GL_BACK);
 			glFrontFace(faces == cull::keep_positive ? GL_CCW : GL_CW);
+		};
+		auto set_model = [&](const glm::mat4& model) {
+			glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(model));
+			mirrored = glm::determinant(glm::mat3(model)) < 0.0f;
 		};
 		bool backdrop_pass = false;
 		bool sky_pass = false;
@@ -1267,7 +1277,7 @@ namespace openrayman
 		if(!m_backdrop_sectors.empty())
 		{
 			auto draw_static_pass = [&](const glm::vec3& pass_eye) {
-				glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(identity));
+				set_model(identity);
 				glUniform1i(m_u_lighting, m_lighting ? 1 : 0);
 				set_blend(blend::none);
 				draw_batches(m_batches, blend::none);
@@ -1319,7 +1329,7 @@ namespace openrayman
 		// Solid surfaces first, the level's and the actors'.
 		blend current = blend::none;
 		set_blend(current);
-		glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(identity));
+		set_model(identity);
 		glUniform1i(m_u_lighting, m_lighting ? 1 : 0);
 		draw_batches(m_batches, blend::none);
 		glUniform1i(m_u_lighting, m_lighting ? 2 : 0);
@@ -1327,7 +1337,7 @@ namespace openrayman
 		{
 			if(parts[i].screen || parts[i].alpha < 1)
 				continue; // drawn blended, with the see-through ones
-			glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(parts[i].model));
+			set_model(parts[i].model);
 			use_lights(part_light[i]);
 			use_fog(part_sector[i]);
 			glUniform1f(m_u_part_alpha, parts[i].alpha);
@@ -1343,7 +1353,7 @@ namespace openrayman
 		glUniform1f(m_u_alpha_cut, 0.9f);
 		glUniform1f(m_u_light_alpha, 1.0f);
 		glUniform1i(m_u_lighting, m_lighting ? 1 : 0);
-		glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(identity));
+		set_model(identity);
 		auto draw_cores = [&](std::span<const batch> batches) {
 			for(const batch& b : batches)
 			{
@@ -1358,7 +1368,7 @@ namespace openrayman
 		{
 			if(parts[i].screen || parts[i].alpha < 1)
 				continue;
-			glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(parts[i].model));
+			set_model(parts[i].model);
 			use_lights(part_light[i]);
 			use_fog(part_sector[i]);
 			glUniform1f(m_u_part_alpha, parts[i].alpha);
@@ -1422,7 +1432,7 @@ namespace openrayman
 			{
 				set_blend(current = blend::alpha);
 				glUniform1i(m_u_lighting, 3);
-				glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(identity));
+				set_model(identity);
 				glUniform2f(m_u_uv_offset, 0, 0);
 				glUniform1f(m_u_edge_clamp, 2.0f);
 				glEnable(GL_POLYGON_OFFSET_FILL);
@@ -1475,7 +1485,7 @@ namespace openrayman
 			{
 				placed = d.part;
 				bool is_level = d.part == level;
-				glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(is_level ? identity : parts[d.part].model));
+				set_model(is_level ? identity : parts[d.part].model);
 				glUniform1i(m_u_lighting, m_lighting ? (is_level ? 1 : 2) : 0);
 				glUniform1f(m_u_part_alpha, is_level ? 1.0f : parts[d.part].alpha);
 				if(!is_level)
@@ -1508,7 +1518,7 @@ namespace openrayman
 				run.count += 3, k++;
 			draw_batches(std::span(&run, 1), run.mode);
 		}
-		glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(identity));
+		set_model(identity);
 		glUniform1f(m_u_sharpen, 0.0f);
 		glUniform1f(m_u_part_alpha, 1.0f);
 		use_fog(m_camera_sector);
@@ -1650,7 +1660,7 @@ namespace openrayman
 			glBindVertexArray(m_sprite_vao);
 			glBindBuffer(GL_ARRAY_BUFFER, m_sprite_vbo);
 			glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(faces.size() * sizeof(vertex)), faces.data(), GL_STREAM_DRAW);
-			glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(glm::mat4(1)));
+			set_model(glm::mat4(1));
 			glUniform1i(m_u_lighting, 5);
 			glUniform1f(m_u_light_alpha, 1.0f);
 			glUniform4f(m_u_fog, 0, 0, 0, 0);
