@@ -454,8 +454,20 @@ namespace openrayman
 		m_skies.clear();
 		m_solid_cores.clear();
 		m_floor.clear();
+		m_floor_sector.clear();
 		m_shadow_texture = 0;
 		m_shadows.clear();
+	}
+
+	bool level_renderer::catches_shadow(std::size_t triangle) const
+	{
+		// The backdrop is drawn first, behind everything, so it looks far away; a shadow laid on
+		// its geometry showed while Rayman fell past it in Jail_20 (user, 2026-11-08).
+		if(triangle >= m_floor_sector.size())
+			return true;
+		const std::size_t sector = m_floor_sector[triangle];
+		return std::ranges::find(m_backdrop_sectors, sector) == m_backdrop_sectors.end() &&
+			std::ranges::find(m_backdrop_skies, sector) == m_backdrop_skies.end();
 	}
 
 	std::optional<std::pair<glm::vec3, glm::vec3>> level_renderer::ground_below(const glm::vec3& from) const
@@ -467,6 +479,8 @@ namespace openrayman
 		float nearest = reach;
 		for(std::size_t i = 0; i + 2 < m_floor.size(); i += 3)
 		{
+			if(!catches_shadow(i / 3))
+				continue;
 			const glm::vec3 &a = m_floor[i], &b = m_floor[i + 1], &c = m_floor[i + 2];
 			if(std::min({ a.x, b.x, c.x }) > start.x || std::max({ a.x, b.x, c.x }) < start.x ||
 				std::min({ a.y, b.y, c.y }) > start.y || std::max({ a.y, b.y, c.y }) < start.y)
@@ -834,6 +848,7 @@ namespace openrayman
 		{
 			for(GLint i = b.first; i < b.first + b.count; i++)
 				m_floor.push_back(vertices[std::size_t(i)].position);
+			m_floor_sector.insert(m_floor_sector.end(), std::size_t(b.count / 3), b.sector);
 		}
 		if(shadow_material && shadow_material->texture)
 		{
@@ -1408,7 +1423,9 @@ namespace openrayman
 				// little along its normal: the blob follows the ground over creases and steps.
 				for(std::size_t i = 0; i + 2 < m_floor.size(); i += 3)
 				{
-					const glm::vec3 &a = m_floor[i], &b = m_floor[i + 1], &d = m_floor[i + 2];
+					if(!catches_shadow(i / 3))
+					continue;
+				const glm::vec3 &a = m_floor[i], &b = m_floor[i + 1], &d = m_floor[i + 2];
 					if(std::min({ a.x, b.x, d.x }) > c.x + reach || std::max({ a.x, b.x, d.x }) < c.x - reach ||
 						std::min({ a.y, b.y, d.y }) > c.y + reach || std::max({ a.y, b.y, d.y }) < c.y - reach)
 						continue;

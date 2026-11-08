@@ -257,6 +257,9 @@ namespace openrayman
 		std::vector<part> m_level_cards; // the level's own cards that turn to the camera
 		// The level's solid triangles, three corners each, for finding the ground below a shadow.
 		std::vector<glm::vec3> m_floor;
+		std::vector<std::size_t> m_floor_sector; // per triangle of m_floor
+		// Our backdrop and sky sectors (drawn far behind everything) catch no shadows.
+		bool catches_shadow(std::size_t triangle) const;
 		// The nearest ground straight below a point (within a few units): where, and which way it faces.
 		std::optional<std::pair<glm::vec3, glm::vec3>> ground_below(const glm::vec3& from) const;
 		GLuint m_shadow_texture = 0;
