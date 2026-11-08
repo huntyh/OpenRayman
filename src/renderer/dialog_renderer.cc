@@ -376,10 +376,14 @@ namespace openrayman
 					else if(item.screen_colour == 200) tint = {250/255.0f, 70/255.0f, 70/255.0f, tint[3]};
 					else if(item.screen_colour == 400) tint = {1, 1, 120/255.0f, tint[3]};
 					float offset = float(game::screen_slot_punctuation_offset(item.byte, glyph_height));
-					// Keep the slot layer in a centred 4:3 area at wide window sizes, as Ray2Fix
-					// shows it (the exe itself stretches to the viewport).
+					// 0x4660B0 places slots in the whole viewport (the HUD counters sit at the
+					// screen's edge), but stretching the glyphs with it widens every letter at
+					// wide window sizes. Keep the slot's anchor (its centre when centred, else
+					// its left edge) where the exe puts it and draw the glyphs at 4:3 widths
+					// about it, as Ray2Fix shows them.
 					float slot_width = std::min(1.0f, (4.0f / 3.0f) * height / width);
-					float x0 = 320.0f + ((left + item.x) * 0.64f - 320.0f) * slot_width;
+					float anchor = layout.centred ? 500.0f : left;
+					float x0 = (anchor + (left + item.x - anchor) * slot_width) * 0.64f;
 					float x1 = x0 + item.advance * 0.64f * slot_width;
 					// 0x4660B0 retains the slot's floating-point coordinates on both axes.
 					float y0 = (dialog.y + item.y + offset - dialog.pulse) * 0.48f;
@@ -410,16 +414,12 @@ namespace openrayman
 				unit_x = unit_y = 240.0f * projection[1][1] / p.w;
 			}
 			auto layout = game::layout_dialog(dialog);
-			if(layout.centred) x = (dialog.screen ? 320 : x) - layout.width * unit_x * 0.5f;
+			// 0x419A30 draws glyph objects in the whole viewport, like the slots: the text
+			// stays where the exe puts it (Globox's lines in their box), only its glyphs keep
+			// 4:3 widths at wide window sizes (Ray2Fix), about the same anchor as the slots.
 			if(dialog.screen)
-			{
-				// 0x419A30 draws glyph objects and 0x4660B0 slots in the same viewport.
-				// Keep both in our centred 4:3 text area: mixed mappings closed the gap
-				// between the intro's narration colon and its separate slot-26 counter.
-				float text_area = std::min(1.0f, (4.0f / 3.0f) * height / width);
-				x = 320 + (x - 320) * text_area;
-				unit_x *= text_area;
-			}
+				unit_x *= std::min(1.0f, (4.0f / 3.0f) * height / width);
+			if(layout.centred) x = (dialog.screen ? 320 : x) - layout.width * unit_x * 0.5f;
 			auto& font = font_for(dialog.template_actor);
 			std::optional<SDL_FColor> tint;
 			if(dialog.tint)
