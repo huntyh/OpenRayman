@@ -369,6 +369,12 @@ namespace openrayman
 					}
 			}
 			catch(const std::exception& e) { SDL_Log("Screen image: %s", e.what()); }
+		// Pictures to the side (the HUD's face, gauge and Lum and cage icons): their counters keep
+		// to the same screen edge. Without them (Jail_10's ship, SLAVES NOW ON BOARD) a slot keeps
+		// its 4:3 distance from the text beside it, which starts at the side margin.
+		const bool side_pictures = std::ranges::any_of(images, [](const auto& image) {
+			return !image.centred && (image.first[0] > 0.5f || image.second[0] < 99.5f);
+		});
 		for(const auto& dialog : dialogs)
 		{
 			if(dialog.tint)
@@ -393,10 +399,12 @@ namespace openrayman
 					// screen's edge), but stretching the glyphs with it widens every letter at
 					// wide window sizes. Ours draws them at 4:3 widths: centred text about the
 					// screen's centre (the menu), other text about the screen edge it is nearer to,
-					// like the HUD pictures, so the counters stay next to the Lum and cage icons.
+					// like the HUD pictures, so the counters stay next to the Lum and cage icons. With
+					// no pictures to the side, about the side margin the story texts start at (43 of
+					// 640), so the slaves count stays beside its label (user, 2026-11-08).
 					float slot_width = std::min(1.0f, (4.0f / 3.0f) * height / width);
 					float block_middle = (left + layout.width * 0.5f) * 0.64f;
-					float anchor = layout.centred ? 320.0f : block_middle > 320.0f ? 640.0f : 0.0f;
+					float anchor = layout.centred ? 320.0f : !side_pictures ? 43.0f : block_middle > 320.0f ? 640.0f : 0.0f;
 					float x0 = anchor + ((left + item.x) * 0.64f - anchor) * slot_width;
 					float x1 = x0 + item.advance * 0.64f * slot_width;
 					// 0x4660B0 retains the slot's floating-point coordinates on both axes.
