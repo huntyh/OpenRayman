@@ -1241,9 +1241,29 @@ namespace openrayman::game
 		// Ceilings stop a move up at the top of the body: the head may not pass a surface facing
 		// down (the underside of the Learn_10 bridge by the waterfall, the Globox kids' cave roof).
 		// Without this a jump rose through them until the floor search found their top.
-		if((flags & collides) && has_collision && !climbing && target[2] > current[2])
-			if(auto ceiling = surface_at(&world_collision::ceiling_at, target[0], target[1], target[2] + head_height, current[2] + head_height - 0.05f, true))
-				target[2] = std::max(current[2], ceiling->height - head_height);
+		// Not only on the way up: a roof that slopes down across the move meets the body from the
+		// side (n.z about -0.75, too flat for the walls). Rayman's double jump down the Jail_20 chute
+		// flew level into its roof past the top of the jump and came out above it (user trace,
+		// 2026-11-08). So any surface facing down between the step height and the top of the head at
+		// the target counts: in the air it pushes the actor down under it, on the ground it stops
+		// the move across instead (a low roof mustn't press it into the floor).
+		if((flags & collides) && has_collision && !climbing)
+		{
+			const bool rising = target[2] > current[2];
+			const float bottom = std::min(current[2] + head_height - 0.05f, target[2] + climb_up);
+			if(auto ceiling = surface_at(&world_collision::ceiling_at, target[0], target[1], target[2] + head_height, bottom, true))
+			{
+				std::uint32_t report = m.u32(b + base::contacts);
+				const bool grounded = report && m.contains(report + 4, 4) && (m.u32(report + 4) & on_ground);
+				if(rising || !grounded)
+					target[2] = std::min(target[2], ceiling->height - head_height);
+				else
+				{
+					target[0] = current[0];
+					target[1] = current[1];
+				}
+			}
+		}
 
 		// The floor. The exe gathers contacts with the actor's collision spheres and picks the
 		// nearest (0x43EEC0, 0x43F510); here the actor is a small disc at its origin, tested straight down.
