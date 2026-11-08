@@ -624,13 +624,42 @@ namespace
 		}
 	}
 
-	// 0x459D30 supplies the distance curve. Panning and the camera listener remain
-	// approximations of the sound DLL's listener/position callbacks.
+	// Whether the camera's sector hears an actor's (0x40A1F0, the actor sound type's per-listener
+	// callback, called from 0x4520A0 once per microphone): yes for Rayman's own sounds (0x500578),
+	// in the same sector, or when the camera sector's hearing list (sector data +0x48 first
+	// element, +0x50 count; element: sector super object, flag, next) doesn't name the actor's
+	// sector; no when it names it with flag 0. The distance curve never goes below 77 of 127, so
+	// this is what keeps the chute fan (Jail_20 node 29) out of the starting cell (user,
+	// 2026-11-08). The actor's sector is the one the wake pass follows; the camera's is the
+	// smallest box that holds it (the renderer's), not yet the exe's own camera sector tracking.
+	bool camera_hears(const app& a, std::uint32_t source)
+	{
+		if(!a.vm || !a.live || source == a.vm->main_actor())
+			return true;
+		const std::uint32_t from = a.vm->actor_sector(source);
+		const auto camera = a.sound_sectors.sector_at({ a.camera.position.x, a.camera.position.y, a.camera.position.z });
+		if(!from || !camera || *camera >= a.sound_sector_super_objects.size())
+			return true;
+		const std::uint32_t listener = a.sound_sector_super_objects[*camera];
+		const std::uint32_t data = a.sound_sector_data[*camera];
+		if(from == listener || !data || !a.live->contains(data + 0x48, 12))
+			return true;
+		std::uint32_t element = a.live->u32(data + 0x48);
+		for(std::uint32_t n = a.live->u32(data + 0x50); n && element && a.live->contains(element, 12); n--, element = a.live->u32(element + 8))
+			if(a.live->u32(element) == from)
+				return a.live->u32(element + 4) != 0;
+		return true;
+	}
+
+	// 0x459D30 supplies the distance curve, camera_hears the sector gate. Panning and the camera
+	// listener remain approximations of the sound DLL's listener/position callbacks.
 	std::pair<float, float> sound_placement(const app& a, std::uint32_t source)
 	{
 		auto placed = a.live ? openrayman::game::global_placement(*a.live, source) : std::nullopt;
 		if(!placed)
 			return { 1.0f, 0.0f };
+		if(!camera_hears(a, source))
+			return { 0.0f, 0.0f };
 		glm::vec3 to = glm::vec3(placed->m[0][3], placed->m[1][3], placed->m[2][3]) - a.camera.position;
 		float distance = glm::length(to);
 		float gain = game::sound_distance_volume(distance) / 127.0f;
