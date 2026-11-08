@@ -1298,6 +1298,16 @@ namespace openrayman::game
 					floor_y = y;
 				}
 			}
+			// Rising (a jump's take-off), the floor stops the move only where it is above the target
+			// at the actor's origin. On a slope going up the rim probe ahead touches the floor
+			// above the target while the origin's plane is still below it; landing on it there
+			// cancelled every take-off running uphill (Learn_10 by the start, user 2026-11-08).
+			if(floor && target[2] > current[2] + carried[2])
+			{
+				const float at_origin = floor->height - ((target[0] - floor_x) * floor->normal[0] + (target[1] - floor_y) * floor->normal[1]) / floor->normal[2];
+				if(at_origin < target[2])
+					floor.reset();
+			}
 			if(floor)
 			{
 				vec d = move();
