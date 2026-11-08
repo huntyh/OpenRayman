@@ -352,7 +352,18 @@ namespace openrayman
 								else if(image.first[0] > 0.5f || image.second[0] < 99.5f)
 								{
 									// About that edge, so pieces that touch (the gauge's fill and rest) still do.
-									float edge = r.x + r.w * 0.5f > 320.0f ? 640.0f : 0.0f;
+									// A picture beside a text box (Murfy's face, the next-page arrow) keeps to
+									// the box's nearer edge instead, as the box stays full width: about the
+									// screen edge Murfy's face slid out of his box (user, 2026-11-08).
+									float middle = r.x + r.w * 0.5f;
+									float edge = middle > 320.0f ? 640.0f : 0.0f;
+									for(const auto& box : boxes)
+										if(box.alpha > 0 && image.first[1] < box.second[1] && image.second[1] > box.first[1])
+										{
+											float left = box.first[0] * 6.4f, right = box.second[0] * 6.4f;
+											edge = middle > (left + right) * 0.5f ? right : left;
+											break;
+										}
 									r.x = edge + (r.x - edge) * area;
 									r.w *= area;
 								}
@@ -438,17 +449,18 @@ namespace openrayman
 			auto layout = game::layout_dialog(dialog);
 			// 0x419A30 draws glyph objects in the whole viewport, like the slots: the text
 			// stays where the exe puts it (Globox's lines in their box), only its glyphs keep
-			// 4:3 widths at wide window sizes (Ray2Fix), about the same anchor as the slots. Text
-			// that starts at the side margin keeps its start (the story texts and subtitles all
-			// begin at x 43 of 640). Text that starts further in and spans the middle keeps its
-			// middle: the exe pads such a line with spaces to sit centred at 4:3 without the
-			// centred flag (Jail_10's PRESENTS under the logo, x 134; it slid left, user 2026-11-08).
+			// 4:3 widths at wide window sizes (Ray2Fix), about the same anchor as the slots: each
+			// line keeps its start (the story texts and subtitles at the side margin, Murfy's lines
+			// in his box). Only text the exe centres by padding it with spaces keeps its middle
+			// (Jail_10's "  Presents" under the logo slid left; user 2026-11-08). Keying this to
+			// where text starts also moved Murfy's lines in his box.
 			if(dialog.screen)
 			{
 				const float area = std::min(1.0f, (4.0f / 3.0f) * height / width);
 				const float full = layout.width * unit_x;
 				unit_x *= area;
-				if(!layout.centred && x >= 64.0f && x < 320.0f && x + full > 320.0f)
+				const auto first = dialog.text.find_first_not_of("\r\n");
+				if(!layout.centred && first != std::string::npos && dialog.text[first] == ' ')
 					x += full * (1.0f - area) * 0.5f;
 			}
 			if(layout.centred) x = (dialog.screen ? 320 : x) - layout.width * unit_x * 0.5f;
