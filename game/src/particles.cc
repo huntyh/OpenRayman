@@ -142,6 +142,34 @@ namespace openrayman::game
 			}
 			return;
 		}
+		if(kind == 46)
+		{
+			// 0x463390 case 46: two growing puffs, the second displaced in world X/Y.
+			add(0x100, point, {}, 0.01f, number * 0.5f, material, now);
+			vec3 offset = point;
+			offset[0] += random(-2 * number, 2 * number);
+			offset[1] += random(-2 * number, 2 * number);
+			add(0x100, offset, {}, 0.01f, number * 0.5f, material, now);
+			return;
+		}
+		if(kind == 49)
+		{
+			auto count = m_particles.size();
+			add(0x5a00, point, {}, 255, number * 0.7f, material, now);
+			if(m_particles.size() != count) m_particles.back().alpha = 300;
+			return;
+		}
+		if(kind == 99)
+		{
+			// 0x464b33: one flash and trunc((number + 1) * 4) falling sparks.
+			add(0x4500, point, {}, number, random(0.5f, 0.8f), material, now);
+			for(int i = 0, count = std::max(0, int((number + 1) * 4)); i < count && m_particles.size() < capacity; ++i)
+			{
+				vec3 v = {random(-2, 2), random(-2, 2), random(-0.2f, 6)};
+				add(0x3001, point, v, number, random(0.19f, 0.35f), material, now);
+			}
+			return;
+		}
 		if(kind == 30)
 		{
 			// 0x463ECE: a stationary flash and number sparks in world axes; the input vector is unused.
@@ -399,6 +427,18 @@ namespace openrayman::game
 		case 0x200: p.size += 3.7f * dt; p.height += 3.7f * dt; break;
 		case 0x300: p.size += 6.5f * dt; p.height += 6.5f * dt; break;
 		case 0x500: p.size -= 0.5f * dt; p.height -= 0.5f * dt; break;
+		case 0xa00:
+			p.size += 60 * dt; p.height -= 16.5f * dt;
+			if(p.size >= 5) p.flags = (p.flags & ~0xf00u) | 0xb00;
+			break;
+		case 0xb00:
+			p.size -= 60 * dt;
+			if(p.size <= 1) { p.size = 2; p.flags = (p.flags & ~0xf00u) | 0xd00; }
+			break;
+		case 0xd00:
+			p.size -= 16.5f * dt; p.height += 61.5f * dt;
+			if(p.height >= 10) p.alpha = 0;
+			break;
 		}
 		// Shrunk to nothing: kept at 0.01 (and flagged 0x1000000 by the exe).
 		p.size = std::max(p.size, 0.01f);
@@ -410,6 +450,7 @@ namespace openrayman::game
 		case 0x2000: p.alpha -= 160 * dt; break;
 		case 0x3000: p.alpha -= 260 * dt; break;
 		case 0x4000: p.alpha -= 350 * dt; break;
+		case 0x5000: p.alpha -= 850 * dt; break;
 		}
 	}
 

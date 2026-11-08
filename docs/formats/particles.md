@@ -173,3 +173,21 @@ disassembly through 0x463FD4, pool initialization at 0x4600C0, update at 0x46112
   by GPT 6.1 Terra through Codex) and then checked against the exe in this project: every address and constant
   above was re-read.
 - Which scripts call it, and with what, from `ortool brain` (Learn_10 nodes 3 and 4).
+
+## Kind 46
+
+At 0x46440D the effect adds two stationary, growing sprites using the supplied material. Both have flags 0x100, life field 0.01 and initial equal half-sizes 0.5 times the number. The first is at the point; the second is independently offset on world X and Y by -2 to 2 times the number, with unchanged Z. The vector is unused. The pool stores 0.7 for the first and 1.25 for the second at +0x38, a draw parameter. They grow by 1.3 units per second and have no timed-life or fade flag; animated-material completion can end them.
+
+**Where this came from:** own analysis of Rayman2.exe case 46 in 0x463390, pool initializer 0x4600C0, update 0x461120 and draw 0x460A10, with constants 0x49C9FC, 0x49CB20 and 0x49CBA4. The draw parameter is not yet reproduced by our renderer.
+
+## Kind 49
+
+Case 49 adds one stationary sprite at the point, flags 0x5A00, supplied material, equal initial half-sizes 0.7 times the number and life field 255. It sets alpha to 300, clamped to 255 for drawing; fade class 0x5000 subtracts 850 per second. Growth class 0xA00 adds 60 per second to width and subtracts 16.5 from height; at width 5 it changes to 0xB00, subtracting 60 from width. At width 1 it sets width to 2 and changes to 0xD00, subtracting 16.5 from width and adding 61.5 to height until height reaches 10. Expiry or the animated material can end it earlier. The vector is unused.
+
+**Where this came from:** own analysis of Rayman2.exe case 49 in 0x463390, 0x4600C0, 0x461120 and 0x460A10; constants 0x49CB48, 0x49CA88 through 0x49CA9C and 0x49CAB0.
+
+## Kind 99
+
+At 0x464B33 one flash and trunc((number + 1) * 4) sparks start at the point, all with the supplied material. The flash is stationary, flags 0x4500, size 0.5 to 0.8, shrinking 0.5 and fading 350 per second. Sparks have flags 0x3001, size 0.19 to 0.35 and world velocity -2 to 2 on X and Y, -0.2 to 6 on Z; they fall and fade at 260 per second. The vector is unused; the number is stored as life but timed expiry is not enabled. This matches kind 9's flash and spark ranges, with four sparks for number 0 versus kind 9's eight. Nonnegative counts are assumed by the executable.
+
+**Where this came from:** own analysis of Rayman2.exe 0x4648B0, especially the instructions at 0x464B77 through 0x464B8D (the decompiler omits the count expression), 0x4600C0 and 0x461120. Constants at 0x49CB50, 0x49CA14, 0x49CB0C, 0x49CB2C, 0x49CB78, 0x49CB18, 0x49CAE4 and 0x49CB7C establish the ranges.
