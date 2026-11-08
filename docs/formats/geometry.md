@@ -79,6 +79,16 @@ Two earlier mistakes, both visible in The Woods of Light: multiplying the two ma
 untransposed turned objects the wrong way (the three Globox kids faced the wall instead of the
 stream).
 
+**Turning a transform at run time** (0x445D00, used by the script turns such as procedures 163..165,
+171, 172): types 1..3 get the new axes as both matrices and become type 3. Other types keep their
+scale part as 0x4462A0 reads it: each row of the combined matrix in the old rotation's rows
+(sᵢⱼ = rᵢ · cⱼ), rebuilt on the new rows (cⱼ = Σᵢ sᵢⱼ r′ᵢ). Ours also makes the rows unit length first. A fan
+in Jail_20 (node 29) turns every tick, and float rounding makes the rows a little longer each time.
+The rebuild multiplies that into the scale, so it compounds: our first version (each combined row's
+length as its scale) grew the fan about 2% in 30 s until it poked out of its enclosure. *Where this
+came from: own reading of the decompiled 0x46AB20, 0x445D00 and 0x4462A0; the fan found by a DeepSeek
+reading (2026-11-08), the growth measured with `ortool run` and ORTOOL_TRANSFORMS.*
+
 **IPO data**: +0x00 physical object.
 
 **Hidden scenery**: super object +0x30 bit 0x2 suppresses drawing that object;

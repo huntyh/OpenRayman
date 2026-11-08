@@ -1270,21 +1270,50 @@ namespace openrayman::game
 		}
 
 		// Writes new axes into a transform, keeping each axis' scale in the second copy (0x445D00).
+		// 0x445D00: new axes for a transform. Types 1..3 get them as their only matrix (both copies,
+		// type 3). Otherwise the scale part is kept as the exe keeps it (0x4462A0): each row of the
+		// combined matrix in the old rotation's rows (s_j[i] = r_i . c_j), rebuilt on the new rows.
+		// Taking each combined row's length as its scale instead let a fan that turns every tick
+		// (Jail_20 node 29, procedure 165) grow by about 2% every 30 s until it poked out of its
+		// enclosure (with unit rows, see below).
 		void set_axes(live_memory& m, std::uint32_t t, const vec3& x, const vec3& y, const vec3& z)
 		{
-			const vec3 axes[3] = { x, y, z };
-			for(int i = 0; i < 3; i++)
+			// Unit rows: a turn every tick (the fan's) leaves them a little longer each time from
+			// float rounding (1.00003 after 1500 ticks), and the rebuild below multiplies that into
+			// the scale every tick, so it compounds.
+			auto unit = [](vec3 v) { float l = length(v); return l > 1e-6f ? vec3{ v[0] / l, v[1] / l, v[2] / l } : v; };
+			const vec3 axes[3] = { unit(x), unit(y), unit(z) };
+			std::uint32_t type = m.u32(t);
+			if(type >= 1 && type <= 3)
 			{
-				float scale = length(read3(m, t + 0x34 + std::uint32_t(i) * 12));
-				if(scale < 1e-6f)
-					scale = 1;
-				write3(m, t + 0x10 + std::uint32_t(i) * 12, axes[i]);
-				const vec3& a = axes[i];
-				write3(m, t + 0x34 + std::uint32_t(i) * 12, { a[0] * scale, a[1] * scale, a[2] * scale });
+				for(std::uint32_t i = 0; i < 3; i++)
+				{
+					write3(m, t + 0x10 + i * 12, axes[i]);
+					write3(m, t + 0x34 + i * 12, axes[i]);
+				}
+				m.write<std::uint32_t>(t, 3);
+				return;
 			}
-			// Rotation and scale from here on (type 4: the second copy is what places the object).
-			if(m.u32(t) < 4)
-				m.write<std::uint32_t>(t, 4);
+			vec3 rotation[3], combined[3];
+			for(std::uint32_t i = 0; i < 3; i++)
+			{
+				rotation[i] = unit(read3(m, t + 0x10 + i * 12));
+				combined[i] = read3(m, t + 0x34 + i * 12);
+			}
+			float scale[3][3]; // scale[j][i] = rotation row i . combined row j
+			for(int j = 0; j < 3; j++)
+				for(int i = 0; i < 3; i++)
+					scale[j][i] = type ? dot(rotation[i], combined[j]) : (i == j ? 1.0f : 0.0f);
+			for(std::uint32_t i = 0; i < 3; i++)
+				write3(m, t + 0x10 + i * 12, axes[i]);
+			for(std::uint32_t j = 0; j < 3; j++)
+			{
+				vec3 c{};
+				for(int i = 0; i < 3; i++)
+					for(int k = 0; k < 3; k++)
+						c[std::size_t(k)] += scale[j][i] * axes[i][std::size_t(k)];
+				write3(m, t + 0x34 + j * 12, c);
+			}
 		}
 
 		// --- Zone tests ----------------------------------------------------------------------------

@@ -64,6 +64,23 @@ blinks while the shown value lags the real one or Rayman has under 5 hit points.
 from: a DeepSeek reading of node 44's scripts and the exe, checked by us against the decompiled
 0x460530, 0x460670 and 0x463390 and the constant 0x49CA18 (0.01).
 
+**Rayman's slide dust** (behaviour 38): while sliding faster than 5, var93 adds up
+(1 − var27) × speed; past 60 (then 63, 66, … as var47 grows by 3) it resets, plays a sound and
+makes one puff at his origin by the ground's surface flags (function_197(1)): flag 0x8 → kind 8 with
+05/01 +0x623474 and the vector function_163(); flag 0x1000 → kind 1 with 05/01 +0x6235D0; otherwise
+kind 1 with 05/01 +0x62486C (the Jail_20 chute's floor has only 0x1, so this one).
+
+- **Kinds 1 and 2** (0x463390 cases 1, 2): one still particle (0x10000), number + 1 big (0x49C9F8 is
+  −1); kind 1 lives 2 s, kind 2 the vector's x seconds. Drawn.
+- **Kind 8** (0x461D80): only when the vector's horizontal length is at least 0.01; two particles
+  0.2 above the point, either side of the vector (0.4 across it, each also moved by a random −0.9..0.9
+  times the vector), flags 0x30005100 (grow 1.3, fade class 0x5000), life 200, 0.2 wide and 0.8 tall,
+  moving by the vector. Not drawn yet: it needs separate width and height and fade class 0x5000.
+
+Where this came from: a DeepSeek reading of Rayman's scripts and 0x463390/0x461D80 (2026-11-08),
+checked by us against the decompile and the constants 0x49C9F8, 0x49CA24, 0x49CAF4, 0x49CA58 and
+0x49CA64 (DeepSeek had the 0.2 lift the wrong way round).
+
 **A breaking cage's burst** (Learn_10 node 67's break rule, the same in every cage of that model):
 kinds 5, 9 and three times 45, at the cage's origin minus (0, 0, 1).
 

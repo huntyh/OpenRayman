@@ -88,6 +88,14 @@ namespace openrayman::game
 				m_screen_rectangles.push_back({point, vector, std::clamp(number, 0.0f, 255.0f), now});
 			return;
 		}
+		if(kind == 1 || kind == 2)
+		{
+			// 0x463390 cases 1 and 2: one still particle at the point (0x10000: gone after its life),
+			// number + 1 big (0x49C9F8 is -1); case 1 lives 2 s, case 2 as long as the vector's x.
+			// Rayman's slide makes a kind-1 puff of dust on a plain floor (behaviour 38, var93).
+			add(0x10000, point, {}, kind == 1 ? 2.0f : vector[0], number + 1.0f, material, now);
+			return;
+		}
 		if(kind == 7)
 		{
 			// 0x46348E: a ripple lying on the water, growing and fading; one every 0.2 s at most.
