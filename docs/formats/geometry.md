@@ -249,6 +249,11 @@ the count says.
   by eye; the name "look at" matches what Raymap calls this field.
 - The Rayman 2 PC field offsets and sizes: own analysis, by following pointers with
   `ortool peek` and checking counts against array sizes, then verified over all 70 levels.
+- Learn_10's portal well: sector 1's IPO node 94 uses an eight-vertex, ten-triangle mesh and
+  visual material `05/02 +0x157E4` with `foret_fondetoiles_txy`, scroll `(0, -0.003)` per
+  frame and no texture animation frames. Hiding that material removes the well's white stars
+  in the reported camera view. The extra independently scrolling star sample is our own optional
+  renderer improvement, not a decoded game feature; `OPENRAYMAN_WELL=0` turns it off.
 
 ### Animated textures choose their blending from every frame
 

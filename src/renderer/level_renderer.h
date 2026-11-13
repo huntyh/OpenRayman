@@ -160,6 +160,7 @@ namespace openrayman
 			glm::vec4 ambient{ 0 }, diffuse{ 1 }; // the material's colours and alpha
 			std::size_t sector = no_sector; // the level's own geometry: the sector it belongs to
 			cull faces = cull::none;
+			bool well = false; // Learn_10's identified star material, kept separate from other batches
 		};
 		static constexpr std::size_t no_sector = std::size_t(-1);
 
@@ -232,6 +233,8 @@ namespace openrayman
 		GLint m_u_sky_haze = -1, m_u_sky_eye = -1, m_u_sky_haze_color = -1;
 		GLint m_u_fog_model = -1;
 		GLint m_u_uv_offset = -1;
+		GLint m_u_well = -1;
+		bool m_well = false;
 		GLint m_u_camera = -1, m_u_camera_forward = -1, m_u_lighting = -1;
 		GLint m_u_light_count = -1, m_u_light_kind = -1, m_u_light_vector = -1, m_u_light_color = -1, m_u_light_range = -1;
 		GLint m_u_material_ambient = -1, m_u_material_diffuse = -1, m_u_luminosity = -1, m_u_light_alpha = -1;

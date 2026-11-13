@@ -142,6 +142,7 @@ namespace openrayman
 			uniform float u_sky_haze;
 			uniform vec3 u_sky_haze_color;
 			uniform vec2 u_uv_offset; // scrolling textures (water, mist, clouds)
+			uniform vec4 u_well; // secondary star strength, scale, and offset; zero for all other surfaces
 			uniform vec4 u_fog_color;
 			uniform float u_fog_infinite;
 			uniform vec4 u_fog;       // near, far, how much fog covers at near and at far (0..1)
@@ -187,6 +188,11 @@ namespace openrayman
 				// The level of detail comes from the unclamped coordinates, so clamping doesn't change it.
 				// Scrolling textures tile seamlessly, so their offset goes on after the clamp.
 				vec4 texel = textureGrad(u_texture, uv + u_uv_offset, uv_dx, uv_dy);
+				if(u_well.x > 0.0)
+				{
+					vec3 stars = textureGrad(u_texture, uv * u_well.y + u_well.zw, uv_dx * u_well.y, uv_dy * u_well.y).rgb;
+					texel.rgb = texel.rgb * 0.8 + stars * u_well.x;
+				}
 				if(u_sharpen > 0.5)
 					texel.a = sharpened(texel.a, v_uv);
 				if(v_culled > 0.5)
@@ -395,6 +401,7 @@ namespace openrayman
 		m_u_view_projection = glGetUniformLocation(m_program, "u_view_projection");
 		m_u_model = glGetUniformLocation(m_program, "u_model");
 		m_u_uv_offset = glGetUniformLocation(m_program, "u_uv_offset");
+		m_u_well = glGetUniformLocation(m_program, "u_well");
 		m_u_sky_haze = glGetUniformLocation(m_program, "u_sky_haze");
 		m_u_fog_model = glGetUniformLocation(m_program, "u_fog_model");
 		m_u_sky_eye = glGetUniformLocation(m_program, "u_sky_eye");
@@ -718,7 +725,7 @@ namespace openrayman
 
 		// Triangles grouped by texture. Corners are expanded into separate vertices, because a
 		// corner's UV is indexed separately from its position.
-		using by_texture = std::map<std::tuple<blend, GLuint, int, std::array<float, 2>, std::array<float, 8>, cull>, std::vector<vertex>>;
+		using by_texture = std::map<std::tuple<blend, GLuint, int, std::array<float, 2>, std::array<float, 8>, cull, bool>, std::vector<vertex>>;
 		// Static geometry is lit once here, by the lights its sector lists for scenery; meshes placed
 		// per frame (`lit` empty) are lit as they're drawn.
 		auto add = [&](const geometric_object& object, const affine& world, by_texture& triangles, std::vector<sprite_instance>& sprites,
@@ -732,6 +739,9 @@ namespace openrayman
 			}
 			for(const triangle_element& element : object.elements)
 			{
+				// The portal well's star texture: our own deeper look (docs/IMPROVEMENTS.md, OPENRAYMAN_WELL=0 off).
+				const bool well = element.material && element.material->texture &&
+					element.material->texture->name == "textures_foret\\foret_fondetoiles_txy.tga";
 				gpu_texture texture{ m_white, blend::none };
 				int animation = -1;
 				std::array<float, 2> scroll{};
@@ -756,7 +766,7 @@ namespace openrayman
 						texture.mode = m_animations[std::size_t(animation)].mode;
 					scroll = element.material->scroll;
 				}
-				std::vector<vertex>& out = triangles[{ texture.mode, texture.id, animation, scroll, colors, faces }];
+				std::vector<vertex>& out = triangles[{ texture.mode, texture.id, animation, scroll, colors, faces, well }];
 				for(std::size_t t = 0; t < element.triangles.size(); t++)
 				{
 					// The game's v runs up from the bottom row; our textures are uploaded top row first.
@@ -820,7 +830,7 @@ namespace openrayman
 				glm::vec2 per_second(scroll[0] * scroll_frames_per_second, -scroll[1] * scroll_frames_per_second);
 				const std::array<float, 8>& c = std::get<4>(key);
 				batches.push_back({ std::get<1>(key), GLint(vertices.size()), GLsizei(list.size()), std::get<0>(key), std::get<2>(key), per_second,
-					glm::vec4(c[0], c[1], c[2], c[3]), glm::vec4(c[4], c[5], c[6], c[7]), no_sector, std::get<5>(key) });
+					glm::vec4(c[0], c[1], c[2], c[3]), glm::vec4(c[4], c[5], c[6], c[7]), no_sector, std::get<5>(key), std::get<6>(key) });
 				vertices.insert(vertices.end(), list.begin(), list.end());
 			}
 		};
@@ -1056,6 +1066,8 @@ namespace openrayman
 
 	void level_renderer::set_backdrop(const std::string& level)
 	{
+		const char* well = std::getenv("OPENRAYMAN_WELL");
+		m_well = level == "Learn_10" && !(well && std::strcmp(well, "0") == 0);
 		m_backdrop_sectors.clear();
 		m_backdrop_skies.clear();
 		const char* enabled = std::getenv("OPENRAYMAN_BACKDROP");
@@ -1129,6 +1141,7 @@ namespace openrayman
 		glEnable(GL_DEPTH_TEST);
 		glDisable(GL_CULL_FACE); // which faces are double sided isn't decoded yet
 		glUseProgram(m_program);
+		glUniform4f(m_u_well, 0, 0, 0, 0);
 		glm::mat4 view_projection = projection * view;
 		const glm::mat4 fog_identity(1.0f);
 		glUniformMatrix4fv(m_u_fog_model, 1, GL_FALSE, glm::value_ptr(fog_identity));
@@ -1334,9 +1347,16 @@ namespace openrayman
 				const double scroll_time = m_time * (sky_pass ? m_sky_drift : 1.0f);
 				glm::vec2 offset(std::fmod(double(b.scroll.x) * scroll_time, 2.0), std::fmod(double(b.scroll.y) * scroll_time, 2.0));
 				glUniform2f(m_u_uv_offset, offset.x, offset.y);
+				if(m_well && b.well)
+				{
+					// A fainter, finer copy moves independently of the original, breaking up its
+					// uniform sideways drift without blurring either layer or adding a draw.
+					glUniform4f(m_u_well, 0.35f, 2.0f, float(std::fmod(m_time * -0.035, 2.0)), float(std::fmod(m_time * -0.09, 2.0)));
+				}
 				glUniform4fv(m_u_material_ambient, 1, glm::value_ptr(b.ambient));
 				glUniform4fv(m_u_material_diffuse, 1, glm::value_ptr(b.diffuse));
 				draw_triangles(b.first, b.count);
+				glUniform4f(m_u_well, 0, 0, 0, 0);
 				if(flash_near)
 				{
 					const glm::mat4 sky_fog_now = glm::inverse(sky_model_now);
