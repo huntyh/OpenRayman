@@ -517,3 +517,83 @@ Where this came from: own reading of the exe at those addresses (Sol, 2026-11-07
 user hearing the counter click in the real game and not in ours.
 
 **Per-actor distances.** An actor can carry its own saturation and fade (actor +0x2C: a pointer to two 16.16 values). 0x415930, the actor sound type's +0x5C callback, copies them into the emitter info for 0x451F30, which sets info flag 0x10; the wave DLL's `_SND_fn_vParam3Dto2D` (WAVMWBVR.dll 0x1000B1E0) then computes each microphone's volume with `_SND_fn_ucDistanceToVolumeEx` (0x459D80, the same curve with those two numbers) instead of the default. Most actors that have them use a fade beyond 8 x saturation, so there is no held floor and the sound goes to nothing at 8 x saturation: Jail_20's chute fans (nodes 29, 30) carry 8 and 80, so they are silent beyond 64 units and not heard from the starting cell (user, 2026-11-08). Others hold at a quieter floor (Jail_10 nodes 9 and 10: 1 and 7). Per microphone the DLL also skips an emitter whose 0x40A1F0 gate is 0: the camera sector's hearing list (sector data +0x48, count +0x50; element sector, flag, next) names the actor's sector with flag 0; Rayman's own sounds always pass. Where this came from: own reading of the exe and WAVMWBVR.dll in Ghidra and capstone, 2026-11-08, after a DeepSeek job (H:2exportean95) found the gate. Code: `sound_placement` and `camera_hears` in src/main.cc.
+
+### Learn_10 distant creak investigation (2026-11-13)
+
+The sound log's node number is an index into the rendered actor array, not necessarily a scene-tree
+node number. In the reported recording, logged actor 51 maps to scene node 53. Its actor +0x2C
+points to the 16.16 pair 1000, 2000, so the distance curve gives full gain at 96.6 units. Event
+0x00A80000 resolves to bank 168's GRINCE3.WAV. This identifies the reason for its placement gain;
+it does not establish whether that actor should have started the sound while hidden or inactive.
+
+Own analysis: inspected the level data with `ortool scene` and `ortool peek`, resolved the event
+with `ortool sound`, and inspected 0x452B70: the sound thread recalculates placement for active
+voices. OpenRayman likewise updates voice placement from the current actor transform and camera.
+Whether the listener and source eligibility match the original remains to be established.
+
+The follow-up engine trace found event 0x00540002 (bank 84 event 2, resolving to bank 363
+resource 0, `helpitch.wav`) repeating every 960 ticks from logged actor 51 after placing Rayman
+near (18.9, 185.4, -4.7). It started at gain 1.000 at 91.4 units. The same sound occurs from
+logged actor 65 near the starting cage. The resource's +0x30 word is zero, so our player treats
+it as a one-shot, not a loop. The nearby creak is a separate animation event from the same
+emitter. These are candidates for the reported crying and creak, pending a listening comparison.
+
+At the instant of the actor 51 event in this reproduction, its super-object hidden bit was clear
+and its standard active flag was set. Thus suppressing sounds merely because their source is
+hidden or inactive would not explain this reproduction. Own analysis: instrumented an engine
+run and resolved its event and sample with `ortool`; compared the active-voice update with
+0x452B70 and animation event dispatch with 0x41AFB0. The exact reason for the difference from the
+original game remains unresolved; no change to the placement or animation rules has been made.
+
+### Distance pair units and metric (2026-11-13)
+
+The raw pairs provide no evidence of a divide-by-100 or a float encoding. Learn_10's logged
+actor 51 (scene node 53) and actor 65 (scene node 67) each store `03E80000 07D00000` at their
+actor +0x2C target; Jail_20's scene nodes 29 and 30 store `00080000 00500000`; Jail_10's nodes
+9 and 10 store `00010000 00070000`. Interpreting these as 16.16 gives 1000/2000, 8/80, and 1/7
+respectively. Procedure 364 at 0x46FF00 evaluates two script integers and writes them shifted left
+16 to that actor block (the setters at 0x42DB20 and 0x42DE40 write the first and second words).
+
+Own analysis: 0x58CB0 calls 0x58B60 for the INI pair, then 0x459CF0 and 0x459C90 install the
+defaults. The installed INI supplies saturation 8 and fade 30. 0x459D80 compares a signed distance
+against the first word and the second word, replacing a second word below the first with an
+unlimited value; it uses eight times the first as the zero point. In the installed WAVMWBVR.dll,
+0x1000B1E0 subtracts listener and source positions, calls the export resolved as
+`_SND_fn_rPseudoNormeVectorSnd` at 0x45B2F0, and passes the result with the optional pair to the
+extended curve. 0x45B2C0 implements the approximate norm by combining two components as the
+larger absolute value plus half the smaller, applied twice. Thus the distance is not squared.
+OpenRayman currently uses Euclidean distance instead of that approximation; either is far below
+1000 for the reported 89.2-unit placement, so this difference does not explain the loud sound.
+The separate callback at 0x415930 is an unnamed code label absent as a separate file from the
+provided decompile; its precise input and copies have not been independently rechecked here.
+
+In an instrumented OpenRayman start with the requested fixed camera and a placement to wake the
+emitter, event 0x00540002 still started at gain 1.000 at 89.2 units. A near-cage camera logged
+the same event from actor 65 at gain 1.000. Neither result establishes what the original game
+actually plays there; the underlying discrepancy remains open and no rescaling was applied.
+
+### Crying and actor sleep (2026-11-13)
+
+The real-game `rec_crying/sound.txt` recording identifies the crying as event 0x00C30000,
+not `helpitch.wav`: bank 195 event 0 chooses bbpleur1/2/3. The emitter is the three-kids
+actor, scene node 39 (actor-array log index 37). Its five-frame animation in states 1 and 7
+contains two cry events; state 4 also contains two. The earlier helpitch identification above
+was an incorrect candidate, not the crying.
+
+A diagnostic engine run positioned Rayman beside the kids and gave node 39 the same script
+signal used to enter its scene. The cries began at ticks 225 and 236. Moving Rayman farther
+into the cave to (-40,181,1.6) put him in scene sector 100; by tick 303 the kids left the
+active set, and the last cry start was tick 263. At (-49.9,178.9,1.6), Rayman remained in
+sector 98, whose wake list includes the kids' sector 127, so that position alone did not put
+them to sleep. The real recording specifies the camera, not Rayman's exact position.
+
+Own analysis of the executable: the sector transition 0x40B7B0 sends departing actors to the
+sleep list, then 0x40B410 clears their active flag and calls 0x453040; 0x451DC0 stops all
+voices associated with that actor and sound type. OpenRayman already stopped advancing an
+inactive actor's animation, but left previously started one-shot voices playing until their
+samples ended. It now stops those voices on sector deactivation; ordinary hidden or removed
+objects retain the existing one-shot behavior. Unpositioned script sounds use source zero,
+matching the executable's lack of an emitter, so actor sleep does not stop them by accident.
+The sound log records starts rather than voice endings; it confirms the actor stopped issuing
+new cries, and diagnostic logging confirms the new stop path ran. The manual signal and
+teleport exercise this transition but are not a complete replay of the user's route.

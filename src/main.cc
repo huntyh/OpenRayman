@@ -937,7 +937,7 @@ namespace
 						a.sound_sources.insert(request.source);
 					}
 					else
-						a.sounds->request(request.event, request.source, 1.0f, 0.0f, request.selector);
+						a.sounds->request(request.event, 0, 1.0f, 0.0f, request.selector);
 				}
 			if(!a.screenshot && !a.silent_run)
 				play_sector_sounds(a);
@@ -969,6 +969,14 @@ namespace
 				if(a.vm && (a.vm->removed(source) || (a.live->contains(source + 0x30, 4) && (a.live->u32(source + 0x30) & 0x2))))
 				{
 					a.sounds->stop_source(source);
+					it = a.sound_sources.erase(it);
+					continue;
+				}
+				// On leaving the active world, the exe stops every voice of the actor, including
+				// one-shots already playing (0x40B410 -> 0x453040 -> 0x451DC0).
+				if(a.vm && !a.vm->active(source))
+				{
+					a.sounds->stop_source(source, true);
 					it = a.sound_sources.erase(it);
 					continue;
 				}

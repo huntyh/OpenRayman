@@ -374,11 +374,12 @@ namespace openrayman
 		m_loading_theme = 0;
 	}
 
-	void sound_player::stop_source(std::uint32_t source)
+	void sound_player::stop_source(std::uint32_t source, bool all_voices)
 	{
 		std::lock_guard lock(m_mutex);
-		// Only looping voices: a one-shot finishes, as a Lum's collect sound must while the Lum hides.
-		std::erase_if(m_voices, [&](const voice& v) { return v.source == source && v.loop; });
+		// Hidden objects allow one-shots to finish; leaving the active world stops every voice
+		// from that actor (0x40B410 -> 0x453040 -> 0x451DC0).
+		std::erase_if(m_voices, [&](const voice& v) { return v.source == source && (all_voices || v.loop); });
 	}
 
 	void sound_player::set_paused(bool paused)
