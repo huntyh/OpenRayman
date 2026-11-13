@@ -130,7 +130,7 @@ openrayman --game "<Rayman 2 folder>" --level Learn_10 [--start new|portal] [--s
 `--save 1` (or 2/3) restores an OpenRayman slot at level load and takes precedence over `--start`.
 On Windows, slots live in `%APPDATA%\OpenRayman\OpenRayman\SaveGame`. Place `portable.txt` next to the executable to use its `SaveGame` folder, or set `OPENRAYMAN_SAVE_DIR` to choose a save root. `ortool mksave Learn_10 1` creates a mock slot (set `OPENRAYMAN_GAME_DIR` first). The game installation's saves are never used by default.
 
-Without `--save`, `--start new` starts a first visit (Rayman at the hand-over, the tutorial cage
+Without `--save`, `--start new` starts a first visit (including Rayman's opening scene, the tutorial cage
 waiting); the default starts as if the level were reached from the Hall of Doors. `--story-bits` sets a save's
 story bits at load, `--keys` holds keys on schedule as in `ortool run`, and `--camera-log <file>`
 writes the camera's position every tick as CSV. Without `--camera` it plays seen through the

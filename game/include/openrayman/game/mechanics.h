@@ -134,7 +134,7 @@ namespace openrayman::game
 	// set and gravity give a target position, the floor stops it, and the result becomes the speed
 	// the scripts read back (dynamics base +0x3C) and the contact word they test (conditions 27..32).
 	// Procedure 80 (0x467770): reinstall the current state mechanics, even unchanged.
-	void reinstall_state_mechanics(live_memory& memory, std::uint32_t actor);
+	void reinstall_state_mechanics(live_memory& memory, std::uint32_t actor, std::uint32_t state = 0);
 	// 0x412F20 -> 0x435B70/0x435AC0: clear live motion at a world reset.
 	void reset_dynamics(live_memory& memory, std::uint32_t actor);
 	void move_actor(live_memory& memory, std::uint32_t super_object, std::uint32_t actor, double ms, const world_collision& world, interpreter* vm = nullptr);

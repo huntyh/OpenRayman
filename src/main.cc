@@ -1547,6 +1547,9 @@ namespace
 			if(a.sounds && !a.screenshot && header.startup_sound)
 				a.sounds->request(*header.startup_sound, 0, 1.0f, 0.0f, -1);
 			a.sound_sources.clear();
+			const bool learn_opening = !a.save_slot && a.new_game &&
+				openrayman::game::learn_10_opening(levels[index]) &&
+				(!a.carried_story || !openrayman::game::story_has(*a.carried_story, 1091));
 			// The story so far (first_visit.h): a revisit includes the completed intro and Learn_10; a new
 			// game has the pirate ship and the intro behind it.
 			// Explicit story-bit overrides: 1095 gives
@@ -1558,15 +1561,13 @@ namespace
 				// The menu starts from Fix's own state, as the game boots: no save is loaded yet.
 				bool menu = std::ranges::equal(levels[index], std::string_view("Menu"),
 					[](unsigned char x, unsigned char y) { return std::tolower(x) == std::tolower(y); });
-				// A level reached from another (Jail_20's fall into Learn_10) keeps the story the
-				// scripts left, plus what a start here stands in for: we skip Learn_10's intro and
-				// start where it hands over, and without the 1091 that intro sets its director kept
-				// the near-black cover up (user, 2026-11-08).
+				// A level reached from another keeps the story the scripts left. Learn_10's
+				// first visit runs its director, which sets bit 1091 at the hand-over.
 				if(a.carried_story)
 					a.vm->set_story_words(fix_actors, *a.carried_story);
 				if(menu && saved_language) a.vm->set_story_bit(fix_actors, 1006);
-				if(!menu && !a.save_slot)
-					for(std::uint32_t bit : a.intro_start && !openrayman::game::only_new_game(levels[index]) ? std::span<const std::uint32_t>(openrayman::game::intro_story_bits) : openrayman::game::start_story_bits(levels[index], a.new_game))
+				if(!menu && !a.save_slot && !(learn_opening && a.carried_story))
+					for(std::uint32_t bit : (learn_opening || (a.intro_start && !openrayman::game::only_new_game(levels[index]))) ? std::span<const std::uint32_t>(openrayman::game::intro_story_bits) : openrayman::game::start_story_bits(levels[index], a.new_game))
 						a.vm->set_story_bit(fix_actors, bit);
 				a.carried_story.reset();
 				a.fix_actors = fix_actors;
@@ -1640,8 +1641,8 @@ namespace
 			// Where Rayman stands before the hand-over: his saved place (the intro's), so moving him
 			// to the hand-over plays what the game plays there.
 			a.rayman_sector = rayman_sector_now(a);
-			// A first visit starts where the level's intro cutscene hands Rayman over (first_visit.h).
-			if(a.new_game && !a.intro_start && !a.save_slot && !header.placements.empty())
+			// Levels without an implemented intro use the hand-over shortcut (first_visit.h).
+			if(a.new_game && !a.intro_start && !learn_opening && !a.save_slot && !header.placements.empty())
 				openrayman::game::apply_first_visit_hand_over(*a.live, *a.vm, tree, levels[index], header.placements[0].super_object.address(), a.camera_super_object);
 			a.script_clock = 0;
 			a.animation_time = a.start_time.value_or(0.0);

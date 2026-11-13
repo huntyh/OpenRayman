@@ -1520,7 +1520,8 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	for(const auto& placed : header.placements)
 		fix_actors.push_back(placed.super_object.address());
 	const char* start = std::getenv("ORTOOL_START");
-	bool intro = start && std::string_view(start) == "intro";
+	bool intro = start && (std::string_view(start) == "intro" ||
+		(std::string_view(start) == "new" && game::learn_10_opening(name)));
 	bool first_visit = intro || (start && std::string_view(start) == "new") || game::only_new_game(name);
 	for(std::uint32_t bit : intro && !game::only_new_game(name) ? std::span<const std::uint32_t>(game::intro_story_bits) : game::start_story_bits(name, first_visit))
 		vm.set_story_bit(fix_actors, bit);

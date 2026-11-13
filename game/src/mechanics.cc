@@ -856,12 +856,12 @@ namespace openrayman::game
 			for(std::uint32_t i = 0; i < contacts_size; i += 4) m.write<std::uint32_t>(report + i, 0);
 	}
 
-	void reinstall_state_mechanics(live_memory& m, std::uint32_t actor)
+	void reinstall_state_mechanics(live_memory& m, std::uint32_t actor, std::uint32_t state)
 	{
 		if(!actor || !m.contains(actor, 12)) return;
 		std::uint32_t dynamics = m.u32(actor + 8), data = m.u32(actor);
 		std::uint32_t b = dynamics && m.contains(dynamics, 4) ? m.u32(dynamics) : 0;
-		std::uint32_t s = data && m.contains(data + 4, 4) ? m.u32(data + 4) : 0;
+		std::uint32_t s = state ? state : (data && m.contains(data + 4, 4) ? m.u32(data + 4) : 0);
 		std::uint32_t mech = s && m.contains(s + state_mechanics, 4) ? m.u32(s + state_mechanics) : 0;
 		if(b && mech && m.contains(b, base::size) && m.contains(mech, 0x3C)) install_mechanics(m, b, mech);
 	}
@@ -1290,10 +1290,11 @@ namespace openrayman::game
 			const bool taking_off = target[2] > current[2] + carried[2] ||
 				(dt > 0 && (target[2] - current[2] - carried[2]) / dt > m.f32(b + base::speed + 8) + 4.0f);
 			float bottom = target[2] - ((was_grounded || external_placement) && !taking_off ? follow_down : 0.0f);
-			// The actor's feet cover a small circle: the highest floor under any of nine points of it.
+			// Prefer the floor under the origin. Rim probes provide support at edges; a higher
+			// rim hit can be the chute's side, whose plane is not the floor under the actor.
 			std::optional<world_collision::surface_hit> floor;
 			float floor_x = 0, floor_y = 0;
-			for(int k = 0; k < 9; k++)
+			for(int k = 8; k >= 0; k--)
 			{
 				float angle = float(k) * 0.785398f;
 				float r = k == 8 ? 0.0f : foot_radius;
@@ -1303,6 +1304,7 @@ namespace openrayman::game
 					floor = f;
 					floor_x = x;
 					floor_y = y;
+					if(k == 8) break;
 				}
 			}
 			// Rising (a jump's take-off), the floor stops the move only where it is above the target

@@ -633,8 +633,23 @@ namespace openrayman::game
 			if(c.index == 75)
 				next_arg(c, quiet);
 			std::uint32_t data = actor_part(c.vm, self, actor_field::data_3d);
-			if(data && !change_state(c.vm.memory(), data, target.word(), c.index == 73, c.vm.clock(), false, c.vm.actor_of(self), (quiet.word() & 0xFF) != 0))
-				c.vm.signal(flow::wait);
+			if(data)
+			{
+				auto actor = c.vm.actor_of(self);
+				if(!change_state(c.vm.memory(), data, target.word(), c.index == 73, c.vm.clock(), false, actor, (quiet.word() & 0xFF) != 0))
+					c.vm.signal(flow::wait);
+				else if(target.word())
+				{
+					auto& m = c.vm.memory();
+					auto dynamics = actor && m.contains(actor + 8, 4) ? m.u32(actor + 8) : 0;
+					auto base = dynamics && m.contains(dynamics, 4) ? m.u32(dynamics) : 0;
+					auto state = target.word();
+					auto mechanics = state && m.contains(state + 0x24, 4) ? m.u32(state + 0x24) : 0;
+					if(base && m.contains(base + 4, 4) && mechanics && m.u32(base + 4) != mechanics)
+						reinstall_state_mechanics(m, actor, state);
+				}
+			}
+
 			return c.args;
 		}
 

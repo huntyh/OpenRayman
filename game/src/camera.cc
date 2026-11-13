@@ -475,6 +475,26 @@ namespace openrayman::game
 			tracked_speed = average(0x78, setting(0x50));
 			tracked_position = average(0xD8, setting(0x4C));
 			have_tracked_position = length(tracked_position) > 0;
+			// A scripted cut can put the camera at the destination before its target is
+			// teleported there. Discard the old samples in that case: following their
+			// average would immediately undo the cut and send the camera back across
+			// the level. This is an approximation pending the executable's full reset.
+			if(target == vm.main_actor() && have_tracked_position &&
+				length(sub(position, target_pos)) < 10.0f && length(sub(tracked_position, target_pos)) > 10.0f)
+			{
+				for(std::uint32_t i = 0; i < 8; i++)
+				{
+					for(std::uint32_t k = 0; k < 3; k++)
+					{
+						m.write<float>(cam + 0x78 + i * 12 + k * 4, 0);
+						m.write<float>(cam + 0xD8 + i * 12 + k * 4, target_pos[k]);
+					}
+					m.write<float>(cam + 0x138 + i * 4, 0.03f);
+				}
+				tracked_position = target_pos;
+				tracked_speed = {};
+				state.look_at = add(target_pos, rotate(m, target_transform, read3(m, block + camera_field::vector_b)));
+			}
 		}
 		vec3 aim{};
 		if(target_transform)
@@ -601,7 +621,8 @@ namespace openrayman::game
 		// Only for Rayman: the menu's camera follows a marker (node 7) that jumps from waypoint to
 		// waypoint, and the real game pans there (user 2026-11-04), so other targets travel.
 		bool cut = state.valid && target_transform && target == vm.main_actor() &&
-			length(sub(aim, state.look_at)) > teleported;
+			length(sub(aim, state.look_at)) > teleported &&
+			length(sub(position, read3(m, target_transform + 4))) > teleported;
 		// A cut need not travel from the old position. If its destination is hidden from the
 		// target, search around the target for a clear landing. This is our approximation; the
 		// executable's startup reset (0x485810) and obstacle transitions have different modes.

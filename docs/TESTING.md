@@ -212,6 +212,9 @@ Fixes that landed since the last look, each at its own spot:
 - [ ] Start again with `--start new` and reach the kids' scene. Compare it with the real game:
       Rayman's letters should look white-ish, the kids' letters yellow with red highlights, and
       Murfy's yellow and red should match. Check the colour across both top and bottom of letters.
+- [ ] On a new visit to Learn_10, watch Rayman fall, search for Globox and arrive in the woods.
+      Compare the dialogue, music, camera cuts and the hand-over to the original; control should
+      return after the scene. Also check the Jail_20 chute and its transition into this scene.
 
 ## The main menu (Phase 4)
 

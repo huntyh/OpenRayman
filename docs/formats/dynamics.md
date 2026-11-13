@@ -122,12 +122,11 @@ inspection of the installed executable and capstone at 0x436A30, 2026-11-08.
   the height; flag 0x80 uses +0x1C/+0x20 as the contact response, 0x100 keeps a move's vertical part
   against suitable walls (0x437E60). Ours: while 0x400000 is set, the floor isn't searched and
   walls only push from the height up, so the ledge's face doesn't hold Rayman back (without it he
-  ended on the very edge, user report); 0x80 and 0x100 aren't used yet. When an actor's state changes, its mechanics are installed in our
-  dynamics step, after the scripts, so a 297 in the same tick loses 0x182 (the exe installs them at
-  once, 0x472345).
+  ended on the very edge, user report); 0x80 and 0x100 aren't used yet. State procedures install
+  the requested state's mechanics immediately, before subsequent script calls (0x472345).
 
 The exe finds contacts with the actor's collision spheres and picks the nearest. We treat the actor
-as a disc 0.5 units across its middle (Rayman spawns 12 cm off the grass edge in Learn_10) and look straight down for the highest triangle that faces up (at most 60° from flat),
+as a small disc (Rayman spawns 12 cm off the grass edge in Learn_10) and look straight down for a triangle that faces up (at most 60° from flat), preferring the actor's origin and using rim probes when it has no support,
 following the floor up to 0.3 units down while grounded. Water surfaces aren't floors. Walls stop
 the actor too, as a cylinder: a triangle steeper than 60° (`|normal.z| < 0.5`, not water) that meets
 the height from 0.5 (the step it can climb) to 1.8 above the target pushes it horizontally out, along
@@ -267,3 +266,15 @@ the actor origin, preventing the rim height from lifting him on a slope.
 This improves our disc approximation rather than implementing the original
 sphere solver. See [jail20-handover.md](jail20-handover.md) for measurements,
 original procedure 159 behavior, and provenance.
+
+**Where this came from (2026-11-08):** read-only Ghidra analysis of Rayman2.exe function
+238 at 0x47A660 confirms that its vector result uses the current actor's dynamics gravity,
+the supplied endpoints, and an apex above the higher endpoint. Negative height or absent/zero
+gravity returns zero. Learn_10's node 40 uses it for the opening jump, but the jump's live
+inputs and the mechanics after procedure 182 were then investigated as described below.
+
+**Where this came from (2026-11-08, intro 23c):** the procedure table at 0x4A43E0 has eight-byte entries; entry 182 at 0x4A4990 points to 0x46CBD0. The state procedure installs mechanics during the script call (0x472345, 0x435DF0 and 0x435B80), before a following function 238 reads gravity. In Learn_10, delaying that install until movement made the ballistic function see zero gravity and return a zero vector. The resulting trace first diverged at tick 1013; installing the state mechanics immediately produces an airborne arc. The disc floor remains an approximation.
+
+**Where this came from (intro 23c review):** read-only Ghidra inspection of 0x472290, 0x435DF0, 0x435B80 and 0x412150 shows the pointer comparison is by mechanics address, not kind. A kind-1 install copies the specified flags and parameters; it does not directly overwrite speed, second-inertia factors at +0x168 or the contact coefficient at +0x174. Reproducing Jail_20 with immediate installs reveals a regression whose first divergence is earlier than the slide: after a state transition at 86000 ms, a subsequent script sets gravity to 40; the deferred implementation instead installs the playing state later and leaves gravity 25. This changes the approach trajectory. The subsequent intro 23d investigation found that the altered trajectory exposed the rim-probe floor-selection problem described below; the full executable resolver is still not implemented.
+
+**Where this came from (intro 23d):** the Jail_20 headless reproduction with immediate state mechanics and the recorded gravity 40 reached a side of the chute where a rim probe selected a steep surface while the actor's origin was still over the floor. Its extrapolated plane gave an upward velocity and led to loss of contact. Preferring the origin's support, with rim probes as fallback, keeps the sampled slide grounded through ticks 5300–6099 and reaches the end sequence. This is a correction to our disc approximation, not a claim that the executable uses point probes; its swept sphere resolver remains to be implemented. The headless path and the real live recording were compared, but the chute still needs a visual check.

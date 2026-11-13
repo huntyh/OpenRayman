@@ -13,8 +13,8 @@
 
 namespace openrayman::game
 {
-	// A first visit starts where the level's intro cutscene hands Rayman over, until the cutscenes
-	// play (Phase 4). Learn_10: he crash-lands in the woods, looks for Globox and lands here in
+	// The hand-over shortcut for levels that have not yet had their intro implemented. Learn_10:
+	// he crash-lands in the woods, looks for Globox and lands here in
 	// behaviour 1 (the real game, tools/r2live.py, 2026-10-31); on a revisit node 4 teleports him to
 	// the same spot (waypoint 0d/01 +0x46C7C).
 	//
@@ -23,7 +23,7 @@ namespace openrayman::game
 	// itself) has custom bit 28 and Rayman isn't in the portal arrival (a revisit), the director
 	// hides Rayman, switches his brain off (custom bits 14 and 17) and lets a stand-in (node 40)
 	// walk the scene to a waypoint; when the scene ends it clears that bit and takes itself out of
-	// the world. We start after the scene, so we do the same. (Before 7defa8b its var3, a type-9
+	// the world. The shortcut does the same. (Before 7defa8b its var3, a type-9
 	// variable, didn't read back as Rayman, so the scene never took hold of him.)
 	struct first_visit_hand_over
 	{
@@ -47,6 +47,15 @@ namespace openrayman::game
 	inline constexpr std::uint32_t first_visit_story_bits[] = { 1089, 1091 };
 	// Recorded at Learn_10's load, before the director sets 1091.
 	inline constexpr std::uint32_t intro_story_bits[] = { 1027, 1028, 1059, 1060, 1089 };
+	inline bool learn_10_opening(std::string_view level)
+	{
+		return std::ranges::equal(level, std::string_view("Learn_10"),
+			[](unsigned char a, unsigned char b) { return std::tolower(a) == std::tolower(b); });
+	}
+	inline bool story_has(std::span<const std::uint32_t> words, std::uint32_t bit)
+	{
+		return bit && (bit - 1) / 32 < words.size() && (words[(bit - 1) / 32] & (1u << ((bit - 1) % 32)));
+	}
 	inline constexpr std::uint32_t revisit_story_bits[] = {
 		840, 841, 1089, 1091, 1092, 1133, 1175, 1176, 1177, 1396, 1397, 1398, 1399, 1400,
 	};

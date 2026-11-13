@@ -274,6 +274,15 @@ derives its sample from the mechanics matrices. Confirm the resulting movement a
 original, including cuts and other levels. Own analysis of these executable routines and the
 user's 2026-10-30 live and OpenRayman traces.
 
+At the Learn_10 hand-over, a scripted cut puts the camera close to the destination before
+Rayman arrives. Our target history can still contain his old position: following it undid the
+cut on the next tick. When the camera is already close to Rayman but the history is far away,
+we reseed that history and do not apply our teleport snap. In the headless trace the camera then
+moves from (33.66, 289.73, -5.52) to (33.67, 289.77, -5.44), versus run4's next recorded point
+near (33.82, 289.59, -5.28). This is our approximation, not a decoded executable reset; confirm
+it visually and on other teleports. The executable clears samples when the target changes
+(0x47DA40, 0x413E30), independently checked in its decompilation.
+
 ## What our engine leaves out
 - Menu: node 7 places itself on waypoints selected by node 6's menu behaviour, and nodes 8..10
   and 12..16 can set camera overrides when their zones contain it. The fixed-position mechanics

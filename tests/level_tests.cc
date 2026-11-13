@@ -1524,6 +1524,19 @@ TEST_CASE("handler census: projection and ballistic calculations have exact simp
 	CHECK(f.function(238, { v(0,0,0), v(8,4,0), game::value::real(4) }).words == v(0,0,0).words);
 }
 
+TEST_CASE("state procedure installs gravity before the next script function")
+{
+	handler_fixture f;
+	auto state = f.m.allocate(0x50), mechanics = f.m.allocate(0x3C);
+	f.m.write(state + 0x24, mechanics);
+	f.m.write<std::uint32_t>(mechanics, 1);
+	f.m.write<float>(mechanics + 8, 8);
+	f.procedure(72, { f.integer(int(state)) });
+	CHECK(f.m.f32(f.base + 0x10) == 8);
+	auto v = [](float x, float y, float z) { return game::value::vector(x, y, z); };
+	CHECK(f.function(238, { v(0, 0, 0), v(8, 4, 0), game::value::real(4) }).words == v(4, 2, 8).words);
+}
+
 TEST_CASE("handler census: directed graph fields and reset restore saved defaults")
 {
 	handler_fixture f;
@@ -2834,6 +2847,18 @@ TEST_CASE("actor floors carry a rider through translation and rotation and relea
 	m.write<std::uint32_t>(set + 0x3C, 1);
 	vm.remove(platform);
 	CHECK(game::actor_collision_triangles(vm, rider).empty());
+}
+
+TEST_CASE("Learn_10 opening recognizes the completed story bit")
+{
+	std::vector<std::uint32_t> words(35);
+	CHECK(game::learn_10_opening("learn_10"));
+	CHECK_FALSE(game::learn_10_opening("Jail_20"));
+	CHECK_FALSE(game::story_has(words, 1091));
+	words[(1091 - 1) / 32] |= 1u << ((1091 - 1) % 32);
+	CHECK(game::story_has(words, 1091));
+	CHECK_FALSE(game::story_has(words, 0));
+	CHECK_FALSE(game::story_has(words, 1121));
 }
 
 TEST_CASE("real data: sector wake delays the kids and story removal prevents their first thought")
