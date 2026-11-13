@@ -597,3 +597,26 @@ matching the executable's lack of an emitter, so actor sleep does not stop them 
 The sound log records starts rather than voice endings; it confirms the actor stopped issuing
 new cries, and diagnostic logging confirms the new stop path ran. The manual signal and
 teleport exercise this transition but are not a complete replay of the user's route.
+
+### The "crying" far from the kids was the cage (2026-11-14)
+
+The kids (scene node 39) do not wake again after the cave. A headless replay of the whole
+route (`ortool run` with `ORTOOL_START=new`, Rayman put at the kids' scene waypoint
+(-66.5, 206.5), the scene played, then moved through the cave to the far spot and into
+sector 0) gives: cries 0x00C30000 in pairs every 40 ticks during the scene; node 39 leaves
+the active world when Rayman enters sector 3 (the mushrooms; its wake list is sectors 19, 10,
+2, the kids are in 9) and its flags stay 0x0A with no sound from it through sectors 10 and
+0, whose wake lists (19, 3, 0 and 19, 10, 1, 14) do not name sector 9 either. That matches
+0x40B7B0/0x40B290/0x40B620, which only ever wake the main actor's sector and its +0x3C list.
+
+What starts at the far spot (camera -12.1, 196.8, -2.6: Rayman just inside sector 0's box,
+x >= -13.1) is the hanging cage, scene node 53 in sector 1, woken by sector 0's list: GRINCE2,
+GRINCE3 and the prisoner's `helpitch.wav` (0x00540002), at full gain from about 100 units
+because the cage carries its own sound distances 1000/2000. The real game wakes it there too
+but keeps its brain off until Rayman is within 90 (the far flag, standard +0x29 bit 0x80,
+see scripts.md "The far flag"), so it stays in its silent one-frame state. With the flag
+computed the replay is silent from the mushrooms to the far spot and beyond; the cage starts
+its creak the tick Rayman comes within 90, as in the user's `run4` recording.
+
+Where this came from: own headless replays and reading of the decompiled exe (addresses in
+scripts.md); the real timing from the user's `run4` and `rec_crying` recordings.

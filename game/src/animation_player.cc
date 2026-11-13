@@ -621,6 +621,27 @@ namespace openrayman::game
 			// enabled brain. A script may rely on sector wake for its entire horizontal
 			// range: Bast_20's piranhas only compare Rayman's height before catching him.
 			if(!standard || !vm.active(self, player) || m.u32(standard + 0x18) == vm.frame_number()) return;
+			// The same three passes (0x40AA10, 0x40A7C0, 0x40AB90) set the "far" flag just before
+			// each actor's update: standard +0x29 bit 0x80 when the actor carries any of the custom
+			// bits 0x4C0000 and its Manhattan distance to the main actor is at least the byte at
+			// standard +0x33; the main actor's own is cleared. 0x412230 and 0x40A5C0 read it: far
+			// actors with 0x80000 don't think, with 0x400000 don't move, with 0x40000 don't animate.
+			// Learn_10's hanging cage (node 53, 90) wakes with Rayman's sector but only starts
+			// swinging and calling for help once he is that near.
+			if(self == vm.main_actor())
+				m.write<std::uint8_t>(standard + 0x29, m.u8(standard + 0x29) & 0x7F);
+			else if(m.u32(standard + 0x24) & 0x4C0000)
+			{
+				auto here = global_placement(m, self), main = global_placement(m, vm.main_actor());
+				if(here && main)
+				{
+					float distance = 0;
+					for(int axis = 0; axis < 3; axis++)
+						distance += std::abs(here->m[axis][3] - main->m[axis][3]);
+					std::uint8_t flags = m.u8(standard + 0x29);
+					m.write<std::uint8_t>(standard + 0x29, float(m.u8(standard + 0x33)) <= distance ? flags | 0x80 : flags & 0x7F);
+				}
+			}
 			think(self);
 			advance(self);
 		};

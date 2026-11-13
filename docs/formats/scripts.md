@@ -234,6 +234,32 @@ lists are reconstructed in file order. The existing camera-last policy remains. 
 actors made during a tick can still update that tick; +0x18 prevents duplicate updates
 when a generated actor is also reached through the active list.
 
+**The far flag (standard +0x29 bit 0x80), 2026-11-14.** Awake is not the same as running.
+All three actor passes (0x40AA10, 0x40A7C0, 0x40AB90) do the same thing just before they
+update an actor (0x40A5C0): for the main actor they clear bit 0x80; for any other actor
+whose custom bits (standard +0x24) carry one of 0x4C0000 they add up the absolute
+differences of its global position and the main actor's on the three axes (a Manhattan
+distance, super object +0x24 position) and set bit 0x80 when that sum is at least the
+unsigned byte at standard +0x33, else clear it. Actors without those custom bits keep
+whatever the bit was. The update then reads it: 0x412230 skips the brain (0x4120D0) of an
+actor with custom 0x80000 while the bit is set and the mechanics (0x412150) of one with
+0x400000; 0x40A5C0 skips the animation step of one with 0x40000 (unless 0x800000). The
+byte at +0x33 is saved per actor and procedure 438 writes it (function 270 reads it).
+OpenRayman had the three readers but never computed the bit, so such actors ran as soon
+as their sector woke. Learn_10's hanging cage, scene node 53 (custom 0x00E80020, +0x33 =
+90), showed it: Rayman's step into sector 0 at the cave exit wakes it about 100 units
+away, its first think picks the swinging state, and that animation's creaks and
+`helpitch.wav` call played at full gain (its own sound distances are 1000/2000). In the
+user's `run4` recording of the real game the same actor gets the fresh-wake custom bit
+0x800 at 368.1 s, and its behaviour changes 0 -> 1 with the first sound (0x00540001) only
+at 384.03 s, when Rayman at (21.458, 154.914, 3.967) is 89.87 from it by that sum (one
+sample earlier, at z 2.992, it is 90.85). Code: `game::step`'s `update` in
+`game/src/animation_player.cc`.
+
+Where this came from: own reading of the decompiled 0x40AA10, 0x40A7C0, 0x40AB90,
+0x40A5C0 and 0x412230; the byte and custom bits read from Learn_10's data; the timing
+checked against the user's `run4` recording (actors.txt, rayman.txt, sound.txt).
+
 **Where this came from:** own reading of the local GOG executable's decompilation at
 0x40B7B0, 0x40B290, 0x40B620, 0x40B4C0, 0x40B410, 0x40B930, 0x40AA10, 0x40A7C0,
 0x40AB90, 0x406220, 0x412670, 0x412740, 0x4128D0, 0x419BA0 and 0x45B9B0, checked
