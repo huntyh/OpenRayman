@@ -1408,7 +1408,12 @@ namespace
 			a.vm = std::make_unique<openrayman::game::interpreter>(*a.live, main_actor);
 			openrayman::game::register_handlers(*a.vm);
 			openrayman::game::register_dialog_handlers(*a.vm);
-			openrayman::game::set_dialog_resolver(*a.vm, files);
+			auto saved_language = openrayman::game::read_language(openrayman::game::save_root());
+			openrayman::game::set_dialog_resolver(*a.vm, files, saved_language.value_or(0));
+			a.vm->on_language_selected = [](unsigned language) {
+				if(!openrayman::game::write_language(openrayman::game::save_root(), language))
+					SDL_Log("Could not save the language selection");
+			};
 			// Procedure 369: a script asks for a string to be opened (the Menu level's Site entry).
 			// The scripts still name the dead 1999 address; we open the project page instead, and
 			// say so, because a browser opening by itself can look like something went wrong.
@@ -1446,6 +1451,7 @@ namespace
 				// the near-black cover up (user, 2026-11-08).
 				if(a.carried_story)
 					a.vm->set_story_words(fix_actors, *a.carried_story);
+				if(menu && saved_language) a.vm->set_story_bit(fix_actors, 1006);
 				if(!menu && !a.save_slot)
 					for(std::uint32_t bit : a.intro_start && !openrayman::game::only_new_game(levels[index]) ? std::span<const std::uint32_t>(openrayman::game::intro_story_bits) : openrayman::game::start_story_bits(levels[index], a.new_game))
 						a.vm->set_story_bit(fix_actors, bit);

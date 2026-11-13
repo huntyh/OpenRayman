@@ -10,8 +10,27 @@
 
 #include <doctest/doctest.h>
 #include <algorithm>
+#include <fstream>
 
 using namespace openrayman;
+
+TEST_CASE("language setting survives restart and rejects invalid files")
+{
+	const auto folder = std::filesystem::temp_directory_path() /
+		("openrayman_language_test_" + std::to_string(std::random_device{}()));
+	REQUIRE_FALSE(std::filesystem::exists(folder));
+	CHECK_FALSE(game::read_language(folder));
+	for(unsigned language = 0; language < 5; ++language)
+	{
+		REQUIRE(game::write_language(folder, language));
+		CHECK(game::read_language(folder) == language);
+	}
+	CHECK_FALSE(game::write_language(folder, 5));
+	CHECK(game::read_language(folder) == 4);
+	{ std::ofstream file(folder / "language.txt"); file << "2 garbage"; }
+	CHECK_FALSE(game::read_language(folder));
+	std::filesystem::remove_all(folder);
+}
 
 // Synthetic wrapping only, no game data or implementation of the dictionary encoder.
 static std::vector<std::byte> wrap(std::uint32_t length, const std::vector<unsigned>& tokens)

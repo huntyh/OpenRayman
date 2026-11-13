@@ -328,8 +328,10 @@ our revisit bits.
 
 Own analysis of the GOG executable at 0x469960: procedure 242 stores the low byte of its
 argument as the current language and writes its name to the original game's ini file. OpenRayman
-updates the runtime language and resolves subsequent text IDs from that language's table; it does
-not yet persist the selection. It also does not yet carry the selection into a newly loaded level.
+updates the runtime language and resolves subsequent text IDs from that language's table. It saves
+the choice in its own `language.txt` in the save folder, reads it on each level load, and sets
+story bit 1006 on the Menu's startup when a valid choice exists. This storage and startup handling
+are OpenRayman's own implementation; the executable finding above is from our own analysis.
 
 The Menu scripts for node 7 select from eight waypoint references according to node 6's behaviour,
 then use function 18 and procedure 200 to place node 7. Its initial waypoint also depends on story

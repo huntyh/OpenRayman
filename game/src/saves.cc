@@ -4,12 +4,35 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <fstream>
 #ifdef _WIN32
 #include <windows.h>
 #endif
 
 namespace openrayman::game
 {
+	std::optional<unsigned> read_language(const std::filesystem::path& folder)
+	{
+		std::ifstream file(folder / "language.txt");
+		unsigned language;
+		if(!(file >> language) || language > 4) return std::nullopt;
+		file >> std::ws;
+		if(!file.eof()) return std::nullopt;
+		return language;
+	}
+
+	bool write_language(const std::filesystem::path& folder, unsigned language)
+	{
+		if(language > 4) return false;
+		std::error_code error;
+		std::filesystem::create_directories(folder, error);
+		if(error) return false;
+		std::ofstream file(folder / "language.txt", std::ios::trunc);
+		file << language << '\n';
+		file.close();
+		return bool(file);
+	}
+
 	std::filesystem::path save_root()
 	{
 		if(const char* p = std::getenv("OPENRAYMAN_SAVE_DIR"); p && *p) return p;

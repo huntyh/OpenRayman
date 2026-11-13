@@ -5746,6 +5746,7 @@ namespace openrayman::game
 			value selected;
 			next_arg(c, selected);
 			c.vm.language = static_cast<std::uint8_t>(selected.as_int());
+			if(c.vm.on_language_selected) c.vm.on_language_selected(c.vm.language);
 			return c.args;
 		}
 

@@ -7,6 +7,8 @@
 namespace openrayman::game
 {
 	std::filesystem::path save_root();
+	std::optional<unsigned> read_language(const std::filesystem::path& folder);
+	bool write_language(const std::filesystem::path& folder, unsigned language);
 	std::vector<std::byte> capture_save_entries(const live_memory& memory, std::span<const save_entry> entries, std::size_t size);
 	// Restore registered bytes before the first actor tick. A missing level file leaves that
 	// level at its initial state; a missing general file or malformed save is an error.

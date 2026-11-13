@@ -283,6 +283,7 @@ namespace openrayman::game
 		bool level_request_flag = false;
 		// Function 252: the language index (the low byte of 0x500FA8, from ubi.ini at start-up).
 		std::uint8_t language = 0;
+		std::function<void(unsigned)> on_language_selected;
 		// Function 265: the save folder, whose `Slot*` folders are the save slots (Data/SaveGame).
 		std::string save_folder;
 		// Actors with a native startup probe (custom bit 25, the copy protection's hiding place) and
