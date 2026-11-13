@@ -1080,7 +1080,7 @@ namespace openrayman
 				return fallback;
 			};
 			m_sky_stretch = sky_option("OPENRAYMAN_SKY_STRETCH", 1.0f, 1.0f, 32.0f);
-			m_sky_drift = sky_option("OPENRAYMAN_SKY_DRIFT", 0.1f, 0.0f, 4.0f);
+			m_sky_drift = sky_option("OPENRAYMAN_SKY_DRIFT", 0.07f, 0.0f, 4.0f);
 			m_sky_haze = sky_option("OPENRAYMAN_SKY_HAZE", 0.3f, 0.0f, 1.0f);
 			if(const char* value = std::getenv("OPENRAYMAN_SKY_PARALLAX"))
 			{
@@ -1277,6 +1277,9 @@ namespace openrayman
 		};
 		bool backdrop_pass = false;
 		bool sky_pass = false;
+		// The sky pass's own view, model and eye, to return to after a lightning card.
+		glm::mat4 sky_vp_now(1.0f), sky_model_now(1.0f);
+		glm::vec3 sky_eye_now(0.0f);
 		auto is_backdrop = [&](std::size_t sector) {
 			return std::ranges::find(m_backdrop_sectors, sector) != m_backdrop_sectors.end();
 		};
@@ -1313,6 +1316,20 @@ namespace openrayman
 				const bool lightning = mode == blend::alpha && !classic_lightning && m_lightning_textures.contains(texture);
 				glUniform1f(m_u_lightning, lightning ? 1.0f : 0.0f);
 				if(lightning) glBlendFunc(GL_DST_COLOR, GL_ONE);
+				// Lightning cards stay where the game puts them, seen from the real camera: drawn from
+				// the far sky eye they sank to the horizon, far ahead (user, 2026-11-13). They only
+				// brighten what is behind them, so the far clouds they light can stay far. No depth
+				// test: the shell's depth comes from the other eye.
+				const bool flash_near = lightning && sky_pass;
+				if(flash_near)
+				{
+					glUniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(view_projection));
+					glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(fog_identity));
+					glUniformMatrix4fv(m_u_fog_model, 1, GL_FALSE, glm::value_ptr(fog_identity));
+					glUniform3fv(m_u_sky_eye, 1, glm::value_ptr(eye));
+					glUniform3fv(m_u_camera, 1, glm::value_ptr(eye));
+					glDisable(GL_DEPTH_TEST);
+				}
 				// Wrapped every 2 widths, which keeps mirrored textures the same and the numbers small.
 				const double scroll_time = m_time * (sky_pass ? m_sky_drift : 1.0f);
 				glm::vec2 offset(std::fmod(double(b.scroll.x) * scroll_time, 2.0), std::fmod(double(b.scroll.y) * scroll_time, 2.0));
@@ -1320,6 +1337,16 @@ namespace openrayman
 				glUniform4fv(m_u_material_ambient, 1, glm::value_ptr(b.ambient));
 				glUniform4fv(m_u_material_diffuse, 1, glm::value_ptr(b.diffuse));
 				draw_triangles(b.first, b.count);
+				if(flash_near)
+				{
+					const glm::mat4 sky_fog_now = glm::inverse(sky_model_now);
+					glUniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(sky_vp_now));
+					glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(sky_model_now));
+					glUniformMatrix4fv(m_u_fog_model, 1, GL_FALSE, glm::value_ptr(sky_fog_now));
+					glUniform3fv(m_u_sky_eye, 1, glm::value_ptr(sky_eye_now));
+					glUniform3fv(m_u_camera, 1, glm::value_ptr(fog_override ? eye : sky_eye_now));
+					glEnable(GL_DEPTH_TEST);
+				}
 				if(lightning) glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 				glUniform1f(m_u_lightning, 0.0f);
 			}
@@ -1426,6 +1453,9 @@ namespace openrayman
 			const glm::mat4 sky_model = glm::translate(identity, sky_anchor) *
 				glm::scale(identity, glm::vec3(m_sky_stretch, m_sky_stretch, 1)) * glm::translate(identity, -sky_anchor);
 			const glm::mat4 sky_fog_model = glm::inverse(sky_model);
+			sky_vp_now = sky_vp;
+			sky_model_now = sky_model;
+			sky_eye_now = sky_eye;
 			glUniformMatrix4fv(m_u_fog_model, 1, GL_FALSE, glm::value_ptr(sky_fog_model));
 			draw_static_pass(sky_eye, sky_model);
 			glUniformMatrix4fv(m_u_fog_model, 1, GL_FALSE, glm::value_ptr(identity));

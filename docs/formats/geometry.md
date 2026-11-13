@@ -36,7 +36,7 @@ The Jail_10 sky pass adds three optional depth cues (our renderer improvement):
   stays in place. Only this pass extends its far clip range; existing distance
   fog and flash culling use positions before stretching, so enlargement does
   not erase the clouds in distance fog or change the scripted flash coverage.
-- `OPENRAYMAN_SKY_DRIFT=0..4` (default **0.1** since 2026-11-13; was 0.25) scales only material UV scroll
+- `OPENRAYMAN_SKY_DRIFT=0..4` (default **0.07** since 2026-11-13; was 0.25) scales only material UV scroll
   time in that pass. Texture animation frame selection keeps the original clock,
   including lightning pulses.
 - `OPENRAYMAN_SKY_HAZE=0..1` (default **0.3**) blends towards the shell sector's
