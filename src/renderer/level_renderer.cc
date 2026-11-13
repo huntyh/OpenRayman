@@ -1048,7 +1048,7 @@ namespace openrayman
 			m_backdrop_skies.assign(r.skies.begin(), r.skies.end());
 			m_backdrop_anchor = { r.anchor[0], r.anchor[1], r.anchor[2] };
 			m_backdrop_parallax = r.parallax;
-			m_sky_parallax = 0.1f;
+			m_sky_parallax = 0.02f;
 			if(const char* value = std::getenv("OPENRAYMAN_SKY_PARALLAX"))
 			{
 				char* end = nullptr;

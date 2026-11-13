@@ -147,6 +147,10 @@ namespace
 		// follow where they are).
 		std::unique_ptr<sound_player> sounds;
 		std::set<std::uint32_t> sound_sources;
+		// Our wake guard (card 97): when each actor last woke and the state it woke in.
+		struct woken { long tick; std::uint32_t state; };
+		std::map<std::uint32_t, woken> woke;
+		long woke_seen_tick = -1;
 		// Sectors play sounds when Rayman walks in (the music of Learn_10's hand-over): their boxes,
 		// super objects and data, and the sector he was last in.
 		openrayman::level_lights sound_sectors;
@@ -1037,11 +1041,44 @@ namespace
 		std::vector<bool> screen_parts; // per part: drawn by the exe's screen pass (procedure 409)
 		std::vector<float> part_alpha;  // per part: its actor's transparency level
 		std::vector<std::uint8_t> part_colour_set;
+		// Our own guard (card 97, docs/IMPROVEMENTS.md): an actor that has just woken is not drawn for
+		// its first two ticks while it still holds the state it woke in, its saved placeholder pose,
+		// until the scripts give it its real one. The Jail_20 stand-in otherwise shows its stale jump
+		// pose for two frames at the slide's end (the real game shows it for one).
+		if(a.vm && a.scripts)
+		{
+			if(a.tick < a.woke_seen_tick)
+				a.woke.clear(); // a new level
+			a.woke_seen_tick = a.tick;
+			for(std::size_t i = 0; i < a.super_object_at.size() && i < a.actor_at.size(); i++)
+			{
+				const std::uint32_t so = a.super_object_at[i];
+				const bool awake = a.vm->active(so);
+				const std::uint32_t data = a.actor_at[i] && a.live->contains(a.actor_at[i], 4) ? a.live->u32(a.actor_at[i]) : 0;
+				const std::uint32_t state = data && a.live->contains(data + 4, 4) ? a.live->u32(data + 4) : 0;
+				auto found = a.woke.find(so);
+				if(!awake)
+					a.woke.erase(so);
+				else if(found == a.woke.end())
+					a.woke[so] = { a.tick, state };
+			}
+		}
+		auto just_woken = [&](std::size_t i) {
+			if(i >= a.super_object_at.size() || i >= a.actor_at.size() || a.tick < 10)
+				return false;
+			auto found = a.woke.find(a.super_object_at[i]);
+			if(found == a.woke.end() || a.tick - found->second.tick >= 2)
+				return false;
+			const std::uint32_t data = a.actor_at[i] && a.live->contains(a.actor_at[i], 4) ? a.live->u32(a.actor_at[i]) : 0;
+			return data && a.live->contains(data + 4, 4) && a.live->u32(data + 4) == found->second.state;
+		};
 		for(std::size_t i = 0; i < a.actors.actors.size(); i++)
 		{
 			actor_set::entry& actor = a.actors.actors[i];
 			// Taken out of the world by its scripts.
 			if(a.vm && a.scripts && i < a.super_object_at.size() && hidden(a, a.super_object_at[i]))
+				continue;
+			if(a.vm && a.scripts && just_woken(i))
 				continue;
 			if(a.vm && a.scripts && i < a.selected_object_lists.size() && i < a.actor_at.size())
 			{

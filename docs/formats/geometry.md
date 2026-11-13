@@ -26,7 +26,7 @@ join that initial sky pass too, with their transparency sorted from the same
 parallax eye and clipped by the sky shells before clearing depth. The sky eye uses
 the backdrop anchor horizontally and follows the real eye vertically between z=350
 and the ship anchor height to stay inside the separate sea and ship shells. Its
-translation factor defaults to 0.1 and `OPENRAYMAN_SKY_PARALLAX=0..1` tunes it.
+translation factor defaults to 0.02 (user, 2026-11-13: 0.1 still looked near) and `OPENRAYMAN_SKY_PARALLAX=0..1` tunes it.
 
 The optional renderer recipe selects sector 7 subject to camera-sector
 visibility and draws it after sky, from `anchor + (eye-anchor)*f`, before
