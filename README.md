@@ -12,16 +12,16 @@ This continues [imaginaryPineapple's OpenRayman](https://github.com/imaginaryPin
 
 ## Where it stands
 
-OpenRayman opens every level of the original game and lets you fly through it, looking like the
-real thing. You can't play yet: making it a game is the current phase.
+OpenRayman opens every level of the original game and lets you play the first ones. Two phases run
+at the same time now: making it a game (Phase 3) and building the whole game around it (Phase 4).
 
 | Phase | What it's about | Status |
 | --- | --- | --- |
 | 0. Foundation | Modern toolchain, texture and music readers, test tools | ✅ Done |
 | 1. Level data | Reading the levels: scenery, scene tree, pointers, all 70 levels | ✅ Done |
 | 2. Looking like the game | Characters, animation, the game's lighting, fog and sky | ✅ Done |
-| 3. Making it a game | Sounds, collision, the game's scripts, Rayman walking around | ⬅ **We are here** |
-| 4. The whole game | Saves, menus, cutscenes, every level, widescreen | Planned |
+| 3. Making it a game | Sounds, collision, the game's scripts, Rayman walking around | ⬅ **In progress** |
+| 4. The whole game | Saves, menus, cutscenes, every level, widescreen | ⬅ **In progress, alongside Phase 3** |
 | 5. Android | Touch controls, phone performance | Planned |
 | Later | Vulkan or Direct3D 12, modern lighting and HDR, controller icons | Planned |
 
@@ -35,16 +35,29 @@ What works today:
 - The game's own lighting and fog, worked out from the original program, plus the sky, glass,
   see-through water and characters' shadows. The Woods of Light look the same as the real game
   side by side.
-- The game's music.
-- It is becoming playable: in the first level Rayman walks, runs, jumps, grabs ledges and shoots
-  (the shots home in on targets); the sound effects and voices play; the game's music themes play;
-  dialogs and the HUD are on screen in the game's own letters; the game's camera follows him.
+- Rayman plays: in The Woods of Light he walks, runs, jumps, grabs ledges, climbs and shoots (the
+  shots home in on targets), stands on moving things and steps into shallow water; the game's
+  camera follows him, turning with Q and W.
+- Sound: the sound effects and voices from the scripts and animations, and the game's music, its
+  themes playing segment by segment as the game plays them.
+- On screen: dialogs and Murfy's box in the game's own letters and colours, the HUD with its
+  counters and Rayman's health bar, and the cutscene's black bars.
+- The main menu plays the game's own way: the language prompt (remembered between launches), the
+  menu entries with their text gradient and the butterfly, the Exit prompt and the menu camera.
+  New Game starts the prison ship (Jail_10) and its intro plays: the sea and ship pan, the Ubisoft
+  and the Rayman 2 logo, the story text, Rayman in his cell, and the slide down the chute into
+  Jail_20.
+- Saves: OpenRayman reads the game's own save format, in slots in its own folder, and starts a
+  level from one (`--save 1..3`).
 - A texture browser, `ortool` for looking inside the game's files, and `tools/r2record.py`, which
   records a playthrough of the real game for studying it.
 
-Not yet: some dialog padding, counters for lums and cages are not in the right spot, saves, and basically everything
-beyond the first level. See [docs/ROADMAP.md](docs/ROADMAP.md) for the details. It renders with
-OpenGL today; the plan is Vulkan or Direct3D 12, keeping OpenGL for older devices.
+Not yet: the menu's Load, Delete and Options screens, writing a save, the pause menu and F1, the
+real intro cutscene in front of the first visit, the Hall of Doors, and most of the levels beyond
+the pirate ship (Jail_10, Jail_20) and The Woods of Light (Learn_10). A few details are still off:
+the dialog text's exact size and padding, the HUD counters' spot, the slope's acceleration. See
+[docs/ROADMAP.md](docs/ROADMAP.md) for the details; the open work is on the project's task board.
+It renders with OpenGL today; the plan is Vulkan or Direct3D 12, keeping OpenGL for older devices.
 
 Where OpenRayman deliberately does something differently from the game (no shadow limit, soft leaf
 edges, smoother animation loops, ...), it's listed in [docs/IMPROVEMENTS.md](docs/IMPROVEMENTS.md).
@@ -115,7 +128,7 @@ openrayman --game "<Rayman 2 folder>" --level Learn_10 [--start new|portal] [--s
 ```
 
 `--save 1` (or 2/3) restores an OpenRayman slot at level load and takes precedence over `--start`.
-On Windows, slots live in `%APPDATA%\OpenRayman\OpenRayman\SaveGame`. Place `portable.txt` next to the executable to use its `SaveGame` folder, or set `OPENRAYMAN_SAVE_DIR` to choose a save root. `ortool mksave Learn_10 1` creates a mock slot (set `OPENRAYMAN_GAME_DIR` first). The game installation?s saves are never used by default.
+On Windows, slots live in `%APPDATA%\OpenRayman\OpenRayman\SaveGame`. Place `portable.txt` next to the executable to use its `SaveGame` folder, or set `OPENRAYMAN_SAVE_DIR` to choose a save root. `ortool mksave Learn_10 1` creates a mock slot (set `OPENRAYMAN_GAME_DIR` first). The game installation's saves are never used by default.
 
 Without `--save`, `--start new` starts a first visit (Rayman at the hand-over, the tutorial cage
 waiting); the default starts as if the level were reached from the Hall of Doors. `--story-bits` sets a save's

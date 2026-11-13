@@ -54,11 +54,12 @@ yet: everything that moves on its own moves, but nothing reacts to Rayman.
 Phase 2 ended when Learn_10 side by side with the real game looked the same, apart from the parts
 that need gameplay (2026-10-26).
 
-## Phase 3: make it a game ⬅ we are here
+## Phase 3: make it a game ⬅ in progress, alongside Phase 4
 
 Goal: Rayman runs around The Woods of Light (`Learn_10`) as in the real game, with its characters
 behaving as their scripts say. Everything targets Learn_10 first; the other levels get their turn
-once it plays right (they have issues of their own, found on a first look).
+once it plays right (they have issues of their own, found on a first look). Phase 4 work runs
+alongside it, the menu and the pirate ship's two intro levels first.
 
 **Done**
 
@@ -101,10 +102,13 @@ once it plays right (they have issues of their own, found on a first look).
   replaying Murfy; the HUD's icons and Rayman's health bar (particle kinds 50/120); a breaking
   cage's golden burst (kinds 5/45); the revisit start looking like a finished level (interim
   snapshot, [formats/saves.md](formats/saves.md)).
-- ✅ **The main menu** ([formats/menu.md](formats/menu.md)): the Exit prompt (Yes quits), the
-  white-to-colour text gradient with the selected entry's height pulse, the cutscene black bars,
-  the language prompt and its run-time selection (not saved yet), the menu camera's path, the
-  butterfly placed at a screen point, and the startup theme played from the level's GPT.
+- ✅ **The main menu** ([formats/menu.md](formats/menu.md)): the language prompt and its run-time
+  selection (remembered between launches since 0b49d29), New Game through the name screen into
+  Jail_10, the Exit prompt (Yes quits), the white-to-colour text gradient with the selected
+  entry's height pulse, the menu camera's path, the butterfly placed at a screen point, and the
+  startup theme played from the level's GPT.
+- ✅ **The cutscene black bars**: they slide in and out with a scene (procedure 314 sets the world
+  view's bounds).
 - ✅ **The intro, first pieces**: the Ubisoft logo and the tiled Rayman 2 logo as screen objects
   (smooth edges, turning with the camera), the text boxes' fades, and the logo arc's saved vertex
   colours (procedure 393); the animation morph records are read and blended (the Teensy's hat).
@@ -122,63 +126,113 @@ once it plays right (they have issues of their own, found on a first look).
   world, with the sector wake lists, so the scripts' pacing holds
   ([formats/scripts.md](formats/scripts.md)).
 - ✅ **Revisit settling**: a `--save` start runs four ticks before the first frame (no flash of
-  Rayman at the new-game spot), and a teleport moves a dynamic actor at once (its dynamics block too).
+  Rayman at the new-game spot), and a teleport moves a dynamic actor at once (its dynamics block
+  too).
+- ✅ **The jail levels, Jail_10 and Jail_20** (board #33..#36, #65, #71, #73, #75, #79, #83, #84,
+  #85, #88, #90..#92, #95): Jail_10's sea-and-ship pan with its far backdrop, the cave's lighting
+  and lightning flash, the Ubisoft and the Rayman 2 logo, the sky and fog there, and no falling
+  through the map after the cage; then Jail_20's cell with its bars, laser bars and cage light,
+  Rayman and Globox in it, the chute with its ceiling and fan and its fall backdrop, and the
+  chute's end camera and cutscene.
+- ✅ **Wide windows** (#93): screen text, the HUD and Murfy's box are placed where the exe places
+  them but drawn at 4:3 proportions, so a wide window no longer stretches glyphs, icons or counters.
+- ✅ **Particles, sounds and animation details**: particle kinds 30, 46, 49 and 99 (the Jail_20
+  grate's burst and a shot's stars, #99), actors' own sound distances with the camera's hearing
+  list (the chute fan is silent in the cell), and animation transitions that keep their place, so
+  starting to move mid-throw no longer replays the throw and its sounds (#87).
+- ✅ **Slopes and jumps** (#32, #89, #96): jumps on slopes and from the slide, a roof that slopes
+  across the move stops the body, and the slide steers and throws its dust.
 
 Dated details of everything above, and the user's look-by-look feedback, are in
 [ROADMAP_LOG.md](ROADMAP_LOG.md).
 
-**Open.** From 2026-11-04 the open items are tracked on the maintainers' own task board; in short:
+**Open.** The open items are tracked on the maintainers' own task board (Vikunja), which is the
+source of truth and has the detail; in short:
 
-- 3c leftovers (the slope's acceleration), the dialog text's size and padding, the HUD counters
-- The menu's scenery and the name screen (Phase 4), the intro's rest before Jail_10
-- Sound: theme fades, music and effect levels (loudness by distance follows the exe since ae1c155)
-- The game's camera: the "turning refused" icon, the exe's orbit search around obstacles
-- Unported exe pieces: particle kinds (the handlers Learn_10 called are ported)
-- The pirate ship (Jail_20): the chute's walls and end cutscene, the slide's dust
-- F1's glossary with the pause menu (Phase 4), an optional modern camera
+- 3c leftovers: the slope's acceleration (#1), the dialog text's exact size and left padding (#2),
+  the blue "next" arrow's spot (#62), the HUD counters (#3), the font running off the screen (#6)
+- The game's camera (#8, #9, #13, #14, #63): the "turning refused" icon, the exe's orbit search
+  around obstacles, snapping back to Rayman, the cutscene camera modes, Rodeo_10's narrow hole
+- Sound (#7): the theme transitions' fades, and music and effect levels (loudness by distance
+  follows the exe already)
+- The cutscene black bars: an option to turn them off, with darker text behind (#5)
+- Unported exe pieces: particle kinds, their per-particle draw value and screen dimming (#17);
+  the end scene's pupils (#10, not reproduced in play, the user to check)
+- The pirate ship (Jail_20): the slide's steering and collision (#86), a frame of the wrong pose at
+  the slide's end (#97), the pirates' heads in front of their spines (#98), Rayman and Globox
+  snapping left in the cell (#100)
+- The other levels' first issues: Learn_31's creature and its trailing segments (#66, #81),
+  Bast_20's pond and piranhas (#82), Bast_22's barrels and its silent shots and steps (#68),
+  Ski_10's swamp creatures and missing kill zone (#69), Chase_22's exit animation and camera
+  hunting (#70)
+- A gamepad through SDL3, the Steam Controller first (#101); performance measured with the
+  profiler and tuned (#12)
 
-## Phase 4: the whole game
+## Phase 4: the whole game ⬅ in progress, alongside Phase 3
 
-Everything the PC game has, working before we port it anywhere. The order the user set
-(2026-11-02):
+Everything the PC game has, working before we port it anywhere.
+
+**Done** (the closed cards, one line each; the detail is in the Phase 3 list):
+
+- The menu: the language prompt, now remembered between launches (#56), the menu font (#57), the
+  Exit prompt (#58), the menu camera's pans (#59), F1 and Esc's elements (#21)
+- The intro: the sea pan without its jitter (#33), the logos (#65, #75), the counters (#76, #77),
+  and the text colours (#80)
+- The cutscene bars, engine side and sliding in (#4, #16)
+- Reading the real saves (#19, #37)
+
+**Open**, in the order the user set (2026-11-02):
 
 1. The main menu ([formats/menu.md](formats/menu.md)): the language prompt, the main menu and
-   New Game -> name -> Jail_10 run from the level's scripts (user confirmed, 2026-11-03). Left:
-   writing the save, the Load / Delete / Options screens, the menu's scenery.
+   New Game -> name -> Jail_10 run from the level's scripts (user confirmed, 2026-11-03). New Game
+   already gets through the name screen into Jail_10, whose intro plays. Left: writing the save
+   (#24), the Load / Delete / Options screens (#25), the menu's scenery, a per-character flash on
+   the menu text (#26), and the music still missing in a few places (#31).
 2. The new-game intro cutscene in front of the first-visit start (Jail_10, Jail_20); the logos,
-   text boxes and bars are in (see 3c).
-3. Save games: reading the real saves is done (`--save 1..3`, [formats/saves.md](formats/saves.md));
-   writing one on New Game is left.
-4. The pause menu and the F1 glossary.
-5. The Hall of Doors: the way from one level to the next.
-6. Optional autosave, off by default (into IMPROVEMENTS when built).
+   text boxes and bars are in (see 3c), and there is a diagnostic `--start intro` for Learn_10's
+   opening scene (#23).
+3. Save games: reading the real saves is done (`--save 1..3`,
+   [formats/saves.md](formats/saves.md)); writing one on New Game is left.
+4. The pause menu and F1 Murfy's help (board #38).
+5. The Hall of Doors: the way from one level to the next (board #39).
+6. Optional autosave, off by default (into IMPROVEMENTS when built; board #40).
 
-Then: cutscenes, all the levels from start to end, widescreen and high resolutions, plus modern
-quality-of-life options.
+Then: cutscenes (board #41), all the levels from start to end (#42), widescreen and high
+resolutions with quality-of-life options (#43, and ultrawide later #94), room for our own options
+inside the game's Options menu (#61), an optional modern free camera (#22).
+
+Vikunja is the source of truth for the open work; the card numbers point to the detail.
 
 ## Phase 5: Android
 
-- SDL3 Android project, touch controls overlay
-- Picking the game data folder via Android's storage access framework
-- Performance pass for mobile GPUs
+- SDL3 Android project, touch controls overlay (board #44)
+- Picking the game data folder via Android's storage access framework (#45)
+- Performance pass for mobile GPUs (#46), after batching the draw calls (#55)
 
 ## Later
 
-- A modern renderer: Vulkan or Direct3D 12, keeping OpenGL (3.3 / ES 3.0) for older devices. The
-  current OpenGL renderer is the first step and the fallback
-- A modern lighting mode that keeps the art direction, and HDR, designed together (both change how
-  the lights are used). Two separate things to research first: rendering in high dynamic range
-  (lighting in floating point, then tone mapping down to the screen) and HDR output (HDR10 / scRGB
-  to an HDR display, which needs the swap chain and the OS to cooperate)
-- Controller support with the right button icons
-- Sharper logos: the Ubisoft logo and the tiled Rayman 2 logo look rough in the original; upscale
-  them, or use a better texture if the data has one (optional, the user's wish)
-- Antialiasing: MSAA, with alpha to coverage for cut-out textures, first; SMAA as a cheap
+- A modern renderer: Vulkan or Direct3D 12, keeping OpenGL (3.3 / ES 3.0) for older devices
+  (board #47); the current OpenGL renderer is the first step and the fallback
+- A modern lighting mode that keeps the art direction, and HDR, designed together (board #48;
+  both change how the lights are used). Two separate things to research first: rendering in high
+  dynamic range (lighting in floating point, then tone mapping down to the screen) and HDR output
+  (HDR10 / scRGB to an HDR display, which needs the swap chain and the OS to cooperate)
+- Controller support with the right button icons (#49)
+- Sharper logos (#50): the Ubisoft logo and the tiled Rayman 2 logo look rough in the original;
+  upscale them, or use a better texture if the data has one (optional, the user's wish)
+- Antialiasing (#51): MSAA, with alpha to coverage for cut-out textures, first; SMAA as a cheap
   post-process option. TAA only if it can be done without ghosting (the user's condition); it
   needs motion vectors for every moving thing (skinned actors, scrolling and animated textures,
   sprites), and the game's many see-through and additive surfaces are where TAA usually smears
-- Smoother cut-out textures: colour-keyed and alpha-tested textures have jagged, "cut out with
-  scissors" edges (Globox's eyes); smoothing their edges, as we did for the leaves in 2c
-- Richer water while running (optional, off by default): the game only leaves ripples when Rayman
-  runs through shallow water, while jumping in throws droplets apart (particle kind 60) and
+- Smoother cut-out textures (#52): colour-keyed and alpha-tested textures have jagged, "cut out
+  with scissors" edges (Globox's eyes); smoothing their edges, as we did for the leaves in 2c.
+  The menu's foliage has the same kind of edge (#60)
+- Richer water while running (#53, optional, off by default): the game only leaves ripples when
+  Rayman runs through shallow water, while jumping in throws droplets apart (particle kind 60) and
   bubbles; a few of those droplets and bubbles on each step would look livelier (user's idea)
+- Ultrawide (21:9 and beyond, #94), and mouse selection in the menu with a typed save name and a
+  Continue entry (#64, #74)
+- Rumble, our own addition, with the moments the user picks (#102); the Lightning cards in
+  Jail_10 showing their edges, with optional soft edges (#103)
+- The Globox kids' scene in Learn_10 replays when the level is revisited: the real game does that
+  too (an original bug, kept on purpose); an optional fix may come later (#78)

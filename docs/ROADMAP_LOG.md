@@ -3,16 +3,62 @@
 The dated investigation notes from `ROADMAP.md`, kept here so the roadmap stays short. Newest
 first. The format docs under `formats/` are the permanent home of the findings themselves.
 
+## 2026-11-13: animation transitions, the menu, SDL and the Site entry
+
+- **Animation**: a transition with byte +0x0C = 1 starts its in-between state where the old
+  animation was, in proportion (0x415210); procedure 75's number is a quiet start (0x40E9E0's third
+  argument, so sound events up to the start frame stay silent), not "skip the transitions".
+  Rayman's standing throw hands over to the running one this way, so starting to move mid-throw no
+  longer replays the throw and its sounds (22a2c10, card #87).
+- **The menu**: the chosen language is remembered between launches (0b49d29, card #56).
+- **SDL** moved from 3.4.12 to 3.4.20 (049c9f5), for native Steam Controller support since 3.4.18
+  (card #101, the gamepad itself is still open).
+
+## 2026-11-08: the jail levels' details, slides, screen text and sounds
+
+The work after the 2026-11-07 pass, most of it on 2026-11-08:
+
+- **Jail_10 and Jail_20**: the ship pan's far backdrop (7a76a8d, sector 7 drawn from a slow-moving
+  eye), the backdrop only where the game draws sector 7 (9092dbe), the lightning flash (adbfa24),
+  objects past the fog's infinite distance not drawn (56dd0db), the background black at level
+  start (9a91d40), the cave pan not clipping at wide aspect ratios (218560a), the cell's bars
+  (9f6d437) and laser bars, Globox staying visible at the hand-over (fc436b6), the chute's music
+  following Rayman's sector (0a944b1), its end camera posing animated channels on demand
+  (b5b18f4), and Learn_10 lit after the chute (f34381d).
+- **Slides and slopes**: a slide keeps its descent with the second inertia's factors corrected
+  (aef0698), procedure 172's turn is a move so walls still push (2267d09), the take-off leaves the
+  floor while rising and a slide jump isn't followed down the slope (fb03dc3, 51921a5), and a turn
+  keeps the actor's size (2c9700e).
+- **Screen text and the HUD**: text placed in the whole viewport with glyphs at 4:3 widths, a
+  centred 4:3 area kept at wide sizes, story texts and subtitles keeping their side start, the HUD
+  spread across the screen with pictures and counters at 4:3 proportions, Murfy's face and text
+  staying with his box, and the slaves counter keeping to its label (fdea15b, 6d7f61a, 3364112,
+  cc12031, 32da848, 6e0d777, ad21813).
+- **Sounds**: the exe's per-listener sector gate for actor emitters (d117fbd), and actors' own
+  distance pair (e6544bd), so Jail_20's chute fans are silent from the cell; the distance curve
+  itself is from the exe (ae1c155, 2026-11-07).
+- **Start and revisit**: the pirate ship always starts as a new game (2a6401d), the revisit start
+  settles until the portal has taken Rayman and does so before the first frame (7e21e2e, 5aeae7d),
+  and `--start intro` plays Learn_10's opening scene as a diagnostic (b6721de, card #23).
+- **The menu**: the Site entry opens the project page and reads "OpenRayman 0.1.0" (9cd9a55,
+  bee041c).
+- **Mechanics and particles**: last tick's contacts dropped first (c24796a), a roof sloping across
+  the move stopping the body (8dcd0c3), mirrored parts keeping the right side of one-sided faces
+  (3e98f2d), the slide dust (2c9700e, kinds 1 and 2), the Jail_20 grate's burst (cf90af7, kind 30)
+  and a shot's stars when it hits an actor (1b6b1b6, kinds 99, 46 and 49). Shadows: a slope only
+  catches the blob where its plane is near the ground under the actor (79a0956, 2026-11-07), and
+  our far backdrop and sky sectors catch none (524f994).
+
 ## 2026-11-07: menu and intro, saves, and the exe's order
 
 A big pass of unported exe pieces landed (2026-11-05..07). Menu: the Exit prompt with its choice
 colours (Yes quits, procedure 101), the white-to-colour text gradient with the selected entry's
 height pulse, the cutscene black bars (procedure 314's world view bounds), the language selection
-at run time (procedure 242; not saved yet), the menu camera's straight moves, and the butterfly
-placed at a screen point (procedure 409, reprojected every tick). Intro: the Ubisoft logo and the
-tiled Rayman 2 logo (kinds 170/171) as screen objects with smooth edges, the text boxes' fades,
-and the logo arc's saved vertex colour sets selected by procedure 393. The animation morph
-records are read and blended, and the menu camera's jump cut now applies to Rayman only.
+at run time (procedure 242; saved since 0b49d29), the menu camera's straight moves, and the
+butterfly placed at a screen point (procedure 409, reprojected every tick). Intro: the Ubisoft
+logo and the tiled Rayman 2 logo (kinds 170/171) as screen objects with smooth edges, the text
+boxes' fades, and the logo arc's saved vertex colour sets selected by procedure 393. The animation
+morph records are read and blended, and the menu camera's jump cut now applies to Rayman only.
 
 The "SLAVES ON BOARD" counter flash in the intro came from the actor order: when Rayman changes
 sector the exe relinks its run order so his sector's actors run first (0x40B290, wake pass
@@ -28,7 +74,8 @@ Rendering: only the camera's sector and its +0x24 drawn-with list are drawn, wit
 sector (virtual sectors depend on the list only), and `--screenshot` draws solid scenery again.
 The texture colour keys (+0x2C) and the one-sided materials (flag 0x400 / 0x80000) match the
 game. A revisit start runs four ticks before the first frame, so the portal's pull on the third
-tick is hidden as in the game, and a teleport moves a dynamic actor at once (its dynamics block too).
+tick is hidden as in the game, and a teleport moves a dynamic actor at once (its dynamics block
+too).
 
 Note: the Globox kids' scene in Learn_10 replays on a revisit in the real game too — an original
 bug, kept on purpose; an optional fix may come later.
@@ -57,7 +104,13 @@ Teensy touches it), so the morph on frames 48..49 isn't the whole story: next is
 game's hat object frame by frame. New wishes: remember the chosen language (prompt only on the
 first start); the menu font looks different from the game's.
 
+(solved: the hat 104fbf0 (see the two entries below); the butterfly flies to the selected entry
+since 04f08e0 and fc033ff; the language is remembered since 0b49d29 (card #56); the menu font came
+with #57.)
+
 ## 2026-11-04: the Teensy's hat is a morph
+
+(solved: 6f46f47 reads the morphs and blends them; the remaining frame was 104fbf0.)
 
 Codex (read-only, build/helpers/teensy_hat_report.md), re-checked at the morph lookup 0x40DFB0:
 the exe shows the plain object choice except where the animation has a morph record for that
@@ -69,6 +122,8 @@ flags' high byte (0x0800 on the hat's choices) is ignored by this path; the low 
 the object, 0 shows it.
 
 ## 2026-11-03: the menu Teensy's hat
+
+(solved: 104fbf0, after the morph and interpolation findings above.)
 
 The flip is at frames 48..49 of animation 316 (50 frames, a plain loop): the hat channel (12)
 switches object from 13 (frames 42..47) to 11 (48..49), then 16 (0..5). Its pose is smooth across
@@ -87,6 +142,9 @@ channel is posed or drawn, not in the scripts. Not found yet.
 
 ## 2026-11-02 (late night): the cutscene bars, round two
 
+(solved: 7ca62c3, procedure 314 sets the world view's bounds; cards #4 and #16 are closed, the
+option to turn the bars off is card #5.)
+
 DeepSeek (read-only, build/helpers/black_bars_report2.md), checked by us: no exe code reads the
 camera actor's custom bit 30 or its var6 (every 0x20000000 test is on render objects or particle
 kinds; var6 is an owner token the camera controllers compare among themselves, 65000 = a scene
@@ -99,7 +157,7 @@ watch them during the kids' scene; if they stay put, read the kind-120 rectangle
 the screen sprites (0x4E1638). The report's Learn_10 line numbers for 314 were wrong (they are
 the Menu's).
 
-## 2026-11-02 (late night): ticked off
+## 2026-11-02 (late night): the user's checks
 
 - The slippery slope (Ly_10) feels like the game's (user); Codex measured 10.3 u/s² down the
   fall line in the recording and 10.7 in ours; the slow first step onto the slide is the game's
@@ -151,6 +209,10 @@ the Menu's).
 - Arrival pan: started without `--start new`, the camera begins behind a wall, out of bounds,
   and can't get through to Rayman.
 - Next machine: the Fermi laptop (Quadro 2000M) on Linux with the AUR 390xx driver.
+
+(solved: the arrival pan 64e46d6 later that day; the text's placement with the game's own glyphs
+on 2026-11-02 (3c0bc41) and its projection on 2026-11-07 (a2dc462). Its exact size and padding
+are still open, card #2.)
 
 ## 2026-11-02 (afternoon): standing on actors, and a profiler
 
@@ -206,7 +268,10 @@ the Menu's).
   a shot fired 23 degrees off turns towards cage node 53 at launch and hits it at tick 352; with
   nothing ahead it flies straight. Pinned in the tests. Reviewed and reproduced here.
 
-## 2026-11-02 (night): music plays; homing second try came back empty
+## 2026-11-02 (early): music plays; homing's second try came back empty
+
+The two entries below were logged as "(night)" too: these notes ran past midnight, so they
+are filed here as "(early)".
 
 - Two GPT-6.1 Terra jobs. Music: a theme player in `sound_player` (segments, repeat points,
   restart, tail, stop), built and tested, but its own runs logged no music: nothing asked for a
@@ -218,22 +283,7 @@ the Menu's).
   centre helper 0x476880, but could not make Rayman shoot in its ortool trace, so it had nothing
   to test against (`formats/generated.md`).
 
-## 2026-11-01 (evening): fixes and dialogs
-
-- Ceilings stop jumps (800c6c2): `world_collision::ceiling_at` stops a move up where the head
-  would pass a downward-facing surface — the bridge and the Globox kids' cave roof. Awaiting the
-  user's test at both spots.
-- The hidden end-of-level Rayman (`--camera 21.6,115.8,29.6,266.5,-25.8`) no longer calls
-  "Hey!": actors put away with custom bit 14 (0x2000) skip their animation step as in the exe
-  (0x40A5C0).
-- Dialogs run: function 158, procedures 430/243 wired, the string table from Fix (6facc6f).
-  Jail_10's first narration line returns events 10, 11, 3 at the same reveal positions as the
-  recorded game, about 90 ms later. Drawing the text and procedure 393 are still open; the
-  Globox kids' scene doesn't start its dialog.
-- Homing (functions 113 and 154) investigated, notes in `formats/generated.md`; implementation
-  in progress.
-
-## 2026-11-02: the Globox kids' scene plays (user)
+## 2026-11-02 (early): the Globox kids' scene plays (user)
 
 - The Globox kids' cutscene plays with Rayman talking and the same animations as the game (the
   dialog text isn't there yet).
@@ -256,7 +306,28 @@ the Menu's).
   original's placement slips (the big "Yahoo!" when all of a level's Lums are collected and the
   menu's "overwrite save" text run off the screen).
 
+## 2026-11-01 (evening): fixes and dialogs
+
+- Ceilings stop jumps (800c6c2): `world_collision::ceiling_at` stops a move up where the head
+  would pass a downward-facing surface — the bridge and the Globox kids' cave roof. Awaiting the
+  user's test at both spots.
+- The hidden end-of-level Rayman (`--camera 21.6,115.8,29.6,266.5,-25.8`) no longer calls
+  "Hey!": actors put away with custom bit 14 (0x2000) skip their animation step as in the exe
+  (0x40A5C0).
+- Dialogs run: function 158, procedures 430/243 wired, the string table from Fix (6facc6f).
+  Jail_10's first narration line returns events 10, 11, 3 at the same reveal positions as the
+  recorded game, about 90 ms later. Drawing the text and procedure 393 are still open; the
+  Globox kids' scene doesn't start its dialog.
+- Homing (functions 113 and 154) investigated, notes in `formats/generated.md`; implementation
+  in progress.
+
+(solved: ceilings 2026-11-02 (user), homing 8a9160d, drawing the text 3c0bc41, procedure 393
+fdb94e2.)
+
 ## 2026-11-01 (late): text overlay and homing, first tries
+
+(solved: the game's glyphs and their placement 3c0bc41, colours cd95eb5; homing 8a9160d. The exact
+size and padding are still open, card #2.)
 
 - The dialog text is drawn by a stand-in overlay (SDL's debug font) until the game's glyphs are
   decoded. At `--level Jail_10 --time 10` nothing shows yet: the narration line is there (55
@@ -309,6 +380,21 @@ worked first time (Jail_20 into Learn_10 keeps Rayman's super object; fixed). Wh
   cave roof); the Globox kids start in the wrong state; a "Hey!" voice repeats where the debug
   Rayman was; the flier's buzz goes on after it vanishes.
 
+## 2026-10-31: the shot
+
+(solved: hitting actors 9f56191, homing 8a9160d.)
+
+Rayman's shot is a generated actor (`formats/generated.md`): function 66 copies its template,
+it flies on the fast mechanics, fades after 1.5 s and frees its slot. In today: the shot
+leaves Rayman's hand at the animation's marker (368ce8f), the rank countdown, the bounce
+sparkles and the story bits for its look (27fdca6), the pool sweep (6706e5f), the fade
+animation playing (097275e; the opacity byte is part of the animation object choice, 6865906)
+and the shot's additive sprite taking no fog (3ba745c); the animated part pivot interpolation
+itself is corrected in b62c5fc. The charged shot exists in the scripts (holding the key,
+var19 up to 2000 ms, particles 69/71) but only once story bit 1143 is set, later in the game.
+What is missing: hitting actors (procedure 22's touch query finds nobody yet) and homing
+(function 113).
+
 ## 2026-10-31: the first visit plays
 
 - Murfy's freeze at the stone is gone: since the first-visit start runs (node 38's intro ended at
@@ -321,19 +407,6 @@ worked first time (Jail_20 into Learn_10 keeps Rayman's super object; fixed). Wh
   (user).
 - The big-nosed flier leaving Rayman to sit by the camera is the original game's behaviour too;
   ours keeps buzzing there and its loop seam is harsh (user).
-
-## 2026-10-31: the shot ⬅ (in progress)
-
-Rayman's shot is a generated actor (`formats/generated.md`): function 66 copies its template,
-it flies on the fast mechanics, fades after 1.5 s and frees its slot. In today: the shot
-leaves Rayman's hand at the animation's marker (368ce8f), the rank countdown, the bounce
-sparkles and the story bits for its look (27fdca6), the pool sweep (6706e5f), the fade
-animation playing (097275e; the opacity byte is part of the animation object choice, 6865906)
-and the shot's additive sprite taking no fog (3ba745c); the animated part pivot interpolation
-itself is corrected in b62c5fc. The charged shot exists in the scripts (holding the key,
-var19 up to 2000 ms, particles 69/71) but only once story bit 1143 is set, later in the game.
-What is missing: hitting actors (procedure 22's touch query finds nobody yet) and homing
-(function 113).
 
 ## 2026-10-30: the game camera, fourth look (user)
 
@@ -395,6 +468,9 @@ with the camera for now; the original's candidate scoring and transition modes r
 validated.
 
 ## 2026-10-30: slippery slopes
+
+(solved: 43b8ab5 makes Rayman slide downhill and the user confirmed the feel on 2026-11-02; the
+2% acceleration difference is still open, card #1.)
 
 Slippery slopes slide Rayman uphill instead of down — likely a sign in the slope direction
 (contact normal, function 190, or the slide procedure; user: `--level Ly_10 --camera
