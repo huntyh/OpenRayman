@@ -385,10 +385,10 @@ namespace openrayman
 					else if(item.screen_colour == 200) tint = {250/255.0f, 70/255.0f, 70/255.0f, tint[3]};
 					else if(item.screen_colour == 400) tint = {1, 1, 120/255.0f, tint[3]};
 					float offset = float(game::screen_slot_punctuation_offset(item.byte, glyph_height));
-					// The HUD's counters keep to their screen edge, next to the Lum and cage icons;
-					// every other slot (the menu, the intro's slaves count) is in the centred block.
+					// The HUD's counters keep to their screen edge, next to the Lum and cage icons; centred
+					// slots never do (the pause menu is drawn by the HUD's own actor), nor any other slot.
 					float x0 = (left + item.x) * 0.64f;
-					x0 = dialog.edge ? to_edge(x0, (left + layout.width * 0.5f) * 0.64f) : block(x0);
+					x0 = dialog.edge && !layout.centred ? to_edge(x0, (left + layout.width * 0.5f) * 0.64f) : block(x0);
 					float x1 = x0 + item.advance * 0.64f * area;
 					// 0x4660B0 retains the slot's floating-point coordinates on both axes.
 					float y0 = (dialog.y + item.y + offset - dialog.pulse) * 0.48f;
