@@ -30,13 +30,13 @@ translation factor defaults to 0.02 (user, 2026-11-13: 0.1 still looked near) an
 
 The Jail_10 sky pass adds three optional depth cues (our renderer improvement):
 
-- `OPENRAYMAN_SKY_STRETCH=1..32` (default **4**) scales X/Y around the same
+- `OPENRAYMAN_SKY_STRETCH=1..32` (default **1**, off since 2026-11-13: at 4 the clouds looked smeared) scales X/Y around the same
   sky anchor, leaving Z intact. Shells and sector 4 cards share the model,
   including transformed transparency sorting. The sea/ship height adjustment
   stays in place. Only this pass extends its far clip range; existing distance
   fog and flash culling use positions before stretching, so enlargement does
   not erase the clouds in distance fog or change the scripted flash coverage.
-- `OPENRAYMAN_SKY_DRIFT=0..4` (default **0.25**) scales only material UV scroll
+- `OPENRAYMAN_SKY_DRIFT=0..4` (default **0.1** since 2026-11-13; was 0.25) scales only material UV scroll
   time in that pass. Texture animation frame selection keeps the original clock,
   including lightning pulses.
 - `OPENRAYMAN_SKY_HAZE=0..1` (default **0.3**) blends towards the shell sector's

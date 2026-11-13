@@ -1079,8 +1079,8 @@ namespace openrayman
 				}
 				return fallback;
 			};
-			m_sky_stretch = sky_option("OPENRAYMAN_SKY_STRETCH", 4.0f, 1.0f, 32.0f);
-			m_sky_drift = sky_option("OPENRAYMAN_SKY_DRIFT", 0.25f, 0.0f, 4.0f);
+			m_sky_stretch = sky_option("OPENRAYMAN_SKY_STRETCH", 1.0f, 1.0f, 32.0f);
+			m_sky_drift = sky_option("OPENRAYMAN_SKY_DRIFT", 0.1f, 0.0f, 4.0f);
 			m_sky_haze = sky_option("OPENRAYMAN_SKY_HAZE", 0.3f, 0.0f, 1.0f);
 			if(const char* value = std::getenv("OPENRAYMAN_SKY_PARALLAX"))
 			{
