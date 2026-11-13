@@ -229,6 +229,8 @@ namespace openrayman
 		GLint m_u_alpha_cut = -1, m_u_sharpen = -1, m_u_part_alpha = -1;
 		GLint m_u_edge_clamp = -1;
 		GLint m_u_lightning = -1;
+		GLint m_u_sky_haze = -1, m_u_sky_eye = -1, m_u_sky_haze_color = -1;
+		GLint m_u_fog_model = -1;
 		GLint m_u_uv_offset = -1;
 		GLint m_u_camera = -1, m_u_camera_forward = -1, m_u_lighting = -1;
 		GLint m_u_light_count = -1, m_u_light_kind = -1, m_u_light_vector = -1, m_u_light_color = -1, m_u_light_range = -1;
@@ -284,6 +286,7 @@ namespace openrayman
 		glm::vec3 m_backdrop_anchor{ 0 };
 		float m_backdrop_parallax = 0.1f;
 		float m_sky_parallax = 0.02f;
+		float m_sky_stretch = 4.0f, m_sky_drift = 0.25f, m_sky_haze = 0.3f;
 		// The camera's sector, kept from frame to frame as the exe does (level_lights::follow), and
 		// the sectors drawn while the camera is in it: itself and its +0x24 list (0x44B2E0).
 		mutable std::optional<std::size_t> m_camera_sector;

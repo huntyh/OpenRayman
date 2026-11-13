@@ -41,6 +41,7 @@ namespace openrayman
 			uniform float u_fog_infinite;
 			uniform mat4 u_view_projection;
 			uniform mat4 u_model;
+			uniform mat4 u_fog_model; // undo the renderer-only sky stretch for the game's distance fog
 			uniform vec3 u_camera;
 			uniform vec3 u_camera_forward; // fog goes by depth along the view, like the game's (Glide's W)
 			// 0: a soft stand-in light from above. 1: the game's lights, from a_color. 2: the game's
@@ -69,6 +70,8 @@ namespace openrayman
 			flat out vec4 v_uv_bounds;
 			out vec4 v_light;
 			out float v_distance;
+			out vec3 v_sky_direction;
+			uniform vec3 u_sky_eye;
 			flat out float v_culled;
 			void main()
 			{
@@ -111,12 +114,14 @@ namespace openrayman
 				}
 				v_uv = a_uv;
 				v_uv_bounds = a_uv_bounds;
-				v_distance = dot(world.xyz - u_camera, u_camera_forward);
+				vec3 fog_world = (u_fog_model * world).xyz;
+				v_distance = dot(fog_world - u_camera, u_camera_forward);
+				v_sky_direction = world.xyz - u_sky_eye;
 				// 0x42AF70: with a fog on, an object whose bounding-sphere centre lies at or past the
 				// fog's infinite distance from the camera isn't drawn at all (straight-line distance).
 				v_culled = 0.0;
 				if(u_fog_infinite > 0.0 && a_cull.w > 0.5)
-					v_culled = distance((u_model * vec4(a_cull.xyz, 1.0)).xyz, u_camera) >= u_fog_infinite ? 1.0 : 0.0;
+					v_culled = distance((u_fog_model * u_model * vec4(a_cull.xyz, 1.0)).xyz, u_camera) >= u_fog_infinite ? 1.0 : 0.0;
 				gl_Position = u_view_projection * world;
 			}
 		)";
@@ -126,6 +131,7 @@ namespace openrayman
 			in vec2 v_uv;
 			in vec4 v_light;
 			in float v_distance;
+			in vec3 v_sky_direction;
 			flat in float v_culled;
 			flat in vec4 v_uv_bounds;
 			out vec4 o_color;
@@ -133,6 +139,8 @@ namespace openrayman
 			uniform float u_alpha_cut;
 			uniform float u_edge_clamp;
 			uniform float u_lightning;
+			uniform float u_sky_haze;
+			uniform vec3 u_sky_haze_color;
 			uniform vec2 u_uv_offset; // scrolling textures (water, mist, clouds)
 			uniform vec4 u_fog_color;
 			uniform float u_fog_infinite;
@@ -187,6 +195,14 @@ namespace openrayman
 				if(alpha < u_alpha_cut)
 					discard;
 				vec3 color = texel.rgb * v_light.rgb;
+				if(u_sky_haze > 0.0)
+				{
+					// Z is up: fade over the lowest 12 degrees, independent of camera pitch.
+					float elevation = v_sky_direction.z / max(length(v_sky_direction), 1e-5);
+					float haze = u_sky_haze * (1.0 - smoothstep(0.0, 0.207912, elevation));
+					// Brightening cards fade away in haze rather than painting fog-coloured rectangles.
+					color = u_additive > 0.5 || u_lightning > 0.5 ? color * (1.0 - haze) : mix(color, u_sky_haze_color, haze);
+				}
 				if(u_fog.y > u_fog.x)
 				{
 					float fog = mix(u_fog.z, u_fog.w, clamp((v_distance - u_fog.x) / (u_fog.y - u_fog.x), 0.0, 1.0));
@@ -379,6 +395,10 @@ namespace openrayman
 		m_u_view_projection = glGetUniformLocation(m_program, "u_view_projection");
 		m_u_model = glGetUniformLocation(m_program, "u_model");
 		m_u_uv_offset = glGetUniformLocation(m_program, "u_uv_offset");
+		m_u_sky_haze = glGetUniformLocation(m_program, "u_sky_haze");
+		m_u_fog_model = glGetUniformLocation(m_program, "u_fog_model");
+		m_u_sky_eye = glGetUniformLocation(m_program, "u_sky_eye");
+		m_u_sky_haze_color = glGetUniformLocation(m_program, "u_sky_haze_color");
 		m_u_alpha_cut = glGetUniformLocation(m_program, "u_alpha_cut");
 		m_u_sharpen = glGetUniformLocation(m_program, "u_sharpen");
 		m_u_part_alpha = glGetUniformLocation(m_program, "u_part_alpha");
@@ -1049,6 +1069,19 @@ namespace openrayman
 			m_backdrop_anchor = { r.anchor[0], r.anchor[1], r.anchor[2] };
 			m_backdrop_parallax = r.parallax;
 			m_sky_parallax = 0.02f;
+			auto sky_option = [](const char* name, float fallback, float low, float high) {
+				if(const char* value = std::getenv(name))
+				{
+					char* end = nullptr;
+					const float f = std::strtof(value, &end);
+					if(end != value && *end == '\0' && std::isfinite(f) && f >= low && f <= high)
+						return f;
+				}
+				return fallback;
+			};
+			m_sky_stretch = sky_option("OPENRAYMAN_SKY_STRETCH", 4.0f, 1.0f, 32.0f);
+			m_sky_drift = sky_option("OPENRAYMAN_SKY_DRIFT", 0.25f, 0.0f, 4.0f);
+			m_sky_haze = sky_option("OPENRAYMAN_SKY_HAZE", 0.3f, 0.0f, 1.0f);
 			if(const char* value = std::getenv("OPENRAYMAN_SKY_PARALLAX"))
 			{
 				char* end = nullptr;
@@ -1097,6 +1130,8 @@ namespace openrayman
 		glDisable(GL_CULL_FACE); // which faces are double sided isn't decoded yet
 		glUseProgram(m_program);
 		glm::mat4 view_projection = projection * view;
+		const glm::mat4 fog_identity(1.0f);
+		glUniformMatrix4fv(m_u_fog_model, 1, GL_FALSE, glm::value_ptr(fog_identity));
 		glUniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(view_projection));
 		glUniform1f(m_u_edge_clamp, m_edge_clamp ? 1.0f : 0.0f);
 		glActiveTexture(GL_TEXTURE0);
@@ -1112,6 +1147,7 @@ namespace openrayman
 		// cut every solid surface away (the --screenshot frame showed no solid scenery).
 		glUniform1f(m_u_part_alpha, 1.0f);
 		glUniform1f(m_u_sharpen, 0.0f);
+		glUniform1f(m_u_sky_haze, 0.0f);
 		std::vector<part> parts;
 		parts.reserve(m_level_cards.size() + m_parts.size());
 		follow_camera(eye);
@@ -1258,6 +1294,15 @@ namespace openrayman
 					continue;
 				if(b.sector != no_sector)
 					use_fog(b.sector);
+				const light* sky_fog = sky_pass && m_lighting && b.sector < m_lights.sectors.size() ? m_lights.fog(b.sector) : nullptr;
+				// Sector 4's overlay cards have no fog light. Use the visible shell's
+				// colour so their horizon fade agrees with the sky they brighten.
+				if(sky_pass && m_lighting && !sky_fog)
+					for(const auto sector : m_backdrop_skies)
+						if(drawn(sector) && (sky_fog = m_lights.fog(sector))) break;
+				glUniform1f(m_u_sky_haze, sky_fog ? m_sky_haze : 0.0f);
+				if(sky_fog)
+					glUniform3fv(m_u_sky_haze_color, 1, sky_fog->color.data());
 				use_cull(b.faces);
 				const GLuint texture = texture_at(b.animation, b.texture);
 				glBindTexture(GL_TEXTURE_2D, texture);
@@ -1269,7 +1314,8 @@ namespace openrayman
 				glUniform1f(m_u_lightning, lightning ? 1.0f : 0.0f);
 				if(lightning) glBlendFunc(GL_DST_COLOR, GL_ONE);
 				// Wrapped every 2 widths, which keeps mirrored textures the same and the numbers small.
-				glm::vec2 offset(std::fmod(double(b.scroll.x) * m_time, 2.0), std::fmod(double(b.scroll.y) * m_time, 2.0));
+				const double scroll_time = m_time * (sky_pass ? m_sky_drift : 1.0f);
+				glm::vec2 offset(std::fmod(double(b.scroll.x) * scroll_time, 2.0), std::fmod(double(b.scroll.y) * scroll_time, 2.0));
 				glUniform2f(m_u_uv_offset, offset.x, offset.y);
 				glUniform4fv(m_u_material_ambient, 1, glm::value_ptr(b.ambient));
 				glUniform4fv(m_u_material_diffuse, 1, glm::value_ptr(b.diffuse));
@@ -1327,8 +1373,8 @@ namespace openrayman
 		// fog, lighting and cut-out cores as normal scenery, with their own depth.
 		if(!m_backdrop_sectors.empty())
 		{
-			auto draw_static_pass = [&](const glm::vec3& pass_eye) {
-				set_model(identity);
+			auto draw_static_pass = [&](const glm::vec3& pass_eye, const glm::mat4& model) {
+				set_model(model);
 				glUniform1i(m_u_lighting, m_lighting ? 1 : 0);
 				set_blend(blend::none);
 				draw_batches(m_batches, blend::none);
@@ -1341,7 +1387,7 @@ namespace openrayman
 				for(const auto& t : m_see_through_triangles)
 					if(visible(m_see_through[t.object].b.sector)) order.push_back(&t);
 				std::ranges::stable_sort(order, [&](const auto* a, const auto* b) {
-					return glm::length(a->centre - pass_eye) > glm::length(b->centre - pass_eye);
+					return glm::length(glm::vec3(model * glm::vec4(a->centre, 1)) - pass_eye) > glm::length(glm::vec3(model * glm::vec4(b->centre, 1)) - pass_eye);
 				});
 				for(const auto* t : order)
 				{
@@ -1363,10 +1409,27 @@ namespace openrayman
 			const glm::vec3 sky_eye = sky_anchor + (eye - sky_anchor) * m_sky_parallax;
 			glm::mat4 sky_camera = camera;
 			sky_camera[3] = glm::vec4(sky_eye, 1);
-			const glm::mat4 sky_vp = projection * glm::inverse(sky_camera);
+			// The horizontal stretch can carry the shell beyond the normal far plane.
+			// Extend only this pass's clip range, preserving the supplied near plane/FOV.
+			glm::mat4 sky_projection = projection;
+			if(!m_backdrop_skies.empty() && m_sky_stretch > 1.0f)
+			{
+				const float near = projection[3][2] / (projection[2][2] - 1.0f);
+				const float far = projection[3][2] / (projection[2][2] + 1.0f) * m_sky_stretch;
+				sky_projection[2][2] = -(far + near) / (far - near);
+				sky_projection[3][2] = -2.0f * far * near / (far - near);
+			}
+			const glm::mat4 sky_vp = sky_projection * glm::inverse(sky_camera);
 			glUniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(sky_vp));
 			glUniform3fv(m_u_camera, 1, glm::value_ptr(fog_override ? eye : sky_eye));
-			draw_static_pass(sky_eye);
+			glUniform3fv(m_u_sky_eye, 1, glm::value_ptr(sky_eye));
+			const glm::mat4 sky_model = glm::translate(identity, sky_anchor) *
+				glm::scale(identity, glm::vec3(m_sky_stretch, m_sky_stretch, 1)) * glm::translate(identity, -sky_anchor);
+			const glm::mat4 sky_fog_model = glm::inverse(sky_model);
+			glUniformMatrix4fv(m_u_fog_model, 1, GL_FALSE, glm::value_ptr(sky_fog_model));
+			draw_static_pass(sky_eye, sky_model);
+			glUniformMatrix4fv(m_u_fog_model, 1, GL_FALSE, glm::value_ptr(identity));
+			glUniform1f(m_u_sky_haze, 0.0f);
 			glDepthMask(GL_TRUE);
 			glClear(GL_DEPTH_BUFFER_BIT);
 			sky_pass = false;
@@ -1379,7 +1442,7 @@ namespace openrayman
 			// A scripted flash measures depth from the real eye. Parallax must not
 			// change its coverage on the distant scenery relative to the sky/world.
 			glUniform3fv(m_u_camera, 1, glm::value_ptr(fog_override ? eye : far_eye));
-			draw_static_pass(far_eye);
+			draw_static_pass(far_eye, identity);
 			glDepthMask(GL_TRUE);
 			glClear(GL_DEPTH_BUFFER_BIT);
 			glUniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(view_projection));

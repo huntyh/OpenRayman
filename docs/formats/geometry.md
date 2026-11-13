@@ -28,6 +28,34 @@ the backdrop anchor horizontally and follows the real eye vertically between z=3
 and the ship anchor height to stay inside the separate sea and ship shells. Its
 translation factor defaults to 0.02 (user, 2026-11-13: 0.1 still looked near) and `OPENRAYMAN_SKY_PARALLAX=0..1` tunes it.
 
+The Jail_10 sky pass adds three optional depth cues (our renderer improvement):
+
+- `OPENRAYMAN_SKY_STRETCH=1..32` (default **4**) scales X/Y around the same
+  sky anchor, leaving Z intact. Shells and sector 4 cards share the model,
+  including transformed transparency sorting. The sea/ship height adjustment
+  stays in place. Only this pass extends its far clip range; existing distance
+  fog and flash culling use positions before stretching, so enlargement does
+  not erase the clouds in distance fog or change the scripted flash coverage.
+- `OPENRAYMAN_SKY_DRIFT=0..4` (default **0.25**) scales only material UV scroll
+  time in that pass. Texture animation frame selection keeps the original clock,
+  including lightning pulses.
+- `OPENRAYMAN_SKY_HAZE=0..1` (default **0.3**) blends towards the shell sector's
+  fog colour with a smooth elevation fade from full strength at/below the horizon
+  to zero at 12 degrees above it. Elevation uses the stretched fragment's direction
+  from the sky eye, independent of camera pitch. Sector 4 has no fog light, so its
+  cards use the visible shell's colour. Additive/brightening cards lose intensity
+  in haze rather than adding a fog-coloured rectangle. Haze follows the lighting
+  toggle; existing fog overrides still apply afterwards.
+
+Neutral values **1/1/0** retain the earlier parallax sky. Invalid/nonfinite or
+out-of-range values fall back to defaults. `OPENRAYMAN_BACKDROP=0` bypasses these
+cues along with the existing backdrop recipe. `OPENRAYMAN_LIGHTNING_CLASSIC=1`
+still selects the original lightning blend and retains its animation timing.
+Sea, islands, ship, mountains and actors keep their existing transforms/material
+scroll/fog. Jail_20's sector 0 remains in the backdrop pass and gets none of these
+three cues. Visual sweeps at 2, 4.3, 8.7, 20, 40, 60 and 90 seconds favour S=4:
+it reduces the overhead swirl without leaving as much empty upper sky as S=8/12.
+
 The optional renderer recipe selects sector 7 subject to camera-sector
 visibility and draws it after sky, from `anchor + (eye-anchor)*f`, before
 clearing depth for normal scenery. The anchor is the scripted camera at 90 seconds
@@ -39,7 +67,9 @@ Where this came from: own inspection of the installed PC Jail_10 using
 and renderer screenshots (Codex, 2026-11-07). No external implementation used;
 exports and screenshots kept in the system temporary directory. The sky parallax
 and its height adjustment are our own renderer improvement (Codex, 2026-11-13),
-not an original-engine format finding.
+not an original-engine format finding. The horizontal stretch, drift multiplier,
+and elevation haze are also our own renderer improvements (Codex, 2026-11-13),
+chosen through local screenshot comparisons; no original asset/format changes.
 The intro camera positions were sampled with `--start new --time 95
 --camera-log <temporary CSV>`: at 76 s `(-156.81,310.65,547.46)`, 80 s
 `(-144.60,282.15,547.38)`, 85 s `(-123.59,210.78,544.49)`, 90 s
