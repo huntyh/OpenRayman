@@ -165,8 +165,7 @@ source of truth and has the detail; in short:
   Bast_20's pond and piranhas (#82), Bast_22's barrels and its silent shots and steps (#68),
   Ski_10's swamp creatures and missing kill zone (#69), Chase_22's exit animation and camera
   hunting (#70)
-- A gamepad through SDL3, the Steam Controller first (#101); performance measured with the
-  profiler and tuned (#12)
+- Performance measured with the profiler and tuned (#12)
 
 ## Phase 4: the whole game ⬅ in progress, alongside Phase 3
 
@@ -185,7 +184,8 @@ Everything the PC game has, working before we port it anywhere.
 
 1. The main menu ([formats/menu.md](formats/menu.md)): the language prompt, the main menu and
    New Game -> name -> Jail_10 run from the level's scripts (user confirmed, 2026-11-03). New Game
-   already gets through the name screen into Jail_10, whose intro plays. Left: writing the save
+   already gets through the name screen into Jail_10, whose intro plays (the name screen highlights
+   the whole name instead of the picked letter, #105). Left: writing the save
    (#24), the Load / Delete / Options screens (#25), the menu's scenery, a per-character flash on
    the menu text (#26), and the music still missing in a few places (#31).
 2. The new-game intro cutscene in front of the first-visit start (Jail_10, Jail_20); the logos,
@@ -217,7 +217,8 @@ Vikunja is the source of truth for the open work; the card numbers point to the 
   both change how the lights are used). Two separate things to research first: rendering in high
   dynamic range (lighting in floating point, then tone mapping down to the screen) and HDR output
   (HDR10 / scRGB to an HDR display, which needs the swap chain and the OS to cooperate)
-- Controller support with the right button icons (#49)
+- Gamepads through SDL3, the Steam Controller first (#101; SDL is 3.4.20), with the right button
+  icons (#49) and optional rumble, our own extra (#102)
 - Sharper logos (#50): the Ubisoft logo and the tiled Rayman 2 logo look rough in the original;
   upscale them, or use a better texture if the data has one (optional, the user's wish)
 - Antialiasing (#51): MSAA, with alpha to coverage for cut-out textures, first; SMAA as a cheap
