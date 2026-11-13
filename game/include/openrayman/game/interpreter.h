@@ -111,6 +111,8 @@ namespace openrayman::game
 		void think(std::uint32_t super_object);
 		// When set, step() adds each actor's thinking time (nanoseconds) here, to find costly scripts.
 		std::map<std::uint32_t, std::int64_t>* think_costs = nullptr;
+		// Optional diagnostic for the order in which step updates actors.
+		std::function<void(std::uint32_t)> on_update;
 		// When set, called for every script write to a designer variable: the actor thinking, the
 		// variable's address and the value (a debugging aid, `ORTOOL_WRITES`).
 		std::function<void(std::uint32_t self, std::uint32_t address, const value& v)> on_write;

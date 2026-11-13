@@ -510,6 +510,7 @@ namespace openrayman::game
 			return actor && m.contains(actor + 0x10, 4) && m.u32(actor + 0x10) != 0;
 		};
 		auto think = [&](std::uint32_t self) {
+			if(vm.on_update) vm.on_update(self);
 			// 0x40A5C0 stamps an active actor before its brain/animation/mechanics update.
 			std::uint32_t actor = vm.actor_of(self);
 			std::uint32_t standard = actor ? m.u32(actor + 4) : 0;

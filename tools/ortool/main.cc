@@ -1750,11 +1750,14 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 			};
 	}
 	const bool wake_trace = std::getenv("ORTOOL_WAKE") != nullptr;
+	std::vector<std::uint32_t> updated_order;
+	if(std::getenv("ORTOOL_ORDER")) vm.on_update = [&](std::uint32_t self) { updated_order.push_back(self); };
 	std::uint32_t last_wake_sector = 0xFFFFFFFF, thought_ticks = 0;
 	int last_wake_flags = -1;
 	std::size_t counter_ticks = 0;
 	for(int f = 0; f < frames; f++)
 	{
+		updated_order.clear();
 		tick_now = f;
 		if(auto placed = places.find(f); placed != places.end())
 		{
@@ -1787,6 +1790,26 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 		catch(const std::exception& e)
 		{
 			throw format_error(std::format("tick {}, outside the actors' scripts (last node 0x{:08X}): {}", f, vm.last_node(), e.what()));
+		}
+		if(std::getenv("ORTOOL_ORDER"))
+		{
+			std::cout << std::format("order tick {}:", f);
+			for(auto so : vm.run_order)
+			{
+				auto actor = vm.actor_of(so), standard = actor ? memory.u32(actor + 4) : 0;
+				auto node = node_of.find(so);
+				std::cout << (node == node_of.end() ? std::format(" 0x{:X}", so) : std::format(" {}", node->second));
+				if(standard)
+					std::cout << std::format("{}[{:+d}]", memory.u8(standard + 0x28) ? "*" : "",
+						std::int32_t(memory.u32(standard + 0x18) - vm.frame_number()));
+			}
+			std::cout << " | updated";
+			for(auto so : updated_order)
+			{
+				auto node = node_of.find(so);
+				std::cout << (node == node_of.end() ? std::format(" 0x{:X}", so) : std::format(" {}", node->second));
+			}
+			std::cout << "\n";
 		}
 		if(wake_trace)
 		{

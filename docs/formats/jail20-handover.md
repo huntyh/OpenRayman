@@ -126,3 +126,22 @@ origin. This improves our documented disc/cast approximation; it does not
 claim to implement the original sphere solver (0x43EEC0 / 0x43F510). The
 trace settles to 455.4816 before freezing and remains there at hand-over.
 No level-specific position or timing is inserted.
+
+## Update order at the slide hand-over
+
+Live order capture (huntyh, 2026-11-13) identifies the director as node 3,
+one of the moving actors at the head of the dynamic world, with Rayman later
+in the list when the stand-in (node 13) is placed. The later movement of node
+11 and the stand-in ahead of Rayman occurs several hundred frames after that
+hand-over. Thus that later reorder cannot explain the earlier condition-56
+wait. The recording of a separate run shows Rayman hidden on the stand-in's
+first visible frame and its landing state on the next; why the condition has
+the observed result remains open.
+
+Where this came from: our analysis of the read-only live order capture and
+`run4/actors.txt`, checked against the scene nodes and the executable. The
+frame driver runs the moving pass (0x40AA10) before the world walk (0x40A7C0);
+condition 56 (0x48AE60) compares the target's update stamp with the frame
+counter. Sector change handling (0x40B7B0, 0x40B290, 0x40B4C0) unlinks and
+wakes world actors; procedure 84 (0x405FA0) links an actor from the inactive
+world. These observations do not establish the missing timing mechanism.
