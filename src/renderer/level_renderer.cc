@@ -1048,6 +1048,14 @@ namespace openrayman
 			m_backdrop_skies.assign(r.skies.begin(), r.skies.end());
 			m_backdrop_anchor = { r.anchor[0], r.anchor[1], r.anchor[2] };
 			m_backdrop_parallax = r.parallax;
+			m_sky_parallax = 0.1f;
+			if(const char* value = std::getenv("OPENRAYMAN_SKY_PARALLAX"))
+			{
+				char* end = nullptr;
+				const float f = std::strtof(value, &end);
+				if(end != value && *end == '\0' && std::isfinite(f) && f >= 0 && f <= 1)
+					m_sky_parallax = f;
+			}
 			if(const char* value = std::getenv("OPENRAYMAN_BACKDROP_PARALLAX"))
 			{
 				char* end = nullptr;
@@ -1347,7 +1355,18 @@ namespace openrayman
 			// Jail_10's IPO sky shells and cloud/lightning cards precede the backdrop.
 			// Retain sky-shell depth while drawing clouds so the shell still clips them.
 			sky_pass = true;
-			draw_static_pass(eye);
+			// The sea and ship have separate shells at different heights. Follow the
+			// eye between their layers so that the view stays inside the visible shell.
+			glm::vec3 sky_anchor = m_backdrop_anchor;
+			if(!m_backdrop_skies.empty())
+				sky_anchor.z = std::min(std::max(eye.z, 350.0f), m_backdrop_anchor.z); // Jail_10: the sea shell lies below 383, the ship's above 483
+			const glm::vec3 sky_eye = sky_anchor + (eye - sky_anchor) * m_sky_parallax;
+			glm::mat4 sky_camera = camera;
+			sky_camera[3] = glm::vec4(sky_eye, 1);
+			const glm::mat4 sky_vp = projection * glm::inverse(sky_camera);
+			glUniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(sky_vp));
+			glUniform3fv(m_u_camera, 1, glm::value_ptr(fog_override ? eye : sky_eye));
+			draw_static_pass(sky_eye);
 			glDepthMask(GL_TRUE);
 			glClear(GL_DEPTH_BUFFER_BIT);
 			sky_pass = false;

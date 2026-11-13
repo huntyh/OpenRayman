@@ -283,6 +283,7 @@ namespace openrayman
 		std::vector<std::size_t> m_backdrop_skies;
 		glm::vec3 m_backdrop_anchor{ 0 };
 		float m_backdrop_parallax = 0.1f;
+		float m_sky_parallax = 0.1f;
 		// The camera's sector, kept from frame to frame as the exe does (level_lights::follow), and
 		// the sectors drawn while the camera is in it: itself and its +0x24 list (0x44B2E0).
 		mutable std::optional<std::size_t> m_camera_sector;

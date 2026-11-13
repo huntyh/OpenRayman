@@ -18,14 +18,17 @@ the pirate ship; sector 5/node 37 is water; sector 6 contains the low islands
 and vegetation of the earlier sea passage. Those remain in the normal pass.
 Sectors 2/node 21 and 3/node 23 are ordinary IPO sky shells, both using
 `beach_sky2_txy` (at ship height and sea height respectively). With the recipe
-enabled, visible sky shells draw first with the real view, then depth is cleared
+enabled, visible sky shells draw first with a parallax view, then depth is cleared
 before the far scenery. Otherwise these opaque shells would cover the backdrop
 after its depth reset. They retain their sector fog and visibility rules.
 Sector 4's cloud and lightning quads (`inv_nz`, `foudre_aaa`, `beach_sky3_aaa`)
-join that initial sky pass too, with their transparency sorted from the real
-eye and clipped by the sky shells before clearing depth.
+join that initial sky pass too, with their transparency sorted from the same
+parallax eye and clipped by the sky shells before clearing depth. The sky eye uses
+the backdrop anchor horizontally and follows the real eye vertically between z=350
+and the ship anchor height to stay inside the separate sea and ship shells. Its
+translation factor defaults to 0.1 and `OPENRAYMAN_SKY_PARALLAX=0..1` tunes it.
 
-The optional renderer recipe selects sector 7 regardless of camera-sector
+The optional renderer recipe selects sector 7 subject to camera-sector
 visibility and draws it after sky, from `anchor + (eye-anchor)*f`, before
 clearing depth for normal scenery. The anchor is the scripted camera at 90 seconds
 `(-101.584,139.372,541.117)`, and `f=0.1`. This is our deliberate improvement,
@@ -34,7 +37,9 @@ not a newly discovered original-engine flag; see [IMPROVEMENTS](../IMPROVEMENTS.
 Where this came from: own inspection of the installed PC Jail_10 using
 `ortool lights`, `scene` and `obj`, exported object bounds/material names,
 and renderer screenshots (Codex, 2026-11-07). No external implementation used;
-exports and screenshots kept in the system temporary directory.
+exports and screenshots kept in the system temporary directory. The sky parallax
+and its height adjustment are our own renderer improvement (Codex, 2026-11-13),
+not an original-engine format finding.
 The intro camera positions were sampled with `--start new --time 95
 --camera-log <temporary CSV>`: at 76 s `(-156.81,310.65,547.46)`, 80 s
 `(-144.60,282.15,547.38)`, 85 s `(-123.59,210.78,544.49)`, 90 s
