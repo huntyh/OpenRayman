@@ -622,17 +622,18 @@ namespace openrayman::game
 		}
 
 		// 72..75 (0x472290): change the actor's state (73 even to the state already asked for, 75
-		// takes a second number: non-zero skips the transitions). A refused
+		// takes a second number: non-zero starts it quietly, its sound events up to the start frame
+		// silent, 0x40E9E0's third argument; the transitions apply as for the others). A refused
 		// change stops the script run (flag 2).
 		std::uint32_t change_state_procedure(call& c)
 		{
 			std::uint32_t self = c.vm.target(c.self, true);
-			value target, direct;
+			value target, quiet;
 			next_arg(c, target);
 			if(c.index == 75)
-				next_arg(c, direct);
+				next_arg(c, quiet);
 			std::uint32_t data = actor_part(c.vm, self, actor_field::data_3d);
-			if(data && !change_state(c.vm.memory(), data, target.word(), c.index == 73, c.vm.clock(), (direct.word() & 0xFF) != 0, c.vm.actor_of(self)))
+			if(data && !change_state(c.vm.memory(), data, target.word(), c.index == 73, c.vm.clock(), false, c.vm.actor_of(self), (quiet.word() & 0xFF) != 0))
 				c.vm.signal(flow::wait);
 			return c.args;
 		}

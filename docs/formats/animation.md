@@ -179,6 +179,30 @@ the actor in the middle of the view into its family's next / previous state (wit
 actor of that family), and `--actor-state <node>:<state>` does it from the command line.
 `ortool motion <game> <level>` lists each actor's animation and how far its parts move over a loop.
 
+### Changing state: transitions that keep the place, quiet starts
+
+Procedures 72..75 change the state through 0x40FAA0. A state's transition list (state +0x08;
+entries: next, target state +4, state to play on the way +8) has a **u8 at +0x0C**: when it is 1
+(0x415210) the state on the way does not start at frame 0 but where the old animation was, in
+proportion: frame = old frame × new frame count / old frame count (at most the last frame), and
+the time into the animation is scaled the same way (0x40FB5A). Starting further in, the events
+before that frame are passed over (0x41A930 puts the cursor at the first event at or after it).
+
+Procedure 75's second number is not "skip the transitions" (that is 0x40FAA0's fifth argument,
+which the script procedures always pass as 0): it is handed to 0x40E9E0 as its third argument, a
+**quiet start**. The event countdowns are loaded as usual, then every sound event (type 0) at or
+before the start frame gets a countdown of its own start gate, at least 1 (0x40EC2E), and the
+events are not played on that call, so those sounds stay silent for this pass. Markers are not
+touched: they still arm.
+
+Rayman uses both when he starts to move in the middle of a throw: his standing throw (state
+04/00 +0x8500, animation 171, 10 frames) lists the running throw (+0xBB68) with the state on the
+way +0xC090 (animation 192, 6 frames) and +0x0C = 1, and the scripts ask for it with
+`procedure_75(var111, var20)`, var20 being 1 while a throw is under way. So the running throw
+picks up at frame × 6 / 10 without its voice (event 60, frame 0) a second time. Before
+2026-11-13 OpenRayman read the number as "skip the transitions" and started +0xBB68 from frame 0
+with its sounds: the throw and its voice played twice with one fist made (card #87).
+
 ## Events
 
 An animation reference's +4 points to its events (12 bytes each, sorted by frame) and +0x1A holds
@@ -256,6 +280,13 @@ them a look later) get no shadow yet.
 
 - Events: own analysis of Rayman2.exe (0x40E800, 0x40E9E0, 0x41A930..0x41B100), from a helper
   model's reading re-checked at the frame field, the part list and the marker clear.
+
+- Transitions that keep the place and procedure 75's quiet start (2026-11-13): own analysis of
+  Rayman2.exe (0x472290, 0x40FAA0, 0x415210, 0x40E9E0, 0x41A930), checked against Learn_10's data
+  with `ortool peek` (state 04/00 +0x8500's eleven transitions: six with +0x0C = 1, among them the
+  one to +0xBB68 by way of +0xC090) and with `ortool run` (Up from tick 300, Space from 290..296:
+  the voice, event 60, was queued twice before and once after). Not yet compared with a live
+  recording of the real game.
 
 - Playback rate: own analysis of Rayman2.exe (the stepper 0x40E800 and the state-change path of
   0x40E9E0, 0x419980, 0x418790, procedure 89 0x4675A0 → 0x4187E0, the 3D data constructor 0x418170),

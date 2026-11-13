@@ -49,6 +49,9 @@ namespace openrayman::game
 	{
 		// A transition: next, target state, state to play on the way (0x4199B0, 0x42DE30, 0x4194B0).
 		constexpr std::uint32_t transition_next = 0x00, transition_target = 0x04, transition_via = 0x08;
+		// u8: 1 = the state on the way starts where the old animation was, in proportion (0x415210,
+		// used at 0x40FB5A).
+		constexpr std::uint32_t transition_keeps_place = 0x0C;
 		// The animation reference: u16 frame count, u8 the animation's own speed (the engine does not
 		// play by it: the state's rate does, see docs/formats/animation.md), events and their count.
 		constexpr std::uint32_t reference_frames = 0x00, reference_events = 0x04, reference_event_count = 0x1A;
@@ -207,7 +210,9 @@ namespace openrayman::game
 			return rate;
 		}
 
-		void start(live_memory& m, std::uint32_t data, std::uint32_t s, std::uint32_t actor)
+		// `at` is the frame it starts on (0 unless a transition keeps the place); `quiet` is
+		// procedure 75's number (0x40E9E0's third argument).
+		void start(live_memory& m, std::uint32_t data, std::uint32_t s, std::uint32_t actor, std::uint16_t at = 0, std::uint32_t elapsed = 0, bool quiet = false)
 		{
 			if(std::uint32_t from = m.u32(data + data_3d::current_state); from && from != s)
 				leaving_events(m, data, from, s);
@@ -217,13 +222,41 @@ namespace openrayman::game
 			m.write<std::uint8_t>(data + data_3d::playback_rate, m.u8(s + state::rate));
 			// How many more times it plays before moving on (0x40ED75; counted down at 0x40EA4F).
 			m.write<std::uint8_t>(data + data_3d::loops, m.u8(s + state::repeats));
-			m.write<std::uint16_t>(data + data_3d::frame, 0);
-			m.write<std::uint32_t>(data + data_3d::elapsed, 0);
+			m.write<std::uint16_t>(data + data_3d::frame, at);
+			m.write<std::uint32_t>(data + data_3d::elapsed, elapsed);
 			m.write<std::uint8_t>(data + data_3d::changed, 0);
 			m.write<std::uint8_t>(data + data_3d::finished, 0);
 			m.write<std::uint8_t>(data + data_3d::reached_end, 0);
 			m.write<std::uint8_t>(data + data_3d::event_cursor, 0);
 			load_event_gates(m, data, s);
+			if(!at && !quiet)
+				return;
+			std::uint32_t reference = m.u32(s + state::animation);
+			std::uint32_t events = reference ? m.u32(reference + reference_events) : 0;
+			std::uint8_t count = events ? m.u8(reference + reference_event_count) : 0;
+			std::vector<std::uint8_t>& gates = event_gates()[data];
+			std::uint8_t i = 0;
+			for(; i < count && i < gates.size(); i++)
+			{
+				std::uint32_t e = events + i * event_size;
+				std::uint16_t frame = m.read<std::uint16_t>(e + event_frame);
+				if(!quiet)
+				{
+					// 0x41A930: starting further in, the events before that frame are passed over.
+					if(frame >= at)
+						break;
+					continue;
+				}
+				// 0x40EC2E: a quiet start gives each sound event up to the start frame a countdown
+				// (its own start gate, at least 1), so it stays silent this pass; markers still arm.
+				if(frame > at)
+					break;
+				std::uint32_t descriptor = m.u32(e);
+				if(descriptor && m.u8(descriptor + descriptor_type) == event_sound_type && !gates[i])
+					gates[i] = 1;
+			}
+			if(!quiet)
+				m.write<std::uint8_t>(data + data_3d::event_cursor, i);
 		}
 
 		// The motion the animation's frames carry, for the dynamics (base +0x54, 0x412060 via
@@ -266,7 +299,7 @@ namespace openrayman::game
 		}
 	}
 
-	bool change_state(live_memory& m, std::uint32_t data, std::uint32_t target, bool again, std::uint32_t clock, bool direct, std::uint32_t actor)
+	bool change_state(live_memory& m, std::uint32_t data, std::uint32_t target, bool again, std::uint32_t clock, bool direct, std::uint32_t actor, bool quiet)
 	{
 		std::uint32_t current = m.u32(data + data_3d::current_state);
 		if(!target || (target == m.u32(data + data_3d::requested_state) && !again))
@@ -276,6 +309,8 @@ namespace openrayman::game
 		if(!m.contains(target, state::after + 4))
 			throw format_error(std::format("0x{:X} is not a state", target));
 		std::uint32_t play = target;
+		std::uint16_t at = 0;
+		std::uint32_t elapsed = 0;
 		if(!direct && current)
 		{
 			std::uint32_t via = 0;
@@ -284,6 +319,15 @@ namespace openrayman::game
 				if(m.u32(t + transition_target) == target)
 				{
 					via = m.u32(t + transition_via);
+					// 0x40FB5A: a transition marked so carries the place over: the frame and the time
+					// into the animation, both times new length / old length. Rayman's standing throw
+					// hands over to the running one this way when he starts to move mid-throw.
+					std::uint16_t old_frames = frame_count(m, current), new_frames = via ? frame_count(m, via) : 0;
+					if(m.u8(t + transition_keeps_place) == 1 && old_frames && new_frames)
+					{
+						at = std::uint16_t(std::min<std::uint32_t>(std::uint32_t(m.read<std::uint16_t>(data + data_3d::frame)) * new_frames / old_frames, new_frames - 1u));
+						elapsed = std::uint32_t(std::uint64_t(m.u32(data + data_3d::elapsed)) * new_frames / old_frames);
+					}
 					break;
 				}
 			}
@@ -303,7 +347,7 @@ namespace openrayman::game
 		m.write<std::uint32_t>(data + data_3d::previous_state, current);
 		m.write<std::uint32_t>(data + data_3d::requested_state, target);
 		m.write<std::uint32_t>(data + data_3d::changed_at, clock);
-		start(m, data, play, actor);
+		start(m, data, play, actor, at, elapsed, quiet);
 		return true;
 	}
 
