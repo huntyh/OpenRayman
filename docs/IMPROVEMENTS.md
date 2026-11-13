@@ -27,6 +27,7 @@ of them off may come later.
 | The Menu's Teensy rock | The big green rock the left Teensy stands on (Menu level) has its texture smeared into long streaks, stretched as if towards infinity | The rock's texture shows normally (user 2026-11-04, side by side; cause in the game not traced, we just draw the level's texture coordinates) | 4 |
 | Looping animations | A loop whose last pose doesn't match its first jumps when it restarts (the swinging cages, 2 degrees on three channels) | Only after a loop has really started over (same state, the frame jumped back), its first frames (up to 4, at most a quarter of the loop) fade out of the pose it ended on. Nothing is blended ahead of the end: an earlier seam that glided into frame 0 in advance showed a stepping pose for two frames when the Jail_20 director switched states first (card 97, docs/formats/animation.md) | 3b |
 
+| Cameras riding an animation part | Function 210 (a part's world position) reads the part at the whole frame the animation has reached, so a camera tied to it moves only when a new frame comes: in Jail_20 the camera following Globox down the chute (animation 354, about half a frame per tick) moved on 2 of every 3 or 4 ticks and stuttered | Our fallback poses the part at the in-between frame (elapsed ms x rate, the same frame the renderer draws), so the camera moves every tick. Held last frames stay whole | 3c |
 ## The scripts
 
 | What | The game | OpenRayman | Since |

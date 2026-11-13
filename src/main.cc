@@ -1820,8 +1820,13 @@ namespace
 		{
 			static std::ofstream log(path);
 			static unsigned long long frame = 0;
-			log << std::format("DRAW {} level={} tick={} fraction={:.6f}\n", ++frame,
-				a.game ? a.game->game_dsb().levels[a.level_index] : "", a.tick, a.script_clock * 60.0)
+			std::string camera;
+			if(a.live && a.camera_super_object)
+				if(auto placed = openrayman::game::global_placement(*a.live, a.camera_super_object))
+					camera = std::format(" camera={:.3f},{:.3f},{:.3f} back={:.4f},{:.4f},{:.4f}", placed->m[0][3], placed->m[1][3], placed->m[2][3],
+						-placed->m[0][1], -placed->m[1][1], -placed->m[2][1]);
+			log << std::format("DRAW {} level={} tick={} fraction={:.6f}{}\n", ++frame,
+				a.game ? a.game->game_dsb().levels[a.level_index] : "", a.tick, a.script_clock * 60.0, camera)
 				<< a.actor_draw_trace;
 			log.flush();
 		}

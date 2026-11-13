@@ -2662,7 +2662,16 @@ namespace openrayman::game
 					std::uint16_t animation = m.read<std::uint16_t>(reference + 0x18);
 					if(animation < c.vm.animations()->animations.size())
 					{
-						auto channels = pose(*c.vm.animations(), animation, m.read<std::uint16_t>(data + data_3d::frame));
+						// The in-between frame the renderer draws (elapsed ms x rate), not the stored
+						// whole frame: a camera tied to a part (Jail_20, the camera riding Globox's
+						// slide, animation 354 at ~0.5 frames per tick) otherwise moved on only 2 of
+						// every 3 or 4 ticks and stuttered (docs/IMPROVEMENTS.md).
+						double frame = m.read<std::uint16_t>(data + data_3d::frame);
+						const std::uint8_t rate = m.u8(data + data_3d::playback_rate);
+						const std::uint16_t frames = c.vm.animations()->animations[animation].frames;
+						if(rate && frames && !m.u8(data + data_3d::reached_end))
+							frame = std::min(double(m.u32(data + data_3d::elapsed)) * rate / 1000.0, double(frames - 1));
+						auto channels = pose(*c.vm.animations(), animation, frame);
 						auto found = std::ranges::find(channels, std::int16_t(index), &channel_pose::id);
 						if(found != channels.end())
 						{
