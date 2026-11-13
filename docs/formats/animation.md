@@ -331,9 +331,27 @@ original small discontinuity of unflagged cage loops; it changes no actor visibi
 **Our loop smoothing now (2026-11-13, after the fix above).** We still smooth loops whose ends don't
 match (the swinging cages), but only *after* a real restart: when the drawn frame jumps back while the
 state stays the same, the first frames of the new pass (up to 4, at most a quarter of the loop) fade
-out of the pose the last pass ended on (`actor_set::entry::wrap_blend`, set in src/main.cc
+out of the pose the last pass ended on (`actor_set::entry::blend`, set in src/main.cc
 `update_actors`, applied in `pose_actor`). If a script switches the state before the restart, nothing
-blends. **Lesson for later bugs:** a wrong pose for a frame or two right before a state change has
-twice been our own smoothing (the old anticipatory seam). Check `wrap_blend` and the render-frame
+blends from the loop's end.
+
+**Across state changes (2026-11-13, card 100).** The same fade also runs after a state change when the
+new animation's pose starts within 0.25 units of the last pose drawn (largest distance of any shared
+channel, by id, in the actor's own space: `pose_gap`). The blend is done in actor space, so two
+animations whose part hierarchies differ still line up. Example: the Jail_20 cell wake-up, node 7
+(Globox and Rayman as one actor) going from animation 310 (state 04/01 +0x19A0, last frame 192, its
+channels without parents) to 311 (+0x1A40, a hierarchy, a still pose until frame 73). The parts of
+the two poses are up to about 0.1-0.14 units apart, which showed as both snapping sideways. Bigger gaps
+are taken as intended cuts and snap. An actor that was hidden starts with no earlier pose.
+
+Where this came from: our own measurement (`ORTOOL_WORLD=1 ortool anim <level> <index> <frame>`) and
+an F10 recording. The exe was checked for a blend between animations and has none: its animation
+start (0x40E9E0) only shifts the actor by the difference of the two references' 3-float vectors
+(+8..+0x10, zero for 310 and 311) and marks the pose for recomputing (3D data +0xCA, cleared in
+0x40EDF0); keyframe interpolation (0x41A610) stays within one animation. So the real game has the
+same mismatch in its data; the crossfade is our own improvement (docs/IMPROVEMENTS.md).
+
+**Lesson for later bugs:** a wrong pose for a frame or two right before a state change has
+twice been our own smoothing (the old anticipatory seam). Check `blend` and the render-frame
 code first (try `OPENRAYMAN_DRAW_TRACE=<file>`, one block per drawn frame) before suspecting the
 scripts, transitions or the update order.

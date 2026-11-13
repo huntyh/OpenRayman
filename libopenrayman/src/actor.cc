@@ -6,7 +6,9 @@
 #include <openrayman/error.h>
 
 #include <algorithm>
+#include <cmath>
 #include <format>
+#include <limits>
 
 namespace openrayman
 {
@@ -34,6 +36,25 @@ namespace openrayman
 		std::string describe(const memory_location& at)
 		{
 			return std::format("{} +0x{:X}", at.block->id.to_string(), at.offset);
+		}
+
+		// Each channel's transform in the actor's own space: its parents applied, the actor's place not.
+		std::vector<affine> actor_space(const std::vector<channel_pose>& channels)
+		{
+			std::vector<affine> space(channels.size());
+			std::vector<std::uint8_t> visited(channels.size());
+			auto resolve = [&](auto&& resolve, std::size_t c) -> affine {
+				if(visited[c] == 2) return space[c];
+				if(visited[c] == 1) return affine{}; // malformed hierarchy cycle
+				visited[c] = 1;
+				affine parent = channels[c].parent && *channels[c].parent < channels.size() ? resolve(resolve, *channels[c].parent) : affine{};
+				space[c] = parent * channels[c].local;
+				visited[c] = 2;
+				return space[c];
+			};
+			for(std::size_t c = 0; c < channels.size(); c++)
+				resolve(resolve, c);
+			return space;
 		}
 
 		binary_reader reader_at(const memory_location& at, std::size_t size)
@@ -235,23 +256,33 @@ namespace openrayman
 			add(0, actor.world);
 			return;
 		}
-		// Loop smoothing only AFTER a real restart: the first frames of the new pass fade out of the
-		// pose the last pass ended on. Never before the end (a seam that glided into frame 0 ahead of
-		// time showed a pose that never came when a script switched states first: Jail_20, card 97).
-		// pose() already respects the authored keyframe flag 0x200 where a loop blend is wanted.
 		std::vector<channel_pose> channels = pose(bank, *actor.animation, frame);
-		if(actor.wrap_blend > 0 && *actor.animation < bank.animations.size() && bank.animations[*actor.animation].frames > 1)
-		{
-			const std::vector<channel_pose> end = pose(bank, *actor.animation, bank.animations[*actor.animation].frames - 1);
-			const float w = std::min(actor.wrap_blend, 1.0f);
-			for(std::size_t c = 0; c < channels.size() && c < end.size(); c++)
-				if(channels[c].id == end[c].id && channels[c].parent == end[c].parent)
-					for(int r = 0; r < 3; r++)
-						for(int k = 0; k < 4; k++)
-							channels[c].local.m[r][k] += (end[c].local.m[r][k] - channels[c].local.m[r][k]) * w;
-		}
 		std::vector<affine> worlds(channels.size());
 		std::vector<std::uint8_t> visited(channels.size());
+		// Our smoothing, only AFTER a switch (a loop's restart or a state change, set by the engine):
+		// fade out of the pose drawn before it, in the actor's own space so the two animations' part
+		// hierarchies need not match. Never ahead of a switch (a seam that glided into frame 0 early
+		// showed a pose that never came: Jail_20, card 97). Not with script-placed parts.
+		if(actor.blend > 0 && positions.empty() && actor.blend_animation < bank.animations.size())
+		{
+			const std::vector<channel_pose> before = pose(bank, actor.blend_animation, actor.blend_frame);
+			const std::vector<affine> from = actor_space(before), to = actor_space(channels);
+			const float w = std::min(actor.blend, 1.0f);
+			for(std::size_t c = 0; c < channels.size(); c++)
+			{
+				affine blended = to[c];
+				auto same = std::ranges::find(before, channels[c].id, &channel_pose::id);
+				if(same != before.end())
+				{
+					const affine& old = from[std::size_t(same - before.begin())];
+					for(int r = 0; r < 3; r++)
+						for(int k = 0; k < 4; k++)
+							blended.m[r][k] += (old.m[r][k] - blended.m[r][k]) * w;
+				}
+				worlds[c] = actor.world * blended;
+				visited[c] = 2;
+			}
+		}
 		// Resolve parents first, including hidden channels. A placed parent carries its children
 		// with it, while each child's own placement can replace its final world position.
 		auto resolve = [&](auto&& resolve, std::size_t c) -> affine {
@@ -281,6 +312,27 @@ namespace openrayman
 				out.back().morph_amount = channels[c].morph->amount;
 			}
 		}
+	}
+
+	float pose_gap(const animation_bank& bank, std::uint16_t a, double a_frame, std::uint16_t b, double b_frame)
+	{
+		const std::vector<channel_pose> first = pose(bank, a, a_frame), second = pose(bank, b, b_frame);
+		const std::vector<affine> one = actor_space(first), two = actor_space(second);
+		float gap = 0;
+		bool shared = false;
+		for(std::size_t c = 0; c < second.size(); c++)
+		{
+			auto same = std::ranges::find(first, second[c].id, &channel_pose::id);
+			if(same == first.end())
+				continue;
+			const affine& p = one[std::size_t(same - first.begin())];
+			float d = 0;
+			for(int axis = 0; axis < 3; axis++)
+				d += (p.m[axis][3] - two[c].m[axis][3]) * (p.m[axis][3] - two[c].m[axis][3]);
+			gap = std::max(gap, std::sqrt(d));
+			shared = true;
+		}
+		return shared ? gap : std::numeric_limits<float>::infinity();
 	}
 
 	std::vector<placed_geometry> actor_geometry(const memory_image& memory, const scene& tree, const animation_bank& bank)

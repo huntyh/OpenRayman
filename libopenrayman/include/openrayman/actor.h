@@ -70,9 +70,12 @@ namespace openrayman
 			affine world;
 			std::optional<std::uint16_t> animation; // what it plays now
 			bool loops = true;                      // whether that animation starts over at its end
-			// Our own loop smoothing (docs/IMPROVEMENTS.md): just after a loop has really started over,
-			// how much of the previous pass's last pose still shows (1 at the restart, fading to 0).
-			float wrap_blend = 0;
+			// Our own smoothing (docs/IMPROVEMENTS.md): just after a loop has really started over, or
+			// after a state change whose first pose is close to the last one drawn, how much of that
+			// earlier pose (an animation at a frame) still shows: 1 at the switch, fading to 0.
+			float blend = 0;
+			std::uint16_t blend_animation = 0;
+			double blend_frame = 0;
 			std::optional<memory_location> family;  // see actor
 			std::vector<std::optional<std::uint16_t>> states;
 			std::vector<memory_location> state_at;
@@ -109,6 +112,10 @@ namespace openrayman
 	// animation show their first object, if they have one.
 	// Script placements are world points keyed by channel id (not animation array index).
 	using channel_positions = std::map<std::int16_t, vec3>;
+
+	// How far apart two poses are: the largest distance between the actor-space positions of the
+	// channels both animations have (by channel id), parents applied. Infinite when they share none.
+	float pose_gap(const animation_bank& bank, std::uint16_t a, double a_frame, std::uint16_t b, double b_frame);
 	void pose_actor(const actor_set::entry& actor, const animation_bank& bank, double frame, std::vector<posed_part>& out,
 		const channel_positions& positions = {});
 

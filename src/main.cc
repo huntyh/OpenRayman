@@ -224,9 +224,17 @@ namespace
 		// locations point into the level files, which are gone once the level has loaded.)
 		std::vector<std::vector<std::uint32_t>> state_addresses;
 		std::vector<double> state_since;         // per entry: animation time its state began
-		// Our loop smoothing after a real restart (actor_set::entry::wrap_blend): per entry, the state
-		// and frame drawn last time, and whether the loop has just started over.
-		struct loop_watch { std::optional<std::size_t> state; double frame = 0; bool restarted = false; };
+		// Our smoothing after a switch (actor_set::entry::blend): per entry, the state, animation and
+		// frame drawn last time, and the pose being faded out of, if any.
+		struct loop_watch
+		{
+			std::optional<std::size_t> state;
+			std::optional<std::uint16_t> animation;
+			double frame = 0;
+			bool blending = false;
+			std::uint16_t from_animation = 0;
+			double from_frame = 0, start = 0;
+		};
 		std::map<std::size_t, loop_watch> loop_watches;
 		// Actors the scripts create (function 66, Rayman's shots): what each template looks like, read
 		// at load since the renderer takes every mesh then, and per pool slot the entry that shows it.
@@ -1070,11 +1078,11 @@ namespace
 			const auto so = a.super_object_at[i], actor = a.actor_at[i];
 			const auto data = a.live->u32(actor), standard = a.live->u32(actor + 4);
 			const auto& entry = a.actors.actors[i];
-			a.actor_draw_trace += std::format("node={} result={} active={} hidden={} soflags={:08X} standard={:02X} custom={:08X} state={:08X} cached_state={} anim={} frame={:.3f} live_frame={} parts={} pos={:.2f},{:.2f},{:.2f}\n",
+			a.actor_draw_trace += std::format("node={} result={} active={} hidden={} soflags={:08X} standard={:02X} custom={:08X} state={:08X} cached_state={} anim={} frame={:.3f} live_frame={} parts={} blend={:.2f}:{}@{:.1f} pos={:.2f},{:.2f},{:.2f}\n",
 				entry.node, result, a.vm->active(so), hidden(a, so), a.live->u32(so + 0x30),
 				standard ? a.live->u8(standard + 0x29) : 0, standard ? a.live->u32(standard + 0x24) : 0,
 				data ? a.live->u32(data + 4) : 0, entry.state ? int(*entry.state) : -1, entry.animation ? int(*entry.animation) : -1,
-				frame, data ? a.live->read<std::uint16_t>(data + game::data_3d::frame) : 0, count,
+				frame, data ? a.live->read<std::uint16_t>(data + game::data_3d::frame) : 0, count, entry.blend, entry.blend_animation, entry.blend_frame,
 				entry.world.m[0][3], entry.world.m[1][3], entry.world.m[2][3]);
 		};
 		std::vector<posed_part> parts;
@@ -1088,6 +1096,7 @@ namespace
 			if(a.vm && a.scripts && i < a.super_object_at.size() && hidden(a, a.super_object_at[i]))
 			{
 				trace_actor(i, "hidden", 0, 0);
+				a.loop_watches.erase(i); // what it showed before is stale once it shows again (card 97)
 				continue;
 			}
 			if(a.vm && a.scripts && i < a.selected_object_lists.size() && i < a.actor_at.size())
@@ -1131,25 +1140,47 @@ namespace
 					std::uint16_t frames = a.bank.animations[*actor.animation].frames;
 					if(!actor.loops && frames)
 						frame = std::min(frame, double(frames - 1));
-					// Our loop smoothing: the frame jumped back while the state stayed the same, so the
-					// loop really started over; fade out of its last pose over up to 4 frames.
+					// Our smoothing (docs/IMPROVEMENTS.md), over up to 4 frames after a switch, out of the
+					// pose drawn just before it: when a loop really started over (same state, the frame
+					// jumped back), or after a state change whose new pose starts close to the old one
+					// (a small mismatch in the data: the Jail_20 cell wake-up, card 100). Bigger changes
+					// are meant as cuts and snap, as in the game.
+					constexpr float close_enough = 0.25f; // units, the largest part move to smooth over
 					auto& watch = a.loop_watches[i];
 					const double window = std::min(4.0, frames / 4.0);
+					auto last_drawn = [&](std::uint16_t from) {
+						return std::min(watch.frame, double(std::max<int>(a.bank.animations[from].frames - 1, 0)));
+					};
+					auto start_blend = [&](std::uint16_t from) {
+						watch.blending = true;
+						watch.from_animation = from;
+						watch.from_frame = last_drawn(from);
+						watch.start = frame;
+					};
 					if(watch.state != actor.state)
-						watch.restarted = false;
-					else if(actor.loops && frames > 1 && frame + frames / 2.0 < watch.frame)
-						watch.restarted = true;
-					if(watch.restarted && window > 0 && frame < window)
 					{
-						float s = float(frame / window);
-						actor.wrap_blend = 1 - s * s * (3 - 2 * s);
+						watch.blending = false;
+						if(watch.state && watch.animation && *watch.animation < a.bank.animations.size() && window > 0 &&
+							openrayman::pose_gap(a.bank, *watch.animation, last_drawn(*watch.animation), *actor.animation, frame) <= close_enough)
+							start_blend(*watch.animation);
+					}
+					else if(actor.loops && frames > 1 && frame + frames / 2.0 < watch.frame)
+						start_blend(*actor.animation);
+					const double into = frame - watch.start;
+					if(watch.blending && window > 0 && into >= 0 && into < window)
+					{
+						float s = float(into / window);
+						actor.blend = 1 - s * s * (3 - 2 * s);
+						actor.blend_animation = watch.from_animation;
+						actor.blend_frame = watch.from_frame;
 					}
 					else
 					{
-						watch.restarted = false;
-						actor.wrap_blend = 0;
+						watch.blending = false;
+						actor.blend = 0;
 					}
 					watch.state = actor.state;
+					watch.animation = actor.animation;
 					watch.frame = frame;
 				}
 			}
