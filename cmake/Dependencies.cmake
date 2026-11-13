@@ -7,7 +7,7 @@ if(OPENRAYMAN_BUILD_ENGINE)
 	set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
 	set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
 	FetchContent_Declare(SDL3
-		URL https://github.com/libsdl-org/SDL/releases/download/release-3.4.12/SDL3-3.4.12.tar.gz
+		URL https://github.com/libsdl-org/SDL/releases/download/release-3.4.20/SDL3-3.4.20.tar.gz
 		DOWNLOAD_EXTRACT_TIMESTAMP ON)
 	FetchContent_MakeAvailable(SDL3)
 
