@@ -132,6 +132,7 @@ namespace openrayman
 			uniform sampler2D u_texture;
 			uniform float u_alpha_cut;
 			uniform float u_edge_clamp;
+			uniform float u_lightning;
 			uniform vec2 u_uv_offset; // scrolling textures (water, mist, clouds)
 			uniform vec4 u_fog_color;
 			uniform float u_fog_infinite;
@@ -191,6 +192,18 @@ namespace openrayman
 					float fog = mix(u_fog.z, u_fog.w, clamp((v_distance - u_fog.x) / (u_fog.y - u_fog.x), 0.0, 1.0));
 					if(u_fog_infinite > 0.0 && v_distance > u_fog_infinite) fog = 1.0;
 					color = u_additive > 0.5 ? color * (1.0 - fog) : mix(color, u_fog_color.rgb, fog);
+				}
+				if(u_lightning > 0.5)
+				{
+					// Brighten the existing sky, preserving its cloud pattern. Fade over the
+					// outer fifth of the card, using unclamped coordinates.
+					const float edge_width = 0.20;
+					vec2 edge = min(v_uv, vec2(1.0) - v_uv);
+					float fade = smoothstep(0.0, edge_width, edge.x) * smoothstep(0.0, edge_width, edge.y);
+					// The dark sky needs extra gain for a visible flash when brightening by
+					// its existing colour. The animation's alpha still controls the pulse.
+					const float gain = 4.0;
+					color *= alpha * fade * gain;
 				}
 				o_color = vec4(color, u_alpha_cut > 0.25 ? 1.0 : alpha);
 			}
@@ -370,6 +383,7 @@ namespace openrayman
 		m_u_sharpen = glGetUniformLocation(m_program, "u_sharpen");
 		m_u_part_alpha = glGetUniformLocation(m_program, "u_part_alpha");
 		m_u_edge_clamp = glGetUniformLocation(m_program, "u_edge_clamp");
+		m_u_lightning = glGetUniformLocation(m_program, "u_lightning");
 		m_u_camera = glGetUniformLocation(m_program, "u_camera");
 		m_u_camera_forward = glGetUniformLocation(m_program, "u_camera_forward");
 		m_u_lighting = glGetUniformLocation(m_program, "u_lighting");
@@ -434,6 +448,7 @@ namespace openrayman
 				glDeleteTextures(1, &texture.id);
 		}
 		m_textures.clear();
+		m_lightning_textures.clear();
 		m_batches.clear();
 		m_see_through.clear();
 		m_see_through_triangles.clear();
@@ -616,6 +631,9 @@ namespace openrayman
 		else
 			stats.missing_textures++;
 		m_textures[path] = texture;
+		if(texture.id && (path == "textures_cinematique_rhop/beach_sky2_aaa.gf" ||
+			path == "textures_cinematique_rhop/beach_sky3_aaa.gf" || path == "textures_cinematique_rhop/beach_sky4_aaa.gf"))
+			m_lightning_textures.insert(texture.id);
 		return texture;
 	}
 
@@ -1233,13 +1251,23 @@ namespace openrayman
 				if(b.sector != no_sector)
 					use_fog(b.sector);
 				use_cull(b.faces);
-				glBindTexture(GL_TEXTURE_2D, texture_at(b.animation, b.texture));
+				const GLuint texture = texture_at(b.animation, b.texture);
+				glBindTexture(GL_TEXTURE_2D, texture);
+				static const bool classic_lightning = [] {
+					const char* v = std::getenv("OPENRAYMAN_LIGHTNING_CLASSIC");
+					return v && std::strcmp(v, "1") == 0;
+				}();
+				const bool lightning = mode == blend::alpha && !classic_lightning && m_lightning_textures.contains(texture);
+				glUniform1f(m_u_lightning, lightning ? 1.0f : 0.0f);
+				if(lightning) glBlendFunc(GL_DST_COLOR, GL_ONE);
 				// Wrapped every 2 widths, which keeps mirrored textures the same and the numbers small.
 				glm::vec2 offset(std::fmod(double(b.scroll.x) * m_time, 2.0), std::fmod(double(b.scroll.y) * m_time, 2.0));
 				glUniform2f(m_u_uv_offset, offset.x, offset.y);
 				glUniform4fv(m_u_material_ambient, 1, glm::value_ptr(b.ambient));
 				glUniform4fv(m_u_material_diffuse, 1, glm::value_ptr(b.diffuse));
 				draw_triangles(b.first, b.count);
+				if(lightning) glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+				glUniform1f(m_u_lightning, 0.0f);
 			}
 		};
 		// Temporarily replace this mesh's expanded corners for morphing and saved vertex colours;

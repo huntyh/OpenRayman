@@ -228,6 +228,7 @@ namespace openrayman
 		GLint m_u_model = -1;
 		GLint m_u_alpha_cut = -1, m_u_sharpen = -1, m_u_part_alpha = -1;
 		GLint m_u_edge_clamp = -1;
+		GLint m_u_lightning = -1;
 		GLint m_u_uv_offset = -1;
 		GLint m_u_camera = -1, m_u_camera_forward = -1, m_u_lighting = -1;
 		GLint m_u_light_count = -1, m_u_light_kind = -1, m_u_light_vector = -1, m_u_light_color = -1, m_u_light_range = -1;
@@ -238,6 +239,7 @@ namespace openrayman
 		std::vector<sprite_instance> m_sprites;     // of the static geometry, in world space
 		GLuint m_white = 0; // for untextured materials
 		std::map<std::string, gpu_texture> m_textures; // by CNT path, id 0 if missing
+		std::set<GLuint> m_lightning_textures;
 		std::vector<batch> m_batches; // of the static geometry: solid surfaces
 		struct see_through
 		{
