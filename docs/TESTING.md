@@ -31,13 +31,31 @@ To show the agent exactly what happened in a run (for example Rayman getting out
 game with `--trace <file>`:
 
 ```powershell
-.uild\windows-releasein\openrayman.exe --game "F:\Games\Rayman 2" --level Jail_20 --trace build\our_run.txt
+.\build\windows-release\bin\openrayman.exe --game "F:\Games\Rayman 2" --level Jail_20 --trace build\our_run.txt
 ```
 
 Play as usual, then close the game. The file has Rayman's position, speed, contacts, behaviour, script
 variables 21, 27, 35 and 87 (`--trace-vars 21,27,35` before `--trace` picks others) and the keys you held,
 every tick, in the same format as `tools/r2live.py` writes for the real game. The two can be compared with
 `python tools/trace_compare.py <real log> <our log>`. A later level in the same run starts a new section.
+
+### F10: record just the moment something goes wrong
+
+While the game runs (playing or flying), press **F10** to start a debug recording and **F10** again to
+stop it; **Shift+F10** starts one that also saves a small picture every 4 ticks. A red square in the top
+right corner (and "RECORDING" in the title) shows it is on. Each recording is a folder
+`build\windows-release\bin\recordings\rec_<date>_<time>` with:
+
+- `frames.txt`: every drawn frame: the tick, the game camera's position and direction, then every actor
+  (node, hidden/active, flags, state, animation, frame, position);
+- `rayman.txt`: Rayman and the keys held, every tick (the `--trace` format);
+- `sounds.txt`: each actor sound as it starts (node, gain, pan, distance);
+- `info.txt`: level, the tick it started at, whether pictures are on;
+- `tick<n>.bmp` with Shift+F10.
+
+So: play to just before the problem, press F10, let it happen, press F10, and tell the agent the folder
+name and what to look for. Keep recordings short (about 1 MB of text per second, plus about 3.5 MB of
+pictures per second with Shift).
 
 ## Textures
 

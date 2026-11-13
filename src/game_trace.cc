@@ -65,9 +65,9 @@ namespace openrayman
 		}
 	}
 
-	game_trace::game_trace()
+	game_trace::game_trace(bool from_environment)
 	{
-		if(const char* file = std::getenv("OPENRAYMAN_TRACE"); file && *file)
+		if(const char* file = std::getenv("OPENRAYMAN_TRACE"); from_environment && file && *file)
 		{
 			const char* vars = std::getenv("OPENRAYMAN_TRACE_VARS");
 			open(file, vars ? vars : "");

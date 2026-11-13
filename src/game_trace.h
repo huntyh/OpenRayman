@@ -22,7 +22,9 @@ namespace openrayman
 	{
 	public:
 		// From the environment; inactive when OPENRAYMAN_TRACE isn't set.
-		game_trace();
+		game_trace() : game_trace(true) {}
+		// `from_environment` false: closed until open() (F10's debug recording keeps its own).
+		explicit game_trace(bool from_environment);
 		// Start writing to `file` (the --trace switch); `variables` as "21,27,35", empty for the default.
 		void open(const std::string& file, const std::string& variables);
 		bool active() const { return m_out.is_open(); }

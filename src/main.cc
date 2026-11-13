@@ -7,6 +7,8 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+#include <chrono>
+
 #include <audio/music_player.h>
 #include <audio/sound_player.h>
 #include <camera.h>
@@ -242,6 +244,18 @@ namespace
 		bool scripts = true;
 		double script_clock = 0;                 // seconds not yet run as ticks
 		std::string actor_note;           // the state last picked with F4/F5, shown in the title
+		// F10 (Shift+F10 with small pictures): a debug recording of what happens, for the agent to
+		// read afterwards. A folder next to the program: every drawn frame (camera, every actor's
+		// state, animation, frame, flags, position), Rayman and the held keys every tick, sounds.
+		struct debug_recording
+		{
+			fs::path folder;
+			std::ofstream frames, sounds;
+			std::unique_ptr<openrayman::game_trace> rayman;
+			bool pictures = false;
+			long last_picture = -1;
+			bool active() const { return frames.is_open(); }
+		} recording;
 		std::vector<std::pair<std::size_t, std::size_t>> start_states; // --actor-state <node>:<state>
 		std::vector<std::pair<std::size_t, std::size_t>> start_behaviours; // --behaviour <node>:<index>
 		bool show_cutscene_bars = true; // renderer option, reserved for a future user setting
@@ -460,6 +474,8 @@ namespace
 			title += " | WASD move, hold right mouse to look, PgUp/PgDn level, T textures, P copy position, L lighting, F6/F7 luminosity, F4/F5 actor state, G scripts";
 			if(!a.actor_note.empty())
 				title += " | " + a.actor_note;
+			if(a.recording.active())
+				title += " | RECORDING (F10 to stop)";
 		}
 		else if(!a.textures.empty())
 		{
@@ -859,14 +875,17 @@ namespace
 			openrayman::game::step(*a.vm, a.thinkers, [](std::uint32_t self, const std::exception& e) {
 				SDL_Log("Script error, actor 0x%08X: %s", self, e.what());
 			});
-			if(a.trace.active() && a.vm)
+			if((a.trace.active() || a.recording.rayman) && a.vm)
 			{
 				std::string held;
 				if(a.input)
 					for(int k = 1; k < 256; k++)
 						if(a.input->key(std::uint8_t(k)))
 							held += (held.empty() ? "" : ",") + openrayman::key_name(std::uint16_t(k));
-				a.trace.tick(*a.live, a.vm->main_actor(), a.vm->clock(), held);
+				if(a.trace.active())
+					a.trace.tick(*a.live, a.vm->main_actor(), a.vm->clock(), held);
+				if(a.recording.rayman)
+					a.recording.rayman->tick(*a.live, a.vm->main_actor(), a.vm->clock(), held);
 			}
 			if(std::exchange(a.vm->stop_sounds_requested, false))
 			{
@@ -893,14 +912,18 @@ namespace
 							const char* p = std::getenv("OPENRAYMAN_SOUND_LOG");
 							return p && *p ? std::ofstream(p) : std::ofstream();
 						}();
-						if(sound_log.is_open())
+						if(sound_log.is_open() || a.recording.active())
 						{
 							auto node = std::ranges::find(a.super_object_at, request.source);
 							auto placed = openrayman::game::global_placement(*a.live, request.source);
 							float distance = placed ? glm::length(glm::vec3(placed->m[0][3], placed->m[1][3], placed->m[2][3]) - a.camera.position) : -1.0f;
-							sound_log << std::format("tick {} node {} event 0x{:08X} gain {:.3f} pan {:.2f} distance {:.1f} hears {}\n", a.tick,
+							const std::string line = std::format("tick {} node {} event 0x{:08X} gain {:.3f} pan {:.2f} distance {:.1f} hears {}\n", a.tick,
 								node == a.super_object_at.end() ? -1 : int(node - a.super_object_at.begin()), request.event, gain, pan, distance,
-								camera_hears(a, request.source) ? 1 : 0) << std::flush;
+								camera_hears(a, request.source) ? 1 : 0);
+							if(sound_log.is_open())
+								sound_log << line << std::flush;
+							if(a.recording.active())
+								a.recording.sounds << line;
 						}
 						a.sounds->request(request.event, request.source, gain, pan, request.selector);
 						a.sound_sources.insert(request.source);
@@ -1041,7 +1064,7 @@ namespace
 	void update_actors(app& a)
 	{
 		a.actor_draw_trace.clear();
-		const bool trace_draw = std::getenv("OPENRAYMAN_DRAW_TRACE") != nullptr;
+		const bool trace_draw = std::getenv("OPENRAYMAN_DRAW_TRACE") != nullptr || a.recording.active();
 		auto trace_actor = [&](std::size_t i, const char* result, double frame, std::size_t count) {
 			if(!trace_draw || !a.vm || i >= a.actor_at.size() || i >= a.super_object_at.size()) return;
 			const auto so = a.super_object_at[i], actor = a.actor_at[i];
@@ -1522,6 +1545,8 @@ namespace
 			a.input.reset();
 			a.tick = 0;
 			a.trace.restart(levels[index]);
+			if(a.recording.rayman)
+				a.recording.rayman->restart(levels[index]);
 			try
 			{
 				a.input = std::make_unique<openrayman::game::input>(*a.live, read_input_actions(files));
@@ -1816,19 +1841,23 @@ namespace
 
 	void draw(app& a)
 	{
-		if(const char* path = std::getenv("OPENRAYMAN_DRAW_TRACE"))
+		const char* draw_trace_path = std::getenv("OPENRAYMAN_DRAW_TRACE");
+		if(draw_trace_path || a.recording.active())
 		{
-			static std::ofstream log(path);
+			static std::ofstream log = draw_trace_path ? std::ofstream(draw_trace_path) : std::ofstream();
 			static unsigned long long frame = 0;
 			std::string camera;
 			if(a.live && a.camera_super_object)
 				if(auto placed = openrayman::game::global_placement(*a.live, a.camera_super_object))
 					camera = std::format(" camera={:.3f},{:.3f},{:.3f} back={:.4f},{:.4f},{:.4f}", placed->m[0][3], placed->m[1][3], placed->m[2][3],
 						-placed->m[0][1], -placed->m[1][1], -placed->m[2][1]);
-			log << std::format("DRAW {} level={} tick={} fraction={:.6f}{}\n", ++frame,
+			const std::string block = std::format("DRAW {} level={} tick={} fraction={:.6f}{}\n", ++frame,
 				a.game ? a.game->game_dsb().levels[a.level_index] : "", a.tick, a.script_clock * 60.0, camera)
-				<< a.actor_draw_trace;
-			log.flush();
+				+ a.actor_draw_trace;
+			if(log.is_open())
+				log << block << std::flush;
+			if(a.recording.active())
+				a.recording.frames << block;
 		}
 		int w = 0, h = 0;
 		SDL_GetWindowSizeInPixels(a.window, &w, &h);
@@ -1992,9 +2021,78 @@ namespace
 			SDL_DestroySurface(surface);
 		}
 
+		if(a.recording.active() && a.recording.pictures && a.tick % 4 == 0 && a.tick != a.recording.last_picture && w >= 4 && h >= 4)
+		{
+			// A quarter-size picture every 4 ticks, named by tick, to line up with frames.txt.
+			a.recording.last_picture = a.tick;
+			SDL_Surface* full = SDL_CreateSurface(w, h, SDL_PIXELFORMAT_ABGR8888);
+			SDL_Surface* small = SDL_CreateSurface(w / 4, h / 4, SDL_PIXELFORMAT_ABGR8888);
+			if(full && small)
+			{
+				glPixelStorei(GL_PACK_ALIGNMENT, 1);
+				glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, full->pixels);
+				SDL_FlipSurface(full, SDL_FLIP_VERTICAL);
+				SDL_BlitSurfaceScaled(full, nullptr, small, nullptr, SDL_SCALEMODE_LINEAR);
+				auto* bytes = static_cast<std::uint8_t*>(small->pixels);
+				for(int i = 3; i < small->h * small->pitch; i += 4)
+					bytes[i] = 255;
+				SDL_SaveBMP(small, (a.recording.folder / std::format("tick{}.bmp", a.tick)).string().c_str());
+			}
+			SDL_DestroySurface(full);
+			SDL_DestroySurface(small);
+		}
+		if(a.recording.active())
+		{
+			// A small red square in the top right corner while recording (not in the pictures).
+			glEnable(GL_SCISSOR_TEST);
+			glScissor(w - 28, h - 28, 16, 16);
+			glClearColor(0.9f, 0.1f, 0.1f, 1.0f);
+			glClear(GL_COLOR_BUFFER_BIT);
+			glDisable(GL_SCISSOR_TEST);
+		}
 		draw_profile(a, w, h);
 		game::profiler::scope timed(game::profiler::zone::swap);
 		SDL_GL_SwapWindow(a.window);
+	}
+
+	// F10: start or stop a debug recording (see app::debug_recording; docs/TESTING.md).
+	void toggle_recording(app& a, bool pictures)
+	{
+		auto& r = a.recording;
+		if(r.active())
+		{
+			r.frames.close();
+			r.sounds.close();
+			r.rayman.reset();
+			SDL_Log("Recording saved to %s", r.folder.string().c_str());
+			update_title(a);
+			return;
+		}
+		const char* program = SDL_GetBasePath();
+		const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
+		r.folder = fs::path(program ? program : ".") / "recordings" / std::format("rec_{:%Y%m%d_%H%M%S}", now);
+		std::error_code error;
+		fs::create_directories(r.folder, error);
+		r.frames.open(r.folder / "frames.txt");
+		if(!r.frames.is_open())
+		{
+			SDL_Log("Could not start a recording in %s", r.folder.string().c_str());
+			return;
+		}
+		r.sounds.open(r.folder / "sounds.txt");
+		const std::string level = a.game ? a.game->game_dsb().levels[a.level_index] : "";
+		r.rayman = std::make_unique<openrayman::game_trace>(false);
+		r.rayman->open((r.folder / "rayman.txt").string(), a.trace_vars);
+		r.rayman->restart(level);
+		r.pictures = pictures;
+		r.last_picture = -1;
+		std::ofstream(r.folder / "info.txt") << std::format(
+			"OpenRayman {}\nlevel {}\nstarted at tick {}\nplaying {}\nscripts {}\npictures {}\ncamera {:.3f},{:.3f},{:.3f}\n"
+			"frames.txt: every drawn frame (DRAW line: tick, camera; then every actor)\n"
+			"rayman.txt: Rayman and the held keys every tick (r2live format)\nsounds.txt: actor sounds as they start\n",
+			version, level, a.tick, a.playing, a.scripts, pictures, a.camera.position.x, a.camera.position.y, a.camera.position.z);
+		SDL_Log("Recording to %s (F10 to stop)", r.folder.string().c_str());
+		update_title(a);
 	}
 
 	void step_texture(app& a, long delta)
@@ -2276,6 +2374,11 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 				game::profiler::set_enabled(a.show_profile || a.profile_log.is_open());
 				if(a.show_profile)
 					update_profile_texture(a, { "profiling..." });
+				return SDL_APP_CONTINUE;
+			}
+			if(event->key.key == SDLK_F10 && !event->key.repeat)
+			{
+				toggle_recording(a, (event->key.mod & SDL_KMOD_SHIFT) != 0);
 				return SDL_APP_CONTINUE;
 			}
 			if(event->key.key == SDLK_F9 && !event->key.repeat)
