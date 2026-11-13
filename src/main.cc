@@ -881,6 +881,20 @@ namespace
 					if(request.procedure == 115 || request.procedure == 0)
 					{
 						auto [gain, pan] = sound_placement(a, request.source);
+						// OPENRAYMAN_SOUND_LOG=<file>: each actor sound as it starts, its node, gain and pan.
+						static std::ofstream sound_log = [] {
+							const char* p = std::getenv("OPENRAYMAN_SOUND_LOG");
+							return p && *p ? std::ofstream(p) : std::ofstream();
+						}();
+						if(sound_log.is_open())
+						{
+							auto node = std::ranges::find(a.super_object_at, request.source);
+							auto placed = openrayman::game::global_placement(*a.live, request.source);
+							float distance = placed ? glm::length(glm::vec3(placed->m[0][3], placed->m[1][3], placed->m[2][3]) - a.camera.position) : -1.0f;
+							sound_log << std::format("tick {} node {} event 0x{:08X} gain {:.3f} pan {:.2f} distance {:.1f} hears {}\n", a.tick,
+								node == a.super_object_at.end() ? -1 : int(node - a.super_object_at.begin()), request.event, gain, pan, distance,
+								camera_hears(a, request.source) ? 1 : 0) << std::flush;
+						}
 						a.sounds->request(request.event, request.source, gain, pan, request.selector);
 						a.sound_sources.insert(request.source);
 					}
