@@ -1022,7 +1022,26 @@ static int cmd_anim(const fs::path& folder, const std::string& name, const std::
 		}
 		return EXIT_SUCCESS;
 	}
-	for(const channel_pose& c : pose(bank, a, std::stod(frame)))
+	const std::vector<channel_pose> channels = pose(bank, a, std::stod(frame));
+	if(std::getenv("ORTOOL_WORLD"))
+	{
+		// Each channel's position in the actor's space, its parents applied (to compare the end of
+		// one animation with the start of the next, whose hierarchies can differ).
+		for(const channel_pose& c : channels)
+		{
+			affine world = c.local;
+			std::optional<std::size_t> up = c.parent;
+			for(std::size_t n = 0; up && *up < channels.size() && n < channels.size(); n++)
+			{
+				world = channels[*up].local * world;
+				up = channels[*up].parent;
+			}
+			std::cout << std::format("  channel {:>3} object {:>3}  at ({:.3f}, {:.3f}, {:.3f})  x axis ({:.2f}, {:.2f}, {:.2f})\n", c.id,
+				c.object ? std::to_string(*c.object) : "-", world.m[0][3], world.m[1][3], world.m[2][3], world.m[0][0], world.m[1][0], world.m[2][0]);
+		}
+		return EXIT_SUCCESS;
+	}
+	for(const channel_pose& c : channels)
 	{
 		const auto& m = c.local.m;
 		// The turn about each axis, roughly (from the rotation's columns), to see swings.
