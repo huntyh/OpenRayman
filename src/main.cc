@@ -1991,6 +1991,7 @@ namespace
 								else if(slot.colour == 3) tint = {1, 1, 120 / 255.0f, tint[3]};
 							}
 							text.tint = tint;
+							text.edge = a.vm->particles().draws_gauge(slot.owner);
 							if(slot.wobble)
 								text.pulse = std::sin(float(a.vm->clock()) / 1000.0f * 5.0f) * 7.0f;
 							dialogs.push_back(std::move(text));
@@ -1998,10 +1999,27 @@ namespace
 				const auto& boxes = a.vm->particles().screen_rectangles();
 				// The gauges (kind 120) are painted before the images (0x460670, then 0x460600).
 				std::vector<game::particles::screen_image> images = a.vm->particles().screen_bar_images();
-				images.insert(images.end(), a.vm->particles().screen_images().begin(), a.vm->particles().screen_images().end());
+				// The gauge's actor is the in-game HUD's: its pictures and counters are the edge HUD.
+				for(auto image : a.vm->particles().screen_images())
+				{
+					image.edge = a.vm->particles().draws_gauge(image.owner);
+					images.push_back(image);
+				}
 				// Then the tiled picture of kinds 170/171 (0x460670 -> 0x4658B0).
 				for(const auto& tile : a.vm->particles().screen_tile_images())
 					images.push_back(tile);
+				// OPENRAYMAN_OVERLAY_LOG: with a screenshot, what is on the screen and each piece's class
+				// (edge HUD or the centred block), for tools/text_pictures.py.
+				if(a.screenshot && std::getenv("OPENRAYMAN_OVERLAY_LOG"))
+				{
+					for(const auto& d : dialogs)
+						SDL_Log("OVERLAY %s edge=%d at %.1f,%.1f,%.1f '%s'", d.tint ? "slot" : d.screen ? "text" : "world text", d.edge, d.x, d.y, d.z,
+							(d.prepared.empty() ? d.text : d.prepared).c_str());
+					for(const auto& b : boxes)
+						SDL_Log("OVERLAY box %.1f,%.1f - %.1f,%.1f alpha %.0f", b.first[0], b.first[1], b.second[0], b.second[1], b.alpha);
+					for(const auto& i : images)
+						SDL_Log("OVERLAY picture %d edge=%d owner=%08X %.1f,%.1f - %.1f,%.1f alpha %.0f", i.slot, i.edge, i.owner, i.first[0], i.first[1], i.second[0], i.second[1], i.second[2]);
+				}
 				if(!dialogs.empty() || !boxes.empty() || !images.empty() ||
 					(a.show_cutscene_bars && (a.vm->world_view_bounds().top > 0 || a.vm->world_view_bounds().bottom < 1000)))
 					a.dialog_overlay->draw(dialogs, boxes, images, projection * view, projection, w, h, a.animation_time, a.vm->world_view_bounds(), a.show_cutscene_bars);

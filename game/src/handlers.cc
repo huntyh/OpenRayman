@@ -4634,7 +4634,7 @@ namespace openrayman::game
 			next_arg(c, vector);
 			next_arg(c, material);
 			next_arg(c, number);
-			c.vm.particles().start(kind.as_int(), vec_of(point), vec_of(vector), material.word(), number.as_float(), c.vm.clock() / 1000.0);
+			c.vm.particles().start(kind.as_int(), vec_of(point), vec_of(vector), material.word(), number.as_float(), c.vm.clock() / 1000.0, c.self);
 			return c.args;
 		}
 
@@ -4743,7 +4743,7 @@ namespace openrayman::game
 			next_arg(c, text);
 			next_arg(c, alpha);
 			vec3 p = vec_of(position);
-			c.vm.screen_text().set(text_slot(slot), p[0], p[1], text_of(c.vm, text), std::uint8_t(alpha.as_int()), p[2]);
+			c.vm.screen_text().set(text_slot(slot), p[0], p[1], text_of(c.vm, text), std::uint8_t(alpha.as_int()), p[2], c.self);
 			return c.args;
 		}
 

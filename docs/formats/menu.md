@@ -446,6 +446,6 @@ in an experiment did not remove the pink narration gradient. Its cause remains u
 Own analysis of 0x465DD0 and 0x4660B0 confirms the metrics above. The latter multiplies
 both coordinates by 0.1 (0x49CA04); 0x429670 then multiplies X and Y by 0.01 of the
 view width and height respectively. Thus both slot axes are thousandths of the view.
-OpenRayman keeps the screen-slot layer in a centred 4:3 area in wider windows, while the
-3D view still fills the window. At 4:3 its glyph dimensions retain the executable's ratio.
+OpenRayman keeps the screen-slot layer in a centred 4:3 area in wider windows (the HUD's
+counters at the screen edge instead, see text.md), while the 3D view still fills the window. At 4:3 its glyph dimensions retain the executable's ratio.
 The reported difference at 4:3 remains to be checked with a matched capture.

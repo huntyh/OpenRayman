@@ -30,7 +30,7 @@ namespace openrayman::game
 		m_particles.push_back(p);
 	}
 
-	void particles::start(int kind, const vec3& point, const vec3& vector, std::uint32_t material, float number, double now)
+	void particles::start(int kind, const vec3& point, const vec3& vector, std::uint32_t material, float number, double now, std::uint32_t owner)
 	{
 		if(kind == 125)
 		{
@@ -40,7 +40,7 @@ namespace openrayman::game
 			if(slot >= 0 && slot < 36)
 			{
 				std::erase_if(m_screen_images, [slot](const screen_image& image) { return image.slot == slot; });
-				if(material && vector[2] > 0) m_screen_images.push_back({point, vector, material, slot, now});
+				if(material && vector[2] > 0) m_screen_images.push_back({point, vector, material, slot, now, owner});
 			}
 			return;
 		}
@@ -76,7 +76,7 @@ namespace openrayman::game
 			if(slot >= 0 && slot < 8)
 			{
 				std::erase_if(m_screen_bars, [slot](const screen_bar& bar) { return bar.slot == slot; });
-				m_screen_bars.push_back({point, vector, point[2], int(vector[2]), material, m_bar_track, slot});
+				m_screen_bars.push_back({point, vector, point[2], int(vector[2]), material, m_bar_track, slot, owner});
 			}
 			return;
 		}
@@ -347,7 +347,7 @@ namespace openrayman::game
 			float x0 = bar.first[0], y0 = bar.first[1], x1 = bar.second[0], y1 = bar.second[1];
 			float a = float(bar.alpha);
 			auto image = [&](float ax, float ay, float bx, float by, std::uint32_t material) {
-				if(material) out.push_back({ vec3{ ax, ay, 0 }, vec3{ bx, by, a }, material, bar.slot, 0 });
+				if(material) out.push_back({ vec3{ ax, ay, 0 }, vec3{ bx, by, a }, material, bar.slot, 0, bar.owner, true });
 			};
 			if(x1 - x0 <= y1 - y0)
 			{
@@ -366,6 +366,11 @@ namespace openrayman::game
 		return out;
 	}
 
+	bool particles::draws_gauge(std::uint32_t owner) const
+	{
+		return owner && std::ranges::any_of(m_screen_bars, [owner](const screen_bar& bar) { return bar.owner == owner; });
+	}
+
 	std::vector<particles::screen_image> particles::screen_tile_images() const
 	{
 		// 0x4658B0: six columns and three rows between the corners, tile = column * 3 + row (so
@@ -380,7 +385,7 @@ namespace openrayman::game
 		for(int column = 0; column < 6; column++)
 			for(int row = 0; row < 3; row++)
 				if(std::uint32_t material = m_tiles[std::size_t(column * 3 + row)])
-					out.push_back({ vec3{ x0 + w * column, y0 + h * row, 0 }, vec3{ x0 + w * (column + 1), y0 + h * (row + 1), a }, material, 100 + column * 3 + row, 0, true });
+					out.push_back({ vec3{ x0 + w * column, y0 + h * row, 0 }, vec3{ x0 + w * (column + 1), y0 + h * (row + 1), a }, material, 100 + column * 3 + row, 0 });
 		return out;
 	}
 

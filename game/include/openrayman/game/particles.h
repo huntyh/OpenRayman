@@ -55,9 +55,10 @@ namespace openrayman::game
 			std::uint32_t material = 0;
 			int slot = 0;
 			double born = 0;
-			// Ours: kept in the centred 4:3 area at wide window sizes (the tiled logo), instead of
-			// stretched over the whole width like the HUD.
-			bool centred = false;
+			std::uint32_t owner = 0; // the actor (super object) whose script drew it
+			// Ours: a piece of the edge HUD, which stays at its screen edge at wide window sizes
+			// instead of moving into the centred 4:3 area with everything else (docs/formats/text.md).
+			bool edge = false;
 		};
 
 		// Kind 120's gauge slots (0x460530, table 0x4E0F20, drawn by 0x460670): two percent corners,
@@ -70,11 +71,13 @@ namespace openrayman::game
 			int alpha = 0;
 			std::uint32_t material = 0, track = 0;
 			int slot = 0;
+			std::uint32_t owner = 0; // the actor (super object) whose script drew it
 		};
 
 		// Procedure 503's arguments: effect kind, a point, a vector, a game material, a number.
 		// `animation` gives how long a game material's animated texture runs (0 for a still one).
-		void start(int kind, const vec3& point, const vec3& vector, std::uint32_t material, float number, double now);
+		// `owner` is the actor whose script made the call (kept for the screen pictures and gauges).
+		void start(int kind, const vec3& point, const vec3& vector, std::uint32_t material, float number, double now, std::uint32_t owner = 0);
 		void set_animation_lengths(std::function<float(std::uint32_t)> lengths) { m_animation_length = std::move(lengths); }
 		// One tick: moves and fades every particle, and drops those that are done.
 		void update(double now, double seconds);
@@ -83,6 +86,9 @@ namespace openrayman::game
 		const std::vector<screen_rectangle>& screen_rectangles() const { return m_screen_rectangles; }
 		const std::vector<screen_image>& screen_images() const { return m_screen_images; }
 		const std::vector<screen_bar>& screen_bars() const { return m_screen_bars; }
+		// Ours: whether this actor has drawn a gauge. The actor that draws the health gauge is the
+		// in-game HUD's; its pictures and counters are the edge HUD (docs/formats/text.md).
+		bool draws_gauge(std::uint32_t owner) const;
 		// The bars as the images 0x460670 paints: the filled part and, below 100 percent, the rest.
 		std::vector<screen_image> screen_bar_images() const;
 		// The tiled picture of kinds 170/171 (the intro's Rayman 2 logo) as images, painted after

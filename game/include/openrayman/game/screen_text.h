@@ -39,6 +39,7 @@ namespace openrayman::game
 			std::uint8_t flags = 0;    // +0x13
 			std::uint8_t word = 0;     // +0x14: the word index being flashed
 			std::uint8_t colour = 0;   // +0x18: 0 default, 1..2 red, 3 yellow
+			std::uint32_t owner = 0;   // ours: the actor (super object) whose script set the slot up
 		};
 
 		// Flag bits at +0x13, as the setters read and write them.
@@ -52,7 +53,7 @@ namespace openrayman::game
 		};
 
 		// procedure 505 (0x465A50): set a slot up. Returns false when the index is past the table.
-		bool set(std::size_t index, float x, float y, std::string text, std::uint8_t alpha, float size = 0);
+		bool set(std::size_t index, float x, float y, std::string text, std::uint8_t alpha, float size = 0, std::uint32_t owner = 0);
 		// procedure 506 (0x465AA0): the field setter, switching on `what` like the exe does.
 		// `value` is passed as a float; the integer cases truncate it.
 		bool set_field(std::size_t index, int what, float value);

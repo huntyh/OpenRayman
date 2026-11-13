@@ -42,6 +42,8 @@ namespace openrayman::game
 		// The text actor's own transparency (procedures 11/12 on its super object): its script
 		// fades each narration box in and out.
 		float alpha = 1;
+		// Ours: a counter of the edge HUD (a screen slot set up by the actor that draws the gauge).
+		bool edge = false;
 	};
 
 	struct dialog_glyph

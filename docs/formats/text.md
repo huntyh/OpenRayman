@@ -211,3 +211,44 @@ Keeping both mappings alike still preserves the intro counter gap, and also
 aligns dialogue text with its full-viewport box and portrait. ID 504 has no
 /c command; its anchor is (140,850,16). See [jail20-handover.md](jail20-handover.md)
 for the recording transforms, draw-flag investigation and provenance.
+
+## Placement at wide window sizes: two classes (2026-11-13)
+
+This replaces the per-screen rules of the two sections above (the whole-viewport mapping with
+glyphs narrowed about a side margin, lines centred by leading spaces, pictures keeping to a box
+edge, slots following side pictures). The exe places every piece in parts of the whole viewport:
+text objects (0x419A30), screen slots (0x4660B0, thousandths), boxes (kind 110, percent), pictures
+(kind 125, percent) and gauges (kind 120, percent). In a wide window that stretches all of it.
+OpenRayman sorts each piece into one of two classes and gives each class one transform, in the
+640x480 reference units, with `area = min(1, (4/3) * height / width)`:
+
+- **Edge HUD:** `x' = edge + (x - edge) * area`, where the edge is 0 or 640, whichever the piece's
+  middle is nearer to. The pieces stay spread across the screen at 4:3 proportions.
+- **Everything else:** `x' = 320 + (x - 320) * area`: one block in the centred 4:3 area. Text
+  objects, slots, boxes and pictures get the same transform, so a text stays in its box, a
+  portrait beside it, a counter beside its label and a title under its logo.
+- **Full width:** the cutscene bars, and a box or picture whose corners span the whole width
+  (x 0 to 100 percent), are left alone.
+
+Text placed in the world (not through the screen camera) is not touched; Y never changes; at 4:3
+the area is 1 and both transforms are the identity (the pictures are pixel-identical).
+
+**How a piece is classified.** By the actor whose script drew it, not by level, slot number or
+string. Procedure 503 (kinds 120 and 125) and procedure 505 now record the calling super object
+with the gauge, picture or slot. A gauge is always edge HUD; a picture or a slot is edge HUD when
+the same actor has drawn a gauge. In Learn_10 that actor is node 44 (the Fix HUD actor): Rayman's
+face (picture slot 0), the health gauge (gauge slot 0), the Lum and cage icons (picture slots 2
+and 3) and the counters (text slots 15 and 16) all come from it. Murfy's portrait (picture slot 5)
+comes from Murfy's own actor, the menu's slots from the menu actor, Jail_10's slot 26 (the slaves
+count) from the logo actor: none of them draws a gauge, so they are in the block.
+
+Checked by eye at 2000x1125 against 1600x1200 with `tools/text_pictures.py` (it renders a
+fixed list of screens, logs each piece with its class and writes before/after sheets outside the
+repo): the Jail_10 narration starts 350 of 2000 pixels in (43/640 of the centred area), PRESENTS
+is under the logo's middle, the menu, Murfy's box with his face and page arrow, Globox's lines,
+and the Learn_10 HUD at the screen edges.
+
+Where this came from: the placement rule is our own; the reference look is the real game with
+Ray2Fix as the user plays it (user, 2026-11-13: the narration starts about 350 pixels in on a
+2000 pixel wide screen), and the HUD spread across the screen is the user's choice (2026-11-08).
+The exe's own placement (whole viewport) is from our analysis in the sections above.

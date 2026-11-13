@@ -267,6 +267,18 @@ namespace openrayman
 				{{x,y},colour,{u0,0}}, {{x+w,y+h},colour,{u1,1}}, {{x,y+h},colour,{u0,1}}};
 			append(texture, additive, v);
 		};
+		// The exe places everything on the screen in parts of the whole viewport, so a wide
+		// window stretches it all sideways. Ours has two classes, each with one transform
+		// (docs/formats/text.md): the edge HUD (the gauges, and the pictures and counters of the
+		// actor that draws them) keeps to the screen edge it is nearer to, at 4:3 proportions;
+		// everything else (text, boxes, pictures, menus, titles) moves as one block into the
+		// centred 4:3 area, so what belongs together stays together. Only what spans the whole
+		// width (the cutscene bars, a full-screen cover) stays as wide as the screen. At 4:3
+		// the area is 1 and nothing moves.
+		const float area = std::min(1.0f, (4.0f / 3.0f) * float(height) / float(width));
+		auto block = [area](float x) { return 320.0f + (x - 320.0f) * area; };
+		auto to_edge = [area](float x, float middle) { float edge = middle > 320.0f ? 640.0f : 0.0f; return edge + (x - edge) * area; };
+		auto full_width = [](const auto& piece) { return piece.first[0] <= 0.5f && piece.second[0] >= 99.5f; };
 		if(show_bars)
 		{
 			float top = std::clamp(bounds.top, 0, 1000) * 0.48f;
@@ -278,12 +290,13 @@ namespace openrayman
 		{
 			SDL_FRect r{box.first[0] * 6.4f, box.first[1] * 4.8f,
 				(box.second[0] - box.first[0]) * 6.4f, (box.second[1] - box.first[1]) * 4.8f};
+			if(!full_width(box)) { r.x = block(r.x); r.w *= area; }
 			quad(m_white, false, r.x, r.y, r.w, r.h, {0,0,0,std::clamp(box.alpha / 255.0f, 0.0f, 1.0f)}, 0, 1);
 		}
 		// The tiled title picture (slots 100..117) is drawn as one joined picture when it can be.
 		std::vector<game::particles::screen_image> tiles;
 		for(const auto& image : images)
-			if(image.centred && image.slot >= 100 && image.slot < 118) tiles.push_back(image);
+			if(image.slot >= 100 && image.slot < 118) tiles.push_back(image);
 		if(!tiles.empty())
 		{
 			if(GLuint texture = joined_tiles(tiles))
@@ -297,8 +310,7 @@ namespace openrayman
 					x1 = std::max(x1, tile.first[0] + (6 - column) * tw); y1 = std::max(y1, tile.first[1] + (3 - row) * th);
 				}
 				SDL_FRect r{x0 * 6.4f, y0 * 4.8f, (x1 - x0) * 6.4f, (y1 - y0) * 4.8f};
-				float area = std::min(1.0f, (4.0f / 3.0f) * height / width);
-				r.x = 320.0f + (r.x - 320.0f) * area;
+				r.x = block(r.x);
 				r.w *= area;
 				// Ours: 0.6 of the game's size about the same centre, so the 192x96
 				// picture looks less blurry (user request, 2026-11-06).
@@ -310,7 +322,7 @@ namespace openrayman
 			else tiles.clear();
 		}
 		for(const auto& image : images)
-			if(!tiles.empty() && image.centred && image.slot >= 100 && image.slot < 118) continue;
+			if(!tiles.empty() && image.slot >= 100 && image.slot < 118) continue;
 			else try
 			{
 				if(auto material = location(image.material))
@@ -336,37 +348,10 @@ namespace openrayman
 							{
 								SDL_FRect r{image.first[0] * 6.4f, image.first[1] * 4.8f,
 									(image.second[0] - image.first[0]) * 6.4f, (image.second[1] - image.first[1]) * 4.8f};
-								// The exe places these in percent of the whole viewport, so a wide window
-								// stretches them. Ours keeps the place (the HUD spread across the screen, as
-								// the user prefers it, 2026-11-08) but the pictures' 4:3 proportions: each
-								// one is drawn narrower about the screen edge it is nearer to (Rayman's face and the
-								// health gauge on the left, the Lum and cage icons on the right). The tiled
-								// title keeps its centred 4:3 area; a picture across the whole width (a
-								// full-screen cover) stays as wide as the screen.
-								float area = std::min(1.0f, (4.0f / 3.0f) * height / width);
-								if(image.centred)
-								{
-									r.x = 320.0f + (r.x - 320.0f) * area;
-									r.w *= area;
-								}
-								else if(image.first[0] > 0.5f || image.second[0] < 99.5f)
-								{
-									// About that edge, so pieces that touch (the gauge's fill and rest) still do.
-									// A picture beside a text box (Murfy's face, the next-page arrow) keeps to
-									// the box's nearer edge instead, as the box stays full width: about the
-									// screen edge Murfy's face slid out of his box (user, 2026-11-08).
-									float middle = r.x + r.w * 0.5f;
-									float edge = middle > 320.0f ? 640.0f : 0.0f;
-									for(const auto& box : boxes)
-										if(box.alpha > 0 && image.first[1] < box.second[1] && image.second[1] > box.first[1])
-										{
-											float left = box.first[0] * 6.4f, right = box.second[0] * 6.4f;
-											edge = middle > (left + right) * 0.5f ? right : left;
-											break;
-										}
-									r.x = edge + (r.x - edge) * area;
-									r.w *= area;
-								}
+								// The edge HUD about its screen edge, so pieces that touch (the gauge's fill
+								// and rest) still do; the rest with the centred block.
+								if(image.edge) { r.x = to_edge(r.x, r.x + r.w * 0.5f); r.w *= area; }
+								else if(!full_width(image)) { r.x = block(r.x); r.w *= area; }
 								SDL_FColor colour{1,1,1,std::clamp(image.second[2] / 255.0f, 0.0f, 1.0f)};
 								bool additive = (frame->flags & texture_flag::additive) != 0;
 								if(frame->tiling & texture_tiling::mirror_u)
@@ -380,12 +365,6 @@ namespace openrayman
 					}
 			}
 			catch(const std::exception& e) { SDL_Log("Screen image: %s", e.what()); }
-		// Pictures to the side (the HUD's face, gauge and Lum and cage icons): their counters keep
-		// to the same screen edge. Without them (Jail_10's ship, SLAVES NOW ON BOARD) a slot keeps
-		// its 4:3 distance from the text beside it, which starts at the side margin.
-		const bool side_pictures = std::ranges::any_of(images, [](const auto& image) {
-			return !image.centred && (image.first[0] > 0.5f || image.second[0] < 99.5f);
-		});
 		for(const auto& dialog : dialogs)
 		{
 			if(dialog.tint)
@@ -406,18 +385,11 @@ namespace openrayman
 					else if(item.screen_colour == 200) tint = {250/255.0f, 70/255.0f, 70/255.0f, tint[3]};
 					else if(item.screen_colour == 400) tint = {1, 1, 120/255.0f, tint[3]};
 					float offset = float(game::screen_slot_punctuation_offset(item.byte, glyph_height));
-					// 0x4660B0 places slots in the whole viewport (the HUD counters sit at the
-					// screen's edge), but stretching the glyphs with it widens every letter at
-					// wide window sizes. Ours draws them at 4:3 widths: centred text about the
-					// screen's centre (the menu), other text about the screen edge it is nearer to,
-					// like the HUD pictures, so the counters stay next to the Lum and cage icons. With
-					// no pictures to the side, about the side margin the story texts start at (43 of
-					// 640), so the slaves count stays beside its label (user, 2026-11-08).
-					float slot_width = std::min(1.0f, (4.0f / 3.0f) * height / width);
-					float block_middle = (left + layout.width * 0.5f) * 0.64f;
-					float anchor = layout.centred ? 320.0f : !side_pictures ? 43.0f : block_middle > 320.0f ? 640.0f : 0.0f;
-					float x0 = anchor + ((left + item.x) * 0.64f - anchor) * slot_width;
-					float x1 = x0 + item.advance * 0.64f * slot_width;
+					// The HUD's counters keep to their screen edge, next to the Lum and cage icons;
+					// every other slot (the menu, the intro's slaves count) is in the centred block.
+					float x0 = (left + item.x) * 0.64f;
+					x0 = dialog.edge ? to_edge(x0, (left + layout.width * 0.5f) * 0.64f) : block(x0);
+					float x1 = x0 + item.advance * 0.64f * area;
 					// 0x4660B0 retains the slot's floating-point coordinates on both axes.
 					float y0 = (dialog.y + item.y + offset - dialog.pulse) * 0.48f;
 					float y1 = (dialog.y + item.y + offset + glyph_height + dialog.pulse) * 0.48f;
@@ -447,22 +419,9 @@ namespace openrayman
 				unit_x = unit_y = 240.0f * projection[1][1] / p.w;
 			}
 			auto layout = game::layout_dialog(dialog);
-			// 0x419A30 draws glyph objects in the whole viewport, like the slots: the text
-			// stays where the exe puts it (Globox's lines in their box), only its glyphs keep
-			// 4:3 widths at wide window sizes (Ray2Fix), about the same anchor as the slots: each
-			// line keeps its start (the story texts and subtitles at the side margin, Murfy's lines
-			// in his box). Only text the exe centres by padding it with spaces keeps its middle
-			// (Jail_10's "  Presents" under the logo slid left; user 2026-11-08). Keying this to
-			// where text starts also moved Murfy's lines in his box.
-			if(dialog.screen)
-			{
-				const float area = std::min(1.0f, (4.0f / 3.0f) * height / width);
-				const float full = layout.width * unit_x;
-				unit_x *= area;
-				const auto first = dialog.text.find_first_not_of("\r\n");
-				if(!layout.centred && first != std::string::npos && dialog.text[first] == ' ')
-					x += full * (1.0f - area) * 0.5f;
-			}
+			// 0x419A30 draws the glyph objects in the whole viewport; ours in the centred block,
+			// like the boxes and pictures they belong to.
+			if(dialog.screen) { x = block(x); unit_x *= area; }
 			if(layout.centred) x = (dialog.screen ? 320 : x) - layout.width * unit_x * 0.5f;
 			auto& font = font_for(dialog.template_actor);
 			std::optional<SDL_FColor> tint;

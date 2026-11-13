@@ -46,7 +46,7 @@ namespace openrayman::game
 		return index < screen_text::slot_count;
 	}
 
-	bool screen_text::set(std::size_t index, float x, float y, std::string text, std::uint8_t alpha, float size)
+	bool screen_text::set(std::size_t index, float x, float y, std::string text, std::uint8_t alpha, float size, std::uint32_t owner)
 	{
 		if(!in_range(index))
 			return false;
@@ -61,6 +61,7 @@ namespace openrayman::game
 		s.flags = 0;
 		s.word = 0;
 		s.colour = 0;
+		s.owner = owner;
 		return true;
 	}
 

@@ -20,6 +20,25 @@ TEST_CASE("particles: screen rectangle lasts one tick and keeps its coordinates 
 	CHECK(p.screen_rectangles().empty());
 }
 
+TEST_CASE("particles: the actor that draws a gauge is the HUD's")
+{
+	// Ours (docs/formats/text.md): gauges are edge HUD, and so is what their actor draws.
+	particles p;
+	p.start(120, {12, 8.5f, 60}, {16.6f, 11.5f, 200}, 0xBBBB, 0, 1, 0x4400);
+	p.start(125, {2, 4, 0}, {11, 15.5f, 200}, 0x1234, 0, 1, 0x4400); // Rayman's face
+	p.start(125, {4, 80, 0}, {14, 95, 192}, 0x1234, 5, 1, 0x4200);   // Murfy's portrait
+	CHECK(p.draws_gauge(0x4400));
+	CHECK_FALSE(p.draws_gauge(0x4200));
+	CHECK_FALSE(p.draws_gauge(0));
+	REQUIRE(p.screen_images().size() == 2);
+	CHECK(p.screen_images()[0].owner == 0x4400);
+	CHECK(p.screen_images()[1].owner == 0x4200);
+	for(const auto& piece : p.screen_bar_images()) CHECK(piece.edge);
+	// A hidden gauge still names its actor.
+	p.start(120, {12, 8.5f, 60}, {16.6f, 11.5f, 0}, 0xBBBB, 0, 1, 0x4400);
+	CHECK(p.draws_gauge(0x4400));
+}
+
 TEST_CASE("particles: screen images use the script slot and opacity")
 {
 	particles p;
@@ -73,7 +92,7 @@ TEST_CASE("particles: kinds 170/171 lay out the tiled logo in six columns of thr
 	CHECK(t.first[1] == doctest::Approx(20 + 40.0f / 3));
 	CHECK(t.second[0] == doctest::Approx(15 + 2 * 70.0f / 6));
 	CHECK(t.second[2] == doctest::Approx(128));
-	CHECK(t.centred);
+	CHECK(!t.edge);
 	p.start(171, {15, 20, 0}, {85, 60, 0}, 0, 0, 1);
 	CHECK(p.screen_tile_images().empty());
 }

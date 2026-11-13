@@ -134,8 +134,8 @@ alongside it, the menu and the pirate ship's two intro levels first.
   through the map after the cage; then Jail_20's cell with its bars, laser bars and cage light,
   Rayman and Globox in it, the chute with its ceiling and fan and its fall backdrop, and the
   chute's end camera and cutscene.
-- ✅ **Wide windows** (#93): screen text, the HUD and Murfy's box are placed where the exe places
-  them but drawn at 4:3 proportions, so a wide window no longer stretches glyphs, icons or counters.
+- ✅ **Wide windows** (#93, #109): the HUD stays at the screen edges at 4:3 proportions; all other
+  screen text, boxes and pictures sit as one block in the centred 4:3 area (docs/formats/text.md).
 - ✅ **Particles, sounds and animation details**: particle kinds 30, 46, 49 and 99 (the Jail_20
   grate's burst and a shot's stars, #99), actors' own sound distances with the camera's hearing
   list (the chute fan is silent in the cell), and animation transitions that keep their place, so
