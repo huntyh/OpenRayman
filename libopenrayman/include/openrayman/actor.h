@@ -70,6 +70,9 @@ namespace openrayman
 			affine world;
 			std::optional<std::uint16_t> animation; // what it plays now
 			bool loops = true;                      // whether that animation starts over at its end
+			// Our own loop smoothing (docs/IMPROVEMENTS.md): just after a loop has really started over,
+			// how much of the previous pass's last pose still shows (1 at the restart, fading to 0).
+			float wrap_blend = 0;
 			std::optional<memory_location> family;  // see actor
 			std::vector<std::optional<std::uint16_t>> states;
 			std::vector<memory_location> state_at;

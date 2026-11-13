@@ -214,9 +214,6 @@ namespace openrayman
 		}
 	}
 
-	// How many frames a looping animation takes to glide into its start (see pose()).
-	constexpr double loop_seam_frames = 4;
-
 	void pose_actor(const actor_set::entry& actor, const animation_bank& bank, double frame, std::vector<posed_part>& out,
 		const channel_positions& positions)
 	{
@@ -238,7 +235,21 @@ namespace openrayman
 			add(0, actor.world);
 			return;
 		}
-		std::vector<channel_pose> channels = pose(bank, *actor.animation, frame, actor.loops ? loop_seam_frames : 0);
+		// Loop smoothing only AFTER a real restart: the first frames of the new pass fade out of the
+		// pose the last pass ended on. Never before the end (a seam that glided into frame 0 ahead of
+		// time showed a pose that never came when a script switched states first: Jail_20, card 97).
+		// pose() already respects the authored keyframe flag 0x200 where a loop blend is wanted.
+		std::vector<channel_pose> channels = pose(bank, *actor.animation, frame);
+		if(actor.wrap_blend > 0 && *actor.animation < bank.animations.size() && bank.animations[*actor.animation].frames > 1)
+		{
+			const std::vector<channel_pose> end = pose(bank, *actor.animation, bank.animations[*actor.animation].frames - 1);
+			const float w = std::min(actor.wrap_blend, 1.0f);
+			for(std::size_t c = 0; c < channels.size() && c < end.size(); c++)
+				if(channels[c].id == end[c].id && channels[c].parent == end[c].parent)
+					for(int r = 0; r < 3; r++)
+						for(int k = 0; k < 4; k++)
+							channels[c].local.m[r][k] += (end[c].local.m[r][k] - channels[c].local.m[r][k]) * w;
+		}
 		std::vector<affine> worlds(channels.size());
 		std::vector<std::uint8_t> visited(channels.size());
 		// Resolve parents first, including hidden channels. A placed parent carries its children

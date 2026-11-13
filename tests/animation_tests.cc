@@ -228,6 +228,30 @@ TEST_CASE("pose: parent changes hold local keys, including loop blends")
 	}
 }
 
+TEST_CASE("pose_actor: a self-loop holds its ending until an authored wrap")
+{
+	// A script can switch a self-looping landing state to idle at the end. Blending into
+	// its opening pose early briefly replays the landing (Jail_20 stand-in, card 97).
+	animation_bank bank = two_keyframe_bank();
+	actor_set::entry actor;
+	actor.animation = 0;
+	actor.loops = true;
+	actor.meshes.resize(6);
+	actor.scales.resize(6);
+	actor.meshes[5] = 0;
+	auto x_at = [&](double frame) {
+		std::vector<posed_part> parts;
+		pose_actor(actor, bank, frame, parts);
+		REQUIRE(parts.size() == 1);
+		return parts[0].world.m[0][3];
+	};
+	CHECK(x_at(3.5) == doctest::Approx(4.0f));
+	CHECK(x_at(3.99) == doctest::Approx(4.0f));
+	CHECK(x_at(4.0) == doctest::Approx(0.0f));
+	bank.keyframes[1].flags |= 0x200;
+	CHECK(x_at(3.5) == doctest::Approx(1.0f));
+}
+
 TEST_CASE("pose: blends between keyframes, holds after the last, loops back when flagged, eases")
 {
 	animation_bank bank = two_keyframe_bank();

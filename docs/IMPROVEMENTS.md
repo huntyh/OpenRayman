@@ -11,7 +11,6 @@ of them off may come later.
 
 | What | The game | OpenRayman | Since |
 | --- | --- | --- | --- |
-| Freshly woken actors | An actor woken by its sector shows its saved placeholder pose until the scripts give it a state: the Jail_20 stand-in at the slide's end flashes a jump pose for a frame (two in ours, card 97) | Not drawn for its first two ticks while it still holds the state it woke in (src/main.cc `update_actors`) | 3 |
 | Jail_10 cloud flashes | Brief white cloud-pattern cards can look inverted and show rectangular edges | The cloud flash frames brighten the existing sky with a soft 20% UV-edge falloff; `OPENRAYMAN_LIGHTNING_CLASSIC=1` restores the original blend. The texture animation still controls timing. | 3 |
 | Wide screens in the Jail_10 intro | 4:3 only; with the community widescreen patch the wider view clips through the rock as the camera pans out of the cave, showing outside the world for a moment (user, 2026-11-07) | Native wide aspect ratios; the pan out of the cave shows no gap (seen by the user, not yet explained: likely our near plane or the sector draw list) | 3 |
 | Tiled title picture | Kinds 170/171 (the intro's Rayman 2 logo) are placed in percent of the whole viewport, so a wide screen would stretch them | Kept in a centred 4:3 area. The game draws the 18 tiles (32x32 each, 192x96 in all) as separate quads, so the joins show; ours joins them into one picture, enlarges it 8x (Catmull-Rom) and redraws the cut-out edge about one pixel wide, and draws it at 0.6 of the game's size about the same centre so it looks less blurry (user requests, 2026-11-06) | 3 |
@@ -26,7 +25,7 @@ of them off may come later.
 | Colour depth | Textures drawn in 16-bit colour (the usual setting, `GLI_Mode ... x 16` in ubi.ini): banding and blocky gradients | The textures' full 24/32-bit colour from the files (the water looks much better for it, user 2026-11-02) | 2a |
 | Soft-edged effects | The Voodoo renderer (GliVd1vf.dll) alpha-tests cut-outs at 192 of 255, so soft edges like the water splash's come out hard and pixelated | Real alpha blending: effect textures marked `_aaa` always blend with their own alpha | 3c |
 | The Menu's Teensy rock | The big green rock the left Teensy stands on (Menu level) has its texture smeared into long streaks, stretched as if towards infinity | The rock's texture shows normally (user 2026-11-04, side by side; cause in the game not traced, we just draw the level's texture coordinates) | 4 |
-| Looping animations | A loop whose last pose doesn't match its first jumps when it restarts (the swinging cages, 2 degrees on three channels) | A state that loops onto itself glides into its first pose over its last 4 frames (at most a quarter of the loop). Everything else plays as the game does | 3b |
+| Looping animations | A loop whose last pose doesn't match its first jumps when it restarts (the swinging cages, 2 degrees on three channels) | Only after a loop has really started over (same state, the frame jumped back), its first frames (up to 4, at most a quarter of the loop) fade out of the pose it ended on. Nothing is blended ahead of the end: an earlier seam that glided into frame 0 in advance showed a stepping pose for two frames when the Jail_20 director switched states first (card 97, docs/formats/animation.md) | 3b |
 
 ## The scripts
 

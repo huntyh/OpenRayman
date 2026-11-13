@@ -147,10 +147,7 @@ namespace
 		// follow where they are).
 		std::unique_ptr<sound_player> sounds;
 		std::set<std::uint32_t> sound_sources;
-		// Our wake guard (card 97): when each actor last woke and the state it woke in.
-		struct woken { long tick; std::uint32_t state; };
-		std::map<std::uint32_t, woken> woke;
-		long woke_seen_tick = -1;
+		std::string actor_draw_trace; // OPENRAYMAN_DRAW_TRACE: the parts submitted for this draw
 		// Sectors play sounds when Rayman walks in (the music of Learn_10's hand-over): their boxes,
 		// super objects and data, and the sector he was last in.
 		openrayman::level_lights sound_sectors;
@@ -225,6 +222,10 @@ namespace
 		// locations point into the level files, which are gone once the level has loaded.)
 		std::vector<std::vector<std::uint32_t>> state_addresses;
 		std::vector<double> state_since;         // per entry: animation time its state began
+		// Our loop smoothing after a real restart (actor_set::entry::wrap_blend): per entry, the state
+		// and frame drawn last time, and whether the loop has just started over.
+		struct loop_watch { std::optional<std::size_t> state; double frame = 0; bool restarted = false; };
+		std::map<std::size_t, loop_watch> loop_watches;
 		// Actors the scripts create (function 66, Rayman's shots): what each template looks like, read
 		// at load since the renderer takes every mesh then, and per pool slot the entry that shows it.
 		struct generated_look
@@ -254,6 +255,8 @@ namespace
 	fs::path settings_file()
 	{
 		char* pref = SDL_GetPrefPath("OpenRayman", "OpenRayman");
+		if(!pref)
+			return {}; // The settings directory may be unavailable (for example in a sandbox).
 		fs::path path = fs::path(reinterpret_cast<const char8_t*>(pref)) / "game_folder.txt";
 		SDL_free(pref);
 		return path;
@@ -1037,49 +1040,33 @@ namespace
 
 	void update_actors(app& a)
 	{
+		a.actor_draw_trace.clear();
+		const bool trace_draw = std::getenv("OPENRAYMAN_DRAW_TRACE") != nullptr;
+		auto trace_actor = [&](std::size_t i, const char* result, double frame, std::size_t count) {
+			if(!trace_draw || !a.vm || i >= a.actor_at.size() || i >= a.super_object_at.size()) return;
+			const auto so = a.super_object_at[i], actor = a.actor_at[i];
+			const auto data = a.live->u32(actor), standard = a.live->u32(actor + 4);
+			const auto& entry = a.actors.actors[i];
+			a.actor_draw_trace += std::format("node={} result={} active={} hidden={} soflags={:08X} standard={:02X} custom={:08X} state={:08X} cached_state={} anim={} frame={:.3f} live_frame={} parts={} pos={:.2f},{:.2f},{:.2f}\n",
+				entry.node, result, a.vm->active(so), hidden(a, so), a.live->u32(so + 0x30),
+				standard ? a.live->u8(standard + 0x29) : 0, standard ? a.live->u32(standard + 0x24) : 0,
+				data ? a.live->u32(data + 4) : 0, entry.state ? int(*entry.state) : -1, entry.animation ? int(*entry.animation) : -1,
+				frame, data ? a.live->read<std::uint16_t>(data + game::data_3d::frame) : 0, count,
+				entry.world.m[0][3], entry.world.m[1][3], entry.world.m[2][3]);
+		};
 		std::vector<posed_part> parts;
 		std::vector<bool> screen_parts; // per part: drawn by the exe's screen pass (procedure 409)
 		std::vector<float> part_alpha;  // per part: its actor's transparency level
 		std::vector<std::uint8_t> part_colour_set;
-		// Our own guard (card 97, docs/IMPROVEMENTS.md): an actor that has just woken is not drawn for
-		// its first two ticks while it still holds the state it woke in, its saved placeholder pose,
-		// until the scripts give it its real one. The Jail_20 stand-in otherwise shows its stale jump
-		// pose for two frames at the slide's end (the real game shows it for one).
-		if(a.vm && a.scripts)
-		{
-			if(a.tick < a.woke_seen_tick)
-				a.woke.clear(); // a new level
-			a.woke_seen_tick = a.tick;
-			for(std::size_t i = 0; i < a.super_object_at.size() && i < a.actor_at.size(); i++)
-			{
-				const std::uint32_t so = a.super_object_at[i];
-				const bool awake = a.vm->active(so);
-				const std::uint32_t data = a.actor_at[i] && a.live->contains(a.actor_at[i], 4) ? a.live->u32(a.actor_at[i]) : 0;
-				const std::uint32_t state = data && a.live->contains(data + 4, 4) ? a.live->u32(data + 4) : 0;
-				auto found = a.woke.find(so);
-				if(!awake)
-					a.woke.erase(so);
-				else if(found == a.woke.end())
-					a.woke[so] = { a.tick, state };
-			}
-		}
-		auto just_woken = [&](std::size_t i) {
-			if(i >= a.super_object_at.size() || i >= a.actor_at.size() || a.tick < 10)
-				return false;
-			auto found = a.woke.find(a.super_object_at[i]);
-			if(found == a.woke.end() || a.tick - found->second.tick >= 2)
-				return false;
-			const std::uint32_t data = a.actor_at[i] && a.live->contains(a.actor_at[i], 4) ? a.live->u32(a.actor_at[i]) : 0;
-			return data && a.live->contains(data + 4, 4) && a.live->u32(data + 4) == found->second.state;
-		};
 		for(std::size_t i = 0; i < a.actors.actors.size(); i++)
 		{
 			actor_set::entry& actor = a.actors.actors[i];
 			// Taken out of the world by its scripts.
 			if(a.vm && a.scripts && i < a.super_object_at.size() && hidden(a, a.super_object_at[i]))
+			{
+				trace_actor(i, "hidden", 0, 0);
 				continue;
-			if(a.vm && a.scripts && just_woken(i))
-				continue;
+			}
 			if(a.vm && a.scripts && i < a.selected_object_lists.size() && i < a.actor_at.size())
 			{
 				// Procedure 94 (exe 0x468730, case 0x5E) selects the list at 3D data +0x10.
@@ -1121,6 +1108,26 @@ namespace
 					std::uint16_t frames = a.bank.animations[*actor.animation].frames;
 					if(!actor.loops && frames)
 						frame = std::min(frame, double(frames - 1));
+					// Our loop smoothing: the frame jumped back while the state stayed the same, so the
+					// loop really started over; fade out of its last pose over up to 4 frames.
+					auto& watch = a.loop_watches[i];
+					const double window = std::min(4.0, frames / 4.0);
+					if(watch.state != actor.state)
+						watch.restarted = false;
+					else if(actor.loops && frames > 1 && frame + frames / 2.0 < watch.frame)
+						watch.restarted = true;
+					if(watch.restarted && window > 0 && frame < window)
+					{
+						float s = float(frame / window);
+						actor.wrap_blend = 1 - s * s * (3 - 2 * s);
+					}
+					else
+					{
+						watch.restarted = false;
+						actor.wrap_blend = 0;
+					}
+					watch.state = actor.state;
+					watch.frame = frame;
 				}
 			}
 			std::size_t first_part = parts.size();
@@ -1135,6 +1142,7 @@ namespace
 			{
 				// Bad animation data: leave this actor out rather than stop the level.
 			}
+			trace_actor(i, "submitted", frame, parts.size() - first_part);
 			if(a.vm && a.scripts && i < a.super_object_at.size() && a.vm->screen_objects().contains(a.super_object_at[i]))
 				screen_parts.insert(screen_parts.end(), parts.size() - std::min(parts.size(), first_part), true);
 			screen_parts.resize(parts.size(), false);
@@ -1808,6 +1816,15 @@ namespace
 
 	void draw(app& a)
 	{
+		if(const char* path = std::getenv("OPENRAYMAN_DRAW_TRACE"))
+		{
+			static std::ofstream log(path);
+			static unsigned long long frame = 0;
+			log << std::format("DRAW {} level={} tick={} fraction={:.6f}\n", ++frame,
+				a.game ? a.game->game_dsb().levels[a.level_index] : "", a.tick, a.script_clock * 60.0)
+				<< a.actor_draw_trace;
+			log.flush();
+		}
 		int w = 0, h = 0;
 		SDL_GetWindowSizeInPixels(a.window, &w, &h);
 		glViewport(0, 0, w, h);
@@ -1941,7 +1958,20 @@ namespace
 			glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		}
 
-		if(a.screenshot)
+		auto screenshot = a.screenshot;
+		// Optional sequence alongside a real interactive replay, once per simulation tick.
+		if(const char* directory = std::getenv("OPENRAYMAN_DRAW_CAPTURES"))
+			if(const char* range = std::getenv("OPENRAYMAN_CAPTURE_TICKS"))
+			{
+				long from = 0, to = 0;
+				static long captured = -1;
+				if(std::sscanf(range, "%ld-%ld", &from, &to) == 2 && a.tick >= from && a.tick <= to && a.tick != captured)
+				{
+					screenshot = fs::path(directory) / std::format("tick{}.bmp", a.tick);
+					captured = a.tick;
+				}
+			}
+		if(screenshot)
 		{
 			SDL_Surface* surface = SDL_CreateSurface(w, h, SDL_PIXELFORMAT_ABGR8888);
 			glPixelStorei(GL_PACK_ALIGNMENT, 1);
@@ -1952,7 +1982,7 @@ namespace
 			auto* bytes = static_cast<std::uint8_t*>(surface->pixels);
 			for(int i = 3; i < w * h * 4; i += 4)
 				bytes[i] = 255;
-			if(!SDL_SaveBMP(surface, a.screenshot->string().c_str()))
+			if(!SDL_SaveBMP(surface, screenshot->string().c_str()))
 				SDL_Log("Could not save screenshot: %s", SDL_GetError());
 			SDL_DestroySurface(surface);
 		}

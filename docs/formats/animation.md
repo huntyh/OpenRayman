@@ -302,3 +302,38 @@ them a look later) get no shadow yet.
 - The animation structures, element layouts and how a frame is posed follow Raymap's description
   (reference only), each checked against the data as described above. In the level files the arrays
   keep the same layout as in memory.
+
+## Self-looping states do not imply an anticipatory pose blend (card #97, 2026-11-13)
+
+A state's `after` pointer naming itself describes playback after the end; it does not
+instruct the renderer to blend the last four frames into the opening pose. A script may
+replace that state before the loop restarts. `pose_actor` now uses only the authored
+keyframe loop flag 0x200; the explicit `pose(..., seam)` preview option remains opt-in.
+
+In Jail_20, node 13 is actor 11 in the user's real run4 recording. It changes directly
+from state 39 (`04/01 +0x71A4`, animation 413) to state 38 (`+0x7154`, animation 412),
+then state 5 (`+0x66D0`, animation 383). States 39 and 38 have no transitions at +8.
+Animation 412's ending keys lack 0x200. Its ending is settled; its opening is a stepping
+landing pose. Our former automatic seam brought that opening back while the actor was
+still in state 38, particularly at frames 29-30 (shortcut ticks 6253-6254), just before
+state 5 began at tick 6255. This matches the user's standing/stepping screenshots. No
+via state, quiet start, visibility change or actor overlap occurs on these bad frames.
+
+Where this came from: own comparison of the installed level/keyframe data (`ortool
+peek` and `anim ... keys`), per-drawn-frame state/animation/frame logs and personally
+inspected 60 Hz screenshots. Checked against the user's `run4/actors.txt` (213.094 s:
++71A4; 214.328 s: +7154; 215.391 s: +66D0), and our own reading of the original
+program's transition lookup 0x4199B0, state change 0x40FAA0/0x40FB5A and pose evaluation
+0x41A610. The latter holds a final key unless its 0x200 bit requests interpolation;
+there is no automatic four-frame seam. Removing our synthetic seam also restores the
+original small discontinuity of unflagged cage loops; it changes no actor visibility.
+
+**Our loop smoothing now (2026-11-13, after the fix above).** We still smooth loops whose ends don't
+match (the swinging cages), but only *after* a real restart: when the drawn frame jumps back while the
+state stays the same, the first frames of the new pass (up to 4, at most a quarter of the loop) fade
+out of the pose the last pass ended on (`actor_set::entry::wrap_blend`, set in src/main.cc
+`update_actors`, applied in `pose_actor`). If a script switches the state before the restart, nothing
+blends. **Lesson for later bugs:** a wrong pose for a frame or two right before a state change has
+twice been our own smoothing (the old anticipatory seam). Check `wrap_blend` and the render-frame
+code first (try `OPENRAYMAN_DRAW_TRACE=<file>`, one block per drawn frame) before suspecting the
+scripts, transitions or the update order.
