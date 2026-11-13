@@ -549,7 +549,12 @@ namespace openrayman::game
 			// otherwise call "Hey!" from his hiding place through his animation's sound events.
 			std::uint32_t standard = actor ? m.u32(actor + 0x04) : 0;
 			std::uint32_t custom = standard ? m.u32(standard + 0x24) : 0;
-			const bool frozen = (custom & 0x2000) && !(custom & 0x800000);
+			// The same pass also stops the animation of an actor out of view (0x800) that thinks only in
+			// view (0x1000) or carries bit 0 (0x1), and of one with bit 18 (0x40000) whose standard
+			// block flags it at +0x29 (0x80): the Menu's three Globox kids sleep out of view there and
+			// stay silent in the real game, where ours squeaked all the time (card 104).
+			const bool frozen = ((custom & 0x2000) || ((custom & 0x800) && (custom & 0x1001)) ||
+				((custom & 0x40000) && standard && (m.u8(standard + 0x29) & 0x80))) && !(custom & 0x800000);
 			if(data && !vm.removed(self) && !frozen)
 			{
 				// Where a part of the actor is at a frame of an animation: the channel's pose, through
