@@ -1350,7 +1350,10 @@ namespace openrayman::game
 		std::uint32_t schedule = m_memory.u32(behaviour + behaviour_field::schedule);
 		m_memory.write<std::uint32_t>(intelligence + intelligence_field::schedule_at, schedule ? m_memory.u32(schedule) : 0);
 		if(!other)
+		{
+			loops.clear(); // 0x469600 resets the shared loop depth on a local transition.
 			signal(flow::restart);
+		}
 	}
 
 	namespace

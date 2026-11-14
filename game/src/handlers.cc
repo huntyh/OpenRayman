@@ -1067,30 +1067,50 @@ namespace openrayman::game
 			return c.args;
 		}
 
-		// 114 (0x477630): nearest graph waypoint to the actor, without obstacle testing.
+		// 114..117 (0x477630): nearest waypoint, or the one most aligned with a direction.
 		std::uint32_t nearest_waypoint(call& c, value& out)
 		{
-			value graph, obstacles;
+			value graph, obstacles, capability, exclude_a, exclude_b, direction;
 			next_arg(c, graph);
 			next_arg(c, obstacles);
+			const bool filtered = c.index == 115 || c.index == 117;
+			const bool directional = c.index == 116 || c.index == 117;
+			if(filtered)
+			{
+				next_arg(c, capability);
+				next_arg(c, exclude_a);
+				next_arg(c, exclude_b);
+			}
+			if(directional) next_arg(c, direction);
 			live_memory& m = c.vm.memory();
 			std::uint32_t g = graph.word();
 			std::uint32_t best = 0;
-			float best_distance = 3.4028234e38f;
-			if(g && m.contains(g, 12) && !obstacles.as_int())
+			float best_score = -1.0f;
+			if(g && m.contains(g, 12))
 			{
 				std::uint32_t node = m.u32(g);
 				std::uint32_t count = m.u32(g + 8);
-				vec3 origin = position_of(c.vm, c.vm.target(c.self, true));
+				auto self = c.vm.target(c.self, true);
+				vec3 origin = position_of(c.vm, self);
+				auto actor = c.vm.actor_of(self);
+				auto info = actor && m.contains(actor + 0x20, 4) ? m.u32(actor + 0x20) : 0;
+				auto sector = info && m.contains(info, 4) ? m.u32(info) : 0;
+				std::array<std::uint32_t, 1> sectors{sector};
+				auto world = sector ? c.vm.world().in_sectors(sectors) : c.vm.world();
 				for(std::uint32_t i = 0; i < count && node && m.contains(node, 0x14); i++)
 				{
 					std::uint32_t w = m.u32(node + 0xC);
-					if(w && m.contains(w, 0x14))
+					if(w && m.contains(w, 0x14) && (!filtered ||
+						(w != exclude_a.word() && w != exclude_b.word() &&
+						 (m.u32(node + 0x10) & capability.word()) == capability.word())))
 					{
-						float d = length(sub(waypoint_position(m, w), origin));
-						if(d < best_distance)
+						vec3 point = waypoint_position(m, w), delta = sub(point, origin);
+						float distance = length(delta);
+						float score = directional ? dot(delta, vec_of(direction)) / distance : distance;
+						if((best_score == -1.0f || (directional ? score > best_score : score < best_score)) &&
+							(!obstacles.as_int() || !world.first_hit(origin, point)))
 						{
-							best_distance = d;
+							best_score = score;
 							best = w;
 						}
 					}
@@ -4397,6 +4417,7 @@ namespace openrayman::game
 		// stop for this frame (0x4808E0 with 0xB).
 		std::uint32_t start_over(call& c)
 		{
+			c.vm.loops.clear(); // 0x467770 case 81
 			c.vm.signal(flow::stop | flow::wait | flow::restart);
 			return c.args;
 		}
@@ -4470,19 +4491,8 @@ namespace openrayman::game
 
 		// 76..78 (0x472E90, 0x472F00, 0x472F30): loops inside a script. 76(n) runs what follows up
 		// to its matching 77 n times (none: it goes on after that 77), 77 goes back while the count
-		// lasts, 78(k) leaves k + 1 levels of loops at once. One stack for every script, as in the
-		// exe (0x4E9420 return points, 0x4E9540 counts, 0x4E9660 the 76 nodes, depth 0x4B9BC4).
-		struct script_loop
-		{
-			std::uint32_t start = 0;  // the procedure_76 node
-			std::int32_t count = 0;
-			std::uint32_t back = 0;   // the node after its argument
-		};
-		std::vector<script_loop>& loops()
-		{
-			static std::vector<script_loop> stack;
-			return stack;
-		}
+		// lasts, 78(k) leaves k + 1 levels of loops at once. The exe shares a stack across handlers
+		// (0x4E9420 return points, 0x4E9540 counts, 0x4E9660 the 76 nodes, depth 0x4B9BC4).
 		// 0x472E20: the node after the 77 that closes the loop opened at `start` (nested 76/77 pairs
 		// counted), or the script's end.
 		std::uint32_t after_loop(const live_memory& m, std::uint32_t start)
@@ -4507,15 +4517,15 @@ namespace openrayman::game
 		std::uint32_t loop_procedure(call& c)
 		{
 			live_memory& m = c.vm.memory();
-			auto& stack = loops();
+			auto& stack = c.vm.loops;
 			if(c.index == 76)
 			{
 				std::uint32_t node = c.args - 8;
 				value n;
 				next_arg(c, n);
-				if(n.as_int() <= 0)
+				if(n.as_int() == 0)
 					return after_loop(m, node);
-				stack.push_back({ node, n.as_int(), c.args });
+				stack.push_back({ n.as_int(), c.args, node });
 				return c.args;
 			}
 			if(c.index == 77)
@@ -4523,7 +4533,7 @@ namespace openrayman::game
 				if(!stack.empty())
 				{
 					if(--stack.back().count > 0)
-						return stack.back().back;
+						return stack.back().body;
 					stack.pop_back();
 				}
 				return c.args;
@@ -5674,42 +5684,6 @@ namespace openrayman::game
 			return c.args;
 		}
 
-		// 76 (0x472E90), 77 (0x472F00): a counted loop. 76 starts it: with a count of 0 it skips past
-		// its matching 77 (nested 76/77 pairs counted, 0x472E20); otherwise it remembers the count
-		// and where the body starts. 77 counts down and goes back there until the count runs out.
-		std::uint32_t loop(call& c)
-		{
-			interpreter& vm = c.vm;
-			live_memory& m = vm.memory();
-			if(c.index == 77)
-			{
-				if(!vm.loops.empty() && --vm.loops.back().count > 0)
-					return vm.loops.back().body;
-				if(!vm.loops.empty())
-					vm.loops.pop_back();
-				return c.args;
-			}
-			std::uint32_t self = c.args - 8; // the 76 node
-			value count;
-			next_arg(c, count);
-			if(count.as_int() > 0)
-			{
-				vm.loops.push_back({ count.as_int(), c.args });
-				return c.args;
-			}
-			// Nodes are 8 bytes: param, u16, u8 indent, u8 type; type 4 is a procedure, 8 the end.
-			std::int32_t depth = 0;
-			for(std::uint32_t n = self; m.contains(n, 8) && m.u8(n + 7) != 8; n += 8)
-			{
-				if(m.u8(n + 7) != 4)
-					continue;
-				if(m.u32(n) == 76)
-					depth++;
-				else if(m.u32(n) == 77 && --depth < 1)
-					return n + 8;
-			}
-			return c.args;
-		}
 
 		// 101 (0x468AB0): request engine shutdown (state 2), then stop the script.
 		std::uint32_t quit_game(call& c)
@@ -5924,6 +5898,9 @@ namespace openrayman::game
 		vm.on_function(1, [](call& c, value& out) { out = value_of(position_of(c.vm, c.self)); return c.args; }); // 0x47B830
 		vm.on_function(18, waypoint_location);
 		vm.on_function(114, nearest_waypoint);
+		vm.on_function(115, nearest_waypoint);
+		vm.on_function(116, nearest_waypoint);
+		vm.on_function(117, nearest_waypoint);
 		auto paths = std::make_shared<std::map<std::uint32_t, graph_path>>();
 		vm.on_function(121, [paths](call& c, value& out) { return shortest_graph_path(c, out, *paths); });
 		for(std::uint32_t i : { 122, 123 })
@@ -6101,8 +6078,6 @@ namespace openrayman::game
 		vm.on_meta_action(2, wait_animation());
 		vm.on_procedure(174, set_custom_bits);
 		vm.on_procedure(351, set_array_bit);
-		vm.on_procedure(76, loop);
-		vm.on_procedure(77, loop);
 		for(std::uint32_t i : { 343, 344, 345 })
 			vm.on_procedure(i, menu_request);
 		vm.on_function(252, language);

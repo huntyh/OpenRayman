@@ -1665,6 +1665,50 @@ TEST_CASE("handler census: shortest paths honor capability bits and cheaper queu
 	CHECK(f.function(132, {f.integer(0)}).word() == 0);
 }
 
+TEST_CASE("nearest eligible waypoint honors capability and exclusions")
+{
+	handler_fixture f;
+	auto graph = f.m.allocate(12), a = f.m.allocate(28), b = f.m.allocate(28), c = f.m.allocate(28);
+	auto wa = f.m.allocate(20), wb = f.m.allocate(20), wc = f.m.allocate(20);
+	f.m.write(graph, a); f.m.write<std::uint32_t>(graph + 8, 3);
+	f.m.write(a, b); f.m.write(b, c);
+	f.m.write(a + 12, wa); f.m.write(b + 12, wb); f.m.write(c + 12, wc);
+	f.m.write<std::uint32_t>(a + 16, 1); f.m.write<std::uint32_t>(b + 16, 3); f.m.write<std::uint32_t>(c + 16, 3);
+	f.m.write(wa, vec3{1, 0, 0}); f.m.write(wb, vec3{2, 0, 0}); f.m.write(wc, vec3{3, 0, 0});
+	auto query = [&](int mask, std::uint32_t x, std::uint32_t y) {
+		return f.function(115, {f.integer(int(graph)), f.integer(0), f.integer(mask), f.integer(int(x)), f.integer(int(y))}).word();
+	};
+	CHECK(query(3, 0, 0) == wb);
+	CHECK(query(3, wb, 0) == wc);
+	CHECK(query(3, wb, wc) == 0);
+	CHECK(query(1, 0, 0) == wa);
+	CHECK(f.function(116, {f.integer(int(graph)), f.integer(0), game::value::vector(1,0,0)}).word() == wa);
+	CHECK(f.function(117, {f.integer(int(graph)), f.integer(0), f.integer(3), f.integer(int(wb)), f.integer(0), game::value::vector(1,0,0)}).word() == wc);
+	collision_triangle wall;
+	wall.corners = {vec3{1.5f,-4,-4}, vec3{1.5f,4,-4}, vec3{1.5f,0,4}};
+	f.vm.set_world(game::world_collision({wall}));
+	CHECK(f.function(115, {f.integer(int(graph)), f.integer(1), f.integer(3), f.integer(0), f.integer(0)}).word() == 0);
+	CHECK(f.function(115, {f.integer(int(graph)), f.integer(1), f.integer(1), f.integer(0), f.integer(0)}).word() == wa);
+}
+
+TEST_CASE("procedure 78 exits the loop opened by procedure 76")
+{
+	handler_fixture f;
+	auto node = [&](unsigned offset, unsigned parameter, node_type type, unsigned indent) {
+		f.m.write<std::uint32_t>(f.script + offset, parameter);
+		f.m.write<std::uint8_t>(f.script + offset + 6, std::uint8_t(indent));
+		f.m.write<std::uint8_t>(f.script + offset + 7, std::uint8_t(type));
+	};
+	node(0, 76, node_type::procedure, 1); node(8, 30, node_type::integer, 2);
+	node(16, 78, node_type::procedure, 1); node(24, 0, node_type::integer, 2);
+	node(32, 77, node_type::procedure, 1); node(40, 0, node_type::end, 0);
+	game::value result;
+	CHECK(f.vm.eval(f.so, f.script, result) == f.script + 16);
+	REQUIRE(f.vm.loops.size() == 1);
+	CHECK(f.vm.eval(f.so, f.script + 16, result) == f.script + 40);
+	CHECK(f.vm.loops.empty());
+}
+
 TEST_CASE("handler census: list model and family filters distinguish retaining from dropping")
 {
 	handler_fixture f;

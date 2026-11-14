@@ -269,7 +269,7 @@ namespace openrayman::game
 		std::uint32_t sector_at(const std::array<float, 3>& position) const;
 		std::vector<std::uint32_t> collision_sectors(std::uint32_t self) const;
 		// Procedures 76/77's counted loops (the exe keeps one stack for all scripts, 0x4E9420..).
-		struct loop_frame { std::int32_t count; std::uint32_t body; };
+		struct loop_frame { std::int32_t count; std::uint32_t body; std::uint32_t start; };
 		std::vector<loop_frame> loops;
 		// Procedures 343..345's bytes (0x500FA4): 343 sets the first two, 344 reads them back (and
 		// clears them when the fourth, set by the engine, says so), 345 sets the third. The menu

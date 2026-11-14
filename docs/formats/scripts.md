@@ -946,3 +946,31 @@ Own reading of the local GOG Rayman2.exe at the table and addresses above, plus
 suggested `0x48B380` address was checked and rejected. Verified with synthetic
 procedure/query tests and real Bast_20 capture, fall, rim-walk and return tests.
 No decompiled code copied. Codex, 2026-11-07.
+
+
+## Waypoint selection and script loops (114–117, 76–78)
+
+Functions 114–117 share `0x477630`. Each takes a graph and visibility flag;
+115 and 117 then take a capability mask and two excluded waypoints. Functions
+116 and 117 take a direction vector as the last argument. The first two select
+the nearest waypoint; the latter two select the largest dot product of the
+direction and the normalized displacement from the target actor. The mask must
+be entirely present in the graph node. Ties keep the earlier node, subject to
+the native -1 score sentinel. A null graph gives a null waypoint.
+
+For a nonzero visibility flag the native `0x45D8F0` walks the target actor's
+current sector hierarchy and tests its collision objects. The current engine
+uses sector-scoped static collision triangles for this query; it does not yet
+represent every native hierarchy element, notably collision spheres and boxes.
+
+Procedures 76, 77 and 78 share the same loop stack: 76 starts a counted loop,
+77 repeats or pops it, and 78 exits the requested enclosing level. Bast_20's
+node 89 uses 78 to stop processing dialog cues. Separate stacks let it overwrite
+the 99 activation message to node 90 before the controller could read it.
+
+### Where this came from
+
+Own reading of Rayman2.exe at `0x477630`, `0x480050`, `0x45D8F0`, `0x48EE70`,
+`0x472E90`, `0x472F00`, and `0x472F30`; the directional displacement was also
+checked in the machine instructions at `0x477963`. Verified against synthetic
+handler tests and Bast_20 dialog and projectile traces. No decompiled code copied.
