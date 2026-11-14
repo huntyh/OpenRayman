@@ -1010,7 +1010,7 @@ namespace
 			openrayman::game::step(*a.vm, a.thinkers, [](std::uint32_t self, const std::exception& e) {
 				SDL_Log("Script error, actor 0x%08X: %s", self, e.what());
 			});
-			// Our choice (docs/IMPROVEMENTS.md): a new game's opening starts with its cutscene bars already
+			// Our choice (docs/IMPROVEMENTS.md): a level that opens with a cutscene starts with its bars already
 			// in. The bars' actor (the one calling procedure 314; Fix's world actor) grows its var60 by 0.4
 			// a millisecond towards 195 (var58, small bars) or 325.417 (var57, large) and clears the request
 			// when it gets there, so setting var60 to the target finishes the slide at once.
@@ -1727,7 +1727,7 @@ namespace
 			const bool learn_opening = !a.save_slot && a.new_game &&
 				openrayman::game::learn_10_opening(levels[index]) &&
 				(!a.carried_story || !openrayman::game::story_has(*a.carried_story, 1091));
-			a.bars_in_place = learn_opening ? 120 : 0;
+			a.bars_in_place = 120; // any level that opens with a cutscene (Learn_10, Bast_20, ...)
 			// The story so far (first_visit.h): a revisit includes the completed intro and Learn_10; a new
 			// game has the pirate ship and the intro behind it.
 			// Explicit story-bit overrides: 1095 gives
