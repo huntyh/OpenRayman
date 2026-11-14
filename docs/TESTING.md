@@ -226,7 +226,8 @@ Steam Controller included, through SDL's own driver). Press Tab so the pad goes 
 - [ ] Press the bottom face button (A on an Xbox pad, cross on a PlayStation one): jump; the same
       button pressed again in the air should also work if the game allows it
 - [ ] Press the left or right face button (X / square, B / circle): shoot
-- [ ] The shoulder buttons turn the camera (like Q and W); both together like Num0
+- [ ] The right stick (left / right) and the shoulder buttons turn the camera (like Q and W),
+      where the level lets it turn; both shoulders together like Num0
 - [ ] Start pauses (like Esc)
 - [ ] Unplug the pad while playing: Rayman stops instead of running on; plug it back in and it
       works again

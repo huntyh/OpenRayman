@@ -85,6 +85,7 @@ standard gamepad onto them (`pad_map`):
 | `WEST` (X / square), `EAST` (B / circle) | button 10 | shoot (and confirm, menu left) |
 | `NORTH` (Y / triangle) | button 15 | the J action |
 | `LEFT_SHOULDER` / `RIGHT_SHOULDER` | buttons 12 / 13 | turn the camera (Q / W); both: action 18 |
+| right stick, past half way left / right | buttons 12 / 13 | turn the camera, as in most games (our choice) |
 | `LEFT_STICK` / `RIGHT_STICK` (click) | button 14 | action 12 |
 | `LEFT_TRIGGER` / `RIGHT_TRIGGER` | axis 6, negative | action 12 (DirectInput's combined trigger axis) |
 | d-pad up / down | buttons 15 / 14 | the menus' up and down (actions 101, 102 test only these) |

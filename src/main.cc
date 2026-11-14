@@ -714,9 +714,14 @@ namespace
 		std::array<bool, openrayman::game::input::pad_button_count> down{};
 		for(const auto& [sdl, game] : pad_map::buttons)
 			down[game] = down[game] || pressed(sdl);
+		auto axis = [&](SDL_GamepadAxis sdl) { return std::int32_t(SDL_GetGamepadAxis(p.handle, sdl)); };
+		// Our choice, as in most games: the right stick pushed past half way left or right turns
+		// the camera like the shoulders (Q / W), within what the level's camera allows.
+		const std::int32_t turn = axis(SDL_GAMEPAD_AXIS_RIGHTX);
+		down[12] = down[12] || turn < -16384;
+		down[13] = down[13] || turn > 16384;
 		for(std::size_t b = 0; b < down.size(); b++)
 			a.input->set_pad_button(p.pad, b, down[b]);
-		auto axis = [&](SDL_GamepadAxis sdl) { return std::int32_t(SDL_GetGamepadAxis(p.handle, sdl)); };
 		std::int32_t x = pad_map::with_dead_zone(axis(SDL_GAMEPAD_AXIS_LEFTX));
 		std::int32_t y = pad_map::with_dead_zone(axis(SDL_GAMEPAD_AXIS_LEFTY));
 		if(pressed(SDL_GAMEPAD_BUTTON_DPAD_LEFT)) x = -32768;
