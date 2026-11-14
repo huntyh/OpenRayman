@@ -4610,6 +4610,50 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 413 (0x4710C0, case 0x19D, 0x45BA60): with a nonzero argument the screen objects in the
+		// pass are put aside on a stack (one level per call) and the pass starts empty, for the pause
+		// menu's own; with zero, that level ends and the objects put aside at it come back.
+		std::uint32_t stack_screen_objects(call& c)
+		{
+			value on;
+			next_arg(c, on);
+			auto& stack = c.vm.screen_object_stack;
+			if(on.as_int())
+			{
+				stack.push_back(std::move(c.vm.screen_objects()));
+				c.vm.screen_objects().clear();
+			}
+			else if(!stack.empty())
+			{
+				for(auto& [self, object] : stack.back())
+					if(!c.vm.removed(self))
+						c.vm.screen_objects().insert_or_assign(self, object);
+				stack.pop_back();
+			}
+			return c.args;
+		}
+
+		// 306 (0x467970, case 0x132): pause (nonzero) or resume the game. 0x409E90 notes the clock
+		// when pausing and 0x409F00 sets it back to that on resume, so timers skip the pause; byte
+		// 0x500FAA tells the actor passes to run only actors with custom bit 0x100000.
+		std::uint32_t pause_game(call& c)
+		{
+			value on;
+			next_arg(c, on);
+			c.vm.set_paused(on.as_int() != 0);
+			return c.args;
+		}
+
+		// 504 (0x4730A0): byte 0x4B9BC8 = argument != 0; the particle update and some effect
+		// draws (0x4607E0, 0x44B1B0, 0x44B2E0) stand still while it is set.
+		std::uint32_t pause_effects(call& c)
+		{
+			value on;
+			next_arg(c, on);
+			c.vm.effects_paused = on.as_int() != 0;
+			return c.args;
+		}
+
 		// 409 (0x4710C0, case 0x199): register the actor in the persistent screen-object pass.
 		std::uint32_t place_screen_object(call& c)
 		{
@@ -6110,6 +6154,9 @@ namespace openrayman::game
 		vm.on_procedure(427, sound_group);
 		vm.on_procedure(409, place_screen_object);
 		vm.on_procedure(411, remove_screen_object);
+		vm.on_procedure(413, stack_screen_objects);
+		vm.on_procedure(306, pause_game);
+		vm.on_procedure(504, pause_effects);
 		vm.on_condition(76, actor_in_world);
 		vm.on_procedure(433, face_horizontal);
 		vm.on_procedure(171, orient_from_vectors);

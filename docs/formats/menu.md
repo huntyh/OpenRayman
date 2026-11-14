@@ -474,9 +474,25 @@ Procedure 306 (`0x467970`, branch `0x4679EE`) stops and resumes the game clock v
 `0x409E90` and `0x409F00`. Procedure 413 (`0x4710C0`, branch `0x47131E`) calls
 `0x45BA60`, which saves and restores a stack of special actors. Procedure 426
 (`0x471E40`) and 427 call the sound pause/resume paths `0x4536D0`/`0x453700`.
-The exact actor scheduling and effect rendering needed for a complete pause remain
-under investigation; these calls must not be replaced by a blanket stop of every actor,
-because the menu controller still has to run.
+How the pause works (implemented 2026-11-15):
+
+- **306** (case 0x132) with a nonzero argument sets byte `0x500FAA` and notes the clock
+  (`0x409E90`); with zero it sets the clock back to that note (`0x409F00`), so script timers
+  skip the time spent paused. While the byte is set, the three actor passes (`0x40AA10`,
+  `0x40A7C0`, `0x40AB90`) skip every actor whose custom bits (standard block +0x24) lack
+  0x100000. The menu controller and its temporary actors carry that bit; Rayman, the camera
+  and the rest of the world don't, so they stand still. The particle draw `0x460600` keeps
+  only a few slots visible while paused.
+- **413** (case 0x19D, `0x45BA60`) keeps a stack over the screen-object pass (up to 32
+  objects at `0x514E20`, count `0x4B98DC`, level `0x4B98D8`): nonzero puts the current
+  objects aside at a new level, zero ends the level and brings them back if their actor still
+  exists (`0x413790`). Ours keeps a stack of our screen-object maps.
+- **504** sets byte `0x4B9BC8`; ours stops the particle update while it is set.
+
+Before this, ours ran every actor during the pause: a menu actor was drawn huge in front
+of the camera and Rayman kept moving. Ours now freezes the world, lets the menu run
+(selection skips the disabled Load) and resumes on Esc. Still open: the F1 glossary, and
+checking Abandon / Hall of Doors against the game.
 
 ### Where this came from
 

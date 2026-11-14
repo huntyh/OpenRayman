@@ -639,6 +639,9 @@ namespace openrayman::game
 			// enabled brain. A script may rely on sector wake for its entire horizontal
 			// range: Bast_20's piranhas only compare Rayman's height before catching him.
 			if(!standard || !vm.active(self, player) || m.u32(standard + 0x18) == vm.frame_number()) return;
+			// Paused (procedure 306): only the actors marked to run in the pause (custom bit
+			// 0x100000, the menu's) go on; the passes test it before anything else of the actor.
+			if(vm.paused() && !(m.u32(standard + 0x24) & 0x100000)) return;
 			// The same three passes (0x40AA10, 0x40A7C0, 0x40AB90) set the "far" flag just before
 			// each actor's update: standard +0x29 bit 0x80 when the actor carries any of the custom
 			// bits 0x4C0000 and its Manhattan distance to the main actor is at least the byte at
@@ -724,7 +727,8 @@ namespace openrayman::game
 			}
 		}
 		profiler::scope timed(profiler::zone::particles);
-		vm.particles().update(vm.clock() / 1000.0, vm.frame_ms() / 1000.0);
+		if(!vm.effects_paused)
+			vm.particles().update(vm.clock() / 1000.0, vm.frame_ms() / 1000.0);
 		vm.screen_text().step(float(vm.frame_ms() / 1000.0));
 	}
 }

@@ -1603,6 +1603,9 @@ namespace openrayman::game
 		m_surface_cache = {};
 		m_channel_placements.clear();
 		m_screen_objects.clear();
+		screen_object_stack.clear();
+		set_paused(false);
+		effects_paused = false;
 		m_camera_motion = {};
 		m_sounds.clear();
 		if(m_animations) install_level_events(m_memory, *m_animations);

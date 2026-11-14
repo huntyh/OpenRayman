@@ -178,9 +178,30 @@ namespace openrayman::game
 		{
 			std::uint32_t before = m_clock;
 			m_ticks++;
-			m_clock = std::uint32_t(m_ticks * 1000 / 60);
+			m_clock = std::uint32_t(m_ticks * 1000 / 60 - m_clock_skipped);
 			m_frame_ms = m_clock - before;
 		}
+		// Procedure 306 (0x467970, case 0x132): the pause. While it is on, the actor passes
+		// (0x40AA10, 0x40A7C0, 0x40AB90) run only actors whose custom bits carry 0x100000 (the
+		// menu's), and 0x409E90/0x409F00 take the paused time out of the game clock on resume.
+		bool paused() const { return m_paused; }
+		void set_paused(bool on)
+		{
+			if(on && !m_paused)
+				m_paused_clock = m_clock;
+			else if(!on && m_paused)
+			{
+				m_clock_skipped += m_clock - m_paused_clock;
+				m_clock = m_paused_clock;
+			}
+			m_paused = on;
+		}
+		// Procedure 504 (0x4730A0): byte 0x4B9BC8, which stops the particles (0x4607E0) and some
+		// screen effects while the pause menu shows.
+		bool effects_paused = false;
+		// Procedure 413 (0x4710C0, case 0x19D, 0x45BA60): a menu opening over the screen objects
+		// puts the current ones aside and brings them back when it closes.
+		std::vector<std::map<std::uint32_t, screen_object>> screen_object_stack;
 		std::uint32_t frame_ms() const { return m_frame_ms; }
 		// The particles the scripts started (procedure 503).
 		game::particles& particles() { return m_particles; }
@@ -462,6 +483,9 @@ namespace openrayman::game
 		generated_actors m_generated;
 		std::vector<sound_request> m_sounds;
 		std::uint64_t m_ticks = 0;
+		std::uint64_t m_clock_skipped = 0;
+		std::uint32_t m_paused_clock = 0;
+		bool m_paused = false;
 		struct channel_placement { std::uint64_t tick = 0; channel_positions positions; };
 		std::map<std::uint32_t, channel_placement> m_channel_placements;
 		std::uint32_t m_frame_ms = 16;
