@@ -217,6 +217,10 @@ namespace openrayman::game
 			}
 			for(auto self : actors)
 			{
+				// Capture the loaded world placement even for actors whose brain is
+				// disabled: their entry reset still restores it (0x418340, mode 4).
+				if(!m_start_placements.contains(self))
+					if(auto p = global_placement(m, self)) m_start_placements.emplace(self, *p);
 				auto s = standard_of(self);
 				if(!s) continue;
 				if(camera(self)) { insert(run_order, self); m.write<std::uint8_t>(s + 0x29, m.u8(s + 0x29) | 4); }
@@ -281,6 +285,28 @@ namespace openrayman::game
 			for(auto other : m_activation_sectors.sectors[i].wake_with) wake_sectors.push_back(m_sectors[other]);
 		}
 		auto fresh = [&](std::uint32_t so) { return first || std::ranges::find(m_wake_sectors, so) == m_wake_sectors.end(); };
+		// 0x4128D0 -> 0x4063E0 -> 0x406360: entry into a new wake region resets
+		// its eligible residents BEFORE 0x40B620/0x40B4C0 activate them. Shared
+		// sectors and initial level activation do not take this path. The reset
+		// dispatcher (0x405E50, table 0x49F4D8) calls each actor part with mode 4.
+		if(!first)
+			for(auto so : wake_sectors)
+				if(fresh(so))
+					for(auto self : m_sector_members[so])
+					{
+						auto s = standard_of(self);
+						if(!s) continue;
+						auto flags = m.u8(s + 0x29);
+						auto type = m.u32(s + 0x14);
+						if((flags & 0x10) || ((flags & 1) ? type > 1 : m.u32(s + 0x10) != 0)) continue;
+						reset_actor(self);
+						// 0x4132A0 mode 4 restores presence for resettable actors;
+						// explicitly absent actors and pooled actors keep their flags.
+						if(m.u32(s + 8) <= 0xFFFF && !((flags & 1) && !(flags & 2)))
+							m.write<std::uint8_t>(s + 0x29, (flags & ~1u) | 2u);
+						reset_dynamics(m, actor_of(self));
+						reinstall_state_mechanics(m, actor_of(self));
+					}
 		auto wake = [&](std::uint32_t self, bool new_sector) {
 			if(std::ranges::find(live_actors, self) == live_actors.end()) return;
 			auto s = standard_of(self);
@@ -1464,6 +1490,14 @@ namespace openrayman::game
 		std::uint32_t data = m_memory.u32(actor + actor_field::data_3d);
 		if(data && m_memory.contains(data, 0x14))
 		{
+			if(m_memory.contains(data, 0x103))
+			{
+				// 0x418340 mode 4 restores draw flags, opacity and the think divider.
+				m_memory.write<std::uint32_t>(self + 0x2C, m_memory.u32(data + 0xE4));
+				m_memory.write<std::uint32_t>(data + 0xE8, m_memory.u32(data + 0xE4));
+				m_memory.write<float>(self + 0x38, float(m_memory.u8(data + 0x102)));
+				m_memory.write<std::uint8_t>(data + 0xFF, 0xFF);
+			}
 			m_memory.write<std::uint32_t>(data + 0x0C, m_memory.u32(data + 0x10));
 			if(std::uint32_t initial = m_memory.u32(data))
 				change_state(m_memory, data, initial, true, m_clock, true, actor);

@@ -234,6 +234,47 @@ lists are reconstructed in file order. The existing camera-last policy remains. 
 actors made during a tick can still update that tick; +0x18 prevents duplicate updates
 when a generated actor is also reached through the active list.
 
+**Reset on entering a wake region, 2026-11-14.** Sector entry has a reset pass
+before the activation pass. After the main actor's sector changes, `0x4128D0`
+calls `0x4063E0`: visit the new sector and its +0x3C list, excluding sectors
+already in the old sector's region. `0x406360` resets an actor if it is absent
+(standard +0x29 mask 0x01) and its standard type (+0x14) is 0 or 1, or if it is
+present and standard +0x10 is zero. Standard flag 0x10 exempts it. Initial level
+activation does not run this sector-entry reset, and shared sectors retain their
+actors' current state.
+
+The reset is `0x405E50` with mode 4. It dispatches through the actor-part
+callback table at `0x49F4D8`, stride 24 bytes: 3D `0x418340`, standard game
+`0x4132A0`, dynamics `0x412F20`, brain `0x417F40`, and other present parts.
+It restores initial placement/state, custom flags from standard +0x2C,
+eligible health, draw flags/opacity, initial normal/reflex behaviours and
+reset-level-4 variables; transient dynamics and running actions are cleared.
+The brain callback reaches `0x466D30`, `0x466CC0` and `0x466950`. The following
+`0x40B620` / `0x40B4C0` activation relinks the actor and sets standard mask 4
+and fresh custom mask 0x800. That mask does not itself request a reset.
+
+Learn_10 node 39 has no reflex or scripted return from behaviour 1 to 0.
+Sector-entry reset returns it to behaviour 0 and its initial state;
+its next brain update selects the return animation when story bit 1092 is set
+and 1095 is clear, then switches to behaviour 1 and disables its brain.
+Consequently every return from the cave starts its vocal animation again.
+This state (6, file +0x8EAC, animation 334) plays `0x00090003` (`troisBB.wav`)
+at the start and `0x01410000` (`bb_norm1.wav`) later. The scene's separate
+`0x00C30000` cries belong to animations 329/332, not this return state.
+OpenRayman performs the reset before relinking the newly entered sectors in
+`interpreter::update_activation`; headless teleports can therefore reset,
+activate and run behaviour 0 within the same tick. The native sector-follow
+pass occurs after movement, before the next frame's activation.
+
+Where this came from: own reading of the executable at the addresses above,
+including the raw callback-table words and `0x417F40` assembly (not a separate
+function in the supplied decompile), and `ortool brain Learn_10 39`.
+The user's `build/helpers/rec_kids_back` recording shows behaviour 1 -> 0,
+custom 0x10800 -> 0 and initial state 0x21E38CCC at 5.375, 23.250 and 51.875 s;
+16 ms later behaviour 0 -> 1, return state 0x21E38EAC, custom 0x10800 and
+standard 0x0A -> 0x0E. This order identifies the reset-before-wake path.
+No executable code or game assets copied.
+
 **The far flag (standard +0x29 bit 0x80), 2026-11-14.** Awake is not the same as running.
 All three actor passes (0x40AA10, 0x40A7C0, 0x40AB90) do the same thing just before they
 update an actor (0x40A5C0): for the main actor they clear bit 0x80; for any other actor

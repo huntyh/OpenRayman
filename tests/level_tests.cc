@@ -3160,13 +3160,17 @@ TEST_CASE("sector wake uses eligibility, fresh entry and moving-head order")
 	f.m.write<std::uint32_t>(target, 2); f.m.write(target + 4, actor); f.m.write(actor + 4, standard);
 	f.m.write<std::uint8_t>(standard + 0x29, 3);
 	f.m.write<std::uint32_t>(standard + 0x14, 3);
-	bool eligible = false, overlap = false;
+	bool eligible = false, overlap = false, reset = false;
 	SUBCASE("removed type 3 never wakes") {}
-	SUBCASE("removed type 1 wakes on a fresh entry") { eligible = true; f.m.write<std::uint32_t>(standard + 0x14, 1); }
+	SUBCASE("removed type 1 wakes on a fresh entry") { eligible = reset = true; f.m.write<std::uint32_t>(standard + 0x14, 1); }
 	SUBCASE("negative standard type uses the executable's signed comparison") { eligible = true; f.m.write<std::int32_t>(standard + 0x14, -1); }
 	SUBCASE("a shared sector is not fresh") { overlap = true; f.m.write<std::uint32_t>(standard + 0x14, 1); }
-	SUBCASE("mask 2 clear prevents any wake") { f.m.write<std::uint8_t>(standard + 0x29, 0); }
-	SUBCASE("moving actor enters the head") { eligible = true; f.m.write<std::uint8_t>(standard + 0x29, 2); f.m.write<std::uint8_t>(standard + 0x28, 1); }
+	SUBCASE("mask 2 clear prevents wake without entry reset") { f.m.write<std::uint8_t>(standard + 0x29, 0); f.m.write<std::uint32_t>(standard + 0x10, 1); }
+	SUBCASE("moving actor enters the head") { eligible = reset = true; f.m.write<std::uint8_t>(standard + 0x29, 2); f.m.write<std::uint8_t>(standard + 0x28, 1); }
+	SUBCASE("present actor with entry reset disabled keeps its custom flags") { eligible = true; f.m.write<std::uint8_t>(standard + 0x29, 2); f.m.write<std::uint32_t>(standard + 0x10, 1); }
+	SUBCASE("standard bit 0x10 exempts an actor from entry reset") { eligible = true; f.m.write<std::uint8_t>(standard + 0x29, 0x12); }
+	f.m.write<std::uint32_t>(standard + 0x24, 0x10000);
+	f.m.write<std::uint32_t>(standard + 0x2C, 0x20);
 	auto fixed = f.m.allocate(0x48), fixed_actor = f.m.allocate(0x38), fixed_standard = f.m.allocate(0x34);
 	f.m.write<std::uint32_t>(fixed, 2); f.m.write(fixed + 4, fixed_actor); f.m.write(fixed_actor + 4, fixed_standard);
 	f.m.write<std::uint8_t>(fixed_standard + 0x29, 2);
@@ -3183,11 +3187,13 @@ TEST_CASE("sector wake uses eligibility, fresh entry and moving-head order")
 	f.vm.update_activation(actors);
 	CHECK(f.vm.active(f.so));
 	CHECK(f.vm.active(target) == overlap); // first entry is fresh
+	CHECK((f.m.u32(standard + 0x24) & ~0x800u) == 0x10000); // startup never resets
 	if(overlap) f.vm.remove(target);
 	place(12);
 	f.vm.update_activation(actors);
 	CHECK(f.vm.active(f.so));
 	CHECK(f.vm.active(target) == eligible);
+	CHECK((f.m.u32(standard + 0x24) & ~0x800u) == (reset ? 0x20u : 0x10000u));
 	if(eligible)
 	{
 		CHECK((f.m.u32(standard + 0x24) & 0x800) != 0);
@@ -3196,6 +3202,58 @@ TEST_CASE("sector wake uses eligibility, fresh entry and moving-head order")
 	place(1);
 	f.vm.update_activation(actors);
 	CHECK_FALSE(f.vm.active(target));
+}
+
+TEST_CASE("real data: Learn_10 kids reset on every return from the cave")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto data = game_data::locate(*dir);
+	REQUIRE(data);
+	auto files = load_level_files(*data, "Learn_10");
+	auto header = read_level_header(files);
+	scene tree(files.memory, header);
+	auto bank = read_animation_bank(files);
+	game::live_memory m(files.memory);
+	auto rayman = header.placements.at(0).super_object.address();
+	game::interpreter vm(m, rayman);
+	game::register_handlers(vm);
+	vm.set_animations(&bank);
+	std::vector<std::uint32_t> actors;
+	for(const auto& n : tree.nodes())
+		if(n.type == super_object_type::actor) actors.push_back(n.at.address());
+	vm.set_actors(actors);
+	for(const auto& e : read_actors(files.memory, tree, bank).actors)
+		game::set_global_placement(m, tree.node(e.node).at.address(), e.world);
+	REQUIRE(vm.set_story_bit(actors, 1092)); // after the scene: behaviour 0 chooses crying
+	auto kids = tree.node(39).at.address(), actor = vm.actor_of(kids);
+	auto standard = m.u32(actor + 4), anim = m.u32(actor);
+	auto normal = m.u32(m.u32(m.u32(actor + 0x0C)) + 4);
+	auto place = [&](vec3 p) {
+		game::write_transform(m, rayman, {p[0], p[1], p[2]}, {0, 1, 0, -1, 0, 0, 0, 0, 1});
+		vm.update_activation(actors);
+	};
+	place({-63, 202, 0});
+	REQUIRE(vm.active(kids));
+	vm.think(kids);
+	auto crying = m.u32(anim + 4);
+	REQUIRE(crying != m.u32(anim));
+	REQUIRE(m.u32(normal + 8) != m.u32(normal + 0x14));
+	for(int visit = 0; visit < 3; ++visit)
+	{
+		place({-40, 181, 1.6f});
+		CHECK_FALSE(vm.active(kids));
+		CHECK(m.u32(anim + 4) == crying); // sleeping itself does not reset
+		place({-63, 202, 0});
+		CHECK(vm.active(kids));
+		CHECK(m.u32(normal + 8) == m.u32(normal + 0x14));
+		CHECK(m.u32(anim + 4) == m.u32(anim));
+		CHECK(m.u32(standard + 0x24) == (m.u32(standard + 0x2C) | 0x800u));
+		vm.think(kids);
+		CHECK(m.u32(anim + 4) == crying);
+		CHECK(m.u32(normal + 8) != m.u32(normal + 0x14));
+		CHECK((m.u32(standard + 0x24) & 0x10000) != 0);
+	}
 }
 
 TEST_CASE("real data: static objects carry their bounding-sphere centre (0x42AF70 culling)")

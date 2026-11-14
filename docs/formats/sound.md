@@ -620,3 +620,24 @@ its creak the tick Rayman comes within 90, as in the user's `run4` recording.
 
 Where this came from: own headless replays and reading of the decompiled exe (addresses in
 scripts.md); the real timing from the user's `run4` and `rec_crying` recordings.
+
+### Returning to the kids (2026-11-14)
+
+The outbound route above keeps node 39 asleep; walking back into its wake region
+must reset it before waking it. The native path is the main actor's sector-follow
+`0x4128D0 -> 0x4063E0 -> 0x406360 -> 0x405E50` (mode 4), followed by activation
+`0x40B620 / 0x40B4C0`. The indirect actor-part callbacks restore its initial
+brain, state and custom flags. Its first behaviour then chooses the vocal return state
+again. See scripts.md, "Reset on entering a wake region", for eligibility and
+callback addresses. OpenRayman now applies that general sector-entry rule.
+
+Where this came from: own executable/table analysis and the user's
+`rec_kids_back` recording: three returns at 5.375/5.391, 23.250/23.266 and
+51.875/51.891 seconds show behaviour 1 -> 0 -> 1 and custom flags
+0x10800 -> 0 -> 0x10800. The transient initial state is 0x21E38CCC;
+0x21E38EAC is the return state selected immediately afterwards. Its sound is
+`0x00090003` (`troisBB.wav`), followed by `0x01410000` (`bb_norm1.wav`), exactly
+the events in this recording. The scene's `0x00C30000` is a separate cry event;
+the return-state animation does not contain it. The kids have
+no reflex or script branch that returns behaviour 1 to 0. Headless repeated-return
+sound verification and regression details are in `build/helpers/wake110b_report.md`.
