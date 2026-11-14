@@ -333,7 +333,7 @@ namespace openrayman::game
 			std::int16_t short_a = 0, short_b = 0;  // 0x4B9B74, 0x4B9B76: fields 12, 13
 			float real_a = 0, real_b = 0, real_c = 0; // 0x4B9B78..0x4B9B80: fields 14..16
 			std::int32_t integer = 0;               // 0x4B9B84, field 17
-			std::array<std::uint32_t, 2> analog_actions{}; // 0x4B9B54/58; not read yet
+			std::array<std::uint32_t, 2> analog_actions{}; // 0x4B9B54/58: the stick, read by procedure 346
 			std::array<std::uint32_t, 5> actions{}; // 0x4B9B88..: up, down, left, right, walk (procedure 435)
 			bool snap = false;                      // 0x4B9B9C: skip the next smoothing (procedure 348)
 			float axis_h = 0, axis_v = 0;           // 0x4B9BA0, 0x4B9BA4: last smoothed key axes

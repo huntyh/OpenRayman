@@ -57,6 +57,19 @@ value at +0x10, which the frame update clears every tick. So a stick at rest rea
 inside the game's -110..110 windows: movement actions 0 and 1 are always down, and their analog
 value is where the stick is.
 
+## How the stick moves Rayman
+
+Rayman's scripts read movement through procedure 346 (0x46E450). With a direction key held it builds
+-100/+100 per axis from the key actions (eased, halved for walking). With none held it reads the
+stick instead: the two actions procedure 347 named (0x4B9B54/58, Fix's actions 0 and 1, `pad 0 axis
+4/5`), whose analog values (+0x10, read by 0x42E8D0) the axis tests set. The exe measures each
+against a calibrated centre (0x4B9B5C/60, taken by 0x46FB30) and the extremes seen so far
+(0x4A40A4..B0, saved with the options by 0x407B80), scaling to -100..100; our SDL feed is already
+centred and scaled, so we use the values as they are. If the pair is longer than 90 (0x49CC24 =
+8100, compared at 0x46E908), it is scaled to a length of exactly 100: 90% of the travel is a full
+push. The keys' easing and walking half don't apply to the stick. Own analysis (capstone and the
+decompile), card 101.
+
 ## The pads, and how SDL3 maps onto them
 
 The exe keeps up to four pads (its state block at 0x509E60, 0x28 bytes each, with type 3 and 4 =

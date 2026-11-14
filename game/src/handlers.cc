@@ -5115,8 +5115,8 @@ namespace openrayman::game
 		// running super object is Rayman and the target the camera: up moves along the camera's
 		// view, down towards the camera, sideways across. Args: dead zone, turn threshold (degrees),
 		// turn rate, smoothing, mode (0 release, 2 in the actor's own axes, other: the camera's),
-		// turn (1 = turn the actor towards the input), direction code wanted. Joystick input (when
-		// no key is held) isn't read yet. Each tick is one of the exe's reference frames, so its
+		// turn (1 = turn the actor towards the input), direction code wanted. With no key held the
+		// stick is read instead (the analog actions procedure 347 named). Each tick is one of the exe's reference frames, so its
 		// frame exponent is 1 and smoothing factors apply once per tick.
 		std::uint32_t read_movement(call& c)
 		{
@@ -5184,8 +5184,30 @@ namespace openrayman::game
 					axis_v += (out.axis_v - axis_v) * curve;
 				}
 			}
-			out.axis_h = axis_h;
-			out.axis_v = axis_v;
+			if(!any)
+			{
+				// No direction key: the stick (0x46E450's other branch). The two actions procedure 347
+				// named (0x4B9B54/58) carry their axis tests' analog values (0x42E8D0 reads +0x10). The
+				// exe measures them against a calibrated centre and the extremes seen so far (kept in
+				// its ini); our pad feed is already centred and -100..100, so they are used as they
+				// are. Longer than 90 together (0x49CC24 = 8100, 0x46E908), the pair is scaled to a
+				// length of exactly 100, so 90% of the travel is a full push. No easing and no walking
+				// half here, unlike the keys.
+				auto analog = [&](std::uint32_t action) {
+					return action ? float(std::int32_t(m.read<float>(action + input_action::analog))) : 0.0f;
+				};
+				axis_h = analog(out.analog_actions[0]);
+				axis_v = analog(out.analog_actions[1]);
+				const float squared = axis_h * axis_h + axis_v * axis_v;
+				if(squared > 8100)
+				{
+					const float scale = 100 / std::sqrt(squared);
+					axis_h = float(std::int32_t(axis_h * scale));
+					axis_v = float(std::int32_t(axis_v * scale));
+				}
+			}
+			out.axis_h = any ? axis_h : 0;
+			out.axis_v = any ? axis_v : 0;
 			if(mode == 2)
 			{
 				rate = 0;
