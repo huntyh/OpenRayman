@@ -843,7 +843,7 @@ static int cmd_pose(const fs::path& folder, const std::string& name)
 				if(auto geo = physical_object_geometry(files.memory, *a.objects[*c.object].physical_object))
 				{
 					geometric_object g = read_geometric_object(files.memory, *geo);
-					std::cout << std::format("  {} vertices, {} elements", g.vertices.size(), g.elements.size());
+					std::cout << std::format("  geometry {} +0x{:X}: {} vertices, {} elements", geo->block->id.to_string(), geo->offset, g.vertices.size(), g.elements.size());
 					float lo = 1e9f, hi = -1e9f;
 					for(const vec3& v : g.vertices)
 						lo = std::min(lo, v[2]), hi = std::max(hi, v[2]);
