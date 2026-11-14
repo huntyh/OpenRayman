@@ -1022,6 +1022,18 @@ static int cmd_anim(const fs::path& folder, const std::string& name, const std::
 		}
 		return EXIT_SUCCESS;
 	}
+	if(frame == "morphs")
+	{
+		// The animation's morph records: channel id, frame, target object choice and amount (percent).
+		const animation& an = bank.animations[a];
+		std::cout << std::format("animation {}: {} morph records\n", a, an.morphs);
+		for(std::size_t i = 0; i < an.morphs; i++)
+		{
+			const auto& r = bank.morphs.at(std::size_t(an.start_morphs) + i);
+			std::cout << std::format("  channel {:>3} frame {:>3} target {:>3} amount {:>3}\n", r.channel, r.frame, r.target, r.amount);
+		}
+		return EXIT_SUCCESS;
+	}
 	if(frame == "links")
 	{
 		// Each frame's hierarchy links: child channel id <- parent channel id.
@@ -1055,6 +1067,21 @@ static int cmd_anim(const fs::path& folder, const std::string& name, const std::
 			}
 			std::cout << std::format("  channel {:>3} object {:>3}  at ({:.3f}, {:.3f}, {:.3f})  x axis ({:.2f}, {:.2f}, {:.2f})\n", c.id,
 				c.object ? std::to_string(*c.object) : "-", world.m[0][3], world.m[1][3], world.m[2][3], world.m[0][0], world.m[1][0], world.m[2][0]);
+		}
+		return EXIT_SUCCESS;
+	}
+	if(std::getenv("ORTOOL_MATRIX"))
+	{
+		// Each channel's local transform as r2live --animation-parts logs the game's: position, then
+		// the matrix by columns (the exe's order), to compare part by part (card 98).
+		for(const channel_pose& c : channels)
+		{
+			const auto& m = c.local.m;
+			std::cout << std::format("  channel {:>3} local {:.3f} {:.3f} {:.3f} matrix", c.id, m[0][3], m[1][3], m[2][3]);
+			for(int col = 0; col < 3; col++)
+				for(int row = 0; row < 3; row++)
+					std::cout << std::format(" {:.3f}", m[row][col]);
+			std::cout << "\n";
 		}
 		return EXIT_SUCCESS;
 	}
