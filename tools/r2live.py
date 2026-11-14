@@ -459,7 +459,7 @@ def watch_animation_parts(m, animation, say):
 	# Every actor of the dynamic world playing this animation (3D data +4 state, state +4 animation reference,
 	# u16 index at +0x18): on each new animation frame (3D data +0x74), its parts by channel id (3D data +0x90,
 	# 0x14 each, +0 the channel's super object) with the local transform the pose wrote (super object +0x20:
-	# type +0, position +4, rotation-and-scale matrix +0x34) and the world position (+0x24). Compare with
+	# type +0, position +4, rotation-and-scale matrix +0x34) and the world transform (+0x24: position, matrix, type). Compare with
 	# `ortool anim <level> <animation> <frame>` (local) and ORTOOL_WORLD=1 (actor space). Card 98.
 	last = {}
 	while True:
@@ -484,7 +484,7 @@ def watch_animation_parts(m, animation, say):
 						world = m.u32(part + 0x24) if part else 0
 						if not local or not world:
 							continue
-						say(f"  channel {index:>3} local {fmt(m.f32s(local + 4, 3))} matrix {fmt(m.f32s(local + 0x34, 9))} world {fmt(m.f32s(world + 4, 3))}")
+						say(f"  channel {index:>3} local {fmt(m.f32s(local + 4, 3))} matrix {fmt(m.f32s(local + 0x34, 9))} world {fmt(m.f32s(world + 4, 3))} world_matrix {fmt(m.f32s(world + 0x34, 9))} type {m.u32(local)}/{m.u32(world)}")
 			so = m.u32(so + 0x14)
 		while m.u32(CLOCK) == clock:
 			time.sleep(0.0005)
