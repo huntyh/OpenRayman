@@ -487,10 +487,20 @@ How the pause works (implemented 2026-11-15):
   objects at `0x514E20`, count `0x4B98DC`, level `0x4B98D8`): nonzero puts the current
   objects aside at a new level, zero ends the level and brings them back if their actor still
   exists (`0x413790`). Ours keeps a stack of our screen-object maps.
-- **504** sets byte `0x4B9BC8`; ours stops the particle update while it is set.
+- **504** sets byte `0x4B9BC8`. While it is set the sector draw `0x44B2E0` skips the level's
+  geometry and the actor draw `0x44B1B0` skips every actor without custom bit 0x100000, so
+  only the menu shows. Each time the byte changes, the particle update `0x4607E0` empties the
+  whole particle pool (its copy of the byte is `0x4B9B14`).
+- **The swirl** behind the menu: the Esc rule generates actor `04/00 +0x1B0A4` (function 66)
+  at the camera. That actor hides its own body (312) and calls 503 with op 83 every frame:
+  `0x463030` emits one particle (flags 0x87007) every 0.05 s, 5 units along the camera's
+  sight and 4 below, up to 4 to either side, rising 2.5..4.5 units a second. Fade 0x7000
+  starts at alpha 5 and rises 350 a second; at 255 it holds (0x8000) for the particle's
+  life (0.5 s), then fades out at 260 a second (0x3000) (`0x4600C0`, `0x461120`).
 
-Before this, ours ran every actor during the pause: a menu actor was drawn huge in front
-of the camera and Rayman kept moving. Ours now freezes the world, lets the menu run
+Before this, ours ran every actor during the pause, so the swirl's generated actor drifted
+off as the camera moved (the "stuck swirl") and Rayman kept moving. Not checked against
+the game yet: the background colour behind the menu (ours is the fog's clear colour). Ours now freezes the world, lets the menu run
 (selection skips the disabled Load) and resumes on Esc. Still open: the F1 glossary, and
 checking Abandon / Hall of Doors against the game.
 

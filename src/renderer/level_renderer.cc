@@ -1197,7 +1197,7 @@ namespace openrayman
 		// camera so it never comes nearer. It counts as infinitely far, so a fog override's infinite
 		// distance hides it like any far object (the real game shows only the background colour
 		// during Jail_10's big flash).
-		if(m_lighting && !(fog_override && fog_infinite > 0))
+		if(m_lighting && !m_world_hidden && !(fog_override && fog_infinite > 0))
 		{
 			auto s = m_camera_sector;
 			auto sky = s ? m_skies.find(*s) : m_skies.end();

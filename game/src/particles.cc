@@ -27,11 +27,30 @@ namespace openrayman::game
 		p.animation = m_animation_length ? m_animation_length(material) : 0.0f;
 		// Fully visible, except the ripple, which starts at the strength it was given.
 		p.alpha = flags == 0x10003300 ? motion[0] : 255;
+		// Fading in (0xF000 = 0x7000) starts nearly invisible (0x4600C0).
+		if((flags & 0xF000) == 0x7000)
+			p.alpha = 5;
 		m_particles.push_back(p);
 	}
 
 	void particles::start(int kind, const vec3& point, const vec3& vector, std::uint32_t material, float number, double now, std::uint32_t owner)
 	{
+		if(kind == 83)
+		{
+			// 0x463030 (via 0x4648B0): the pause menu's swirl. Every 0.05 s one particle (flags
+			// 0x87007) starts 5 units along `vector` (the camera's sight) from `point` (the camera),
+			// 4 below, up to 4 to either side in x and y, rising 2.5..4.5 a second and drifting up to
+			// 0.2 sideways; its size is 0.2..0.25 times the number.
+			if(m_swirl_next < 0 || m_swirl_next > now + 1)
+				m_swirl_next = now;
+			if(now < m_swirl_next)
+				return;
+			m_swirl_next = now + 0.05;
+			vec3 at{ point[0] + 5 * vector[0] + random(-4, 4), point[1] + 5 * vector[1] + random(-4, 4), point[2] + 5 * vector[2] - 4 };
+			vec3 drift{ random(-0.2f, 0.2f), random(-0.2f, 0.2f), random(2.5f, 4.5f) };
+			add(0x87007, at, drift, 0.5f, random(0.2f, 0.25f) * number, material, now);
+			return;
+		}
 		if(kind == 125)
 		{
 			// 0x4605A0 stores the two percent corners, material and vector.z opacity
@@ -400,7 +419,7 @@ namespace openrayman::game
 		// Moving (0x461120 and 0x4610F0): type 1 falls at 7 units/s², types 1 and 3 move.
 		if(p.type == 1)
 			p.motion[2] -= 7.0f * dt;
-		if(p.type == 1 || p.type == 3)
+		if(p.type == 1 || p.type == 3 || p.type == 7 || p.type == 0xB)
 			for(int i = 0; i < 3; i++)
 				p.position[i] += p.motion[i] * dt;
 		// Type 0x12 moves its step every frame and is gone after eight (counted in `life`); frames
@@ -456,6 +475,21 @@ namespace openrayman::game
 		case 0x3000: p.alpha -= 260 * dt; break;
 		case 0x4000: p.alpha -= 350 * dt; break;
 		case 0x5000: p.alpha -= 850 * dt; break;
+		// 0x461120: 0x7000 fades in at 350 a second; at 255 it holds (0x8000) for `life` seconds,
+		// then fades out like 0x3000.
+		case 0x7000:
+			p.alpha += 350 * dt;
+			if(p.alpha >= 255)
+			{
+				p.alpha = 255;
+				p.flags = (p.flags & ~0xF000u) | 0x8000;
+				p.since = now;
+			}
+			break;
+		case 0x8000:
+			if(p.life < now - p.since)
+				p.flags = (p.flags & ~0xF000u) | 0x3000;
+			break;
 		}
 	}
 

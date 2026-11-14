@@ -1258,6 +1258,15 @@ namespace
 			return true;
 		if(a.live->contains(super_object + 0x30, 4) && (a.live->u32(super_object + 0x30) & 0x2))
 			return true;
+		// The pause menu (procedure 504): the actor draw 0x44B1B0 shows only actors whose custom
+		// bits carry 0x100000, the menu's own (its swirling background among them).
+		if(a.vm->effects_paused)
+		{
+			std::uint32_t actor = a.vm->actor_of(super_object);
+			std::uint32_t standard = actor ? a.live->u32(actor + 4) : 0;
+			if(!standard || !(a.live->u32(standard + 0x24) & 0x100000))
+				return true;
+		}
 		// World actor visibility (0x45C450) requires standard +0x29 bit 4, maintained by
 		// the wake/sleep pass. Screen objects use the separate 0x45CC80/0x45CA30 pass.
 		return !a.vm->screen_objects().contains(super_object) && !a.vm->active(super_object);
@@ -1424,6 +1433,7 @@ namespace
 			out.push_back({ part.mesh, model, {}, part.morph_mesh, part.morph_amount, n < screen_parts.size() && screen_parts[n], n < part_alpha.size() ? part_alpha[n] : 1.0f, part_colour_set[n] });
 		}
 		a.level->set_parts(std::move(out));
+		a.level->set_world_hidden(a.vm && a.scripts && a.vm->effects_paused);
 		a.level->set_time(a.animation_time);
 
 		std::vector<level_renderer::shadow> shadows;

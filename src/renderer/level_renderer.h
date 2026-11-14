@@ -104,6 +104,9 @@ namespace openrayman
 		};
 		void set_collision(std::vector<collision_face> faces) { m_collision = std::move(faces); }
 		void set_show_collision(bool show) { m_show_collision = show; }
+		// The pause menu (procedure 504, byte 0x4B9BC8): the sector draw 0x44B2E0 skips the level's
+		// own geometry, so only the menu's actors show.
+		void set_world_hidden(bool hidden) { m_world_hidden = hidden; }
 		bool show_collision() const { return m_show_collision; }
 
 		// The clock for animated textures, in seconds.
@@ -295,8 +298,11 @@ namespace openrayman
 		mutable std::optional<std::size_t> m_camera_sector;
 		mutable std::vector<bool> m_drawn_sectors;
 		mutable std::optional<glm::vec3> m_background; // the last screen clear colour a fog gave
+		bool m_world_hidden = false;
 		bool drawn(std::size_t sector) const
 		{
+			if(m_world_hidden)
+				return false;
 			return sector == no_sector || sector >= m_drawn_sectors.size() || m_drawn_sectors[sector];
 		}
 		void follow_camera(const glm::vec3& eye) const;

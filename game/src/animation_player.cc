@@ -727,8 +727,8 @@ namespace openrayman::game
 			}
 		}
 		profiler::scope timed(profiler::zone::particles);
-		if(!vm.effects_paused)
-			vm.particles().update(vm.clock() / 1000.0, vm.frame_ms() / 1000.0);
+		vm.particles().set_paused(vm.effects_paused);
+		vm.particles().update(vm.clock() / 1000.0, vm.frame_ms() / 1000.0);
 		vm.screen_text().step(float(vm.frame_ms() / 1000.0));
 	}
 }

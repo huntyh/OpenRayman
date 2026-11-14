@@ -124,6 +124,20 @@ namespace openrayman::game
 		// One tick of a flag-word particle (0x461120); false when it is done.
 		void step(particle& p, double now, float dt);
 		std::mt19937 m_random{ 1999 };
+		double m_swirl_next = -1; // op 83: when the next particle is due (0x4B9B24)
+		bool m_paused = false;    // the pool's copy of procedure 504's flag (0x4B9B14)
+	public:
+		// 0x4607E0: when procedure 504's flag changes either way, the pool is emptied.
+		void set_paused(bool paused)
+		{
+			if(paused != m_paused)
+			{
+				m_particles.clear();
+				m_swirl_next = -1;
+			}
+			m_paused = paused;
+		}
+	private:
 		std::function<float(std::uint32_t)> m_animation_length;
 	};
 }
