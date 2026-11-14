@@ -49,7 +49,7 @@ right corner (and "RECORDING" in the title) shows it is on. Each recording is a 
 - `frames.txt`: every drawn frame: the tick, the game camera's position and direction, then every actor
   (node, hidden/active, flags, state, animation, frame, position);
 - `rayman.txt`: Rayman and the keys held, every tick (the `--trace` format);
-- `sounds.txt`: each actor sound as it starts (node, gain, pan, distance);
+- `sounds.txt`: each actor sound as it starts (node, gain, pan, distance), and every half second each actor still sounding ("sounding" lines: loops started before the recording);
 - `info.txt`: level, the tick it started at, whether pictures are on;
 - `tick<n>.bmp` with Shift+F10.
 

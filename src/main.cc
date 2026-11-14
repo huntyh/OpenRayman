@@ -1107,6 +1107,16 @@ namespace
 				}
 				auto [gain, pan] = sound_placement(a, source);
 				a.sounds->place(source, gain, pan);
+				// F10 recordings: every half second, each actor still sounding, as the sound log
+				// numbers it, with its gain and distance now (loops started before the recording).
+				if(a.recording.active() && a.tick % 30 == 0)
+				{
+					auto node = std::ranges::find(a.super_object_at, source);
+					auto placed = openrayman::game::global_placement(*a.live, source);
+					float distance = placed ? glm::length(glm::vec3(placed->m[0][3], placed->m[1][3], placed->m[2][3]) - a.camera.position) : -1.0f;
+					a.recording.sounds << std::format("tick {} sounding node {} gain {:.3f} pan {:.2f} distance {:.1f} hears {}\n", a.tick,
+						node == a.super_object_at.end() ? -1 : int(node - a.super_object_at.begin()), gain, pan, distance, camera_hears(a, source) ? 1 : 0);
+				}
 				++it;
 			}
 		// Where each actor is now: scripts move and turn them.
