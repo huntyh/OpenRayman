@@ -2725,6 +2725,9 @@ TEST_CASE("real data: Learn_10 cave follow does not circle at the first clearanc
 		if(node.type == super_object_type::actor) actors.push_back(node.at.address());
 	vm.set_actors(actors);
 	for(auto bit : game::revisit_story_bits) vm.set_story_bit(fix, bit);
+	// With the silver shot too (1095), node 4 removes the kids' director: this replay is about the
+	// camera in their cave, without the scene (which replays when only Learn_10 is cleared).
+	vm.set_story_bit(fix, 1095);
 	for(const auto& entry : read_actors(files.memory, tree, bank).actors)
 	{
 		auto so = tree.node(entry.node).at.address();
@@ -2790,10 +2793,18 @@ TEST_CASE("real data: completed Learn_10 revisit keeps its actors and counters")
 	for(const auto& e : read_actors(files.memory, tree, bank).actors)
 		game::set_global_placement(memory, tree.node(e.node).at.address(), e.world);
 	for(auto bit : game::revisit_story_bits) REQUIRE(vm.set_story_bit(actors, bit));
-	// The five placed Lums, the end cage and Teensies, and the kids' director.
-	constexpr std::size_t absent[] = { 3, 11, 12, 13, 36, 53, 56, 57, 58, 59, 60, 61, 70, 71 };
+	// The five placed Lums, the end cage and Teensies. Not the kids' director (node 3): the level's
+	// own rule (node 4, story bits 1133 and 1095) takes it out, so with only Learn_10 cleared the
+	// kids' scene replays, as in the game (card 78).
+	constexpr std::size_t absent[] = { 11, 12, 13, 36, 53, 56, 57, 58, 59, 60, 61, 70, 71 };
 	for(auto node : absent) CHECK_FALSE(vm.removed(tree.node(node).at.address()));
+	bool silver_shot = false;
+	SUBCASE("only Learn_10 cleared: the kids' director wakes when Rayman walks up") {}
+	SUBCASE("with the silver shot, node 4 removes the kids' director") { silver_shot = true; }
+	if(silver_shot) REQUIRE(vm.set_story_bit(actors, 1095));
+	const auto director = tree.node(3).at.address();
 	game::apply_revisit_state(vm, tree, "Learn_10");
+	CHECK_FALSE(vm.removed(director));
 	game::input keys(memory, read_input_actions(files));
 	std::size_t errors = 0;
 	for(int tick = 0; tick < 390; ++tick)
@@ -2802,7 +2813,10 @@ TEST_CASE("real data: completed Learn_10 revisit keeps its actors and counters")
 		if(tick == 330) game::write_transform(memory, rayman, { 32.605f, 106.09f, 33.868f }, { 0, 1, 0, -1, 0, 0, 0, 0, 1 });
 		keys.step();
 		game::step(vm, actors, [&](std::uint32_t, const std::exception&) { ++errors; });
-		CHECK(vm.removed(tree.node(3).at.address()));
+		CHECK(vm.removed(director) == silver_shot);
+		// Asleep until Rayman is put on the kids' spot (tick 240); there it runs its scene.
+		if(tick < 240 || silver_shot) CHECK_FALSE(vm.active(director));
+		if(tick == 329) CHECK(vm.active(director) == !silver_shot);
 		if(tick == 270)
 		{
 			auto at = game::global_placement(memory, rayman);

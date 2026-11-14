@@ -142,9 +142,14 @@ skips the Lums it has already given.
 
 Story bits alone don't give a finished level: some actors only leave through their own scenes.
 When no `--save` is supplied, `apply_revisit_state` (game/include/openrayman/game/first_visit.h) takes
-nodes 3, 11, 12, 13, 36, 53, 56..61, 70 and 71 out of the world (bit 0 set; type 5 also loses bit
+nodes 11, 12, 13, 36, 53, 56..61, 70 and 71 out of the world (bit 0 set; type 5 also loses bit
 1), which matches the finished level the user sees in the game. It is a stand-in for the requested
-end state, not a decoded save.
+end state, not a decoded save. Node 3, the kids' director, was on this list until 2026-11-14
+(card 78): that hid the kids' scene on the default revisit start, although the game replays it
+when only Learn_10 is cleared (recording run10) and a `--save` start of ours did too. The level
+removes the director itself (node 4, story bits 1133 and 1095), so `--story-bits 1095` gives the
+revisit without the scene. `ortool run` takes `ORTOOL_SAVE=1..3` to start from a slot of our save
+folder, as the viewer's `--save` does.
 
 ## Where this came from
 

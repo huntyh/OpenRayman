@@ -1567,6 +1567,12 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	bool intro = start && (std::string_view(start) == "intro" ||
 		(std::string_view(start) == "new" && game::learn_10_opening(name)));
 	bool first_visit = intro || (start && std::string_view(start) == "new") || game::only_new_game(name);
+	// ORTOOL_SAVE=1..3: start from that slot of our save folder (the viewer's --save), instead of
+	// the start's story bits and the interim revisit snapshot.
+	const unsigned save_slot = std::getenv("ORTOOL_SAVE") ? unsigned(std::atoi(std::getenv("ORTOOL_SAVE"))) : 0;
+	if(save_slot)
+		first_visit = intro = false;
+	else
 	for(std::uint32_t bit : intro && !game::only_new_game(name) ? std::span<const std::uint32_t>(game::intro_story_bits) : game::start_story_bits(name, first_visit))
 		vm.set_story_bit(fix_actors, bit);
 	// ORTOOL_STORY_BITS=a,b: explicit story input, also useful with ORTOOL_START=new
@@ -1652,7 +1658,9 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 			node_of[actors.back()] = n;
 		}
 	vm.set_actors(actors);
-	if(!first_visit) game::apply_revisit_state(vm, tree, name);
+	if(save_slot)
+		game::load_save_slot(vm, game::save_root(), files, header, tree, save_slot);
+	else if(!first_visit) game::apply_revisit_state(vm, tree, name);
 	// ORTOOL_IDS=1: each actor's id, flags and type (standard game +8, +0x29, +0x14).
 	if(std::getenv("ORTOOL_IDS"))
 		for(std::uint32_t so : actors)

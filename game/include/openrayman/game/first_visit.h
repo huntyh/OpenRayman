@@ -91,8 +91,10 @@ namespace openrayman::game
 	// describe what was collected. In particular node 69
 	// freezes node 70 before its Lum script can see bit 1399. Node 62 removes cage 53 in its
 	// reflex after its bit 28 is set, but its completed-level startup removes the director first.
+	// The kids' director (node 3) is not here: only node 4's rule (story bits 1133 and 1095) takes
+	// it out, so with only Learn_10 cleared the kids' scene replays, as in the game (card 78).
 	inline constexpr std::size_t learn_10_revisit_absent[] = {
-		3, 11, 12, 13, 36, 53, 56, 57, 58, 59, 60, 61, 70, 71,
+		11, 12, 13, 36, 53, 56, 57, 58, 59, 60, 61, 70, 71,
 	};
 
 	inline void apply_revisit_state(interpreter& vm, const scene& tree, std::string_view level)

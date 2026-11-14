@@ -215,9 +215,12 @@ Procedure 139 -> 0x4062A0 -> 0x406220 sets mask 0x01, keeps 0x02 for placed type
 than 5, and clears 0x04 for types other than 1. Type 1 goes through its mode-4 reset;
 type 5 clears 0x02. A removed placed type-3 actor cannot wake again. Learn_10 node 4's
 first rule removes node 3 (the kids' director) when story bits 1133 and 1095 are both
-set. With activation, that rule runs before node 3 ever wakes. The manual node-3 removal
-in `apply_revisit_state` is unnecessary with those bits; it remains for older synthetic
-revisits without 1095. The other snapshot removals remain. Snapshot-only removals of low
+set. With activation, that rule runs before node 3 ever wakes. That rule is the only thing
+that takes the director out: `apply_revisit_state` no longer removes node 3 by hand
+(2026-11-14, card 78). Until then the default revisit start (no `--save`, story bits without
+1095) hid the kids' scene, while the game, and our `--save` start, replay it when only
+Learn_10 is cleared: node 3 wakes when Rayman's sector change reaches its sector, goes to
+behaviour 2 and starts the scene within 4.5 of its waypoint. The other snapshot removals remain. Snapshot-only removals of low
 standard types also suppress wake eligibility so fresh entry cannot undo that interim
 completed scene.
 

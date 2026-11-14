@@ -80,6 +80,14 @@ too).
 Note: the Globox kids' scene in Learn_10 replays on a revisit in the real game too — an original
 bug, kept on purpose; an optional fix may come later.
 
+2026-11-14 (card 78): the user saw no replay on a revisit without `--start new`. Not caused by the
+day's wake changes (fdbb169, 12a9ab9, c7f34e9, e957699): `ortool run` at aafdd75 and at 3a49330
+give the same output, with a mock save (the scene plays in both) and with the default start (no
+scene in both). The default start's interim snapshot (`apply_revisit_state`, since cd95eb5) still
+removed node 3 by hand; the replay of 2026-11-07 was seen with `--save 1`, which skips the
+snapshot. Node 3 is off the snapshot's list now, so the default revisit replays the scene too, and
+`--story-bits 1095` lets node 4 remove the director as the level does.
+
 ## 2026-11-04: the hat flip was interpolation across a parent change
 
 Correction to the earlier hat investigations: the real Menu Teensies are nodes 27/28; their hat
