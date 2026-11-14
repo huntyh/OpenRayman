@@ -80,6 +80,8 @@ namespace openrayman::game
 	// does: the time into the animation is re-based so the current frame does not jump. The rate of
 	// the state it is in gives the same value (procedure 89 scales that one).
 	void set_playback_rate(live_memory& memory, std::uint32_t data, std::uint8_t rate);
+	// 0x40FD30: choose a frame of the current animation; -32768 chooses at random.
+	void seek_animation(live_memory& memory, std::uint32_t data, std::int32_t frame);
 
 	// Where a super object is in the world as the game keeps it (its global transform, +0x24), or
 	// nothing if it has none.

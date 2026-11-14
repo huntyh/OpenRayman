@@ -33,6 +33,7 @@ namespace openrayman
 		void stop_all();
 		void stop_source(std::uint32_t source, bool all_voices = false);
 		void set_paused(bool paused);
+		void pause_group(bool pause);
 
 	private:
 		struct voice
@@ -47,6 +48,7 @@ namespace openrayman
 			float gain = 1;
 			float pan = 0;
 			bool loop = false;
+			unsigned suspended = 0;
 		};
 
 		struct music_segment
@@ -97,6 +99,7 @@ namespace openrayman
 		std::map<std::uint32_t, bnm_bank> m_banks;
 		std::mutex m_mutex;
 		std::vector<voice> m_voices;
+		unsigned m_pause_group = 1;
 		theme m_theme;
 		std::unique_ptr<theme> m_pending_theme;
 		int m_music_index = -1, m_repeat_index = -1;

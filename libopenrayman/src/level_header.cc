@@ -72,6 +72,7 @@ namespace openrayman
 			header.placements.push_back(placement);
 		}
 
+		const auto world_header = stream.position();
 		header.actual_world = stream.required_pointer();
 		header.dynamic_world = stream.required_pointer();
 		header.inactive_dynamic_world = stream.required_pointer();
@@ -97,6 +98,10 @@ namespace openrayman
 		{
 			header.always_actors.clear();
 		}
+		// 0x403730 reads the selected player after the world lists and the 0xC30-byte
+		// global block. It need not be Fix's Rayman: hubs use their own player actor.
+		stream.skip_to(world_header + 0xCA0);
+		header.main_actor = stream.pointer();
 		return header;
 	}
 }

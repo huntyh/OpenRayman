@@ -222,6 +222,10 @@ namespace
 		// The story-bit words a level change carries over (Fix stays loaded in the game), set when the
 		// scripts ask for another level (procedures 86/87) and used by the next load.
 		std::optional<std::vector<std::uint32_t>> carried_story;
+		std::optional<std::array<std::uint8_t, 4>> carried_entry;
+		openrayman::save_registry registry;
+		std::optional<std::vector<std::byte>> carried_general;
+		std::map<std::size_t, std::vector<std::byte>> level_progress;
 		std::vector<std::uint32_t> fix_actors; // the loaded level's placed Fix actors (super objects)
 		long tick = 0;
 		std::vector<std::uint32_t> thinkers;     // super objects of the actors with a brain
@@ -764,6 +768,11 @@ namespace
 			return;
 		}
 		a.carried_story = a.vm->story_words(a.fix_actors);
+		a.carried_entry = a.vm->menu_request;
+		a.carried_general = openrayman::game::capture_save_entries(*a.live, a.registry.general, a.registry.general_size);
+		a.level_progress[a.level_index] = openrayman::game::capture_save_entries(*a.live, a.registry.level, a.registry.level_size);
+		// A loaded slot seeds this session once. Subsequent loads keep the progress just made.
+		a.save_slot = 0;
 		a.new_game = true;
 		load_level(a, std::size_t(found - levels.begin()));
 	}
@@ -1005,6 +1014,9 @@ namespace
 				a.input->step();
 			}
 			a.tick++;
+			// A --time run has no rendered frames between ticks. Refresh the same
+			// visibility flags a frame would, including actors woken by a sector change.
+			if(a.silent_run) update_game_camera_visibility(a);
 			if(a.start_place && a.start_place_tick > 0 && a.tick == a.start_place_tick)
 				place_main_actor(a);
 			openrayman::game::step(*a.vm, a.thinkers, [](std::uint32_t self, const std::exception& e) {
@@ -1059,6 +1071,11 @@ namespace
 			for(const auto& request : a.vm->take_sounds())
 				if(a.sounds && !a.screenshot && !a.silent_run)
 				{
+					if(request.procedure == 426 || request.procedure == 427)
+					{
+						a.sounds->pause_group(request.procedure == 426);
+						continue;
+					}
 					// Procedure 115 and animations sound from their actor; 117..119 have no emitter
 					// (0x4691E0 passes -1; 0x4520A0 centres them).
 					if(request.procedure == 115 || request.procedure == 0)
@@ -1692,11 +1709,12 @@ namespace
 			a.level->set_collision(std::move(faces));
 			a.level->set_show_collision(a.show_collision);
 
-			// The scripts. Rayman, the game's main actor, is the first Fix actor the level places.
+			// The level selects its player in GPT; hubs can use an actor other than Fix Rayman.
 			a.live = std::make_unique<openrayman::game::live_memory>(files.memory);
-			std::uint32_t main_actor = header.placements.empty() ? 0 : header.placements[0].super_object.address();
+			std::uint32_t main_actor = header.main_actor ? header.main_actor->address() : 0;
 			a.vm = std::make_unique<openrayman::game::interpreter>(*a.live, main_actor);
 			openrayman::game::register_handlers(*a.vm);
+			if(a.carried_entry) a.vm->menu_request = *std::exchange(a.carried_entry, {});
 			openrayman::game::register_dialog_handlers(*a.vm);
 			auto saved_language = openrayman::game::read_language(openrayman::game::save_root());
 			openrayman::game::set_dialog_resolver(*a.vm, files, saved_language.value_or(0));
@@ -1744,7 +1762,7 @@ namespace
 				if(a.carried_story)
 					a.vm->set_story_words(fix_actors, *a.carried_story);
 				if(menu && saved_language) a.vm->set_story_bit(fix_actors, 1006);
-				if(!menu && !a.save_slot && !(learn_opening && a.carried_story))
+				if(!menu && !a.save_slot && !a.carried_story)
 					for(std::uint32_t bit : (learn_opening || (a.intro_start && !openrayman::game::only_new_game(levels[index]))) ? std::span<const std::uint32_t>(openrayman::game::intro_story_bits) : openrayman::game::start_story_bits(levels[index], a.new_game))
 						a.vm->set_story_bit(fix_actors, bit);
 				a.carried_story.reset();
@@ -1772,7 +1790,15 @@ namespace
 					a.thinkers.push_back(tree.node(n).at.address());
 			}
 			a.vm->set_actors(a.thinkers);
-			if(a.save_slot)
+			a.registry = read_save_registry(files.memory, header, tree);
+			if(a.carried_general)
+			{
+				openrayman::game::apply_save_entries(*a.vm, tree, a.registry.general, *a.carried_general, a.registry.general_size);
+				a.carried_general.reset();
+				if(auto saved = a.level_progress.find(index); saved != a.level_progress.end())
+					openrayman::game::apply_save_entries(*a.vm, tree, a.registry.level, saved->second, a.registry.level_size);
+			}
+			else if(a.save_slot)
 			{
 				SDL_Log("Save slot %u from %s", a.save_slot, openrayman::game::save_root().string().c_str());
 				openrayman::game::load_save_slot(*a.vm, openrayman::game::save_root(), files, header, tree, a.save_slot);
@@ -2496,6 +2522,16 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 		{
 			a->intro_start = std::string_view(argv[n + 1]) == "intro";
 			a->new_game = a->intro_start || std::string_view(argv[n + 1]) == "new";
+		}
+		else if(arg == "--entry") // procedure 343's level/reason bytes for a diagnostic arrival
+		{
+			unsigned level = 0, reason = 0;
+			if(std::sscanf(argv[n + 1], "%u,%u", &level, &reason) != 2 || level > 255 || reason > 255)
+			{
+				SDL_Log("--entry must be two bytes: level,reason");
+				return SDL_APP_FAILURE;
+			}
+			a->carried_entry = {std::uint8_t(level), std::uint8_t(reason), 0, 0};
 		}
 		else if(arg == "--story-bits") // comma-separated story bits to set at load, e.g. 1095,1143
 		{

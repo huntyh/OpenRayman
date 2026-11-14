@@ -527,6 +527,12 @@ TEST_CASE("real data: every level loads with all pointers resolved")
 		level_header header = read_level_header(files);
 		CHECK(header.fix_actors.size() == 10);
 		CHECK(header.placements.size() == 5);
+		REQUIRE(header.main_actor);
+		CHECK(files.memory.read_u32(*header.main_actor) == 2);
+		if(level == "Mapmonde")
+			CHECK(*header.main_actor != header.placements.front().super_object);
+		if(level == "Learn_10" || level == "Jail_20")
+			CHECK(*header.main_actor == header.placements.front().super_object);
 
 		scene tree(files.memory, header);
 		smallest_scene = std::min(smallest_scene, std::pair(tree.nodes().size(), level));
@@ -3738,4 +3744,97 @@ TEST_CASE("real data: Jail_20 cell scene: the pirate carrying Globox wakes and w
 	std::vector<posed_part> visible_parts;
 	pose_actor(*body, bank, 76.5, visible_parts);
 	CHECK(visible_parts.size() == 11);
+}
+
+TEST_CASE("real data: Hall arrival, Murfy, locked links and Fairy Glade exit")
+{
+	auto dir = real_game_dir(); if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Mapmonde");
+	auto header = read_level_header(files);
+	scene tree(files.memory, header);
+	auto bank = read_animation_bank(files);
+	game::live_memory m(files.memory);
+	REQUIRE(header.main_actor);
+	game::interpreter vm(m, header.main_actor->address());
+	game::register_handlers(vm);
+	game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
+	vm.set_animations(&bank);
+	game::install_level_events(m, bank);
+	std::vector<std::uint32_t> actors, fix;
+	for(const auto& node : tree.nodes())
+		if(node.type == super_object_type::actor) actors.push_back(node.at.address());
+	for(const auto& p : header.placements) fix.push_back(p.super_object.address());
+	vm.set_actors(actors);
+	for(const auto& e : read_actors(files.memory, tree, bank).actors)
+		game::set_global_placement(m, tree.node(e.node).at.address(), e.world);
+	for(auto bit : game::revisit_story_bits) REQUIRE(vm.set_story_bit(fix, bit));
+	vm.menu_request = {3, 1, 0, 0}; // Learn_10's completed exit unlocks door 1.
+	vm.save_folder.clear(); // isolated new session: no save prompt
+	game::input keys(m, read_input_actions(files));
+	auto selected = [&] { return vm.get_variable(vm.main_actor(), 5).word(); };
+	auto fairy = vm.actor_of(tree.node(8).at.address());
+	for(int tick = 0; tick < 2100 && vm.level_request.empty(); ++tick)
+	{
+		// Down: Woods -> Fairy Glade. Later try continuing beyond the locked next door.
+		keys.set_key(0xD0, (tick >= 100 && tick < 200) || (tick >= 1100 && tick < 1150));
+		keys.set_key(0x39, tick >= 600 && tick <= 900 && tick % 60 == 0);
+		keys.set_key(0x1E, tick == 1250); // A enters the chosen door after the explanation.
+		keys.step();
+		game::step(vm, actors);
+		// ortool's headless draw pass: a newly woken visible actor clears bit 12.
+		for(auto so : actors)
+			if(vm.active(so))
+			{
+				auto standard = m.u32(vm.actor_of(so) + 4);
+				m.write<std::uint32_t>(standard + 0x24, m.u32(standard + 0x24) & ~0x800u);
+			}
+		if(tick == 500)
+		{
+			CHECK(selected() == fairy);
+			CHECK(vm.get_variable(tree.node(77).at.address(), 22).as_int() == 1);
+			CHECK(vm.get_variable(vm.main_actor(), 7).as_int() == 0); // tutorial holds input
+			auto bits = vm.story_words(fix);
+			CHECK(game::story_has(bits, 960));
+			CHECK(game::story_has(bits, 961));
+			CHECK_FALSE(game::story_has(bits, 962));
+			CHECK_FALSE(game::story_has(bits, 989));
+		}
+		if(tick == 1200)
+		{
+			CHECK(selected() == fairy);
+			CHECK(game::story_has(vm.story_words(fix), 989));
+			CHECK(vm.get_variable(vm.main_actor(), 7).as_int() == 1);
+		}
+	}
+	CHECK(vm.level_request == "Learn_30");
+	CHECK(vm.missing.empty());
+}
+
+TEST_CASE("real data: Learn_10 exit scene hands its completed story and entry pair to the Hall")
+{
+	auto dir = real_game_dir(); if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Learn_10");
+	auto header = read_level_header(files);
+	scene tree(files.memory, header);
+	game::live_memory m(files.memory);
+	game::interpreter vm(m, header.main_actor->address());
+	game::register_handlers(vm);
+	auto scene_rayman = tree.node(45).at.address();
+	// The gate cutscene's final command is mailbox 99, consumed by this placed actor.
+	// Exercise the installed ending script rather than manufacturing a level request.
+	for(int tick = 0; tick < 4; ++tick) { vm.next_tick(); vm.think(scene_rayman); }
+	auto standard = m.u32(vm.actor_of(scene_rayman) + 4);
+	m.write<std::uint8_t>(standard + 0x22, 99);
+	vm.next_tick(); vm.think(scene_rayman);
+	CHECK(vm.level_request == "mapmonde");
+	CHECK(vm.menu_request[0] == 3);
+	CHECK(vm.menu_request[1] == 1);
+	std::vector<std::uint32_t> fix;
+	for(const auto& p : header.placements) fix.push_back(p.super_object.address());
+	CHECK(game::story_has(vm.story_words(fix), 1133));
+	CHECK(vm.missing.empty());
 }

@@ -977,3 +977,68 @@ Own reading of Rayman2.exe at `0x477630`, `0x480050`, `0x45D8F0`, `0x48EE70`,
 `0x472E90`, `0x472F00`, and `0x472F30`; the directional displacement was also
 checked in the machine instructions at `0x477963`. Verified against synthetic
 handler tests and Bast_20 dialog and projectile traces. No decompiled code copied.
+
+## Hall of Doors: selected player and entry context (card 39, 2026-11-14)
+
+A level's player is **not necessarily Fix Rayman**. The loader at 0x403730 reads a separate
+super-object pointer into 0x500578 after the world lists and the 0xC30-byte global block.
+It is at +0xCA0 relative to the start of the four world roots in the GPT stream. Mapmonde
+selects scene node 90 (05/02 +0x5E4E4), its glowing selection Lum. Fix Rayman is node 4;
+node 28 is the visible Rayman who walks and jumps between doors. The camera targets the
+selection actor. Wake regions and far-distance tests must use the selected player too.
+Using the first Fix placement left most of the Hall asleep.
+
+Procedures 343/344 (0x46BB10, global bytes at 0x500FA4) carry an entry pair across level
+loads. These are script identifiers, not indices into Game.dsb. Learn_10's completed exit
+supplies **3,1**: the first door has pair 3,0, and the Fairy Glade door has pair 3,1. The
+Hall controller (node 5) reads the pair, clears the pending request, sets bit 960, then
+waits for the 22 door actors to initialize. Each door checks its metadata against that
+pair before setting its availability bit **960 + door index**. It filters its links to
+unavailable neighbours. Thus completion unlocks the next door through data, without a
+host-side level/unlock table. The player initially selects the Woods door (identifier 3).
+Down moves to the Fairy Glade; A makes Rayman jump in. The Fairy Glade door requests
+`Learn_30`. Entry 10,0 selects that door on return; it does not itself unlock it, so its
+existing story bit 961 must survive the load.
+
+The first visit's Murfy is node 77. Once Rayman reaches the Fairy Glade it flies into
+place and explains the Hall in six pages. Space advances them. While it talks, selection
+input (node 90 var7) is disabled; completing the pages sets story bit 989 and restores it.
+On later visits the nearby help message uses the same actor without replaying the tutorial.
+Level names and collection counts are screen-text slots 15..17, written by the selection
+actor's own scripts. Locked doors never become candidates for directional selection.
+
+OpenRayman carries the entry bytes and registered general progress between script-requested
+loads. Registered level progress is retained in memory for visited levels. A selected save
+seeds the session once; loading a new level no longer rereads its old general progress over
+new story bits. This is session persistence, not writing save files. The initial command-line
+start presets apply only to the initial load. A diagnostic `--entry level,reason` (ortool:
+`ORTOOL_ENTRY=level,reason`) supplies procedure 343's pair when starting directly in a hub.
+
+Newly reached handlers:
+
+- 405/406, 0x471020 -> 0x40FD30: evaluate the target actor and seek its current animation to a
+  signed frame (405), or a random frame (406). Clamp to the animation bounds; 0x8000 on 405
+  means frame zero, whereas 406 passes the random sentinel directly. Reset finished/event
+  traversal state and rebase elapsed playback time. This lets the Hall's pose initialization
+  match its scripts.
+- 426/427, 0x471E40 -> 0x4536D0/0x453700 -> 0x4580B0/0x458110: suspend existing sound voices
+  and release their suspension group. Later voices continue playing; nested groups retain
+  earlier suspensions. This is separate from pausing the entire audio device.
+
+When simulating `--time` without drawing intermediate frames, the engine must still update
+visibility every tick. A sector wake sets custom bit 12; a visibility-gated portal otherwise
+stops after setting custom bit 13 and never hands off to the next level. ortool clears the
+visibility bit on active actors as its headless approximation; the engine uses the game
+camera frustum.
+
+### Where this came from
+
+Own independent analysis of the installed GOG Rayman2.exe loader 0x403730; handlers
+0x46BB10, 0x471020, 0x40FD30, 0x471E40, 0x4536D0, 0x453700, 0x4580B0 and 0x458110;
+Mapmonde GPT and nodes 5, 7..27, 28, 77 and 90, printed with ortool. No executable code
+was copied. Cross-checked against the user's read-only `H:\r2export\live\run3` recording:
+Mapmonde loads with Learn_10 completed, sets 960 at game clock 49, 961 at 65, and 989 when
+the tutorial finishes at 13796. run3 stops in the Hall: it does **not** record a Fairy Glade
+exit. That exit is verified independently by the installed scripts, a headless integration
+test, and an engine screenshot after loading Learn_30. Exact visual timing and audio parity
+still require comparison in interactive play.

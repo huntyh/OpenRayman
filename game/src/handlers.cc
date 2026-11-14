@@ -4549,6 +4549,25 @@ namespace openrayman::game
 			return after_loop(m, start);
 		}
 
+		// 405/406 (0x471020 -> 0x40FD30): seek the current animation, or choose a random frame.
+		std::uint32_t animation_seek(call& c)
+		{
+			value who, frame;
+			next_arg(c, who);
+			if(c.index == 405) next_arg(c, frame);
+			const auto data = actor_part(c.vm, super_object_value(c.vm, who), actor_field::data_3d);
+			const auto requested = std::int16_t(frame.as_int());
+			if(data) seek_animation(c.vm.memory(), data, c.index == 406 ? -32768 : (requested == -32768 ? -1 : requested));
+			return c.args;
+		}
+
+		// 426/427 (0x471E40 -> 0x4536D0/0x453700): suspend/resume existing sound voices.
+		std::uint32_t sound_group(call& c)
+		{
+			c.vm.play_sound(0, 0, c.index, -1);
+			return c.args;
+		}
+
 		// 393 (0x470F20 -> 0x416D70): select a saved vertex colour set.
 		std::uint32_t select_colour_set(call& c)
 		{
@@ -6085,6 +6104,10 @@ namespace openrayman::game
 		for(std::uint32_t i = 42; i <= 47; ++i) vm.on_procedure(i, fog_override);
 		vm.on_procedure(200, teleport);
 		vm.on_procedure(393, select_colour_set);
+		vm.on_procedure(405, animation_seek);
+		vm.on_procedure(406, animation_seek);
+		vm.on_procedure(426, sound_group);
+		vm.on_procedure(427, sound_group);
 		vm.on_procedure(409, place_screen_object);
 		vm.on_procedure(411, remove_screen_object);
 		vm.on_condition(76, actor_in_world);

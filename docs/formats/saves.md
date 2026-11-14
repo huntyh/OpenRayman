@@ -17,7 +17,9 @@ file leaves that level's initial state. `HiddenSlot` is not a selectable user sl
 values (0x449E80), then refreshes activity (0x406340). OpenRayman restores the bytes before the
 first script tick and adjusts type-5 activity. With a slot selected, neither the revisit snapshot
 nor first-visit hand-over runs. Explicit `--story-bits` overrides run after restoration. The slot
-is re-read at each level load; progress is not written back to disk.
+seeds the initial load. Script-requested level changes carry registered general progress and
+retain registered state for visited levels in memory; they do not reread the initial slot over
+new progress. Progress is not written back to disk.
 
 On Windows the root is `%APPDATA%\OpenRayman\OpenRayman\SaveGame`. A `portable.txt` beside the executable selects its `SaveGame` folder; `OPENRAYMAN_SAVE_DIR` overrides either location. The game?s own saves are never used by default. `ortool mksave <level> <slot> [--story-bits a,b,...]` writes a synthetic revisit state and refuses destinations inside the game folder.
 

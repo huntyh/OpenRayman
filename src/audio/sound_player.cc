@@ -368,6 +368,7 @@ namespace openrayman
 	{
 		std::lock_guard lock(m_mutex);
 		m_voices.clear();
+		m_pause_group = 1;
 		m_music_index = -1;
 		m_pending_theme.reset();
 		++m_theme_serial;
@@ -380,6 +381,21 @@ namespace openrayman
 		// Hidden objects allow one-shots to finish; leaving the active world stops every voice
 		// from that actor (0x40B410 -> 0x453040 -> 0x451DC0).
 		std::erase_if(m_voices, [&](const voice& v) { return v.source == source && (all_voices || v.loop); });
+	}
+
+	void sound_player::pause_group(bool pause)
+	{
+		std::lock_guard lock(m_mutex);
+		if(pause)
+		{
+			for(auto& v : m_voices) if(!v.suspended) v.suspended = m_pause_group;
+			++m_pause_group;
+		}
+		else
+		{
+			if(m_pause_group > 1) --m_pause_group;
+			for(auto& v : m_voices) if(v.suspended <= m_pause_group) v.suspended = 0;
+		}
 	}
 
 	void sound_player::set_paused(bool paused)
@@ -441,6 +457,7 @@ namespace openrayman
 			++player.m_music_frames;
 			for(auto& v : player.m_voices)
 			{
+				if(v.suspended) continue;
 				std::size_t count = v.samples.size() / v.channels;
 				if(v.position >= count)
 				{

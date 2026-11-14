@@ -5,6 +5,7 @@
 
 #include <array>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <format>
 #include <unordered_map>
@@ -439,6 +440,22 @@ namespace openrayman::game
 		m.write<std::uint32_t>(data + data_3d::elapsed, elapsed);
 		m.write<std::uint16_t>(data + data_3d::frame, std::uint16_t(frame));
 		play_events(m, data, frame, false, point, sound);
+	}
+
+	void seek_animation(live_memory& m, std::uint32_t data, std::int32_t frame)
+	{
+		const auto s = m.u32(data + data_3d::current_state);
+		const auto count = frame_count(m, s);
+		if(!count) return;
+		if(frame == -32768) frame = std::rand() % count;
+		frame = std::clamp(frame, 0, int(count) - 1);
+		const auto rate = rate_of(m, data, s);
+		m.write<std::uint16_t>(data + data_3d::frame, std::uint16_t(frame));
+		m.write<std::uint32_t>(data + data_3d::elapsed, rate ? std::uint32_t(frame) * 1000 / rate : 0);
+		m.write<std::uint8_t>(data + data_3d::finished, 0);
+		m.write<std::uint8_t>(data + data_3d::reached_end, 0);
+		m.write<std::uint8_t>(data + data_3d::event_cursor, 0);
+		play_events(m, data, std::uint32_t(frame), false, {}, {});
 	}
 
 	void set_playback_rate(live_memory& m, std::uint32_t data, std::uint8_t rate)

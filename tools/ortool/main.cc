@@ -1546,7 +1546,7 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	game::live_memory memory(files.memory);
 
 	std::cout << std::format("{} pointers relocated, {} moved\n", memory.relocated(), memory.moved());
-	std::uint32_t main_actor = header.placements.empty() ? 0 : header.placements[0].super_object.address();
+	std::uint32_t main_actor = header.main_actor ? header.main_actor->address() : 0;
 	std::cout << std::format("main actor's super object 0x{:08X}:", main_actor);
 	for(std::uint32_t i = 0; main_actor && i < 10; i++)
 		std::cout << std::format(" {:08X}", memory.u32(main_actor + i * 4));
@@ -1554,6 +1554,14 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	game::interpreter vm(memory, main_actor);
 	game::register_handlers(vm);
 	game::register_dialog_handlers(vm);
+	// Diagnostic equivalent of procedure 343 before arriving from another level.
+	if(const char* entry = std::getenv("ORTOOL_ENTRY"))
+	{
+		unsigned level = 0, reason = 0;
+		if(std::sscanf(entry, "%u,%u", &level, &reason) != 2 || level > 255 || reason > 255)
+			throw std::runtime_error("ORTOOL_ENTRY must be two bytes: level,reason");
+		vm.menu_request = {std::uint8_t(level), std::uint8_t(reason), 0, 0};
+	}
 	game::set_dialog_resolver(vm, files);
 	vm.save_folder = game::save_root().string();
 	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
@@ -2349,7 +2357,7 @@ static int cmd_mksave(const std::string& name, const std::string& slot_text, con
 	scene tree(files.memory, header);
 	auto registry = read_save_registry(files.memory, header, tree);
 	game::live_memory memory(files.memory);
-	game::interpreter vm(memory, header.placements.empty() ? 0 : header.placements.front().super_object.address());
+	game::interpreter vm(memory, header.main_actor ? header.main_actor->address() : 0);
 	std::vector<std::uint32_t> actors;
 	for(const auto& a : header.placements) actors.push_back(a.super_object.address());
 	for(auto bit : game::revisit_story_bits) vm.set_story_bit(actors, bit);

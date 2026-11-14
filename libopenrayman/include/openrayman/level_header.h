@@ -46,6 +46,7 @@ namespace openrayman
 		memory_location dynamic_world;          // actors
 		memory_location inactive_dynamic_world;
 		memory_location father_sector;          // the level geometry, as a tree of sectors
+		std::optional<memory_location> main_actor; // level-selected player super object (0x500578)
 
 		// The level's "always" actors (Rayman2.exe keeps the list at 0x4A6B1C): a placed actor
 		// with one of their ids (standard game +8) stays out of the world when scripts remove it

@@ -41,6 +41,11 @@ these records supply them. In every level the same 5 of the 10 actors are placed
 Learn_10 the second sits about 11 units above and slightly behind the first, and the engine starts
 its view from there. Not confirmed beyond that.
 
+The player super object is read separately at +0xCA0 relative to the GPT's world-root header
+(0x403730, destination 0x500578). Mapmonde selects its own actor rather than Fix Rayman;
+the first Fix placement must not be used as an implicit player selector. Checked against all
+70 installed GPTs; see [the Hall notes](scripts.md#hall-of-doors-selected-player-and-entry-context-card-39-2026-11-14).
+
 The world roots sit at the same offsets in every level (block `05/02`, +0x108, +0x1B0, +0x258,
 +0x300), and the actual world's 3 children are the other three.
 
