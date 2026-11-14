@@ -187,43 +187,129 @@ the distance between the current camera position (context +0x20) and the target 
 not the desired camera position (+0x2C). `0x486710` also tests candidate distance against the
 block's settle distance plus a global tolerance at 0x4FF698.
 
-### Obstacle search: investigation in progress
+### Obstacle search and transitions
 
-The original's mode-0 follow path (0x4870C0) periodically tests the route between the target anchor
-and the camera (0x4863D0 -> 0x485FD0). When that test reports an obstruction and the other gates
-pass, it checks the desired position (0x486400) and asks 0x486D50 for a different one. That function
-builds candidates (0x486880), sorts them by a score, and tests them with 0x486710 and 0x4864D0.
-An accepted candidate enters a separate transition mode through 0x487520, which resets the swing
-direction and records both the current position and the candidate. The obstruction check can sample
-several offset paths around the line (0x485FD0); it is not simply the camera sphere's wall slide.
-OpenRayman now has an interim search. It starts only when the static centre line from target to
-camera is blocked and the wanted position fails a distance or static line test; block +0x72 bit 3
-also disables it. These are approximations of the executable's offset-ray tests and gates, and can
-miss obstructions near the line or dynamic objects. Once triggered, it tries candidate positions in
-16 directions at three distances, preferring its current distance
-from the target before falling back to shorter distances, and choosing the candidate closest to the
-desired follow position at each distance with a clear line to the target and a collision-free sphere movement
-from the camera. It first prefers candidates with the same wider clearance, falling back to the
-physical collision radius if the view is blocked and no wider candidate fits. This clearance is an
-OpenRayman tuning choice prompted by the user's corner feedback, not a measured executable value.
-Previously, the interim search could start on clearance alone even with an unobstructed view: in a
-Learn_10 cave replay it picked a waypoint close to Rayman's path and the script's procedure 499
-then held the camera nearly above him. Holding Down made him circle under it. With the obstruction
-gates he reaches y=189.75 at tick 3300 rather than circling near y=193.2. This is one replay, not a
-proof of the original's search or a fix for every wall; the tighter gate needs a visual recheck of
-the corridor that used the earlier proactive search.
-It keeps that waypoint across ticks and retries every four ticks when it finds no
-candidate; it discards the waypoint when the target moves two units, or the camera comes within
-0.5 units. This is our own approximation, not a reconstruction of the original's candidate scoring
-or transition. It is skipped for fixed-position/vector modes, cuts and disabled camera collision.
-The user tested the interim search through the Learn_10 corridor near `-19.8,195.1,0.1` and is
-happy with it for now (2026-10-30); exact candidate generation, scoring, timing and transition
-remain to be validated.
-In the user's original-game corner recording on 2026-10-30 (`build/camera-wall-original.txt`),
-the camera entered mode 1 around Rayman (-36.38, 191.67, -1.42), returned to mode 0 near
-(-20.76, 196.12, -2.94), and was then 4.34 units from him. A later mode-1 transition was brief.
-This confirms that the original can move substantially closer through this route; the trace alone
-does not prove which obstruction caused each mode change.
+The executable uses two distinct collision queries. `0x4863D0` tests the view from the
+instantaneous target anchor (context +0x44) to the eye. `0x4862B0` tests movement from the eye
+to a candidate. Both use `0x485FD0`: one ray when the count is one, otherwise a ring of rays
+around the line, with no additional centre ray. The initial perpendicular is scaled by the
+start radius and is multiplied by the endpoint radius again, so the default movement ring's
+start offset is 0.35 squared, or 0.1225. The view defaults to one centre ray. `0x4862E0` uses
+the movement ring on a view extended 0.35 beyond the proposed eye. Endpoints are truncated to
+thousandths by `0x485CA0` before intersection tests.
+
+`0x4870C0` runs in modes 0 and 1, except with block +0x72 bit 3, a fixed position (0x2000),
+or camera +0x74 bit 1. It accumulates elapsed milliseconds at camera +0x68 and tests the view
+after the configured number of frame durations (four by default). A clear view clears the
+blocked timer (+0x6C). A blocked view advances that timer; after 60 tested frame durations
+it requests the fallback search. Otherwise a rejected desired follow point starts a reachable
+search immediately. `0x486400` rejects points nearer the instantaneous anchor than settle
+distance + tolerance, and optionally tests view and movement rays (mask bits 1 and 2).
+
+The static scenery pass can be suppressed while the camera has stopped for more than ten frame
+durations, or while its last movement and the anchor line have absolute dot product greater
+than 0.9. Actor tests remain enabled unless block +0x72 bit 4 is set. This bit disables actor
+queries, not scenery. The stationary timer at camera +0x70 uses movement threshold 0.005 and
+caps at 60 frame durations. `0x486FA0` also searches when the camera is within settle distance
+and stopped or colliding. `0x4873B0` searches when collision report +0x168 has both bits 0 and 1.
+`0x434660` sets the second bit for a first head-on contact (movement dot outward normal < -0.7)
+while travelling towards the mechanics aim (dot > 0.7).
+
+`0x486880` starts with the ordinary follow block (the spare block while a transition has saved
+one), holds its angle centres, and walks yaw in pi/4 steps. At each yaw it samples the saved
+pitch, zero, +pi/4 and -pi/4, with the usual distance and height clamp and `0x4845E0` floor-slope
+pitch correction. The fallback additionally samples half the ideal follow distance at the saved
+pitch unless global bit 0x40 disables it, and mask bit 8 adds 0.33 distance. With default tuning
+there are 32 reachable-search candidates or 40 fallback candidates (48 with the extra distance).
+
+`0x486540` scores distance, yaw and pitch differences from the ordinary follow point. For a
+nonnegative difference d it forms q(d) = -trunc(-200d) - trunc(100d). The score is
+0.001 q(distance error) + 0.01 q(yaw error) + 0.1 q(pitch error). Yaw is reflected about pi
+before subtraction. For pitch, the reference above pi is reflected while a candidate above pi
+is reduced by 2pi; the asymmetry is present in the assembly. `0x486D50` sorts ascending, then
+`0x486710` checks minimum distance and proximity to the desired/current eye (tolerance 0.5).
+It adds an offset to the instantaneous anchor for these checks, whereas `0x4864D0` adds it to
+the tracked aim point for the final view/movement tests. Improving searches (mask bit 8) also
+require a score reduction of at least 0.05 and `0x4875D0`'s transition progress gate.
+
+`0x487520` starts **mode 1**. It saves the current block once, fits its distance/yaw/pitch to
+the accepted world point (`0x487440`/`0x4874F0`), copies those four fields into the per-frame
+block, clears the swing direction and stores the start and destination at camera +0x10/+0x1C.
+Camera +0x75 bit 2 marks fitted follow parameters; bit 3 holds an obstruction waypoint.
+`0x485180` keeps that waypoint, projecting the ordinary follow point onto its line towards the
+tracked target while the target moves (unless global bit 8 disables projection). `0x4875D0`
+releases the hold once the ordinary follow point makes more progress from the start than the
+waypoint, or the stationary timeout expires. There is **no special transition speed constant**:
+`0x484B50` still supplies the usual position/turn gains and caps, and mechanics still slides its
+sphere. Mode 1 can restore the spare and return to mode 0 when a moving target's fitted follow
+point is within tolerance and global bit 0x10 is enabled (`0x485810`). `0x487730` also checks
+every 20 frame durations when camera +0x17C is requested (procedure 491 index 44): an improving
+search with mask 11 restores ordinary follow when the first sorted candidate is accepted,
+otherwise starts another transition. Global bit 0x20 disables this improvement pass.
+
+If no reachable candidate passes, `0x486EA0` searches with mask 5 (13 with global bit 4): it
+checks the extended view but does not require movement from the old eye. **Mode 2** then relocates
+the eye directly (`0x486F40`/`0x473420`) and enters mode 1. Thus a full collision-free swept-sphere
+path is not a prerequisite for every recovery. The removed interim search required such a path
+and used its own retry and waypoint lifetime rules.
+
+Offsets below are relative to global tuning block 0x4FF62C:
+
+| Offsets | Use | Defaults |
+|---|---|---|
+| +0x34/+0x38 | movement ring endpoint scales | 0.35/0.35 |
+| +0x3C/+0x40 | view ring endpoint scales | 0.1/0.1 |
+| +0x44/+0x48 | reachable/fallback yaw spacing | pi/4, pi/4 |
+| +0x54/+0x58 | camera/target movement thresholds | 0.005/0.01 |
+| +0x68/+0x6C | proximity tolerance/min-distance tolerance | 0.5/0.05 |
+| +0x74/+0x76 | movement/view ray counts, int16 | 3/1 |
+| +0x78/+0x7A | route/improvement periods, int16 frame counts | 4/20 |
+| +0x7C/+0x7E | stationary/blocked timeouts, int16 frame counts | 60/60 |
+| +0xB0 | global options, uint16 | 0 |
+
+OpenRayman now uses these candidate and transition routines, including the view-only relocation
+fallback. It tests all loaded static triangles rather than the executable's camera/target sector
+lists. Its actor pass uses the movement system's nearby posed triangles; actor sphere/box
+occluders and the executable's collision-set group filter are not reproduced. Stable ordering
+breaks equal scores by generation order; the executable's C qsort does not specify tie order.
+The mechanics slides against both static scenery and nearby posed actor triangles. Its first
+contact normal supplies the head-on report bit. Resolving scenery, actor geometry and then
+rechecking scenery remains an approximation of the executable's combined sphere solver.
+Relocation also resets the mechanics aim and carried aim step (`0x473480`), so the new view
+looks at the target rather than the pre-cut aim point. The solver uses the interpreter's elapsed
+frame time for its timers.
+
+The Learn_10 trapdoor replay now passes the approximate recovery check. With the first-visit
+door present and sliding open, camera mechanics stops on its posed triangles and reports a
+head-on obstruction. `0x4873B0` requests the search; after the reachable candidates fail, the
+view-only fallback relocates below the door and enters mode 1. The earlier replay used a
+completed revisit (which removes the door), and the camera mechanics also omitted actor
+surfaces. Adding actor tests to the search alone could not reproduce the obstruction.
+
+The reproducible headless run (`build/helpers/cam13_replay.ps1`) enters mode 1 0.650 s after
+the z < -11.8/behaviour-8 fall threshold, versus 0.625 s in the recording. Its eye is then
+(-25.84,291.38,-23.28), 4.67 units from Rayman; after another 0.1 s it is
+(-26.83,291.31,-24.42), 5.51 units away. Mode 0 resumes after 0.267 s, with the eye at
+(-27.72,291.27,-25.40), 5.38 units away. This meets the approximate timing and below-floor
+proximity requirement, without matching every recorded frame. The approach/fall trajectories
+differ; the recording's mode-1 duration is 0.375 s. The replay uses the Lum-collected signal and
+releases the door's frozen brain, then lets its scripts move it. It seeds the recorded approach
+eye/aim once, and never forces a camera mode or selected candidate.
+
+The synthetic wall test verifies the route timer, a relocation with no swept-sphere path, and
+spare-block restoration. The real-data trapdoor regression verifies the mode change, aim reset,
+and return to mode 0 within six units below the floor. The corridor replay enters mode 1 and
+returns to normal following. Ordinary Learn_10 route differences are at most 0.018 units in
+two-decimal traces; the Jail_20 introduction and a playable follow route match at that precision.
+Commands, measurements and remaining limits are in `build/helpers/cam13_report.md`. Visual
+checks should cover the first-visit trapdoor, the corridor corner and Rodeo_10's reported area.
+
+In the user's original corner recording (`build/helpers/camera-wall-original.txt`), mode 1 began
+near Rayman (-36.38,191.67,-1.42), returned to mode 0 near (-20.76,196.12,-2.94), and was then
+4.34 units away. In `build/helpers/rec_camsnap/camera.txt`, the trapdoor's behaviour 8 returns to
+0 at 3.922 s, mode 1 begins at 3.937 s, and at 4.047 s the eye is
+(-26.824,291.108,-22.921), 5.90 units from Rayman. Mode 0 resumes at 4.312 s. These recordings
+constrain the behavior but do not identify which query or collision triggered each transition.
 
 The user also reports that the view shows more scenery from the same place than the original. The
 distance clamp above uses the live block's min and max distances, but that alone does not establish
@@ -287,9 +373,10 @@ it visually and on other teleports. The executable clears samples when the targe
 - Menu: node 7 places itself on waypoints selected by node 6's menu behaviour, and nodes 8..10
   and 12..16 can set camera overrides when their zones contain it. The fixed-position mechanics
   correction above needs a visual comparison with the original across menu entries.
-- **The original's orbit search around obstacles** (0x486880, with 0x486710 deciding whether a step
-  may run): our interim candidate search does not yet reproduce its scoring or transitions.
-- **The cutscene modes** (cam+0x60: mode 1 scripted keyframes, mode 4 snap, mode 5 target switch)
+- **Complete camera collision queries**: sector selection, actor sphere/box occluders and collision-set
+  filtering are still approximated in the obstacle search. Camera mechanics resolves static and actor
+  triangles in separate passes; it does not reproduce every combined contact manifold.
+- **The cutscene modes** (cam+0x60: mode 4 snap, mode 5 target switch)
   and the global tuning block 0x4FF62C.. beyond what procedures 491..493 store.
 
 The portal startup exposed a limitation of our teleport cut: its destination is calculated from
@@ -335,6 +422,18 @@ which the exe places by resetting the camera instead of moving it.
 
 ## Where this came from
 
+Obstacle search: own reading of Rayman2.exe at 0x4870C0, 0x4863D0, 0x485FD0, 0x486400,
+0x486D50, 0x486880, 0x486710, 0x4864D0, 0x487520, 0x487730 and 0x485810, with
+0x486540/0x486840 (scoring/sort), 0x4862E0 (extended view), 0x486EA0/0x486F40 (relocation),
+0x485180/0x4875D0 (waypoint hold/progress), 0x4876E0 (restore), 0x486FA0/0x4873B0
+(additional triggers), 0x434390/0x434660 (actor contacts and report bits), 0x473480 (relocated aim),
+0x4845E0 (slope correction), and 0x4138B0..0x413A06
+(default tuning). The score's x87 stack expressions, yaw-loop count, comparator order and
+0x4862E0's negative extension constant were independently checked in capstone. Descriptions and
+C++ are our own; no executable or decompiled code is included. The two user's camera recordings
+above supply behavioral evidence; the headless results and remaining discrepancies are in the
+cam13 report.
+
 Jail_20's chute-end rig selects animation 354 and sends the world positions of its animation
 channels 1 and 0 to procedures 495 and 496. Own analysis of its node 2 scripts and the executable
 handlers 0x478AA0 (function 210, part world position) and 0x47EC20 (camera vectors), compared with
@@ -356,7 +455,7 @@ addresses are the ones above:
   (look-at), 0x4847D0 (distance clamp), 0x484390 and 0x484470 (the pi/8 turn), 0x4858F6 (the reset
   branch and mode 4);
 - the mechanics: 0x4359D0, 0x433B00 (step towards), 0x433CD0 (turn a frame), 0x435930 and 0x435640
-  (publish), 0x434660 (occlusion, left out), 0x486880 and 0x486710 (orbit search, left out);
+  (publish), 0x434660 (sphere slide and head-on report bit);
 - procedure 444's body: 0x47DA40, which calls 0x474270 (build the context), 0x485810 and 0x474420
   (apply to the camera object).
 

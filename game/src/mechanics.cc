@@ -398,8 +398,10 @@ namespace openrayman::game
 		return best;
 	}
 
-	std::array<float, 3> world_collision::slide_sphere(const std::array<float, 3>& start, const std::array<float, 3>& end, float radius) const
+	std::array<float, 3> world_collision::slide_sphere(const std::array<float, 3>& start, const std::array<float, 3>& end, float radius,
+		std::array<float, 3>* first_normal) const
 	{
+		if(first_normal) *first_normal = {};
 		if(m_geometry->triangles.empty() || radius <= 0)
 			return end;
 		// The solid triangles near the whole movement.
@@ -445,7 +447,10 @@ namespace openrayman::game
 		vec pos = start;
 		vec normal{};
 		if(float depth = overlap(pos, normal); depth > 0)
+		{
+			if(first_normal) *first_normal = normal;
 			pos = vadd(pos, vmul(normal, depth + margin));
+		}
 		vec target = end;
 		const vec first = vsub(end, start);
 		const float first_length = vlen(first);
@@ -485,6 +490,7 @@ namespace openrayman::game
 					free = mid;
 			}
 			overlap(vadd(pos, vmul(move, blocked)), normal);
+			if(first_normal && vlen(*first_normal) == 0) *first_normal = normal;
 			// Stop 0.02 short of the surface.
 			float advance = std::max(0.0f, free * length - margin);
 			pos = vadd(pos, vmul(move, advance / length));

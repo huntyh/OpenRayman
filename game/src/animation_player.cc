@@ -605,7 +605,8 @@ namespace openrayman::game
 				if(camera.valid && self == camera.super_object)
 				{
 					profiler::scope timed(profiler::zone::camera);
-					move_camera(m, self, camera, vm.frame_ms(), vm.world());
+					world_collision camera_objects(actor_collision_triangles(vm, self), true);
+					move_camera(m, self, camera, vm.frame_ms(), vm.world(), &camera_objects);
 				}
 				else
 				{

@@ -1566,7 +1566,9 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	const char* start = std::getenv("ORTOOL_START");
 	bool intro = start && (std::string_view(start) == "intro" ||
 		(std::string_view(start) == "new" && game::learn_10_opening(name)));
-	bool first_visit = intro || (start && std::string_view(start) == "new") || game::only_new_game(name);
+	// "handover" starts a first visit after the intro, retaining tutorial actors
+	// such as Learn_10's moving trapdoor (a completed revisit removes it).
+	bool first_visit = intro || (start && (std::string_view(start) == "new" || std::string_view(start) == "handover")) || game::only_new_game(name);
 	// ORTOOL_SAVE=1..3: start from that slot of our save folder (the viewer's --save), instead of
 	// the start's story bits and the interim revisit snapshot.
 	const unsigned save_slot = std::getenv("ORTOOL_SAVE") ? unsigned(std::atoi(std::getenv("ORTOOL_SAVE"))) : 0;
@@ -1784,6 +1786,46 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	// cage: ORTOOL_PLACE=-27,291.5,-7.3,0@240.
 	// Several placements separate with ';' (walk away and come back: ...@260;30,295,-7,0@500).
 	std::map<int, std::array<float, 4>> places;
+	// Reproduce an external script signal without replacing an actor's behaviour.
+	// ORTOOL_CUSTOM_BITS=node:bit:value@tick;node/variable:bit:value@tick
+	// Bits are numbered 1..32; /variable follows an actor reference held by that node.
+	struct custom_bit_write { unsigned node, bit, value; int variable = -1; };
+	std::multimap<int, custom_bit_write> custom_bits;
+	if(const char* source = std::getenv("ORTOOL_CUSTOM_BITS"))
+		for(const char* p = source; p && *p; p = std::strchr(p, ';') ? std::strchr(p, ';') + 1 : nullptr)
+		{
+			custom_bit_write write{};
+			int tick = -1;
+			if(std::sscanf(p, "%u/%d:%u:%u@%d", &write.node, &write.variable, &write.bit, &write.value, &tick) != 5)
+			{
+				write.variable = -1;
+				if(std::sscanf(p, "%u:%u:%u@%d", &write.node, &write.bit, &write.value, &tick) != 4)
+					throw std::runtime_error("ORTOOL_CUSTOM_BITS expects node[/variable]:bit:value@tick");
+			}
+			if(write.node >= tree.nodes().size() || write.bit < 1 || write.bit > 32 || write.value > 1 || tick < 0)
+				throw std::runtime_error("invalid ORTOOL_CUSTOM_BITS entry");
+			custom_bits.emplace(tick, write);
+		}
+	// ORTOOL_CAMERA=x,y,z@tick: seed an eye position from a recording without
+	// changing camera modes, scripts, target history or transition destinations.
+	std::map<int, std::array<float, 3>> camera_places;
+	// An optional aim point gives a complete recorded look-at pose:
+	// ORTOOL_CAMERA=x,y,z,aim_x,aim_y,aim_z@tick. Mechanics carry starts at rest.
+	std::map<int, std::array<float, 3>> camera_aims;
+	if(const char* place = std::getenv("ORTOOL_CAMERA"))
+		for(const char* p = place; p && *p; p = std::strchr(p, ';') ? std::strchr(p, ';') + 1 : nullptr)
+		{
+			std::array<float, 3> v{};
+			std::array<float, 3> aim{};
+			int tick = -1;
+			if(std::sscanf(p, "%f,%f,%f,%f,%f,%f@%d", &v[0], &v[1], &v[2], &aim[0], &aim[1], &aim[2], &tick) == 7)
+			{
+				camera_places[tick] = v;
+				camera_aims[tick] = aim;
+			}
+			else if(std::sscanf(p, "%f,%f,%f@%d", &v[0], &v[1], &v[2], &tick) == 4)
+				camera_places[tick] = v;
+		}
 	if(const char* place = std::getenv("ORTOOL_PLACE"))
 		for(const char* p = place; p && *p; p = std::strchr(p, ';') ? std::strchr(p, ';') + 1 : nullptr)
 		{
@@ -1831,8 +1873,48 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	{
 		updated_order.clear();
 		tick_now = f;
+		auto [bit_first, bit_last] = custom_bits.equal_range(f);
+		for(auto it = bit_first; it != bit_last; ++it)
+		{
+			const auto& write = it->second;
+			auto so = tree.node(write.node).at.address();
+			auto actor = write.variable < 0 ? vm.actor_of(so) : vm.get_variable(so, unsigned(write.variable)).word();
+			if(vm.actor_of(actor)) actor = vm.actor_of(actor);
+			auto standard = actor && memory.contains(actor + 4, 4) ? memory.u32(actor + 4) : 0;
+			if(!standard || !memory.contains(standard + 0x24, 4)) throw std::runtime_error("custom-bit target has no standard game block");
+			auto mask = 1u << (write.bit - 1);
+			auto bits = memory.u32(standard + 0x24);
+			memory.write<std::uint32_t>(standard + 0x24, write.value ? bits | mask : bits & ~mask);
+			std::cout << std::format("tick {}: node {} variable {} custom bit {} := {}\n", f, write.node, write.variable, write.bit, write.value);
+		}
+		if(auto placed = camera_places.find(f); placed != camera_places.end() && camera_super)
+			if(auto pose = game::global_placement(memory, camera_super))
+			{
+				for(unsigned k = 0; k < 3; ++k) pose->m[k][3] = placed->second[k];
+				if(auto aimed = camera_aims.find(f); aimed != camera_aims.end())
+				{
+					vec3 y{};
+					float length = 0;
+					for(unsigned k = 0; k < 3; ++k) { y[k] = placed->second[k] - aimed->second[k]; length += y[k] * y[k]; }
+					length = std::sqrt(length);
+					if(length > 0) for(float& v : y) v /= length;
+					float horizontal = std::hypot(y[0], y[1]);
+					vec3 x = horizontal > 0 ? vec3{ y[1] / horizontal, -y[0] / horizontal, 0 } : vec3{ 1, 0, 0 };
+					vec3 z{ x[1] * y[2], -x[0] * y[2], x[0] * y[1] - x[1] * y[0] };
+					for(unsigned k = 0; k < 3; ++k) { pose->m[k][0] = x[k]; pose->m[k][1] = y[k]; pose->m[k][2] = z[k]; }
+					auto& motion = vm.camera_motion();
+					motion.aim = motion.look_at = motion.off = aimed->second;
+					motion.previous_move = motion.previous_aim = {};
+					motion.carry_angle = 0;
+				}
+				game::set_global_placement(memory, camera_super, *pose);
+			}
 		if(auto placed = places.find(f); placed != places.end())
 		{
+			// A debug teleport has no mechanics movement sample. Seed the camera's
+			// target history at the new location so it does not average the old level
+			// position into the first seconds of the reproduction.
+			vm.camera_motion().tracked_target = 0;
 			const auto* place_at = &placed->second;
 			std::uint32_t t = memory.u32(main_actor + 0x24);
 			for(std::uint32_t k = 0; k < 3; k++)
@@ -2159,7 +2241,8 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 				unsigned(t.flags70), unsigned(t.flags72), t.mode, unsigned(t.swing & 255), t.swing_gap, t.yaw, t.gap, t.report, t.global_flags, t.waypoint, t.focus, t.view_blocked, t.wanted_blocked, vec(t.wanted));
 			for(int i = 0; i < t.candidates; ++i)
 				std::cout << std::format(" candidate{} {} reject {}", i, vec(t.candidate[i]), t.rejected[i]);
-			std::cout << "\n";
+			std::cout << std::format(" radius {:.3f} search_mask {} search_count {} search_rank {} relocated {}\n",
+				t.collision_radius, t.search_mask, t.search_candidates, t.search_rank, t.relocated);
 			std::cout << std::format(
 				"cam tick {:>4}: block {} tgt 0x{:X} f70 0x{:X} f72 0x{:X} A {} B {} cam28 {} cam40 {} cam4C {}"
 				" | look {} off {} aim {} back {} move {}"

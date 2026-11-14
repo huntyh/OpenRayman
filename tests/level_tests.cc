@@ -2699,6 +2699,75 @@ TEST_CASE("real data: Learn_10 portal camera lands with a clear view")
 	CHECK(straight->m[2][3] == doctest::Approx(0.0f));
 }
 
+TEST_CASE("real data: camera fallback relocates across an unreachable wall and restores follow")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto data = game_data::locate(*dir);
+	REQUIRE(data);
+	auto files = load_level_files(*data, "Learn_10");
+	auto header = read_level_header(files);
+	scene tree(files.memory, header);
+	game::live_memory m(files.memory);
+	auto rayman = header.placements.at(0).super_object.address();
+	auto camera_so = tree.node(5).at.address();
+	game::interpreter vm(m, rayman);
+	auto actor = m.u32(camera_so + 4), cam = m.u32(actor + 0x10);
+	REQUIRE(cam);
+	auto block = m.u32(cam + 4);
+	std::memcpy(m.span(block, 0x7C).data(), m.span(m.u32(cam), 0x7C).data(), 0x7C);
+	for(unsigned at = 0; at < 0x18; at += 4) m.write<float>(block + at, 0);
+	m.write<float>(block + 0x18, 4); m.write<float>(block + 0x1C, 4);
+	m.write<float>(block + 0x20, 1);
+	for(unsigned at : { 0x28u, 0x2Cu, 0x30u, 0x34u }) m.write<float>(block + at, 0);
+	m.write<float>(block + 0x60, -100); m.write<float>(block + 0x64, 100);
+	m.write<std::uint32_t>(block + 0x68, rayman);
+	m.write<std::uint16_t>(block + 0x70, 4);
+	m.write<std::uint16_t>(block + 0x72, 2 | 4 | 0x40);
+	m.write<std::uint8_t>(cam + 0x74, 0); m.write<std::uint8_t>(cam + 0x75, 0);
+	m.write<int>(cam + 0x60, 0);
+	m.write<float>(cam + 0x68, 0); m.write<float>(cam + 0x6C, 0);
+	affine target{}, eye{};
+	target.m[0][3] = 2; eye.m[0][3] = -2;
+	game::set_global_placement(m, rayman, target);
+	game::set_global_placement(m, camera_so, eye);
+	collision_triangle lower, upper;
+	lower.corners = { vec3{ 0, -2, -4 }, vec3{ 0, 2, -4 }, vec3{ 0, 2, 4 } };
+	upper.corners = { vec3{ 0, -2, -4 }, vec3{ 0, 2, 4 }, vec3{ 0, -2, 4 } };
+	lower.normal = upper.normal = { 1, 0, 0 };
+	vm.set_world(game::world_collision({ lower, upper }));
+	auto& state = vm.camera_motion();
+	state.valid = true;
+	state.look_at = { 2, 0, 0 };
+	state.previous_move = { 0, 0.01f, 0 }; // do not suppress static tests as stationary/parallel
+	for(int tick = 0; tick < 3; ++tick) {
+		game::solve_camera(vm, camera_so);
+		CHECK(m.u32(cam + 0x60) == 0); // the four-frame route timer has not expired
+	}
+	game::solve_camera(vm, camera_so);
+	CHECK(m.u32(cam + 0x60) == 1);
+	CHECK((m.u8(cam + 0x75) & 2) != 0);
+	CHECK(state.trace.relocated);
+	CHECK(state.trace.search_mask == 5);
+	CHECK(state.trace.search_candidates == 40); // eight yaws, four pitches and a half-distance sample
+	auto landed = *game::global_placement(m, camera_so);
+	vec3 p{ landed.m[0][3], landed.m[1][3], landed.m[2][3] };
+	CHECK_FALSE(vm.world().first_hit({ 2, 0, 0 }, p));
+	CHECK(vm.world().slide_sphere({ -2, 0, 0 }, p, 0.35f) != p);
+	// The ordinary speed law is retained; there is no invented transition speed.
+	CHECK(state.speed <= 10);
+	// 0x485810's moving-target arrival gate restores the spare follow block.
+	for(unsigned i = 0; i < 8; ++i) {
+		m.write<float>(cam + 0x78 + i * 12, 1);
+		m.write<float>(cam + 0x138 + i * 4, 0.03f);
+	}
+	vm.camera().values[0xB0] = 0x10;
+	game::solve_camera(vm, camera_so);
+	CHECK(m.u32(cam + 0x60) == 0);
+	CHECK((m.u8(cam + 0x75) & 2) == 0);
+	CHECK(m.f32(block + 0x28) == 0);
+}
+
 TEST_CASE("real data: Learn_10 cave follow does not circle at the first clearance waypoint")
 {
 	auto dir = real_game_dir();
@@ -2865,10 +2934,11 @@ TEST_CASE("real data: Rayman stands on Learn_10's closed tutorial trapdoor")
 	vm.set_actors(actors);
 	for(const actor_set::entry& e : read_actors(files.memory, tree, bank).actors)
 		game::set_global_placement(m, tree.node(e.node).at.address(), e.world);
-	bool revisit = false, collect = false;
+	bool revisit = false, collect = false, camera_drop = false;
 	SUBCASE("closed trapdoor matches the recording") {}
 	SUBCASE("revisit has an open trapdoor") { revisit = true; }
 	SUBCASE("the tutorial releases the door and the Lum opens it") { collect = true; }
+	SUBCASE("camera recovers below the sliding door") { collect = camera_drop = true; }
 	for(std::uint32_t bit : revisit ? std::span<const std::uint32_t>(game::revisit_story_bits) : std::span<const std::uint32_t>(game::first_visit_story_bits))
 		REQUIRE(vm.set_story_bit(actors, bit));
 	if(!revisit) REQUIRE(game::apply_first_visit_hand_over(m, vm, tree, "Learn_10", rayman));
@@ -2877,10 +2947,18 @@ TEST_CASE("real data: Rayman stands on Learn_10's closed tutorial trapdoor")
 	std::uint32_t rayman_base = m.u32(m.u32(vm.actor_of(rayman) + 8));
 	std::uint32_t report = m.u32(rayman_base + 0x150);
 	std::size_t errors = 0;
+	const auto camera_so = tree.node(5).at.address();
+	const auto cam = m.u32(vm.actor_of(camera_so) + 0x10);
+	int drop_tick = -1, transition_tick = -1, restored_tick = -1;
+	float recovery_distance = 100, recovery_height = 0;
 	for(int tick = 0; tick <= 600; tick++)
 	{
 		if(tick == 240)
-			game::write_transform(m, rayman, { -25, 291.4f, -9 }, { 0, 1, 0, -1, 0, 0, 0, 0, 1 });
+		{
+			if(camera_drop) game::write_transform(m, rayman, { -26.3f, 291.4f, -9 }, { 0, -1, 0, 1, 0, 0, 0, 0, 1 });
+			else game::write_transform(m, rayman, { -25, 291.4f, -9 }, { 0, 1, 0, -1, 0, 0, 0, 0, 1 });
+			if(camera_drop) vm.camera_motion().tracked_target = 0;
+		}
 		if(collect && tick == 300)
 		{
 			// Node 66 watches the Lum's custom bit 28. Set exactly that signal; the door's
@@ -2894,10 +2972,45 @@ TEST_CASE("real data: Rayman stands on Learn_10's closed tutorial trapdoor")
 			standard = m.u32(vm.actor_of(door) + 4);
 			m.write<std::uint32_t>(standard + 0x24, m.u32(standard + 0x24) & ~(1u << 16));
 		}
+		if(camera_drop && tick == 300)
+		{
+			// Seed the approach eye/aim from rec_camsnap; let scripts open the door,
+			// choose behaviour 8, and release it themselves. Never force a camera mode.
+			game::write_transform(m, camera_so, { -18.787f, 292.758f, -6.671f },
+				{ 0.1779f, -0.9840f, 0, 0.9257f, 0.1673f, 0.3392f, -0.3338f, -0.0603f, 0.9407f });
+			auto& motion = vm.camera_motion();
+			motion.aim = motion.look_at = motion.off = { -26.3f, 291.4f, -9.424f };
+			motion.previous_move = motion.previous_aim = {};
+			motion.carry_angle = 0;
+		}
+		if(camera_drop) keys.set_key(0xC8, tick >= 340 && tick < 580);
 		keys.step();
 		game::step(vm, actors, [&](std::uint32_t, const std::exception& e) {
 			if(errors++ == 0) MESSAGE(std::format("tick {}: {}", tick, e.what()));
 		});
+		if(camera_drop && tick >= 300)
+		{
+			auto ray = *game::global_placement(m, rayman);
+			if(drop_tick < 0 && ray.m[2][3] < -11.8f) drop_tick = tick;
+			if(transition_tick < 0 && m.u32(cam + 0x60) == 1)
+			{
+				transition_tick = tick;
+				// A relocation resets the mechanics aim too, so the first new view
+				// looks down towards Rayman rather than back up through the door.
+				CHECK(vm.camera_motion().aim[2] == doctest::Approx(vm.camera_motion().off[2]));
+				auto eye = *game::global_placement(m, camera_so);
+				CHECK(vm.camera_motion().aim[2] < eye.m[2][3]);
+			}
+			if(transition_tick >= 0 && restored_tick < 0 && m.u32(cam + 0x60) == 0)
+			{
+				restored_tick = tick;
+				auto eye = *game::global_placement(m, camera_so);
+				recovery_height = eye.m[2][3];
+				float squared = 0;
+				for(unsigned k = 0; k < 3; ++k) { float d = eye.m[k][3] - ray.m[k][3]; squared += d * d; }
+				recovery_distance = std::sqrt(squared);
+			}
+		}
 		if(tick == 270 || tick == 299 || tick == 420)
 		{
 			auto placement = game::global_placement(m, rayman);
@@ -2918,12 +3031,23 @@ TEST_CASE("real data: Rayman stands on Learn_10's closed tutorial trapdoor")
 		// The door slides out from under him and he drops straight down the shaft onto the floor
 		// below (user, the real game), not shoved sideways past it (#73).
 		auto fell = *game::global_placement(m, rayman);
-		CHECK(fell.m[0][3] == doctest::Approx(-25.0f).epsilon(0.02));
+		if(!camera_drop) CHECK(fell.m[0][3] == doctest::Approx(-25.0f).epsilon(0.02));
 		CHECK(fell.m[2][3] > -30.0f);
 		CHECK(fell.m[2][3] < -27.0f);
 		auto at = *game::global_placement(m, door);
 		CHECK(at.m[0][3] > -20); // a sideways slide, not a lowered or switched-off floor
 		CHECK(at.m[2][3] == doctest::Approx(-10.8240f).epsilon(0.00001));
+	}
+	if(camera_drop)
+	{
+		INFO("drop ", drop_tick, ", mode 1 ", transition_tick, ", mode 0 ", restored_tick,
+			", recovery distance ", recovery_distance, ", height ", recovery_height);
+		REQUIRE(drop_tick >= 0);
+		REQUIRE(transition_tick >= drop_tick);
+		CHECK(transition_tick - drop_tick <= 39); // about 0.6 s from the behaviour-8 fall threshold
+		REQUIRE(restored_tick > transition_tick);
+		CHECK(recovery_distance <= 6);
+		CHECK(recovery_height < -20);
 	}
 	CHECK(errors == 0);
 }

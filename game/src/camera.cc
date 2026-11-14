@@ -311,63 +311,316 @@ namespace openrayman::game
 		return 0;
 	}
 
-	std::optional<std::array<float, 3>> camera_obstacle_waypoint(const world_collision& world,
-		const std::array<float, 3>& target, const std::array<float, 3>& position, const std::array<float, 3>& desired, float radius)
+	bool camera_route_obstructed(const world_collision& world, const vec3& from, const vec3& to,
+		float start_radius, float end_radius, unsigned count)
 	{
-		// A camera this far from its target isn't following it (the viewer's fly camera carries it
-		// while not playing): the candidates on a circle that wide cost seconds of casts and sweeps.
-		if(radius <= 0 || length(sub(position, target)) > 20.0f)
-			return std::nullopt;
-		const bool blocked = world.first_hit(target, position).has_value();
-		// Start looking before the camera's collision sphere actually touches a wall. The larger
-		// test is only a search trigger/clearance preference; physical collision keeps its radius.
-		const float clearance = radius * 1.25f;
-		auto has_clearance = [&](const vec3& p) {
-			return length(sub(world.slide_sphere(p, p, clearance), p)) < 0.01f;
-		};
-		bool path_blocked = length(sub(world.slide_sphere(position, desired, clearance), desired)) > 0.01f;
-		if(!blocked && !path_blocked && has_clearance(position))
-			return std::nullopt;
-		vec3 offset = sub(position, target);
-		float distance = length(offset);
-		if(distance < radius * 2)
-			return std::nullopt;
-		// Prefer keeping the current distance from the target. A nearby shortcut can put the
-		// camera just beyond one corner, where the normal follow path cuts into the next one.
-		// If a full-distance position cannot be reached, try progressively closer positions.
-		// The original builds directional candidates at 0x486880; its scoring is not decoded yet.
-		for(bool wider : { true, false })
-		{
-			// If only the safety margin is blocked, don't force the camera into another tight spot.
-			if(!wider && !blocked && !path_blocked)
-				break;
-			for(float scale : { 1.0f, 0.75f, 0.5f })
-			{
-				std::vector<vec3> candidates;
-				for(int step = 0; step < 16; step++)
-				{
-					float angle = float(step) * pi / 8.0f;
-					float cs = std::cos(angle), sn = std::sin(angle);
-					candidates.push_back(add(target, mul(vec3{ offset[0] * cs - offset[1] * sn,
-						offset[0] * sn + offset[1] * cs, offset[2] }, scale)));
-				}
-				std::ranges::sort(candidates, [&](const vec3& a, const vec3& b) {
-					return length(sub(a, desired)) < length(sub(b, desired));
-				});
-				for(const vec3& candidate : candidates)
-				{
-					if(length(sub(candidate, position)) < 0.5f || world.first_hit(target, candidate) || (wider && !has_clearance(candidate)))
-						continue;
-					vec3 reached = world.slide_sphere(position, candidate, wider ? clearance : radius);
-					if(length(sub(reached, candidate)) < 0.01f)
-						return candidate;
-				}
+		// 0x485FD0 scales the initial perpendicular by start_radius, then multiplies
+		// it again at each endpoint. Preserve that unusual squared start offset.
+		auto hit = [&](vec3 a, vec3 b) {
+			// 0x485CA0 truncates world coordinates to thousandths before casting.
+			for(unsigned k = 0; k < 3; ++k) {
+				a[k] = std::trunc(a[k] * 1000) * 0.001f;
+				b[k] = std::trunc(b[k] * 1000) * 0.001f;
 			}
+			return world.first_hit(a, b).has_value();
+		};
+		if(count == 1) return hit(from, to);
+		if(count == 0 || length(sub(to, from)) < 1e-9f) return false;
+		vec3 axis = normalised(sub(to, from));
+		vec3 side = cross(axis, vec3{ 0, 0, 1 });
+		if(length(side) < 1e-9f) side = cross(axis, vec3{ 1, 0, 0 });
+		side = mul(normalised(side), start_radius);
+		for(unsigned i = 0; i < count; ++i) {
+			if(hit(add(from, mul(side, start_radius)), add(to, mul(side, end_radius)))) return true;
+			side = rotate_about(side, axis, two_pi / float(count));
 		}
-		return std::nullopt;
+		return false;
 	}
 
-	void solve_camera(interpreter& vm, std::uint32_t super_object)
+	namespace
+	{
+		// A solve context for 0x486400..0x487730. Runtime state lives in the camera
+		// object, so script save/restore and mode resets see the same state as the solve.
+		struct obstacle_search
+		{
+			interpreter& vm;
+			live_memory& m;
+			camera_state& state;
+			std::uint32_t cam, block, target_transform;
+			vec3 anchor, aim, position, desired, offset_point;
+			vec3 ref, up;
+			unsigned flags, globals;
+			bool static_tests = true;
+			mutable std::optional<world_collision> objects;
+
+			float setting(unsigned at) const {
+				float f; std::memcpy(&f, &vm.camera().values[at], 4); return f;
+			}
+			unsigned count(unsigned at) const {
+				std::uint16_t n; std::memcpy(&n, &vm.camera().values[at], 2); return n;
+			}
+			int mode() const { return m.read<int>(cam + 0x60); }
+			bool near(const vec3& a, const vec3& b) const { return length(sub(a, b)) <= setting(0x68); }
+			void copy_block(std::uint32_t to, std::uint32_t from) {
+				if(to && from) std::memcpy(m.span(to, 0x7C).data(), m.span(from, 0x7C).data(), 0x7C);
+			}
+			bool route(const vec3& from, const vec3& to, bool view, bool extended = false) const {
+				vec3 end = to;
+				// 0x4862E0 extends the anchor ray 0.35 beyond the candidate.
+				if(extended) end = add(to, mul(normalised(sub(to, from)), 0.35f));
+				auto blocked = [&](const world_collision& world) {
+					return camera_route_obstructed(world, from, end,
+						setting(view ? 0x3C : 0x34), setting(view ? 0x40 : 0x38), count(view ? 0x76 : 0x74));
+				};
+				if(static_tests && blocked(vm.world())) return true;
+				// 0x485BE0 also tests actor geometry. Use the posed triangles our
+				// movement system already supplies; actor spheres/boxes and the exact
+				// collision-set group filter are still absent here. Bit 0x10 disables
+				// this actor pass, rather than disabling scenery as the interim code did.
+				if(flags & 0x10) return false;
+				if(!objects) objects.emplace(actor_collision_triangles(vm, state.super_object), true);
+				return blocked(*objects);
+			}
+			// 0x486400: true means rejected. Bit 1 tests the view, bit 2 the
+			// movement; bit 4 replaces the view ray by the extended movement ring.
+			bool rejected(const vec3& p, unsigned mask) const {
+				if(length(sub(p, anchor)) < m.f32(block + 0x20) + setting(0x6C)) return true;
+				return ((mask & 1) && route(anchor, p, !(mask & 4), mask & 4)) ||
+					((mask & 2) && route(position, p, false));
+			}
+			std::array<float, 3> coordinates(const vec3& v) const {
+				auto flat = [&](const vec3& x) { return sub(x, mul(up, dot(x, up))); };
+				vec3 a = flat(ref), b = flat(v);
+				float yaw = length(a) > 1e-6f && length(b) > 1e-6f ? std::atan2(dot(up, cross(a, b)), dot(a, b)) : 0;
+				auto elevation = [&](const vec3& x) { return length(x) > 1e-6f ? std::asin(std::clamp(dot(x, up) / length(x), -1.0f, 1.0f)) : 0.0f; };
+				float pitch = elevation(v) - elevation(ref);
+				if(std::fabs(pitch) > pi / 2) pitch = pitch > 0 ? pi - pitch : -pi - pitch;
+				return { length(v), wrap_two_pi(yaw), wrap_two_pi(pitch) };
+			}
+			vec3 direction_at(float yaw, float pitch) const {
+				vec3 v = rotate_about(ref, up, yaw);
+				vec3 axis = normalised(cross(v, up));
+				return length(axis) > 0.5f ? normalised(rotate_about(v, axis, pitch)) : normalised(v);
+			}
+			float slope_pitch(float yaw, float pitch) const {
+				// 0x484B00 -> 0x4845E0 adjusts candidates for the target's floor.
+				if(flags & 0x20) return pitch;
+				auto word = [&](std::uint32_t at) { return at && m.contains(at, 4) ? m.u32(at) : 0u; };
+				auto actor = word(m.u32(block + 0x68) + 4);
+				auto base = word(word(actor + 8)), report = word(base + 0x150);
+				if(!report || !(word(report + 4) & 1)) return pitch;
+				vec3 normal = read3(m, report + 0x34);
+				vec3 flat = normalised(sub(ref, mul(normal, dot(ref, normal))));
+				if(length(flat) < 0.5f) return pitch;
+				float tilt = (std::acos(std::clamp(flat[2], -1.0f, 1.0f)) - pi / 2) * dot(mul(direction_at(yaw, pitch), -1), flat);
+				float centre = m.u8(cam + 0x75) & 2 ? m.f32(m.u32(cam + 8) + 0x30) : pitch;
+				if(centre * tilt >= 0) {
+					if(std::fabs(tilt) < std::fabs(centre)) return pitch;
+					tilt -= centre;
+				}
+				return centre + tilt;
+			}
+			std::uint32_t original_block() const { return m.u8(cam + 0x75) & 2 ? m.u32(cam + 8) : block; }
+			vec3 follow_point(std::uint32_t b, bool hold_centres) const {
+				auto options = m.read<std::uint16_t>(b + 0x72);
+				if(hold_centres) options |= 0x40;
+				auto d = camera_direction(m, cam, b, target_transform, sub(position, aim), options);
+				float r = std::clamp(length(sub(position, aim)), m.f32(block + 0x18), std::max(m.f32(block + 0x18), m.f32(block + 0x1C)));
+				vec3 p = add(aim, mul(d.back, std::max(r, 0.01f)));
+				p[2] = std::clamp(p[2], m.f32(block + 0x60), std::max(m.f32(block + 0x60), m.f32(block + 0x64)));
+				return p;
+			}
+			vec3 ideal() const { return follow_point(original_block(), true); }
+			// 0x486540: quantized errors in distance, yaw and pitch from the
+			// saved follow block, sorted smallest first by 0x486840.
+			float score(const vec3& offset) const {
+				auto base = coordinates(sub(ideal(), aim)), c = coordinates(offset);
+				auto quantize = [](float x) { x *= 100; return float(-int(x * -2) - int(x)); };
+				float by = base[1] > pi ? two_pi - base[1] : base[1];
+				float cy = c[1] > pi ? two_pi - c[1] : c[1];
+				float bp = base[2] > pi ? two_pi - base[2] : base[2];
+				float cp = c[2] > pi ? c[2] - two_pi : c[2];
+				return quantize(std::fabs(by - cy)) * 0.01f + quantize(std::fabs(bp - cp)) * 0.1f +
+					quantize(std::fabs(base[0] - c[0])) * 0.001f;
+			}
+			struct candidate { vec3 offset; float score; };
+			// 0x486880: rotate the ordinary follow block around the target, at
+			// its saved pitch, level, +pi/4 and -pi/4. The fallback also samples
+			// half distance, and (with mask 8) 0.33 distance at the saved pitch.
+			std::vector<candidate> candidates(unsigned mask) const {
+				std::vector<candidate> out;
+				auto b = original_block();
+				float step = setting(mask & 4 ? 0x48 : 0x44);
+				if(!(step > 0)) return out;
+				unsigned n = std::min(unsigned(two_pi / step), 256u);
+				float yaw = m.f32(b + 0x28), pitch = m.f32(b + 0x30);
+				float radius = std::clamp(length(sub(position, aim)), m.f32(block + 0x18), std::max(m.f32(block + 0x18), m.f32(block + 0x1C)));
+				float ideal_radius = length(sub(ideal(), aim));
+				auto append = [&](float p, float r) {
+					float angle = wrap_two_pi(yaw);
+					vec3 point = add(aim, mul(direction_at(angle, slope_pitch(angle, p)), std::max(r, 0.01f)));
+					point[2] = std::clamp(point[2], m.f32(block + 0x60), std::max(m.f32(block + 0x60), m.f32(block + 0x64)));
+					vec3 v = sub(point, aim);
+					out.push_back({ v, score(v) });
+				};
+				for(unsigned i = 0; i < n; ++i, yaw += step) {
+					append(pitch, radius);
+					if((mask & 4) && !(globals & 0x40)) {
+						append(pitch, ideal_radius * 0.5f);
+						if(mask & 8) append(pitch, ideal_radius * 0.33f);
+					}
+					append(0, radius); append(pi / 4, radius); append(-pi / 4, radius);
+				}
+				return out;
+			}
+			// 0x4875D0: do not abandon an obstruction waypoint for a candidate
+			// closer to the transition's starting point while still moving.
+			bool may_leave(const vec3& p, float dt) const {
+				if(mode() && m.f32(cam + 0x70) < count(0x7C) * 1000 * dt && (m.u8(cam + 0x75) & 8))
+					return length(sub(p, read3(m, cam + 0x10))) > length(sub(read3(m, cam + 0x1C), read3(m, cam + 0x10)));
+				return true;
+			}
+			// 0x486710 followed by 0x4864D0; the former uses the instantaneous
+			// anchor, the latter adds the offset to the tracked aim point.
+			std::optional<std::pair<vec3, unsigned>> search(unsigned mask, float dt) const {
+				auto list = candidates(mask);
+				state.trace.search_mask = mask;
+				state.trace.search_candidates = unsigned(list.size());
+				std::stable_sort(list.begin(), list.end(), [](const candidate& a, const candidate& b) { return a.score < b.score; });
+				float previous = score(sub(mask & 4 ? position : desired, aim));
+				for(unsigned i = 0; i < list.size(); ++i) {
+					const auto& c = list[i];
+					vec3 p = add(anchor, c.offset);
+					if((mask & 8) && (c.score >= previous || previous - c.score < 0.05f || !may_leave(p, dt))) continue;
+					if(length(c.offset) < m.f32(block + 0x20) + setting(0x6C)) continue;
+					if(!(mask & 4) && near(p, desired)) continue;
+					if((!(mask & 4) || (mask & 8)) && near(p, position)) continue;
+					p = add(aim, c.offset);
+					if(!rejected(p, mask)) {
+						state.trace.search_rank = int(i);
+						return std::pair{ p, i };
+					}
+				}
+				return {};
+			}
+			// 0x487440 / 0x4874F0: fit a follow block to a world destination.
+			void fit(std::uint32_t b, const vec3& p) {
+				auto c = coordinates(sub(p, aim));
+				m.write<float>(b + 0x18, c[0]); m.write<float>(b + 0x1C, c[0]);
+				m.write<float>(b + 0x28, c[1]); m.write<float>(b + 0x30, c[2]);
+			}
+			void store3(unsigned at, const vec3& p) {
+				for(unsigned k = 0; k < 3; ++k) m.write<float>(cam + at + k * 4, p[k]);
+			}
+			// 0x487520. Keep the unmodified block in the spare slot until the
+			// transition ends; scripts can continue overriding its other fields.
+			void begin(const vec3& p, bool obstruction) {
+				if(!(m.u8(cam + 0x75) & 2)) {
+					copy_block(m.u32(cam + 8), m.u32(cam + 4));
+					m.write<std::uint8_t>(cam + 0x75, m.u8(cam + 0x75) | 2);
+				}
+				fit(m.u32(cam + 4), p);
+				for(unsigned at : { 0x18u, 0x1Cu, 0x28u, 0x30u }) m.write<float>(block + at, m.f32(m.u32(cam + 4) + at));
+				desired = follow_point(block, false); // 0x487520 recomputes before the hold/progress tests
+				store3(0x10, position); store3(0x1C, p);
+				m.write<int>(cam + 0x60, 1);
+				m.write<std::uint8_t>(cam + 0x75, (m.u8(cam + 0x75) | 4) & ~8u);
+				if(obstruction) m.write<std::uint8_t>(cam + 0x75, m.u8(cam + 0x75) | 8);
+				state.swing = 0;
+			}
+			void finish() {
+				// 0x4876E0 restores both current and per-frame blocks.
+				copy_block(m.u32(cam + 4), m.u32(cam + 8));
+				copy_block(block, m.u32(cam + 8));
+				m.write<std::uint8_t>(cam + 0x75, (m.u8(cam + 0x75) & ~10u) | 4);
+				m.write<int>(cam + 0x60, 0);
+				desired = follow_point(block, false);
+			}
+			void fallback(float dt) {
+				// 0x486EA0 -> mode 2 -> 0x486F40: a view-only search can
+				// relocate without a path from the old eye (a real recovery cut).
+				if(auto found = search(globals & 4 ? 13 : 5, dt)) {
+					state.trace.relocated = true;
+					affine placement = *global_placement(m, state.super_object);
+					for(unsigned k = 0; k < 3; ++k) placement.m[k][3] = found->first[k];
+					set_global_placement(m, state.super_object, placement);
+					position = found->first;
+					state.previous_move = {};
+					// 0x473480 also resets the mechanics aim and its carried step.
+					// Keeping the pre-cut aim would briefly look up through the floor.
+					state.aim = offset_point;
+					state.previous_aim = {};
+					state.carry_angle = 0;
+					begin(found->first, false);
+				}
+			}
+			vec3 follow(float dt) {
+				float elapsed = float(vm.frame_ms());
+				float still = m.f32(cam + 0x70);
+				if(!(flags & (8 | 0x2000)) && !(m.u8(cam + 0x74) & 2)) {
+					float timer = m.f32(cam + 0x68) + elapsed;
+					m.write<float>(cam + 0x68, timer);
+					if(timer >= count(0x78) * 1000 * dt) {
+						m.write<float>(cam + 0x68, 0);
+						// 0x4870C0 changes this frame's scenery gate only when
+						// its route timer expires. Other triggers otherwise retain it.
+						if(m.f32(cam + 0x6C) == 0) {
+							if(still > dt * 10000) static_tests = false;
+							else if(length(state.previous_move) > 0.0001f && length(sub(anchor, position)) > 0.0001f &&
+								std::fabs(dot(normalised(state.previous_move), normalised(sub(anchor, position)))) > 0.9f) static_tests = false;
+						}
+						if(!route(anchor, position, true)) m.write<float>(cam + 0x6C, 0);
+						else {
+							float blocked = m.f32(cam + 0x6C) + elapsed;
+							m.write<float>(cam + 0x6C, blocked);
+							if(blocked > count(0x7E) * 1000 * dt) { m.write<float>(cam + 0x6C, 0); fallback(dt); }
+							else if(rejected(desired, 3)) {
+								m.write<float>(cam + 0x64, 0); m.write<float>(cam + 0x6C, 0);
+								if(auto found = search(3, dt)) begin(found->first, true); else fallback(dt);
+							}
+						}
+					}
+				}
+				// 0x486FA0: a stopped/colliding camera inside settle distance also searches.
+				if(!(flags & 0x3000) && !(m.u8(cam + 0x74) & 2) &&
+					length(sub(position, anchor)) <= m.f32(block + 0x20) &&
+					((state.trace.report & 1) || (m.u8(cam + 0x74) & 4)) && rejected(desired, 3)) {
+					m.write<float>(cam + 0x64, 0);
+					if(auto found = search(flags & 8 ? 2 : 3, dt)) begin(found->first, true); else fallback(dt);
+				}
+				if(!(flags & 0x3000) && (state.trace.report & 3) == 3) {
+					m.write<float>(cam + 0x64, 0);
+					if(auto found = search(flags & 8 ? 2 : 3, dt)) begin(found->first, false); else fallback(dt);
+				}
+				// 0x487730: procedure 491 index 44 requests an improving search.
+				if(mode() == 1) {
+					float timer = m.f32(cam + 0x64) + elapsed;
+					m.write<float>(cam + 0x64, timer);
+					if(timer >= count(0x7A) * 1000 * dt && !(globals & 0x20) && m.u8(cam + 0x17C)) {
+						m.write<float>(cam + 0x64, 0);
+						if(auto found = search(11, dt)) {
+							if(found->second == 0) finish(); else begin(found->first, false);
+							m.write<std::uint8_t>(cam + 0x17C, 0);
+						}
+					}
+				}
+				if(may_leave(desired, dt)) m.write<std::uint8_t>(cam + 0x75, m.u8(cam + 0x75) & ~8u);
+				if(mode() == 1 && (m.u8(cam + 0x75) & 8)) {
+					// 0x485180: project the moving follow point onto the line
+					// from the stored waypoint towards the tracked target.
+					vec3 p = read3(m, cam + 0x1C), axis = normalised(sub(aim, p));
+					if(length(axis) > 0 && length(tracked_motion()) > setting(0x58) && !(globals & 8))
+						p = add(p, mul(axis, dot(sub(desired, p), axis)));
+					fit(m.u32(cam + 4), p); store3(0x1C, p);
+					return p;
+				}
+				return desired;
+			}
+			vec3 tracked_motion() const { return read3(m, cam + 0xCC); }
+		};
+	}
+
+	void solve_camera(interpreter& vm, std::uint32_t super_object, bool offset_only)
 	{
 		live_memory& m = vm.memory();
 		std::uint32_t actor = vm.actor_of(super_object);
@@ -508,6 +761,23 @@ namespace openrayman::game
 		else if(target_transform)
 			off = add(aim, rotate(m, target_transform, read3(m, block + camera_field::vector_a)));
 
+		if(offset_only) { state.off = off; return; }
+
+		// 0x485810 maintains this timer even while a script fixes the eye.
+		if(state.valid)
+		{
+			float still = m.f32(cam + 0x70);
+			if(length(state.previous_move) >= setting(0x54)) still = 0;
+			else
+			{
+				std::uint16_t frames;
+				std::memcpy(&frames, &vm.camera().values[0x7C], 2);
+				if(still < float(frames) * float(vm.frame_ms())) still += float(vm.frame_ms());
+				m.write<std::uint8_t>(cam + 0x74, m.u8(cam + 0x74) | 4);
+			}
+			m.write<float>(cam + 0x70, still);
+		}
+
 		// The wanted position (0x4847D0).
 		vec3 want{}, back{ 0, 0, 1 };
 		if(flags_72 & fixed_position)
@@ -548,64 +818,7 @@ namespace openrayman::game
 			back = dir.back;
 			want = wanted_along(back);
 
-			// 0x485760 / 0x4855D0: keep a chosen direction, or latch blocked until
-			// the yaw gap becomes small or the block disables swinging.
-			const float eighth = setting(0xA4);
-			if(!(m.u8(cam + 0x74) & 2) && (std::fabs(dir.gap) < eighth || (flags_72 & 0x4)))
-				state.swing = 0;
-			else if(!(m.u8(cam + 0x74) & 2) && state.swing != -2)
-			{
-				if((state.trace.report & 1) && !(state.trace.global_flags & 1))
-					state.swing = -2;
-				else
-				{
-					if(state.swing_gap * dir.gap < 0 && std::fabs(dir.gap) < pi - eighth)
-						state.swing = 0;
-					if(state.swing == 0) state.swing_gap = dir.gap;
-					vec3 anchor = add(read3(m, target_transform + 4), rotate(m, target_transform, read3(m, block + camera_field::vector_b)));
-					auto try_step = [&](int sign) {
-						float angle = wrap_two_pi(dir.yaw + sign * eighth);
-						vec3 candidate_back = camera_direction(m, cam, block, target_transform, d, flags_72, angle).back;
-						vec3 candidate = wanted_along(candidate_back);
-						bool rejected = length(sub(candidate, anchor)) < m.f32(block + 0x20) + setting(0x6C);
-						// 0x4853C0 requests these casts only in mode 1 with cam+0x75 bit 2.
-						// 0x485FD0 samples rays around the segment. Our world has static level
-						// triangles but not the executable's dynamic collision objects.
-						if(!rejected && state.trace.mode == 1 && (m.u8(cam + 0x75) & 4) && !(flags_72 & 0x10))
-						{
-							auto obstructed = [&](vec3 from, vec3 to, float start_radius, float end_radius, unsigned count) {
-								vec3 axis = normalised(sub(to, from));
-								vec3 radial = cross(axis, vec3{ 0, 0, 1 });
-								if(length(radial) < 1e-6f) radial = cross(axis, vec3{ 1, 0, 0 });
-								radial = normalised(radial);
-								for(unsigned i = 0; i < count; ++i)
-								{
-									vec3 v = rotate_about(radial, axis, two_pi * float(i) / float(count));
-									if(vm.world().first_hit(add(from, mul(v, start_radius * start_radius)), add(to, mul(v, start_radius * end_radius)))) return true;
-								}
-								return false;
-							};
-							auto count = [&](std::size_t offset) { std::uint16_t n; std::memcpy(&n, &vm.camera().values[offset], 2); return unsigned(n); };
-							if(!(flags_72 & 8) && obstructed(anchor, candidate, setting(0x3C), setting(0x40), count(0x76))) rejected = true;
-							if(obstructed(position, candidate, setting(0x34), setting(0x38), count(0x74))) rejected = true;
-						}
-						int n = state.trace.candidates++;
-						state.trace.candidate[n] = candidate;
-						state.trace.rejected[n] = rejected;
-						if(!rejected) { back = candidate_back; want = candidate; }
-						return !rejected;
-					};
-					int sign = state.swing == 0 ? (dir.gap > 0 ? 1 : -1) : state.swing;
-					if(try_step(sign))
-					{
-						if(state.swing == 0) state.swing = sign;
-					}
-					else if(state.swing == 0 && std::fabs(dir.gap) >= pi - eighth && try_step(-sign))
-						state.swing = -sign;
-					else
-						state.swing = -2;
-				}
-			}
+
 		}
 		if(!target_transform)
 		{
@@ -661,44 +874,96 @@ namespace openrayman::game
 			state.trace.view_blocked = vm.world().first_hit(anchor, position).has_value();
 			state.trace.wanted_blocked = vm.world().first_hit(anchor, want).has_value();
 		}
-		// Until the original's candidate scoring and transition modes are fully understood, use a
-		// conservative search: when the target is hidden, pick a reachable candidate with a clear
-		// view. Keep the waypoint across ticks so the camera can actually go around a corner.
-		std::uint16_t options = m.read<std::uint16_t>(block + camera_field::flags_70);
-		if(!target_transform || (flags_72 & 0x3000) || (options & (snap_position | 0x40)) || !state.valid || cut)
+		state.super_object = super_object;
+		state.trace.collision_radius = camera_radius(m, super_object);
+		if(target_transform && state.valid && !cut && !(flags_72 & 0x2000) && !(m.u8(cam + 0x74) & 2))
 		{
-			state.obstacle_waypoint.reset();
-			state.obstacle_retry = 0;
+			vec3 up = flags_72 & 0x4000 ? normalised(read3(m, cam + 0x4C)) : vec3{ 0, 0, 1 };
+			vec3 ref = flags_72 & 0x4000 ? normalised(read3(m, cam + 0x40)) : normalised(read3(m, target_transform + 0x1C));
+			if(length(up) < 0.5f) up = { 0, 0, 1 };
+			if(length(ref) < 0.5f) ref = { 0, -1, 0 };
+			vec3 anchor = add(read3(m, target_transform + 4), rotate(m, target_transform, read3(m, block + camera_field::vector_b)));
+			obstacle_search search{ vm, m, state, cam, block, target_transform, anchor, aim, position, want, off, ref, up, flags_72, state.trace.global_flags };
+			float dt = float(vm.frame_ms()) * 0.001f;
+			if(m.read<int>(cam + 0x60) <= 1) {
+				// 0x485810: while moving, arriving at the fitted follow point
+				// restores the spare block and resumes the ordinary follow solve.
+				if(search.mode() == 1 && (search.globals & 0x10) && length(tracked_speed) > setting(0x58) && search.near(position, want)) {
+					search.finish();
+				}
+				want = search.follow(dt);
+				// Mode 2 may have changed the eye before mechanics runs.
+				position = search.position;
+			}
+			state.trace.waypoint = search.mode() == 1;
 		}
-		else
+		else if((flags_72 & 0x3000) || (m.u8(cam + 0x74) & 2))
 		{
-			if(state.obstacle_waypoint && (length(sub(aim, state.obstacle_target)) > 2.0f || length(sub(position, *state.obstacle_waypoint)) < 0.5f))
-				state.obstacle_waypoint.reset();
-			if(!state.obstacle_waypoint)
+			m.write<std::uint8_t>(cam + 0x75, m.u8(cam + 0x75) & ~12u);
+		}
+		state.trace.mode = m.read<int>(cam + 0x60);
+		// The obstruction handlers precede the swing handler in 0x485810.
+		if(target_transform && !(flags_72 & fixed_position) && !(m.u8(cam + 0x75) & 8) && m.read<int>(cam + 0x60) <= 1)
+		{
+			vec3 d = sub(position, aim);
+			float near = m.f32(block + camera_field::min_distance), far = m.f32(block + camera_field::max_distance);
+			float r = std::max(std::clamp(length(d), near, std::max(near, far)), 0.01f);
+			float low = m.f32(block + camera_field::min_height), high = m.f32(block + camera_field::max_height);
+			auto wanted_along = [&](const vec3& way) {
+				vec3 w = add(aim, mul(way, r));
+				w[2] = std::clamp(w[2], low, std::max(low, high));
+				return w;
+			};
+			direction dir = camera_direction(m, cam, block, target_transform, d, flags_72);
+			// 0x485760 / 0x4855D0: keep a chosen direction, or latch blocked until
+			// the yaw gap becomes small or the block disables swinging.
+			const float eighth = setting(0xA4);
+			if(!(m.u8(cam + 0x74) & 2) && (std::fabs(dir.gap) < eighth || (flags_72 & 0x4)))
+				state.swing = 0;
+			else if(!(m.u8(cam + 0x74) & 2) && state.swing != -2)
 			{
-				if(state.obstacle_retry > 0)
-					state.obstacle_retry--;
+				if((state.trace.report & 1) && !(state.trace.global_flags & 1))
+					state.swing = -2;
 				else
 				{
-					state.obstacle_retry = 3;
-					// 0x4870C0 only enters its search after the view and the wanted position
-					// both fail obstruction tests. These centre-line static-world tests are
-					// an approximation of its offset rays and dynamic collision objects.
+					if(state.swing_gap * dir.gap < 0 && std::fabs(dir.gap) < pi - eighth)
+						state.swing = 0;
+					if(state.swing == 0) state.swing_gap = dir.gap;
 					vec3 anchor = add(read3(m, target_transform + 4), rotate(m, target_transform, read3(m, block + camera_field::vector_b)));
-					bool static_tests = !(flags_72 & 0x10);
-					bool view_blocked = static_tests && vm.world().first_hit(anchor, position).has_value();
-					bool wanted_blocked = length(sub(want, anchor)) < m.f32(block + 0x20) + setting(0x6C) ||
-						(static_tests && (vm.world().first_hit(anchor, want).has_value() || vm.world().first_hit(position, want).has_value()));
-					if(!(flags_72 & 8) && view_blocked && wanted_blocked)
-						state.obstacle_waypoint = camera_obstacle_waypoint(vm.world(), aim, position, want, camera_radius(m, super_object));
-					state.obstacle_target = aim;
+					auto try_step = [&](int sign) {
+						float angle = wrap_two_pi(dir.yaw + sign * eighth);
+						vec3 candidate_back = camera_direction(m, cam, block, target_transform, d, flags_72, angle).back;
+						vec3 candidate = wanted_along(candidate_back);
+						bool rejected = length(sub(candidate, anchor)) < m.f32(block + 0x20) + setting(0x6C);
+						// 0x4853C0 requests these casts only in mode 1 with cam+0x75 bit 2.
+						// 0x485FD0 samples rays around the segment. Our world has static level
+						// triangles but not the executable's dynamic collision objects.
+						if(!rejected && state.trace.mode == 1 && (m.u8(cam + 0x75) & 4))
+						{
+
+							auto count = [&](std::size_t offset) { std::uint16_t n; std::memcpy(&n, &vm.camera().values[offset], 2); return unsigned(n); };
+							if(!(flags_72 & 8) && camera_route_obstructed(vm.world(), anchor, candidate, setting(0x3C), setting(0x40), count(0x76))) rejected = true;
+							if(camera_route_obstructed(vm.world(), position, candidate, setting(0x34), setting(0x38), count(0x74))) rejected = true;
+						}
+						int n = state.trace.candidates++;
+						state.trace.candidate[n] = candidate;
+						state.trace.rejected[n] = rejected;
+						if(!rejected) { back = candidate_back; want = candidate; }
+						return !rejected;
+					};
+					int sign = state.swing == 0 ? (dir.gap > 0 ? 1 : -1) : state.swing;
+					if(try_step(sign))
+					{
+						if(state.swing == 0) state.swing = sign;
+					}
+					else if(state.swing == 0 && std::fabs(dir.gap) >= pi - eighth && try_step(-sign))
+						state.swing = -sign;
+					else
+						state.swing = -2;
 				}
 			}
-			if(state.obstacle_waypoint)
-				want = *state.obstacle_waypoint;
 		}
-		state.super_object = super_object;
-		state.trace.waypoint = state.obstacle_waypoint.has_value();
+
 		m.write<std::uint8_t>(cam + 0x76, static_cast<std::uint8_t>(state.swing));
 		m.write<float>(cam + 0x5C, state.swing_gap);
 		state.trace.swing = state.swing;
@@ -805,7 +1070,8 @@ namespace openrayman::game
 		}
 	}
 
-	void move_camera(live_memory& m, std::uint32_t super_object, camera_state& state, double ms, const world_collision& world)
+	void move_camera(live_memory& m, std::uint32_t super_object, camera_state& state, double ms, const world_collision& world,
+		const world_collision* objects)
 	{
 		std::uint32_t transform = global_transform(m, super_object);
 		if(!state.valid || !transform)
@@ -890,14 +1156,34 @@ namespace openrayman::game
 		std::uint32_t base = dynamics ? word(dynamics) : 0, report = base ? word(base + 0x150) : 0;
 		bool have_report = report && m.contains(report + 0x168, 1);
 		if(have_report) m.write<std::uint8_t>(report + 0x168, m.u8(report + 0x168) & 0xFE);
-		if(!(state.flags & 0x40) && !(state.flags & snap_position) && !world.empty())
+		if(!(state.flags & 0x40) && !(state.flags & snap_position) && (!world.empty() || (objects && !objects->empty())))
 		{
 			if(float radius = camera_radius(m, super_object); radius > 0)
 			{
-				vec3 moved = world.slide_sphere(position, pos, radius);
+				vec3 contact{};
+				vec3 moved = world.slide_sphere(position, pos, radius, &contact);
+				if(objects && !objects->empty())
+				{
+					vec3 object_contact{};
+					vec3 object_move = objects->slide_sphere(position, moved, radius, &object_contact);
+					if(object_move != moved)
+					{
+						if(length(contact) == 0) contact = object_contact;
+						// Recheck scenery after sliding along an actor at a shared corner.
+						moved = world.slide_sphere(position, object_move, radius);
+					}
+				}
 				if(moved != pos)
 				{
-					if(have_report) m.write<std::uint8_t>(report + 0x168, m.u8(report + 0x168) | 1);
+					if(have_report)
+					{
+						// 0x434660: bit 1 distinguishes a head-on obstruction while
+						// travelling towards the aim point (0x49C710/0x49C714).
+						vec3 direction = normalised(sub(pos, position));
+						unsigned bits = m.u8(report + 0x168) & ~2u;
+						if(dot(direction, contact) < -0.7f && dot(direction, normalised(sub(state.aim, position))) > 0.7f) bits |= 2;
+						m.write<std::uint8_t>(report + 0x168, bits | 1);
+					}
 					pos = moved;
 					vec3 from = normalised(sub(state.look_at, position)), to = normalised(sub(state.look_at, pos));
 					state.carry_angle = std::acos(std::clamp(dot(from, to), -1.0f, 1.0f));

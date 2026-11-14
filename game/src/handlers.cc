@@ -2100,9 +2100,10 @@ namespace openrayman::game
 		// turns bit 0 of its +0x72 option word on and bit 0x1000 of the current block's off, runs
 		// the first two stages of the solve (0x483F90 the wanted position, 0x4840A0 the offset
 		// point) and returns that point (context +0xA0, a world position). Nothing is committed. Here the
-		// solve our camera code does stands in for those stages, and its result (which includes
-		// the distance clamp and the height limits of 0x485810) is put back afterwards so the
-		// frame's commit is unaffected. Bit 0 of +0x72 means nothing to our solve; 0x1000 (the
+		// offset-only solve stops after those stages, before obstacle transitions or mechanics
+		// parameters change. Its transient camera_state is restored afterwards. The existing
+		// target-history sampling approximation is retained. Bit 0 of +0x72 means nothing to
+		// our solve; 0x1000 (the
 		// script's fixed offset point) is cleared in the block the solve reads, as the exe does.
 		std::uint32_t camera_move_vector(call& c, value& out)
 		{
@@ -2120,7 +2121,7 @@ namespace openrayman::game
 			camera_state before = c.vm.camera_motion();
 			std::uint8_t saved_swing = m.u8(cam + 0x76);
 			float saved_gap = m.f32(cam + 0x5C);
-			solve_camera(c.vm, self);
+			solve_camera(c.vm, self, true);
 			out = value_of(c.vm.camera_motion().off);
 			c.vm.camera_motion() = before;
 			m.write<std::uint8_t>(cam + 0x76, saved_swing);

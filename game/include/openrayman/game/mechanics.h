@@ -73,7 +73,9 @@ namespace openrayman::game
 		// and gives up when the slide turns more than 150 degrees from the movement. A sphere that
 		// starts inside a surface is pushed out first. Water and 0x8000 surfaces let it through
 		// (0x434390 skips collide flags 0xC000). Returns where it ends.
-		std::array<float, 3> slide_sphere(const std::array<float, 3>& start, const std::array<float, 3>& end, float radius) const;
+		// first_normal, when supplied, receives the first contact's outward normal (zero without contact).
+		std::array<float, 3> slide_sphere(const std::array<float, 3>& start, const std::array<float, 3>& end, float radius,
+			std::array<float, 3>* first_normal = nullptr) const;
 
 		// The nearest surface carrying all of `flags` that a sphere at `centre` touches: the point on
 		// it closest to the centre, within `radius`, its normal and material. What a ledge probe of

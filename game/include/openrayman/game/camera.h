@@ -40,6 +40,10 @@ namespace openrayman::game
 			unsigned report = 0, global_flags = 0;
 			bool waypoint = false, focus = false, view_blocked = false, wanted_blocked = false;
 			float swing_gap = 0, yaw = 0, gap = 0;
+			float collision_radius = 0;
+			unsigned search_candidates = 0, search_mask = 0;
+			int search_rank = -1;
+			bool relocated = false;
 			std::array<std::array<float, 3>, 2> candidate{};
 			std::array<int, 2> rejected{};
 			std::array<float, 3> wanted{};
@@ -80,25 +84,21 @@ namespace openrayman::game
 		// camera settings (+0xA8, +0xAC); 1 means no smoothing and is what the defaults give.
 		float position_smoothing = 1;
 		float aim_smoothing = 1;
-		std::optional<std::array<float, 3>> obstacle_waypoint;
-		std::array<float, 3> obstacle_target{};
-		unsigned obstacle_retry = 0;
 	};
 
-	// Find a reachable position with a clear view of the target when a wall blocks the camera.
-	// This is an approximation of the original's candidate search, pending a full trace.
-	std::optional<std::array<float, 3>> camera_obstacle_waypoint(const world_collision& world,
-		const std::array<float, 3>& target, const std::array<float, 3>& position,
-		const std::array<float, 3>& desired, float radius);
+	// 0x485FD0: a ring of offset rays, or the centre ray when count is one.
+	bool camera_route_obstructed(const world_collision& world, const vec3& from, const vec3& to,
+		float start_radius, float end_radius, unsigned count);
 
 	// Procedure 444's solve (0x47DA40 -> 0x485810): the camera's scripts have filled the parameter
 	// block that is in force, so work out the look-at point, the offset point and the wanted position,
 	// and hand the numbers and the block's speeds to the mechanics through `vm.camera_motion()`.
-	void solve_camera(interpreter& vm, std::uint32_t super_object);
+	void solve_camera(interpreter& vm, std::uint32_t super_object, bool offset_only = false);
 
 	// One tick of the camera's mechanics (0x4359D0, its steps 1, 2, 4 and 6): step the camera's
 	// position towards the wanted one, orbit it about the look-at point, keep it out of the level's
 	// surfaces (`world`, may be empty), ease the aim point, and publish the result as the super
 	// object's global transform.
-	void move_camera(live_memory& memory, std::uint32_t super_object, camera_state& state, double ms, const world_collision& world);
+	void move_camera(live_memory& memory, std::uint32_t super_object, camera_state& state, double ms, const world_collision& world,
+		const world_collision* objects = nullptr);
 }
