@@ -209,6 +209,14 @@ are 0x4DDC07FF (cull, keep positive; 0x08000000 depth writes, 0x40000000 normal 
 mountain ring hides from behind. Before, OpenRayman drew everything double-sided;
 `OPENRAYMAN_NO_CULL=1` still does, for comparison.
 
+  The mask is object-dependent: 0x42AAE0 places the submitted draw flags at context +0xC,
+  while 0x42AA30 and 0x41E310 select the visual material through context +0x2D3B8. The
+  scene traversal at 0x45CA30 combines super-object flags, and 0x40F140 initializes newly
+  created nodes to 0xFFFFFFFF; 0x40E0D0 clears 0x80000 on a negatively scaled part.
+  Sprite drawing at 0x4291E0 and 0x428F10 clears 0x400 in the draw flags. The full
+  runtime masks for individual actor parts have not yet been measured, so the renderer's
+  material-only rule for those parts remains an assumption.
+
 **Scrolling textures**: the speed is in texture widths per frame, with v counting up as everywhere
 in the game (0.0065 for the Learn_10 stream). 177 materials in all levels scroll: water, foam and
 mist, fog, skies and star fields, rain, a vortex. In every one the flag is 1 exactly when a speed is
@@ -233,6 +241,8 @@ the count says.
 
 ## Where this came from
 
+  - One-sided surfaces and object masks: own analysis of the executable and renderer drivers at
+    the addresses above; the actor-part runtime mask still needs a data and runtime survey.
 - The chain of structures (IPO, physical object, visual set, geometric object, element, game and
   visual material) follows the usual OpenSpace model as documented by Raymap (reference only).
 - Sprites: structure from Raymap (reference only), checked against the data (centre vertices in
