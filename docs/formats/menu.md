@@ -449,3 +449,39 @@ view width and height respectively. Thus both slot axes are thousandths of the v
 OpenRayman keeps the screen-slot layer in a centred 4:3 area in wider windows (the HUD's
 counters at the screen edge instead, see text.md), while the 3D view still fills the window. At 4:3 its glyph dimensions retain the executable's ratio.
 The reported difference at 4:3 remains to be checked with a matched capture.
+
+## Pause menu and Murfy (investigation, 2026-11-14)
+
+The shared Fix controller at `04/00 +0x13E64` owns the in-game menu. Its behaviour 1
+(rule `0d/00 +0x230BC`) tests input action 7 (Esc); its next rule tests action 23
+(F1) with additional story and player-state guards. The tutorial tablet's Learn_10
+node 42 behaviour 7 instead tests action 22, also F1, to replay its scene.
+
+The Esc branch creates six labels from text IDs 0x16F, 0x167, 0x168, 0x16A,
+0x170 and 0x169, at y=200..700 in steps of 100, with slot 0 initially selected.
+In the English data these appear as Resume Game, Load, Options, OpenRayman 0.1.0
+(the project's replacement text), Abandon and The Hall of Doors. The scripts disable
+Load when there are no saves and conditionally disable the Hall of Doors. They generate
+two temporary actors, including the visual effect, and fill screen slots through 505/506.
+Behaviour 2 (`0d/00 +0x25410`) removes both temporary actors, restores Rayman's
+saved variable, clears the menu state and returns the controller to behaviour 0.
+The scripts request `menu` or `mapmonde` in different exit branches; the latter is the
+Hall of Doors level, and its full flow still needs verification.
+
+The executable's procedure 504 handler `0x4730A0` sets byte `0x4B9BC8`; the
+particle update `0x4607E0` and draw routines `0x44B1B0`/`0x44B2E0` inspect it.
+Procedure 306 (`0x467970`, branch `0x4679EE`) stops and resumes the game clock via
+`0x409E90` and `0x409F00`. Procedure 413 (`0x4710C0`, branch `0x47131E`) calls
+`0x45BA60`, which saves and restores a stack of special actors. Procedure 426
+(`0x471E40`) and 427 call the sound pause/resume paths `0x4536D0`/`0x453700`.
+The exact actor scheduling and effect rendering needed for a complete pause remain
+under investigation; these calls must not be replaced by a blanket stop of every actor,
+because the menu controller still has to run.
+
+### Where this came from
+
+Own analysis of the installed GOG executable, the game's Fix and Learn_10 scripts
+(`ortool input` and `ortool brain`), and OpenRayman baseline screenshots. Addresses
+above are executable virtual addresses unless marked as data block offsets. No original
+code or game assets are included here. This describes observed script and executable
+paths, not a claim that OpenRayman implements them all.
