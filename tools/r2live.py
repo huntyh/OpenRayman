@@ -455,6 +455,41 @@ def update_order(m, limit=12):
 	return " ".join(items)
 
 
+def watch_animation_parts(m, animation, say):
+	# Every actor of the dynamic world playing this animation (3D data +4 state, state +4 animation reference,
+	# u16 index at +0x18): on each new animation frame (3D data +0x74), its parts by channel id (3D data +0x90,
+	# 0x14 each, +0 the channel's super object) with the local transform the pose wrote (super object +0x20:
+	# type +0, position +4, rotation-and-scale matrix +0x34) and the world position (+0x24). Compare with
+	# `ortool anim <level> <animation> <frame>` (local) and ORTOOL_WORLD=1 (actor space). Card 98.
+	last = {}
+	while True:
+		clock = m.u32(CLOCK)
+		so = m.u32(m.u32(DYNAMIC_WORLD) + 8)
+		while so:
+			actor = m.u32(so + 4)
+			data = m.u32(actor) if actor else 0
+			state = m.u32(data + 4) if data else 0
+			reference = m.u32(state + 4) if state else 0
+			if reference and (m.u32(reference + 0x18) & 0xFFFF) == animation:
+				frame = m.u32(data + 0x74) & 0xFFFF
+				if last.get(so) != frame:
+					last[so] = frame
+					placed = m.u32(so + 0x24)
+					at = m.f32s(placed + 4, 3) if placed else (float("nan"),) * 3
+					say(f"t {clock:>9}: actor {so:X} at {fmt(at)} animation {animation} frame {frame}")
+					parts = m.u32(data + 0x90)
+					for index in range(128):
+						part = m.u32(parts + index * 0x14) if parts else 0
+						local = m.u32(part + 0x20) if part else 0
+						world = m.u32(part + 0x24) if part else 0
+						if not local or not world:
+							continue
+						say(f"  channel {index:>3} local {fmt(m.f32s(local + 4, 3))} matrix {fmt(m.f32s(local + 0x34, 9))} world {fmt(m.f32s(world + 4, 3))}")
+			so = m.u32(so + 0x14)
+		while m.u32(CLOCK) == clock:
+			time.sleep(0.0005)
+
+
 def main():
 	parser = argparse.ArgumentParser(description="Watch Rayman in the running Rayman2.exe (read-only).")
 	parser.add_argument("--vars", default="", help="script variable indexes, comma separated")
@@ -468,6 +503,7 @@ def main():
 	parser.add_argument("--story", action="store_true", help="also the story bits as they turn on or off (numbered as function 248 counts them)")
 	parser.add_argument("--story-only", action="store_true", help="log only the story bits, each change with the clock and Rayman's position (for a whole playthrough)")
 	parser.add_argument("--generated", action="store_true", help="also the generated actors (Rayman's shots): slot, maker, position, state, timers")
+	parser.add_argument("--animation-parts", type=int, help="log only the parts of every actor playing this animation, each new frame (card 98)")
 	parser.add_argument("--parts", action="store_true", help="log animation frame and Rayman's part positions")
 	parser.add_argument("--order", action="store_true", help="also the frame counter (0x5003E4) and the dynamic world's actors in update order (0x500FD0): super object, moving byte +0x28 (*), update stamp +0x18 relative to the counter, position")
 	args = parser.parse_args()
@@ -487,6 +523,15 @@ def main():
 			log.flush()
 
 	say(f"watching {args.process} (pid {pid}); Ctrl+C stops")
+	if args.animation_parts is not None:
+		try:
+			watch_animation_parts(m, args.animation_parts, say)
+		except KeyboardInterrupt:
+			pass
+		finally:
+			if log:
+				log.close()
+		return
 	if args.story_only:
 		try:
 			watch_story(m, say)
