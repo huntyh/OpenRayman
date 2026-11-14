@@ -95,7 +95,8 @@ standard gamepad onto them (`pad_map`):
 | SDL | Game | Why |
 | --- | --- | --- |
 | `SOUTH` (A / cross) | button 11 | jump (and back, menu right) |
-| `WEST` (X / square), `EAST` (B / circle) | button 10 | shoot (and confirm, menu left) |
+| `EAST` (B / circle) | button 10 | shoot (and confirm, menu left) |
+| `WEST` (X / square) | button 14 | action 12: recentres the camera, as Ray2Fix maps X (user, 2026-11-15) |
 | `NORTH` (Y / triangle) | button 15 | the J action |
 | `LEFT_SHOULDER` / `RIGHT_SHOULDER` | buttons 12 / 13 | turn the camera (Q / W); both: action 18 |
 | right stick, past half way right / left | buttons 12 / 13 | turn the camera, as in most games (our choice): Q turns the view right |

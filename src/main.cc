@@ -682,8 +682,8 @@ namespace
 	{
 		constexpr std::pair<SDL_GamepadButton, std::size_t> buttons[] = {
 			{ SDL_GAMEPAD_BUTTON_SOUTH, 11 },          // A: jump
-			{ SDL_GAMEPAD_BUTTON_WEST, 10 },           // X: shoot
-			{ SDL_GAMEPAD_BUTTON_EAST, 10 },           // B: shoot too (and confirm in menus)
+			{ SDL_GAMEPAD_BUTTON_WEST, 14 },           // X: recentre the camera (action 12), as with Ray2Fix
+			{ SDL_GAMEPAD_BUTTON_EAST, 10 },           // B: shoot (and confirm in menus)
 			{ SDL_GAMEPAD_BUTTON_NORTH, 15 },          // Y: the J action
 			{ SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, 12 },  // camera left (Q)
 			{ SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, 13 }, // camera right (W); both: action 18 (Num0)
