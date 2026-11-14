@@ -1022,6 +1022,23 @@ static int cmd_anim(const fs::path& folder, const std::string& name, const std::
 		}
 		return EXIT_SUCCESS;
 	}
+	if(frame == "links")
+	{
+		// Each frame's hierarchy links: child channel id <- parent channel id.
+		const animation& an = bank.animations[a];
+		for(std::size_t f = 0; f < an.frames; f++)
+		{
+			const animation_frame& fr = bank.frames.at(std::size_t(an.start_frames) + f);
+			std::cout << std::format("  frame {:>3}:", f);
+			for(std::size_t h = 0; h < fr.hierarchy_count; h++)
+			{
+				const auto& link = bank.hierarchies.at(std::size_t(fr.hierarchy_start) + h);
+				std::cout << std::format(" {}<-{}", link[0], link[1]);
+			}
+			std::cout << "\n";
+		}
+		return EXIT_SUCCESS;
+	}
 	const std::vector<channel_pose> channels = pose(bank, a, std::stod(frame));
 	if(std::getenv("ORTOOL_WORLD"))
 	{
