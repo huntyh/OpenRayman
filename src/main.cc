@@ -716,10 +716,11 @@ namespace
 			down[game] = down[game] || pressed(sdl);
 		auto axis = [&](SDL_GamepadAxis sdl) { return std::int32_t(SDL_GetGamepadAxis(p.handle, sdl)); };
 		// Our choice, as in most games: the right stick pushed past half way left or right turns
-		// the camera like the shoulders (Q / W), within what the level's camera allows.
+		// the camera like Q / W, within what the level's camera allows. Pushed right it presses button
+		// 12 (Q), left 13 (W): Q swings the camera so the view turns right (user, 2026-11-14).
 		const std::int32_t turn = axis(SDL_GAMEPAD_AXIS_RIGHTX);
-		down[12] = down[12] || turn < -16384;
-		down[13] = down[13] || turn > 16384;
+		down[12] = down[12] || turn > 16384;
+		down[13] = down[13] || turn < -16384;
 		for(std::size_t b = 0; b < down.size(); b++)
 			a.input->set_pad_button(p.pad, b, down[b]);
 		std::int32_t x = pad_map::with_dead_zone(axis(SDL_GAMEPAD_AXIS_LEFTX));
@@ -1109,13 +1110,23 @@ namespace
 				a.sounds->place(source, gain, pan);
 				// F10 recordings: every half second, each actor still sounding, as the sound log
 				// numbers it, with its gain and distance now (loops started before the recording).
-				if(a.recording.active() && a.tick % 30 == 0)
+				// OPENRAYMAN_SOUNDING_LOG=<file> writes the same lines outside a recording.
+				static std::ofstream sounding_log = [] {
+					const char* p = std::getenv("OPENRAYMAN_SOUNDING_LOG");
+					return p && *p ? std::ofstream(p) : std::ofstream();
+				}();
+				if((a.recording.active() || sounding_log.is_open()) && a.tick % 30 == 0)
 				{
 					auto node = std::ranges::find(a.super_object_at, source);
 					auto placed = openrayman::game::global_placement(*a.live, source);
 					float distance = placed ? glm::length(glm::vec3(placed->m[0][3], placed->m[1][3], placed->m[2][3]) - a.camera.position) : -1.0f;
-					a.recording.sounds << std::format("tick {} sounding node {} gain {:.3f} pan {:.2f} distance {:.1f} hears {}\n", a.tick,
-						node == a.super_object_at.end() ? -1 : int(node - a.super_object_at.begin()), gain, pan, distance, camera_hears(a, source) ? 1 : 0);
+					const std::string line = std::format("tick {} sounding node {} gain {:.3f} pan {:.2f} distance {:.1f} hears {} camera sector 0x{:X}\n", a.tick,
+						node == a.super_object_at.end() ? -1 : int(node - a.super_object_at.begin()), gain, pan, distance, camera_hears(a, source) ? 1 : 0,
+						a.camera_super_object && a.vm ? a.vm->actor_sector(a.camera_super_object) : 0u);
+					if(a.recording.active())
+						a.recording.sounds << line;
+					if(sounding_log.is_open())
+						sounding_log << line << std::flush;
 				}
 				++it;
 			}
