@@ -222,6 +222,8 @@ namespace openrayman::game
 
 		struct view_bounds { int top = 0, left = 0, bottom = 1000, right = 1000; };
 		view_bounds& world_view_bounds() { return m_world_view_bounds; }
+		// The actor whose script last set view 1's bounds (procedure 314): the cutscene bars' actor.
+		std::uint32_t view_bounds_actor = 0;
 		const view_bounds& world_view_bounds() const { return m_world_view_bounds; }
 		// Stored until the renderer applies view bounds and viewport state.
 		struct view_settings { int width = 100, height = 100, x = 0, y = 0; };

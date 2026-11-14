@@ -217,6 +217,7 @@ namespace
 		unsigned save_slot = 0; // --save 1..3: restore the installed slot at level load
 		bool new_game = false; // --start new: levels start as on a new game, not as reached from the hub
 		bool intro_start = false; // run the level's opening scene
+		int bars_in_place = 0; // ticks left in which a new game's first cutscene bars start fully in (our choice)
 		std::vector<std::int32_t> story_bits; // --story-bits 1095,1143: more of a save's story, set at load
 		// The story-bit words a level change carries over (Fix stays loaded in the game), set when the
 		// scripts ask for another level (procedures 86/87) and used by the next load.
@@ -1009,6 +1010,28 @@ namespace
 			openrayman::game::step(*a.vm, a.thinkers, [](std::uint32_t self, const std::exception& e) {
 				SDL_Log("Script error, actor 0x%08X: %s", self, e.what());
 			});
+			// Our choice (docs/IMPROVEMENTS.md): a new game's opening starts with its cutscene bars already
+			// in. The bars' actor (the one calling procedure 314; Fix's world actor) grows its var60 by 0.4
+			// a millisecond towards 195 (var58, small bars) or 325.417 (var57, large) and clears the request
+			// when it gets there, so setting var60 to the target finishes the slide at once.
+			if(a.bars_in_place > 0)
+			{
+				a.bars_in_place--;
+				if(const std::uint32_t bars = a.vm->view_bounds_actor)
+				{
+					const bool small = a.vm->get_variable(bars, 58).as_int() != 0;
+					const bool large = a.vm->get_variable(bars, 57).as_int() != 0;
+					if((small || large) && !a.vm->get_variable(bars, 59).as_int())
+					{
+						const float target = small ? 195.0f : 325.417f;
+						a.vm->set_variable(bars, 60, openrayman::game::value::real(target));
+						auto& view = a.vm->world_view_bounds();
+						view.top = int(target * 0.23076923f);
+						view.bottom = 1000 - int(target);
+						a.bars_in_place = 0;
+					}
+				}
+			}
 			if((a.trace.active() || a.recording.rayman) && a.vm)
 			{
 				std::string held;
@@ -1704,6 +1727,7 @@ namespace
 			const bool learn_opening = !a.save_slot && a.new_game &&
 				openrayman::game::learn_10_opening(levels[index]) &&
 				(!a.carried_story || !openrayman::game::story_has(*a.carried_story, 1091));
+			a.bars_in_place = learn_opening ? 120 : 0;
 			// The story so far (first_visit.h): a revisit includes the completed intro and Learn_10; a new
 			// game has the pirate ship and the intro behind it.
 			// Explicit story-bit overrides: 1095 gives

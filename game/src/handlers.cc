@@ -4755,7 +4755,10 @@ namespace openrayman::game
 			next_arg(c, view); next_arg(c, top); next_arg(c, left);
 			next_arg(c, bottom); next_arg(c, right);
 			if(view.as_int() == 1)
+			{
 				c.vm.world_view_bounds() = {top.as_int(), left.as_int(), bottom.as_int(), right.as_int()};
+				c.vm.view_bounds_actor = c.self;
+			}
 			return c.args;
 		}
 
