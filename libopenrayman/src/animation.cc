@@ -151,7 +151,7 @@ namespace openrayman
 						k.frame = r.u16();
 						k.flags = r.u16();
 						k.quaternion = r.u16();
-						r.u16(); // a second quaternion
+						k.scale_axes = r.u16();
 						k.scale_vector = r.u16();
 						k.position_vector = r.u16();
 						r.skip(6);
@@ -316,38 +316,76 @@ namespace openrayman
 			vec3 position = at(bank.vectors, key.position_vector, "position");
 			vec3 scale = at(bank.vectors, key.scale_vector, "scale");
 			std::array<float, 4> q = at(bank.quaternions, key.quaternion, "rotation");
+			std::array<float, 4> axes = at(bank.quaternions, key.scale_axes, "scale axes");
 			float multiplier = key.position_multiplier;
+			// Blend one quaternion towards another the short way (q and -q are the same rotation);
+			// quaternion_to_matrix normalizes the result.
+			auto blend = [](std::array<float, 4>& from, std::array<float, 4> to, float amount) {
+				if(from[0] * to[0] + from[1] * to[1] + from[2] * to[2] + from[3] * to[3] < 0)
+					for(float& v : to)
+						v = -v;
+				for(int k = 0; k < 4; k++)
+					from[k] += (to[k] - from[k]) * amount;
+			};
 			if(next)
 			{
 				const vec3& position2 = at(bank.vectors, next->position_vector, "position");
 				const vec3& scale2 = at(bank.vectors, next->scale_vector, "scale");
-				std::array<float, 4> q2 = at(bank.quaternions, next->quaternion, "rotation");
-				// q and -q are the same rotation: take the one nearer, so the blend goes the short way.
-				if(q[0] * q2[0] + q[1] * q2[1] + q[2] * q2[2] + q[3] * q2[3] < 0)
-					for(float& v : q2)
-						v = -v;
 				for(int k = 0; k < 3; k++)
 				{
 					if(!(key.flags & 0x8))
 						position[k] += (position2[k] - position[k]) * t;
 					scale[k] += (scale2[k] - scale[k]) * t;
 				}
-				for(int k = 0; k < 4; k++)
-					q[k] += (q2[k] - q[k]) * t; // normalized by quaternion_to_matrix
+				blend(q, at(bank.quaternions, next->quaternion, "rotation"), t);
+				// Flag 2 holds the scale axes of the earlier key (0x419BD0).
+				if(!(key.flags & 0x2))
+					blend(axes, at(bank.quaternions, next->scale_axes, "scale axes"), t);
 				if(!(key.flags & 0x8))
 					multiplier += (next->position_multiplier - multiplier) * t;
 			}
+			// The part's rotation and scale, as 0x419BD0 builds it: the rotation, times the scale
+			// stretched along its own axes (A^T S A, 0x418E50) unless flag 0x20 says the scale needs
+			// no axes of its own; flags 0x44 together mean no scale at all. The game's quaternions
+			// rotate the other way round from the textbook formula (its own matrix is the transpose),
+			// so use the inverse. Checked by eye: with the textbook rotation, characters' heads and
+			// crowns end up sideways or upside down.
+			auto part_matrix = [&](const std::array<float, 4>& rotation_q, const std::array<float, 4>& axes_q, const vec3& s) {
+				std::array<float, 9> rotation = quaternion_to_matrix(-rotation_q[0], -rotation_q[1], -rotation_q[2], rotation_q[3]);
+				if((key.flags & 0x44) == 0x44)
+					return rotation;
+				float stretch[9]{};
+				if(key.flags & 0x20)
+				{
+					for(int k = 0; k < 3; k++)
+						stretch[k * 3 + k] = s[k];
+				}
+				else
+				{
+					const std::array<float, 9> a = quaternion_to_matrix(-axes_q[0], -axes_q[1], -axes_q[2], axes_q[3]);
+					for(int r = 0; r < 3; r++)
+						for(int c = 0; c < 3; c++)
+							for(int k = 0; k < 3; k++)
+								stretch[r * 3 + c] += a[k * 3 + r] * s[k] * a[k * 3 + c];
+				}
+				std::array<float, 9> m{};
+				for(int r = 0; r < 3; r++)
+					for(int c = 0; c < 3; c++)
+						for(int k = 0; k < 3; k++)
+							m[r * 3 + c] += rotation[r * 3 + k] * stretch[k * 3 + c];
+				return m;
+			};
 			// The stored positions follow the channel's pivot. Recover the part origin after
 			// rotating and scaling that pivot (0x419BD0); flag 8 keeps the original position.
 			if(next && !(key.flags & 0x8))
 			{
 				const vec3& pivot = at(bank.vectors, channel.vector, "channel pivot");
-				const auto rotation = quaternion_to_matrix(-q[0], -q[1], -q[2], q[3]);
+				const auto m = part_matrix(q, axes, scale);
 				for(int r = 0; r < 3; r++)
 				{
 					position[r] = key.pivot_position[r] + (next->pivot_position[r] - key.pivot_position[r]) * t;
 					for(int axis = 0; axis < 3; axis++)
-						position[r] -= rotation[r * 3 + axis] * ((key.flags & 0x44) == 0x44 ? 1.0f : scale[axis]) * pivot[axis];
+						position[r] -= m[r * 3 + axis] * pivot[axis];
 				}
 				multiplier = 1;
 			}
@@ -361,10 +399,6 @@ namespace openrayman
 				const animation_keyframe& start = at(bank.keyframes, at(bank.frame_keys, channel.frame_keys, "frame key"), "keyframe");
 				const vec3& position2 = at(bank.vectors, start.position_vector, "position");
 				const vec3& scale2 = at(bank.vectors, start.scale_vector, "scale");
-				std::array<float, 4> q2 = at(bank.quaternions, start.quaternion, "rotation");
-				if(q[0] * q2[0] + q[1] * q2[1] + q[2] * q2[2] + q[3] * q2[3] < 0)
-					for(float& v : q2)
-						v = -v;
 				// Blend the final positions: blending position and multiplier apart and multiplying
 				// afterwards overshoots midway, pulling parts apart once per loop.
 				for(int k = 0; k < 3; k++)
@@ -373,8 +407,8 @@ namespace openrayman
 					position[k] = from + (position2[k] * start.position_multiplier - from) * s;
 					scale[k] += (scale2[k] - scale[k]) * s;
 				}
-				for(int k = 0; k < 4; k++)
-					q[k] += (q2[k] - q[k]) * s;
+				blend(q, at(bank.quaternions, start.quaternion, "rotation"), s);
+				blend(axes, at(bank.quaternions, start.scale_axes, "scale axes"), s);
 				multiplier = 1;
 			}
 			const animation_object& object = at(bank.objects, at(bank.ntto_choices, std::size_t(channel.ntto) + f.ntto, "object choice"), "object");
@@ -392,14 +426,11 @@ namespace openrayman
 					break;
 				}
 			}
-			// The game's quaternions rotate the other way round from the textbook formula (its own
-			// matrix is the transpose), so use the inverse. Checked by eye: with the textbook
-			// rotation, characters' heads and crowns end up sideways or upside down.
-			std::array<float, 9> rotation = quaternion_to_matrix(-q[0], -q[1], -q[2], q[3]);
+			const std::array<float, 9> m = part_matrix(q, axes, scale);
 			for(int r = 0; r < 3; r++)
 			{
 				for(int k = 0; k < 3; k++)
-					p.local.m[r][k] = rotation[r * 3 + k] * scale[k];
+					p.local.m[r][k] = m[r * 3 + k];
 				p.local.m[r][3] = position[r] * multiplier;
 			}
 			result.push_back(p);

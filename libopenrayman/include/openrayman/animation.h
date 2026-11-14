@@ -78,6 +78,9 @@ namespace openrayman
 		float position_multiplier = 1;
 		std::uint16_t frame = 0, flags = 0;
 		std::uint16_t quaternion = 0, scale_vector = 0, position_vector = 0;
+		// A second rotation that turns the axes the scale stretches along (not the part itself):
+		// the identity unless flag 0x20 is clear and the scale is uneven. See part_matrix in animation.cc.
+		std::uint16_t scale_axes = 0;
 		// The preceding key enables easing; this key supplies e in t * (1 + e * (t - 1)), e = ease / 8192.
 		std::int16_t ease = 0;
 		bool last() const { return flags & 0x80; }

@@ -75,7 +75,7 @@ each array's new elements follow inline, every array starting 4-byte aligned, in
 | 6 | channels: u16, i16 id, u16 vector, u16 first object choice, u32 first frame key, u32 first keyframe | 16 |
 | 7 | object choice indices (u16) | 2 |
 | 8 | frame keys: per channel and frame, a keyframe index (u32) | 4 |
-| 9 | keyframes: 3 floats pivot position, float position multiplier, u16 frame, flags (0x80 = last), rotation, a second rotation, scale vector, position vector, 4 × u16 | 36 |
+| 9 | keyframes: 3 floats pivot position, float position multiplier, u16 frame, flags (0x80 = last), rotation, scale axes (a second rotation), scale vector, position vector, 4 × u16 | 36 |
 | 10 | events (contain pointers, so they're not part of the pointer-free stretch) | 12 |
 | 11 | morphs: u8 target object choice, u8 amount (percent), u16 channel, u16 frame, u16 unknown | 8 |
 
@@ -105,7 +105,8 @@ For animation `a` at frame `f`, with `F = frames[a.start_frames + f]`, for each 
 
 - keyframe `k = keyframes[frame_keys[c.first_frame_key + f]]`
 - local transform: translate by `vectors[k.position] × k.position_multiplier`, rotate by
-  `quaternions[k.rotation]`, scale by `vectors[k.scale]`
+  `quaternions[k.rotation]`, scale by `vectors[k.scale]` along the axes of `quaternions[k.scale_axes]`
+  (see "Rotation and scale" below)
 - shown object: `objects[choices[c.first_object_choice + F.object_choice]]`; hidden if its flag says
   so, else that entry of the actor's object list
 - parent: the frame's hierarchy links (`F.hierarchy_start`, `F.hierarchy_count`) link channels by id
@@ -131,6 +132,22 @@ the channel's pivot, then subtracts the channel vector transformed by the part's
 to find the part origin. Flag 0x8 holds the previous position instead. At a keyframe itself it uses
 the stored position vector and multiplier. Easing is enabled by the current keyframe's +0x22 value;
 the next keyframe's +0x22 supplies the easing amount.
+
+### Rotation and scale
+
+A part's 3×3 matrix is `R × (A^T × S × A)`: `R` from the keyframe's rotation, `S` the diagonal of its
+scale vector, and `A` from the keyframe's second quaternion (+0x16), which turns the axes the scale
+stretches along. So it changes a part's shape (a squash along a slanted axis), not where it points.
+Keyframe flags decide how much of that is used:
+
+- 0x44 together: no scale at all, just `R`.
+- 0x20: the scale has no axes of its own: `R × S`.
+- otherwise `A` is used; flag 0x2 keeps the earlier key's `A` instead of blending it towards the next
+  key's. With an even scale `A` changes nothing (the exe then skips it).
+
+The pivot correction above uses the same matrix. Until card 98 we read the second quaternion and
+dropped it; on Jail_20's pirates it turns the helmet a little but moves no part's origin.
+Not followed yet: at a keyframe itself (no blend) the exe also drops the scale when flag 0x40 is set.
 
 ### The playback rate
 
@@ -270,7 +287,10 @@ them a look later) get no shadow yet.
 
 ## Where this came from
 
-- Pivot positions and easing gate: own analysis of Rayman2.exe 0x41A610 and 0x419BD0. The original
+- Pivot positions and easing gate: own analysis of Rayman2.exe 0x41A610 and 0x419BD0. Rotation and
+  scale axes: own analysis of 0x419BD0 with 0x418F70 (quaternion to matrix), 0x418C40, 0x418E50
+  (`A^T S A`, symmetric, its last entry from the trace) and 0x418D20 (product), card 98, 2026-11-14;
+  the second quaternion was first spotted by a DeepSeek helper. The original
   game's live Learn_10 trace confirms that strafing shots use the same state sequence as OpenRayman.
 
 - Morphs: own analysis of Rayman2.exe (the morph lookup 0x40DFB0, the object choice 0x41A400 and
