@@ -157,13 +157,22 @@ this count excludes generated templates.
 | 0x04 | vertex normals: 3 floats each |
 | 0x10 | element types: u16 each |
 | 0x14 | elements: one pointer each |
-| 0x28 | u32 look-at mode: 0 none, 1 upright card, 2 card facing the camera |
+| 0x28 | u32 look-at mode: 0 none, 1 card upright on the screen, 2 card turning about its own Z axis |
 | 0x2C | u16 number of vertices, u16 number of elements |
 
 **Look-at cards**: a mesh with a look-at mode is a flat card in its own YZ plane, facing +X, and the
-game turns it towards the camera every frame. Mode 1 turns only about the mesh's own Z axis, so it
-stays upright: mushrooms, flowers, Murfy's mittens (30 meshes in all levels). Mode 2 faces the camera
-fully: flames, sparks, chain links, the rings and eyes of Lums (505 meshes). Every one of them is
+game turns it towards the camera every frame (0x41DAD0, called from the mesh draw 0x42AAE0 on a
+copy of the part's world transform). The card keeps one axis as its Z and swings about it until its
++X points at the camera as nearly as that axis allows: Y = axis x direction to the camera,
+X = Y x axis; seen exactly along the axis it is left alone. The mode's bit 2 picks the axis.
+Mode 2 (bit set): the card's own Z axis (the rotation matrix's third axis, transform +0x28), so a
+long card stays along its part: the pirates' neck and leg rods (`tallpi_cou3`), chain links, flames,
+sparks, the rings and eyes of Lums (505 meshes). Mode 1 (bit clear): the camera's up axis (the
+second axis of the inverted view matrix), so the card stands upright on the screen whatever its
+part does: mushrooms, flowers, Murfy's mittens (30 meshes in all levels). A scale in the transform
+is kept (0x445D00 takes it out with 0x4462A0 and puts it back on the new axes; OpenRayman keeps the
+length of each axis, which is the same for a scale along the part's own axes).
+Every one of them is
 flat along X, and no other value occurs. Drawn fixed, the cards vanish edge-on and overlap each
 other, which is how the missing mushrooms near the Learn_10 start were found.
 
@@ -255,8 +264,12 @@ the count says.
   flap). The fields match what Raymap reads for animated textures (reference only).
 - Look-at mode: own analysis. The word differs between a mushroom card and a character mesh; a
   survey of all meshes in all 70 levels found only 0, 1 and 2, and every non-zero mesh flat along
-  X. Which way the card turns (upright vs. fully) was inferred from what uses each mode and checked
-  by eye; the name "look at" matches what Raymap calls this field.
+  X. Which axis each mode keeps: own analysis of Rayman2.exe 0x41DAD0 (the `test al, 2` at
+  0x41DB05), 0x445F00, 0x445D00, 0x444B80 and the projection signs at 0x422AB0/0x42C8A0
+  (2026-11-14, card 98). Until then the two modes were swapped (inferred by eye): the pirates' rods
+  in Jail_20 stood upright on the screen instead of lying along the neck and legs. Checked with
+  before/after renders of Jail_20 and Learn_10; not yet compared live. The name "look at" matches
+  what Raymap calls this field. No executable code copied.
 - The Rayman 2 PC field offsets and sizes: own analysis, by following pointers with
   `ortool peek` and checking counts against array sizes, then verified over all 70 levels.
 - Learn_10's portal well: sector 1's IPO node 94 uses an eight-vertex, ten-triangle mesh and

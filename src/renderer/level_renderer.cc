@@ -289,30 +289,27 @@ namespace openrayman
 		}
 
 		// Turns a card (flat in its own YZ plane, facing +X) towards the camera, keeping its
-		// position and the size along each of its axes.
+		// position and the size along each of its axes. As the exe does it (0x41DAD0, called from
+		// 0x42AAE0 for every drawn mesh with a look-at mode): the card keeps one axis as its Z and
+		// swings about it until +X points at the camera as nearly as that axis allows. Mode bit 2
+		// set: the axis is the card's own Z (a rod, a chain link, a flame stays along its part).
+		// Bit 2 clear: the axis is the camera's up, so the card stands upright on the screen.
 		glm::mat4 face_camera(const glm::mat4& model, look_at look, const glm::mat4& camera)
 		{
 			if(look == look_at::none)
 				return model;
 			glm::vec3 position(model[3]);
 			glm::vec3 to_camera = glm::vec3(camera[3]) - position;
-			glm::vec3 x, z;
-			if(look == look_at::upright)
-			{
-				z = glm::normalize(glm::vec3(model[2]));
-				x = to_camera - glm::dot(to_camera, z) * z;
-			}
-			else
-			{
-				x = to_camera;
-				glm::vec3 up(camera[1]);
-				z = up - glm::dot(up, glm::normalize(x)) * glm::normalize(x);
-			}
-			if(glm::length(x) < 1e-5f || glm::length(z) < 1e-5f)
+			glm::vec3 z = (std::uint32_t(look) & 2) ? glm::vec3(model[2]) : glm::vec3(camera[1]);
+			if(glm::length(to_camera) < 1e-5f || glm::length(z) < 1e-5f)
 				return model;
-			x = glm::normalize(x);
+			to_camera = glm::normalize(to_camera);
 			z = glm::normalize(z);
-			glm::vec3 y = glm::cross(z, x);
+			glm::vec3 y = glm::cross(z, to_camera);
+			if(glm::length(y) < 1e-5f) // seen exactly along the axis: the exe leaves it as it is
+				return model;
+			y = glm::normalize(y);
+			glm::vec3 x = glm::cross(y, z);
 			glm::mat4 out(1.0f);
 			out[0] = glm::vec4(x * glm::length(glm::vec3(model[0])), 0);
 			out[1] = glm::vec4(y * glm::length(glm::vec3(model[1])), 0);

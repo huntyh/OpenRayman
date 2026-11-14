@@ -72,8 +72,8 @@ namespace openrayman
 	enum class look_at : std::uint32_t
 	{
 		none = 0,
-		upright = 1, // turns about its own Z axis only (mushrooms, flowers)
-		facing = 2,  // faces the camera fully (flames, sparks, chain links)
+		screen_upright = 1, // faces the camera, its Z along the camera's up (mushrooms, flowers)
+		own_axis = 2,       // turns about its own Z axis only (rods, chain links, flames); exe 0x41DAD0 tests bit 2
 	};
 
 	// A mesh: vertices plus elements. See docs/formats/geometry.md.
