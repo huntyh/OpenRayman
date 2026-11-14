@@ -2243,6 +2243,202 @@ TEST_CASE("real data: dialog template glyph objects")
 	}
 }
 
+// A level made only of what the input evaluator needs: one block 0x06/00 with 138 actions (all
+// disabled but the ones `actions` names) and a pool of expressions the actions point at. Each
+// expression is a list of 8-byte slots, the first byte a kind and the rest its operands.
+struct input_fixture
+{
+	static constexpr std::uint32_t base = 0x1000;
+	static constexpr std::uint32_t count = 138;
+	static constexpr std::uint32_t expressions = base + count * input_action_size;
+	static constexpr std::uint32_t pool_size = 0x400;
+
+	std::array<std::vector<std::uint32_t>, count> nodes; // per action: its slots, 2 words each
+
+	// Slot helper: the kind's low byte in the first word, as the files have it.
+	static std::uint32_t kind(std::uint8_t k) { return 0xF000u | k; }
+
+	// A pad button test (kinds 12..15, 26): slots kind, pad, button; the button slot's bytes +5/+6
+	// hold the tick range (node +0x15/+0x16, 0x42EFE0).
+	static std::vector<std::uint32_t> pad(std::uint8_t k, std::uint32_t pad_number, std::uint32_t button, std::uint8_t lo = 0, std::uint8_t hi = 0)
+	{
+		return { kind(k), 0, pad_number, 0, button, std::uint32_t(lo) << 8 | std::uint32_t(hi) << 16 };
+	}
+
+	// A pad axis test (kind 16): slots kind, pad, axis, min, max.
+	static std::vector<std::uint32_t> axis(std::uint32_t pad_number, std::uint32_t axis_number, std::int32_t min, std::int32_t max)
+	{
+		return { kind(16), 0, pad_number, 0, axis_number, 0, std::uint32_t(min), 0, std::uint32_t(max), 0 };
+	}
+
+	// Points action `index` at the expression given as 32-bit slot words.
+	input_fixture& set(std::size_t index, std::vector<std::uint32_t> words)
+	{
+		nodes[index] = std::move(words);
+		return *this;
+	}
+
+	memory_image build() const
+	{
+		// The block: 138 actions, then each enabled action's expression one after the other.
+		std::vector<std::uint8_t> block(count * input_action_size + pool_size, 0);
+		auto put = [&](std::uint32_t address, std::uint32_t value) {
+			std::uint32_t at = address - base;
+			for(int i = 0; i < 4; i++)
+				block[at + i] = std::uint8_t(value >> (8 * i) & 0xFF);
+		};
+		std::vector<std::pair<std::uint32_t, block_id>> pointers;
+		std::uint32_t at = expressions;
+		for(std::size_t i = 0; i < count; i++)
+		{
+			if(nodes[i].empty())
+				continue;
+			std::uint32_t action = base + std::uint32_t(i) * input_action_size;
+			put(action + input_action::slots, std::uint32_t(nodes[i].size() / 2));
+			put(action + input_action::expression, at);
+			put(action + input_action::counter, 0xFFFFFFFE); // -2, as the files have it
+			block[action - base + input_action::enabled] = 1;
+			for(std::uint32_t word : nodes[i])
+			{
+				put(at, word);
+				at += 4;
+			}
+			pointers.push_back({ action + input_action::expression, { 0x06, 0 } });
+		}
+		bytes data;
+		for(std::uint8_t byte : block)
+			data.u8(byte);
+		sna_builder sna;
+		sna.block(0x06, 0, base, base + std::uint32_t(block.size()), data);
+		bytes table;
+		table.u8(1).u32(0);
+		table_block(table, 0x06, 0, pointers);
+		memory_image image;
+		image.add(sna_file(sna.build()), parse_relocation_table(table.data));
+		return image;
+	}
+};
+
+TEST_CASE("input: joystick buttons and axes feed the actions")
+{
+	input_fixture fixture;
+	// 10: held button 11 (kind 26), 11: button 12 went down, 12: button 13 went up,
+	// 13: button 14 down for at least 3 frames, 14: button 15 up, 15: an axis in -110..110.
+	fixture.set(10, input_fixture::pad(26, 0, 11, 0, 0xFF));
+	fixture.set(11, input_fixture::pad(12, 0, 12));
+	fixture.set(12, input_fixture::pad(13, 0, 13));
+	fixture.set(13, input_fixture::pad(14, 0, 14, 3, 0xFF));
+	fixture.set(14, input_fixture::pad(15, 0, 15, 0, 0xFF));
+	fixture.set(15, input_fixture::axis(0, 4, -110, 110));
+	memory_image image = fixture.build();
+	game::live_memory memory(image);
+	input_actions actions{ { image.find({ 0x06, 0 }), 0 }, input_fixture::count };
+	game::input pad(memory, actions);
+	auto counter = [&](std::size_t index) { return memory.read<std::int32_t>(pad.action(index) + input_action::counter); };
+	auto analog = [&](std::size_t index) { return memory.read<float>(pad.action(index) + input_action::analog); };
+
+	// Everything starts up and its counter counts down.
+	pad.step();
+	CHECK(counter(10) == -3);
+	CHECK_FALSE(pad.pad_button(0, 11));
+
+	// Kind 26 is the held test: button 11 down keeps action 10 down.
+	pad.set_pad_button(0, 11, true);
+	pad.step();
+	CHECK(counter(10) == 1);
+	CHECK(pad.pad_button(0, 11));
+	pad.step();
+	CHECK(counter(10) == 2);
+	pad.set_pad_button(0, 11, false);
+	pad.step();
+	CHECK(counter(10) == -1);
+
+	// Kind 12 is the press edge only: button 12 held gives a counter that stops at 1.
+	pad.set_pad_button(0, 12, true);
+	pad.step();
+	CHECK(counter(11) == 1);
+	pad.step();
+	CHECK(counter(11) == -1);
+
+	// Kind 13 is the release edge: nothing while it is held, then the release frame.
+	pad.set_pad_button(0, 13, true);
+	pad.step();
+	CHECK(counter(12) < 0);
+	pad.set_pad_button(0, 13, false);
+	pad.step();
+	CHECK(counter(12) == 1);
+
+	// Kind 14 is down for between the operand's frames: 3..255 here (the press tick counts 1), so
+	// the third tick qualifies.
+	pad.set_pad_button(0, 14, true);
+	pad.step();
+	pad.step();
+	CHECK(counter(13) < 0);
+	pad.step();
+	CHECK(counter(13) == 1);
+	pad.set_pad_button(0, 14, false);
+	pad.step();
+	CHECK(counter(13) == -1);
+
+	// Kind 15 is up for 0..255 frames: button 15 has been up all along, so action 14 is held.
+	pad.step();
+	CHECK(counter(14) > 1);
+	pad.set_pad_button(0, 15, true);
+	pad.step();
+	CHECK(counter(14) == -1);
+	pad.set_pad_button(0, 15, false);
+
+	// Kind 16 reads the axis over -32768..32767 as -100..100 and keeps it as the analog value.
+	pad.set_pad_axis(0, 4, 0);
+	pad.step();
+	CHECK(counter(15) > 0); // 0 is inside -110..110, as it has been since the start
+	CHECK(analog(15) == doctest::Approx(0.0f));
+	pad.set_pad_axis(0, 4, 16384);
+	pad.step();
+	CHECK(analog(15) == doctest::Approx(50.0f));
+	pad.set_pad_axis(0, 4, -32768);
+	pad.step();
+	CHECK(analog(15) == doctest::Approx(-100.0f));
+	// A full push the other way reads 99.997 (32767 / 32768), still inside the data's -110..110.
+	pad.set_pad_axis(0, 4, 32767);
+	pad.step();
+	CHECK(counter(15) > 0);
+	CHECK(analog(15) == doctest::Approx(100.0f).epsilon(0.001));
+
+	// The other pad numbers are separate, and release_pad clears one of them.
+	pad.set_pad_button(1, 11, true);
+	pad.step();
+	CHECK(pad.pad_button(1, 11));
+	CHECK(counter(10) < 0); // pad 0's button is still up, so the action stays up
+	pad.release_all();
+	pad.step();
+	CHECK_FALSE(pad.pad_button(1, 11));
+}
+
+TEST_CASE("input: a pad axis test outside its range leaves the analog value alone")
+{
+	input_fixture fixture;
+	// Action 0: axis 6 in -110..-50 (the game's action 12 axis), action 1: the same axis in 1..1.
+	fixture.set(0, input_fixture::axis(0, 6, -110, -50));
+	fixture.set(1, input_fixture::axis(0, 6, 1, 1));
+	memory_image image = fixture.build();
+	game::live_memory memory(image);
+	input_actions actions{ { image.find({ 0x06, 0 }), 0 }, input_fixture::count };
+	game::input pad(memory, actions);
+	auto analog = [&](std::size_t index) { return memory.read<float>(pad.action(index) + input_action::analog); };
+
+	pad.set_pad_axis(0, 6, -32768); // -100: inside
+	pad.step();
+	CHECK(analog(0) == doctest::Approx(-100.0f));
+	CHECK(analog(1) == doctest::Approx(0.0f));
+	CHECK(memory.read<std::int32_t>(pad.action(1) + input_action::counter) < 0);
+
+	pad.set_pad_axis(0, 6, 0); // 0: outside
+	pad.step();
+	CHECK(analog(0) == doctest::Approx(0.0f));
+	CHECK(memory.read<std::int32_t>(pad.action(0) + input_action::counter) < 0);
+}
+
 TEST_CASE("real data: input actions follow the keys")
 {
 	auto dir = real_game_dir();
@@ -2264,10 +2460,10 @@ TEST_CASE("real data: input actions follow the keys")
 	CHECK(describe(2) == "key Up");
 	CHECK(describe(5) == "key Left");
 	CHECK(describe(6) == "any(key LShift, key Num7)");
-	CHECK(describe(10) == "any(any(key A, key Num8), pad 0 button 11 (kind 26))");
-	CHECK(describe(11) == "any(any(key Space, key Num1), pad 0 button 10 (kind 26))");
+	CHECK(describe(10) == "any(any(key A, key Num8), pad 0 button 11 held)");
+	CHECK(describe(11) == "any(any(key Space, key Num1), pad 0 button 10 held)");
 	CHECK(describe(13) == "any(any(key LCtrl, key RCtrl), held action 12)");
-	CHECK(describe(16) == "any(any(key W, key PgDn), pad 0 button 13 (kind 26))");
+	CHECK(describe(16) == "any(any(key W, key PgDn), pad 0 button 13 held)");
 
 	// The counter's timeline (0x42E710): 1 on the press tick, then up; -1 on release, then down.
 	game::live_memory memory(files.memory);

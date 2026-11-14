@@ -74,7 +74,8 @@ the saved sum without that stand-in, as needed by the intro logo, whose own ligh
   other scenes and display configurations still need checking. The obstacle search also skips
   cameras more than 20 units from their target, so a fly camera dragged far away does not slow the
   viewer down; segment casts try only the triangles in the collision grid cells under the segment.
-- Input: the keyboard only (no gamepad yet), and cheat codes (typed key sequences) don't fire.
+- Input: the keyboard and gamepads through SDL3 (no rumble yet, and the Steam Controller's
+  touchpads and gyro are unmapped); cheat codes (typed key sequences) don't fire.
   Tab switches the keyboard between the viewer's fly camera and the game.
 - Some particle effects are not read yet (the kinds the exe's table names but we haven't traced);
   an unknown kind is started but does nothing (docs/formats/particles.md).

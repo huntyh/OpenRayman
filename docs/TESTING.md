@@ -216,6 +216,27 @@ Fixes that landed since the last look, each at its own spot:
       Compare the dialogue, music, camera cuts and the hand-over to the original; control should
       return after the scene. Also check the Jail_20 chute and its transition into this scene.
 
+## A gamepad (card #101)
+
+Start `openrayman --game "F:\Games\Rayman 2" --level Learn_10` with a controller plugged in (the
+Steam Controller included, through SDL's own driver). Press Tab so the pad goes to the game, then:
+
+- [ ] Walk with the left stick: Rayman should move in the stick's direction and the run speed
+      should follow how far it is pushed, with no drift when the stick is left alone
+- [ ] Press the bottom face button (A on an Xbox pad, cross on a PlayStation one): jump; the same
+      button pressed again in the air should also work if the game allows it
+- [ ] Press the left or right face button (X / square, B / circle): shoot
+- [ ] The shoulder buttons turn the camera (like Q and W); both together like Num0
+- [ ] Start pauses (like Esc)
+- [ ] Unplug the pad while playing: Rayman stops instead of running on; plug it back in and it
+      works again
+- [ ] In the menu (`--level Menu`): the d-pad up/down moves the yellow entry and X / B confirm,
+      like Enter (A goes back, as the game's own pad layout has it)
+
+If nothing happens when Steam is running, Steam Input has taken the controller: close Steam, or
+disable Steam Input for this game, and start again. Our log (`SDL_Log`) prints "Gamepad 0: <name>"
+when a pad opens.
+
 ## The main menu (Phase 4)
 
 Start `openrayman --game "F:\Games\Rayman 2" --level Menu` (release build), press Tab so the

@@ -200,6 +200,17 @@ namespace
 		std::unique_ptr<openrayman::game::input> input;
 		bool playing = false;
 		bool chose_view = false; // a level was loaded once: later loads keep playing/flying as it is
+		// The gamepads SDL knows about, by the instance id its events carry, each with its handle
+		// while it is open. main.cc maps SDL's standard buttons and sticks onto the game's pad
+		// numbers (pad_map, docs/formats/input.md).
+		struct pad_slot
+		{
+			SDL_JoystickID id = 0;
+			SDL_Gamepad* handle = nullptr;
+			std::size_t pad = 0; // the game's pad number: the first pad open is 0
+			mutable bool start = false; // Start, fed as the Esc key
+		};
+		std::vector<pad_slot> pads;
 		// --keys Up:60-200,A:100-110: keys held over script ticks, to replay input for screenshots.
 		struct held_key { std::uint8_t key; long from, to; };
 		std::vector<held_key> held_keys;
@@ -612,6 +623,115 @@ namespace
 
 	void run_ticks(app& a, double seconds);
 	void sync_generated(app& a);
+
+	// Opens a pad SDL just announced, gives it the first free game pad number, and closes it when
+	// it goes away or when the viewer quits.
+	void open_pad(app& a, SDL_JoystickID id)
+	{
+		if(std::ranges::any_of(a.pads, [&](const app::pad_slot& p) { return p.id == id; }))
+			return;
+		SDL_Gamepad* handle = SDL_OpenGamepad(id);
+		if(!handle)
+		{
+			SDL_Log("Could not open gamepad %u: %s", unsigned(id), SDL_GetError());
+			return;
+		}
+		std::size_t pad = 0;
+		while(std::ranges::any_of(a.pads, [&](const app::pad_slot& p) { return p.pad == pad; }))
+			pad++;
+		if(pad >= openrayman::game::input::pad_count)
+		{
+			SDL_Log("More than %zu gamepads; %s is left alone", openrayman::game::input::pad_count, SDL_GetGamepadName(handle));
+			SDL_CloseGamepad(handle);
+			return;
+		}
+		a.pads.push_back({ id, handle, pad });
+		SDL_Log("Gamepad %zu: %s", pad, SDL_GetGamepadName(handle));
+	}
+
+	void close_pad(app& a, SDL_JoystickID id)
+	{
+		auto found = std::ranges::find_if(a.pads, [&](const app::pad_slot& p) { return p.id == id; });
+		if(found == a.pads.end())
+			return;
+		if(a.input)
+			a.input->release_pad(found->pad);
+		if(found->handle)
+			SDL_CloseGamepad(found->handle);
+		a.pads.erase(found);
+	}
+
+	void close_pads(app& a)
+	{
+		for(const app::pad_slot& p : a.pads)
+			if(p.handle)
+				SDL_CloseGamepad(p.handle);
+		a.pads.clear();
+	}
+
+	// How SDL's standard gamepad maps onto the game's pad 0, from what the game's input actions test
+	// (`ortool input`, docs/formats/input.md): button 11 jumps (and goes back in menus), 10 shoots
+	// (and confirms), 12/13 turn the camera (Q/W), 15 is the J action, 14 or axis 6 pushed below -50
+	// is action 12 (as Ctrl and Z); axes 4/5 move, -100..100 for a full push.
+	namespace pad_map
+	{
+		constexpr std::pair<SDL_GamepadButton, std::size_t> buttons[] = {
+			{ SDL_GAMEPAD_BUTTON_SOUTH, 11 },          // A: jump
+			{ SDL_GAMEPAD_BUTTON_WEST, 10 },           // X: shoot
+			{ SDL_GAMEPAD_BUTTON_EAST, 10 },           // B: shoot too (and confirm in menus)
+			{ SDL_GAMEPAD_BUTTON_NORTH, 15 },          // Y: the J action
+			{ SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, 12 },  // camera left (Q)
+			{ SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, 13 }, // camera right (W); both: action 18 (Num0)
+			{ SDL_GAMEPAD_BUTTON_LEFT_STICK, 14 },     // action 12
+			{ SDL_GAMEPAD_BUTTON_RIGHT_STICK, 14 },
+			{ SDL_GAMEPAD_BUTTON_DPAD_UP, 15 },        // the menus' up (action 101)
+			{ SDL_GAMEPAD_BUTTON_DPAD_DOWN, 14 },      // the menus' down (action 102)
+		};
+
+		// About 15% of the stick's travel counts as centred, so a worn stick doesn't walk Rayman.
+		constexpr std::int32_t dead_zone = 32768 * 15 / 100;
+
+		// A stick's value with the dead zone around 0, rising from 0 at its edge to full.
+		inline std::int32_t with_dead_zone(std::int32_t value)
+		{
+			std::int32_t magnitude = value < 0 ? -value : value;
+			if(magnitude <= dead_zone)
+				return 0;
+			std::int32_t scaled = (magnitude - dead_zone) * 32767 / (32767 - dead_zone);
+			return value < 0 ? -scaled : scaled;
+		}
+	}
+
+	// Feeds one open pad's whole state into the game's pad, read from SDL after any of its events:
+	// the buttons above (the d-pad's up/down are the menus' buttons 15/14, as the data has them);
+	// the left stick as axes 4/5 (up is negative, as in DirectInput), the d-pad's left/right
+	// overriding axis 4; either trigger as axis 6 pushed negative; Start as the Esc key (pause).
+	void feed_pad(app& a, const app::pad_slot& p)
+	{
+		if(!a.input || !a.playing)
+			return;
+		auto pressed = [&](SDL_GamepadButton b) { return SDL_GetGamepadButton(p.handle, b); };
+		std::array<bool, openrayman::game::input::pad_button_count> down{};
+		for(const auto& [sdl, game] : pad_map::buttons)
+			down[game] = down[game] || pressed(sdl);
+		for(std::size_t b = 0; b < down.size(); b++)
+			a.input->set_pad_button(p.pad, b, down[b]);
+		auto axis = [&](SDL_GamepadAxis sdl) { return std::int32_t(SDL_GetGamepadAxis(p.handle, sdl)); };
+		std::int32_t x = pad_map::with_dead_zone(axis(SDL_GAMEPAD_AXIS_LEFTX));
+		std::int32_t y = pad_map::with_dead_zone(axis(SDL_GAMEPAD_AXIS_LEFTY));
+		if(pressed(SDL_GAMEPAD_BUTTON_DPAD_LEFT)) x = -32768;
+		if(pressed(SDL_GAMEPAD_BUTTON_DPAD_RIGHT)) x = 32767;
+		a.input->set_pad_axis(p.pad, 4, x);
+		a.input->set_pad_axis(p.pad, 5, y);
+		// SDL's triggers read 0..32767; the game wants the combined trigger axis below -50%.
+		std::int32_t trigger = std::max(axis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER), axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER));
+		a.input->set_pad_axis(p.pad, 6, -trigger);
+		if(p.pad == 0 && pressed(SDL_GAMEPAD_BUTTON_START) != p.start)
+		{
+			p.start = !p.start;
+			a.input->set_key(0x01, p.start); // Esc: only on a change, so the keyboard's Esc still works
+		}
+	}
 
 	// Runs the game's scripts for `seconds`, in ticks of 1/60 s, then shows the states they picked.
 	// An error outside one actor's scripts (input, placing the actors) is logged and the scripts
@@ -2175,7 +2295,11 @@ namespace
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 {
 	SDL_SetAppMetadata("OpenRayman", version, "game.openrayman");
-	if(!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO))
+	// Open the Steam Controller through SDL's HIDAPI driver, so it works without Steam running
+	// (docs/TESTING.md has the note about Steam Input).
+	SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI, "1");
+	SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_STEAM, "1");
+	if(!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD))
 	{
 		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "OpenRayman", SDL_GetError(), nullptr);
 		return SDL_APP_FAILURE;
@@ -2225,6 +2349,18 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 	}
 
 	a->music = std::make_unique<music_player>();
+
+	// The gamepads already plugged in are opened as if they had just been added, so the first one
+	// gets game pad 0 (which is the one the game's actions test).
+	{
+		int count = 0;
+		if(SDL_JoystickID* ids = SDL_GetGamepads(&count))
+		{
+			for(int i = 0; i < count; i++)
+				open_pad(*a, ids[i]);
+			SDL_free(ids);
+		}
+	}
 
 	// Game folder: --game <folder>, else the last one used, else ask.
 	std::optional<fs::path> folder;
@@ -2417,6 +2553,23 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 		case SDL_EVENT_WINDOW_FOCUS_LOST:
 			if(a.input)
 				a.input->release_all();
+			break;
+
+		case SDL_EVENT_GAMEPAD_ADDED:
+			open_pad(a, event->gdevice.which);
+			break;
+
+		case SDL_EVENT_GAMEPAD_REMOVED:
+			close_pad(a, event->gdevice.which);
+			break;
+
+		case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+		case SDL_EVENT_GAMEPAD_BUTTON_UP:
+		case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+			// Only while playing, like the keyboard (feed_pad checks).
+			for(const app::pad_slot& p : a.pads)
+				if(p.id == (event->type == SDL_EVENT_GAMEPAD_AXIS_MOTION ? event->gaxis.which : event->gbutton.which))
+					feed_pad(a, p);
 			break;
 
 		case SDL_EVENT_KEY_UP:
@@ -2668,6 +2821,7 @@ void SDL_AppQuit(void* appstate, SDL_AppResult)
 	std::unique_ptr<app> a(static_cast<app*>(appstate));
 	if(!a)
 		return;
+	close_pads(*a);
 	a->music.reset();
 	if(a->context)
 		SDL_GL_DestroyContext(a->context);

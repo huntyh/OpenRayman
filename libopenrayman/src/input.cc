@@ -56,6 +56,11 @@ namespace openrayman
 				return std::format("action at {} +0x{:X}", to->block->id.to_string(), to->offset);
 			}
 
+			std::string pad_button(std::uint16_t pad_number, std::uint16_t button) const
+			{
+				return std::format("{} button {}", pad_number, button);
+			}
+
 			std::string node()
 			{
 				if(left == 0)
@@ -82,15 +87,23 @@ namespace openrayman
 					case input_kind::pad_axis:
 						text = std::format("pad {} axis {} in {}..{}", word(1), word(2), word(3), word(4));
 						break;
+					case input_kind::pad_pressed: text = "pressed pad " + pad_button(word(1), word(2)); break;
+					case input_kind::pad_released: text = "released pad " + pad_button(word(1), word(2)); break;
+					case input_kind::pad_down: text = "pad " + pad_button(word(1), word(2)); break;
+					case input_kind::pad_up: text = "not pad " + pad_button(word(1), word(2)); break;
+					case input_kind::pad_held: text = "pad " + pad_button(word(1), word(2)) + " held"; break;
 					case input_kind::sequence_key: text = "down " + key_name(std::uint16_t(word(1))); break;
 					case input_kind::sequence_release: text = "up " + key_name(std::uint16_t(word(1))); break;
 					default:
-						if((kind >= 12 && kind <= 15) || kind >= 26)
-							text = std::format("pad {} button {} (kind {})", word(1), word(2), kind);
+						if(kind >= 36 && kind <= 37)
+							text = std::format("typed pad {} button {}", word(1), word(2));
 						break;
 				}
 				if((kind == 6 || kind == 7) && (byte(slot_size + 5) != 0 || byte(slot_size + 6) != 0xFF))
 					text += " for " + range;
+				// The pads' timed tests keep their range in the button's slot (node +0x15/+0x16, 0x42EFE0).
+				if((kind == 14 || kind == 15 || kind == 26) && (byte(2 * slot_size + 5) != 0 || byte(2 * slot_size + 6) != 0xFF))
+					text += std::format(" for {}..{} frames", byte(2 * slot_size + 5), byte(2 * slot_size + 6));
 				std::uint32_t steps = kind == std::uint8_t(input_kind::sequence) ? std::uint32_t(byte(slot_size) | byte(slot_size + 1) << 8) : 0;
 				at.offset += std::uint32_t(*size * slot_size);
 				left -= *size;

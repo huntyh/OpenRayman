@@ -33,53 +33,91 @@ table at 0x4A0F18); operands follow in the next slots. The low bytes of the firs
 | 4, 5 | 2 | key went down / up this frame. Operand: i16 DirectInput scan code |
 | 6, 7 | 2 | key down / up, for between min and max frames (operand bytes +5, +6; 0..255 = any) |
 | 8..11 | 2 | another action's counter (operand: pointer): == 1, == -1, > 0, < 0 |
-| 12..15, 26 | 3 | joystick buttons (pad, button) |
+| 12, 13 | 3 | joystick button went down / up this frame (pad, button) |
+| 14, 15 | 3 | joystick button down / up, for between min and max frames (the button slot's bytes +5, +6) |
 | 16 | 5 | joystick axis in a range (pad, axis, min, max); sets the action's analog value |
+| 26 | 3 | joystick button held, for between min and max frames (the analog pads' test) |
 | 33 | 2 + steps | a sequence typed in order (u32 step count), from a history of key events: cheat codes |
 | 34, 35 | 2 | sequence step: key down, key up (36, 37: the same for a joystick, 3 slots) |
 
 Other kinds (17..25, 27..32) are not read yet; Learn_10's actions don't use them.
 
-The "frames" of kinds 6 and 7 count frames since the key last changed: reset on a press or a
-release, then counted up to 255 (0x430880).
+The "frames" of kinds 6, 7, 14, 15 and 26 count frames since the button or key last changed: reset
+on a press or a release, then counted up to 255 (0x430880 does this for the keys; the pads keep the
+same table per button).
 
-## The counter
+Kinds 12..15 read the pad's button mask directly (0x42EDB0..0x42F120): 12 is `~previous & current`,
+13 is `previous & ~current`, 14 and 15 are the held and the released test for a range of frames.
+Kind 26 (0x42FE80) is the analog pads' version and also requires the button to be down for the
+frames; the game's data uses it for every button it names, so it is effectively "held".
 
-Every frame, for each enabled action (0x42E710):
+Kind 16 (0x42F270) reads the pad's axis over the pad's range, multiplies by 100 (0x49C698) and
+tests the result against min..max. When it fits it *also* stores the value in the action's analog
+value at +0x10, which the frame update clears every tick. So a stick at rest reads 0, which is
+inside the game's -110..110 windows: movement actions 0 and 1 are always down, and their analog
+value is where the stick is.
 
-- down and counter > 0: one more (frames held)
-- down and counter < 0: 1 (the press frame)
-- up and counter > 0: -1 (the release frame)
-- up and counter < 0: one less (frames since release)
-- a counter of 0 never moves, so the files start them at -2.
+## The pads, and how SDL3 maps onto them
 
-Script conditions 44..47 test it: held (> 0), just pressed (== 1), not held (< 0), just released
-(== -1). Actions can test each other (kinds 8..11): Learn_10's "recentre camera" is Ctrl or a held
-action 12, a joystick button or the right stick pushed down.
+The exe keeps up to four pads (its state block at 0x509E60, 0x28 bytes each, with type 3 and 4 =
+digital and analog pads), buttons 0..41 (bit masks in a table at 0x4A0E70) and axes 4..9 (the
+first six of a pad). Every level's input actions test the same ones, and only these:
 
-## The default keys
+| Action | What it is | Tests |
+| --- | --- | --- |
+| 0, 1 | movement, horizontal and vertical | `pad 0 axis 4` / `axis 5`, -110..110 |
+| 2..5 | move up, down, right, left | keys only (arrows) |
+| 9, 11 | confirm, shoot | `pad 0 button 10` |
+| 8, 10, 15 | back, jump | `pad 0 button 11` |
+| 12 | the action Ctrl and Z also give (13, 14) | `pad 0 button 14`, or `pad 0 axis 6` in -110..-50 |
+| 16, 17 | turn the camera | `pad 0 button 13`, `pad 0 button 12` |
+| 18 | Num0 | buttons 12 and 13 together |
+| 24 | the J key | `pad 0 button 15` |
+| 25, 26 | menu left, right | `pad 0 button 10`, `11` |
 
-`ortool input <game folder> <level>` lists every action. On PC they match the game's controls:
+So the range a stick has to produce is **-100..100 for full deflection** (the data allows a little
+past it, -110..110), and the six buttons the game names are 10..15. `src/main.cc` maps SDL's
+standard gamepad onto them (`pad_map`):
 
-| Action | Keys |
-| --- | --- |
-| 2..5 | arrows: up, down, right, left |
-| 6 | LShift, Num7: walk |
-| 10 | A, Num8: jump |
-| 11 | Space, Num1: shoot |
-| 13 | Ctrl: camera back behind Rayman |
-| 16, 17 | W, Q: turn the camera |
-| 28..38 | cheat codes (kind 33) |
+| SDL | Game | Why |
+| --- | --- | --- |
+| `SOUTH` (A / cross) | button 11 | jump (and back, menu right) |
+| `WEST` (X / square), `EAST` (B / circle) | button 10 | shoot (and confirm, menu left) |
+| `NORTH` (Y / triangle) | button 15 | the J action |
+| `LEFT_SHOULDER` / `RIGHT_SHOULDER` | buttons 12 / 13 | turn the camera (Q / W); both: action 18 |
+| `LEFT_STICK` / `RIGHT_STICK` (click) | button 14 | action 12 |
+| `LEFT_TRIGGER` / `RIGHT_TRIGGER` | axis 6, negative | action 12 (DirectInput's combined trigger axis) |
+| d-pad up / down | buttons 15 / 14 | the menus' up and down (actions 101, 102 test only these) |
+| left stick (d-pad left/right override axis 4) | axes 4 / 5 | movement (actions 0, 1); up is negative, as in DirectInput |
+| `START` | the Esc key | pause |
 
-Many more are debug keys (F-keys, letters, the numeric keypad). Procedure 435 hands five actions
-to the movement code (procedure 346): in Learn_10 actions 2, 3, 5, 4 and 6 (up, down, left, right,
-walk). Scan codes are positions on the keyboard, so on a non-US layout the keys keep their places
-(the game's "Z" is the key left of X).
+`feed_pad` in `src/main.cc` reads the whole pad from SDL after any of its events. Sticks are
+-32768..32767 in SDL and the game scales them to -100..100; a 15% dead zone around the centre keeps
+a worn stick from walking Rayman. In play the d-pad's up/down are buttons 15/14 (the J action and
+action 12), because that is all the menus test; walk with the stick. Pads are opened
+with `SDL_OpenGamepad` on `SDL_EVENT_GAMEPAD_ADDED` (and the ones already plugged in at start-up),
+fed only while playing, like the keyboard; a lost window focus or a removed pad releases
+everything. The first pad open is the game's pad 0, the only one the data tests. The SDL hints
+`SDL_HINT_JOYSTICK_HIDAPI` and `SDL_HINT_JOYSTICK_HIDAPI_STEAM` open a Steam Controller without
+Steam. Typed sequences on a pad (kinds 36, 37) are not implemented, like the key ones.
 
-## Where this came from
+The joystick kinds come from disassembling their poll functions:
 
-Own analysis of Rayman2.exe (the Fix loader at 0x402D0F, the frame update at 0x42E710, the poll
-functions of table 0x4A0F18, the key snapshot at 0x430880, procedure 435 at 0x46FAA0), checked
-against the Fix data and against the game's real controls as the project lead plays them. A helper's
-first reading of 0x42E710 claimed a one-frame press lag; the code shows the counter jumps from
-negative to 1 on the press frame itself.
+- 12 at 0x42EDB0 and 13 at 0x42EEB0: the pad's button mask (`pad state +8`, current, and `+0x101`,
+  previous), `~previous & current` and `previous & ~current`.
+- 14 at 0x42EFE0 and 15 at 0x42F120: the same masks, then the per-button frames at `0x509FC0`
+  compared with bytes +5 and +6 of the **button's** slot (node +0x15/+0x16), not the pad's.
+- 26 at 0x42FE80: the same frames, with the mask test limited to the holdings the table 0x4A0E70
+  masks describe (button codes 10..41).
+- 16 at 0x42F270: `fild` of the axis, `fidiv` the pad's range from its capabilities, `fmul` by
+  100.0 (0x49C698), `ftol` and the min..max compare; on success `fstp` into `[action + 0x10]`
+  (0x509E34 is the action pointer while the expression is evaluated).
+- The button numbers the masks cover are 0..31 in `+8` and 32..41 in `+4` (table 0x4A0E70: 10..17
+  are bits 0, 1, 6, 7, 4, 5, 2, 3 there).
+
+The pad table (0x509E60, 0x28-byte records) and the four pads' pointers (0x509E7C) come from
+procedure 418 and the re-acquire code the roadmap log mentions (0x42E1E0/0x42E220). Which SDL button
+becomes which game number is our choice, made from what the actions name (the table above); the
+original's own layout is a DirectInput pad's, which SDL's standard mapping mirrors.
+
+Own analysis, as everything else here.

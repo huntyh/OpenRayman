@@ -47,8 +47,12 @@ namespace openrayman
 		action_released = 9, // ... is -1
 		action_held = 10,    // ... is above 0
 		action_free = 11,    // ... is below 0
+		pad_pressed = 12,    // a joystick button went down this frame (pad, button)
+		pad_released = 13,   // ... went up
+		pad_down = 14,       // ... down, for between min and max frames
+		pad_up = 15,         // ... up, for between min and max frames
 		pad_axis = 16,       // a joystick axis in a range; also sets the action's analog value
-		// 12..15 and 26 test joystick buttons.
+		pad_held = 26,       // the analog pads' button test (pad, button), held for min..max frames
 		sequence = 33,        // the next u32 steps happened in order (cheat codes), from a key history
 		sequence_key = 34,    // a step: a key went down
 		sequence_release = 35 // a step: a key went up (36, 37: the same for a joystick)
