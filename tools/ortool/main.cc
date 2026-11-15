@@ -2016,9 +2016,17 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 		if(auto sample = camera_target_samples.find(f); sample != camera_target_samples.end())
 		{
 			const auto& s = sample->second;
+			auto previous = game::global_placement(memory, main_actor);
 			game::write_transform(memory, main_actor, s.position, s.axes);
 			auto actor = vm.actor_of(main_actor);
 			auto base = memory.u32(memory.u32(actor + 8));
+			bool changed = !previous;
+			for(unsigned k = 0; previous && k < 3; ++k)
+			{
+				changed |= previous->m[k][3] != s.position[k];
+				for(unsigned axis = 0; axis < 3; ++axis) changed |= previous->m[k][axis] != s.axes[axis*3+k];
+			}
+			memory.write<std::uint32_t>(base + 0x0C, (memory.u32(base + 0x0C) & ~0x01000000u) | (changed ? 0x01000000u : 0));
 			auto report = memory.u32(base + 0x150);
 			memory.write(report + 4, s.contact);
 			for(unsigned k = 0; k < 3; ++k)
@@ -2028,6 +2036,10 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 				memory.write<float>(report + 0x14C + 4*k, s.position[k]);
 			}
 			for(auto so : actors) if(so != main_actor) replay_actors.push_back(so);
+			// Keep the replayed target in the sector pass even though its brain and
+			// mechanics are omitted below. Otherwise crossing into a tunnel never
+			// wakes its camera controllers.
+			vm.update_activation(actors);
 		}
 		try
 		{

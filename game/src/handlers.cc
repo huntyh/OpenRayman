@@ -2032,6 +2032,14 @@ namespace openrayman::game
 						m.write<std::uint32_t>(current + 0x68, c.vm.main_actor());
 				}
 				back_up_camera_block(c.vm, cam);
+				// 0x47DA40: a changed target transform requests another improving
+				// search (0x487730). Without this, a tunnel's fitted recovery yaw
+				// can survive indefinitely after a camera zone takes over again.
+				if(auto block = camera_block(c.vm, cam, camera_field::block_override))
+					if(auto target = c.vm.actor_of(m.u32(block + 0x68)))
+						if(auto dynamics = m.u32(target + 8))
+							if(auto base = m.u32(dynamics); base && (m.u32(base + 0x0C) & 0x01000000))
+								m.write<std::uint8_t>(cam + camera_field::snap, 1);
 				if(!c.vm.camera_motion().valid)
 				{
 					// 0x413DB0 initializes this request independently of the
@@ -2049,7 +2057,7 @@ namespace openrayman::game
 			return c.args;
 		}
 
-		// 499 (0x47EDD0): aim the camera at the target: cam+0x34 takes its position and bit 0x2000 of
+		// 499 (0x47EDD0): hold the receiving camera actor's position: cam+0x34 takes that position and bit 0x2000 of
 		// the +0x72 word is set (in the override block only). With the snap flag (cam+0x17C) set it
 		// is an instant cut instead: the exe backs the block up and runs the camera pipeline right
 		// here (the engine's camera code does that), sets bits 0 and 2 of the active block's +0x70

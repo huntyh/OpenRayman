@@ -77,7 +77,7 @@ camera controllers placed in the level) drive it through the same procedures. Pr
 | 491 | one entry of the global tuning block 0x4FF62C.. (index 0x27/0x28 masks, 0x2C the snap flag) |
 | 492, 493 | save and restore that block (the camera model saves once and restores at the end of every frame) |
 | 495, 496, 497 | fix the offset point, the wanted position, or both, and set bit 0x1000 / 0x2000 / 0x4000 |
-| 499 | aim at the target (cam+0x34 and bit 0x2000), or cut when cam+0x17C is set |
+| 499 | hold the receiving camera actor's position (cam+0x34 and override bit 0x2000), or cut when cam+0x17C is set |
 | 500 | restore the current block from the spare one (cam+0x75 bit 1) and clear cam+0x60 |
 | 159 | start the eight tracked points at the target's position, weight 0.03 each |
 
@@ -451,6 +451,40 @@ user's report of extra lag while moving, but the routes and timing differ, so it
 whether the speed law, obstacle search, or another camera behavior causes it.
 
 ## Target tracking
+
+### Movement requests recovery (Bast_20 tunnel return)
+
+Procedure 444 at `0x47DA40` also reads the followed actor's mechanics end flags
+(`actor+8 -> base`, `base+0x0C`). Bit `0x01000000` requests `cam+0x17C = 1`.
+This byte serves both procedure 499's cut path and mode 1's improving obstacle search;
+it is not solely a startup-cut request. `0x431AD0` clears the movement bit before
+each mechanics tick and sets it when the published transform changes. Its comparison
+at `0x436B80` checks translation and, through `0x436CC0`, rotation; `0x432E60`
+also sets it when synchronizing an externally placed transform.
+
+While mode 1 is active, `0x487730` uses that request to try an improving search
+after the configured interval (normally 20 frame durations). A successful first-ranked
+candidate restores ordinary following through `0x4876E0`: spare to both current
+and override, mode 0, clear the saved/hold flags. Merely entering another camera zone
+does not necessarily restore these fields. Bast_20 node 39 supplies a fixed axis and
+a 12-unit distance, but does not overwrite the fitted yaw centre. Without the movement
+request, a yaw fitted while navigating the tunnel could persist throughout the fight.
+
+OpenRayman now publishes and consumes this report. The target-only `ortool` replay
+supplies the equivalent report for its frozen target and follows sector activation
+with that target included. Otherwise this diagnostic silently omitted camera zones
+woken by the replayed path.
+
+Provenance: own reading of the above Rayman2.exe routines in the read-only
+`H:/r2export/re/decomp` export, plus `0x486D50`, `0x414100`, `0x414120`, and
+the Bast_20 node 3/39/65 scripts decoded by `ortool brain`. The user's OpenRayman
+F10 recordings `rec_20261115_220214`, `rec_20261115_220243`, and
+`rec_20261115_220314` supply paths and visible framing, not camera mode or designer
+variables. A round trip constructed from those paths reproduced a persistent
+135-degree recovery yaw before the fix; all three reconstructed round trips return
+to the fight axis after it. This does not establish exact live mode transitions in
+the original game; no synchronized original-game replay has been made. Details and
+remaining limitations are in `build/helpers/cam125_report.md`.
 
 The exe keeps eight samples of the target's movement and position (camera object +0x78 vectors,
 +0xD8 points, +0x138 weights). Procedure 444 (0x47DA40) shifts in the target mechanics report's

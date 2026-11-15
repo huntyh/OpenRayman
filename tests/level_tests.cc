@@ -2889,6 +2889,70 @@ TEST_CASE("real data: Bast_20 director cuts back to Rayman at the scene handoff"
 	CHECK(distance(airborne_wanted, vm.camera_motion().trace.wanted) < 0.001f);
 }
 
+TEST_CASE("real data: Bast_20 movement releases a tunnel recovery yaw")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Bast_20");
+	auto header = read_level_header(files);
+	scene tree(files.memory, header);
+	auto bank = read_animation_bank(files);
+	game::live_memory m(files.memory);
+	auto rayman = header.placements.at(0).super_object.address();
+	game::interpreter vm(m, rayman);
+	game::register_handlers(vm);
+	game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
+	vm.set_animations(&bank);
+	game::install_level_events(m, bank);
+	std::vector<std::uint32_t> actors;
+	for(const auto& n : tree.nodes())
+		if(n.type == super_object_type::actor) actors.push_back(n.at.address());
+	vm.set_actors(actors);
+	for(const auto& e : read_actors(files.memory, tree, bank).actors)
+		game::set_global_placement(m, tree.node(e.node).at.address(), e.world);
+	for(auto bit : game::first_visit_story_bits) REQUIRE(vm.set_story_bit(actors, bit));
+	game::input keys(m, read_input_actions(files));
+	auto camera_so = tree.node(3).at.address();
+	auto cam = m.u32(vm.actor_of(camera_so) + 0x10);
+	// Run the actual opening, then isolate the camera from pirate attacks.
+	for(int tick = 0; tick < 610; ++tick) { keys.step(); game::step(vm, actors); }
+	vm.remove(tree.node(40).at.address());
+	vm.remove(tree.node(46).at.address());
+	game::write_transform(m, rayman, {32.824f,70.048f,-58.963f},
+		{0.5f,0.8660254f,0,-0.8660254f,0.5f,0,0,0,1});
+	vm.camera_motion().tracked_target = 0;
+	for(int tick = 0; tick < 300; ++tick) { keys.step(); game::step(vm, actors); }
+
+	// Seed the state measured in the failing round-trip replay: mode 1 has
+	// fitted a 135-degree yaw to avoid the tunnel. The fight zone writes its
+	// reference axis and distance each tick but relies on recovery to restore yaw.
+	auto current = m.u32(cam + 4), spare = m.u32(cam + 8);
+	std::memcpy(m.span(spare, 0x7C).data(), m.span(current, 0x7C).data(), 0x7C);
+	REQUIRE(m.f32(spare + 0x28) == 0);
+	m.write<float>(current + 0x28, 2.35619449f);
+	m.write<int>(cam + 0x60, 1);
+	m.write<std::uint8_t>(cam + 0x75, 2);
+	m.write<std::uint8_t>(cam + 0x17C, 0);
+	m.write<float>(cam + 0x64, 0);
+	auto base = m.u32(m.u32(vm.actor_of(rayman) + 8));
+	bool moved = false, recovered = false;
+	keys.set_key(0xC8, true);
+	for(int tick = 0; tick < 120; ++tick)
+	{
+		keys.step(); game::step(vm, actors);
+		moved |= (m.u32(base + 0x0C) & 0x01000000) != 0;
+		if(m.u32(cam + 0x60) == 0 && !(m.u8(cam + 0x75) & 2) && m.f32(current + 0x28) == 0)
+		{ recovered = true; break; }
+	}
+	CHECK(moved);
+	CHECK(recovered);
+	keys.step(); game::step(vm, actors);
+	CHECK(std::abs(vm.camera_motion().trace.block[4]) < 0.001f);
+}
+
 TEST_CASE("real data: camera fallback relocates across an unreachable wall and restores follow")
 {
 	auto dir = real_game_dir();
@@ -4046,4 +4110,8 @@ TEST_CASE("fast mechanics applies an imposed world speed once and retains it")
 	game::move_actor(m, so, actor, 1000, world);
 	CHECK(m.f32(transform + 4) == doctest::Approx(24));
 	CHECK(m.f32(transform + 12) == doctest::Approx(-18));
+	CHECK((m.u32(base + 0x0C) & 0x01000000) != 0);
+	m.write(base + 0x3C, vec3{});
+	game::move_actor(m, so, actor, 1000, world);
+	CHECK((m.u32(base + 0x0C) & 0x01000000) == 0);
 }

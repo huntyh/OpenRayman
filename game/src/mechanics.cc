@@ -906,6 +906,29 @@ namespace openrayman::game
 		std::uint32_t t = m.u32(super_object + 0x24);
 		if(!t || !m.contains(t, 0x58))
 			return;
+		// 0x431AD0 clears the transform-change report each mechanics tick,
+		// then 0x436B80 compares translation and rotation before publishing it.
+		// Camera commit uses this bit to retry an obstacle recovery while moving.
+		struct transform_change
+		{
+			live_memory& m;
+			std::uint32_t base, transform;
+			std::array<float, 12> before;
+			transform_change(live_memory& memory, std::uint32_t b, std::uint32_t t) : m(memory), base(b), transform(t)
+			{
+				for(unsigned i = 0; i < before.size(); ++i) before[i] = m.f32(transform + 4 + 4*i);
+				set_bit(m, base + 0x0C, 0x01000000, false);
+			}
+			~transform_change()
+			{
+				for(unsigned i = 0; i < before.size(); ++i)
+					if(before[i] != m.f32(transform + 4 + 4*i))
+					{
+						set_bit(m, base + 0x0C, 0x01000000, true);
+						break;
+					}
+			}
+		} changed(m, b, t);
 		// The mechanics of the actor's state, when it changed (0x412150, and after procedures 72..75
 		// change the state, 0x472345).
 		std::uint32_t data = m.u32(actor);
