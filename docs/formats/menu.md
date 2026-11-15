@@ -535,6 +535,19 @@ addresses above, `ortool mesh`/`peek` on Learn_10, and comparison with the user'
 at a synchronized animation phase. The renderer implements these general draw rules without
 recolouring either texture. Images and the detailed report stay under git-ignored `build/helpers/`.
 
+When **The Hall of Doors** is available: the Esc rule greys it (`var12[5] := 1`) unless the
+first byte of the entry pair that procedures 343/344 carry between levels (0x500FA4, read with
+344 into var61) is 145. So it unlocks only in a level entered from the Hall itself, and stays
+grey in Learn_10 reached from the intro, as in the real game. Not yet checked in ours: entering
+the Fairy Glade from the Hall and pressing Esc should show it available.
+
+F1 (Murfy's help, behaviour 10) closes on F1 *pressed this frame* (condition 45) and returns
+through behaviours 2, 0 and 11 to behaviour 1, whose F1 rule opens it on F1 *held*
+(condition 44). Behaviour 11 waits only for Esc and an action with no keys (+0xEF4) to be
+released, not F1, so a press that lasts until behaviour 1 runs again opens the help again.
+Ours does this (user, 2026-11-15); whether the real game's frame-by-frame behaviour changes
+leave enough time for the key to come up is not checked yet.
+
 ### Where this came from
 
 Own analysis of the installed GOG executable, the game's Fix and Learn_10 scripts
