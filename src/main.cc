@@ -2187,7 +2187,10 @@ namespace
 				// Screen slots are the separate menu/HUD text path (0x465C10). Their
 				// text IDs are resolved by the script handlers before reaching here.
 				if(a.screen_font_actor)
-					for(const auto& slot : a.vm->screen_text().all())
+					for(std::size_t slot_index = 0; const auto& slot : a.vm->screen_text().all())
+						// 0x465C10: while paused (procedure 306) only slots 0..14 are drawn, the pause
+						// menu's own; the in-game HUD's counters (the level's Lums and cages) wait.
+						if(slot_index++ < 15 || !a.vm->paused())
 						if(slot.used && slot.alpha && !slot.text.empty())
 						{
 							game::dialog_text text;
