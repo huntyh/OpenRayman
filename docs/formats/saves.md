@@ -215,9 +215,11 @@ and asks again; a missing/invalid file means the original prompts. Change it lat
 `--autosave on` or `--autosave off` (for the `--save` slot, or slot 1), or edit the file while
 closed. Later an entry in our own Options (card 61) can change the loaded save's choice.
 
-With autosave on, the Hall question (0x18F/0x190) and Menu save-before-exit question
-(node 6 var55 = 6, composed text 0x5043) use the scripts' original Yes/write/success/cleanup
-path. Only that actor's Enter conditions are supplied automatically; the question and success
+With autosave on, the Hall question (0x18F/0x190) uses the scripts' original Yes/write/success/cleanup
+path. The Menu's save-before-exit question (node 6 var55 = 6, composed text 0x5043) is always
+asked: answering it automatically also saved the Hall portal selected when Esc left the Hall
+(Fix actor var67, set by Mapmonde node 5 behaviour 1), so the next load started at that portal
+rather than at the last level's (user, 2026-11-15). Only that actor's Enter conditions are supplied automatically; the question and success
 acknowledgement are hidden. Failed writes follow the original failure branch. With autosave
 off none of these substitutions run. Successful automatic writes show **Saving...** with the
 game's `lums_corpsvert_mxy.gf` and `lums_aile_adnzw.gf`, loaded from Textures.cnt at runtime.

@@ -190,14 +190,15 @@ TEST_CASE("real data: scripted new game saves successfully and registered fields
 	INFO(session->error);
 	REQUIRE(session->slot == 1);
 	CHECK(vm.get_variable(tree.node(6).at.address(), 33).as_int() == 1);
-	// Autosave must not answer the separate Quit confirmation or turn it into another save.
+	// Autosave answers neither the Quit confirmation nor the save-before-quitting question.
 	session->autosave = true;
 	auto menu = tree.node(6).at.address();
 	vm.set_variable(menu, 55, game::value::integer(6));
 	vm.set_variable(menu, 40, game::value::integer(0));
 	CHECK_FALSE(vm.on_screen_text(menu, game::value::of(game::value_type::id, 0x5043)));
 	vm.set_variable(menu, 40, game::value::integer(1));
-	CHECK(vm.on_screen_text(menu, game::value::of(game::value_type::id, 0x5043)));
+	// Quitting always asks, even with autosave on.
+	CHECK_FALSE(vm.on_screen_text(menu, game::value::of(game::value_type::id, 0x5043)));
 	session->automatic_actor = 0;
 	REQUIRE(std::filesystem::exists(root / "Slot1/General.sav"));
 	// The new-game save contains the general values the executable resets on continue.

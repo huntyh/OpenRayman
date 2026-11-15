@@ -310,13 +310,14 @@ namespace openrayman::game
 			settings();
 			auto id = text.word();
 			bool hall_question = id == 0x18F || id == 0x190;
-			bool exit_question = id == 0x5043 && (level == "Menu" || level == "menu") && vm.get_variable(actor, 55).as_int() == 6 && vm.get_variable(actor, 40).as_int() != 0;
-			if(session->autosave.value_or(false) && session->slot && (hall_question || exit_question))
+			// The Menu's "save before quitting?" (0x5043, var55 6) is always asked, autosave or not:
+			// answering it for the player saved the Hall portal selected at Esc as the return point
+			// (actor 3 var67), so a load started at that portal instead of the last level's (user 2026-11-15).
+			if(session->autosave.value_or(false) && session->slot && hall_question)
 			{
 				if(session->automatic_actor != actor) session->automatic_saved = false;
 				session->automatic_actor = actor;
 				if(hall_question) vm.set_variable(actor, 7, value::integer(1));
-				if(exit_question) vm.set_variable(actor, 41, value::integer(1));
 				return true;
 			}
 			if(id == 0x183)
