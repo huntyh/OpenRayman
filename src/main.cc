@@ -2287,7 +2287,8 @@ namespace
 					add_save_text("/C:Press Enter to continue.", 500, 660, 10, 1, false);
 				}
 				float saving = game::saving_alpha(*a.saves);
-				if(saving > 0) add_save_text("Saving...", 815, 920, 8, saving, true);
+				// It floats with the Lum beside it (the same gentle bob).
+				if(saving > 0) add_save_text("Saving...", 815, 920 + 3.1f * std::sin(float(SDL_GetTicks()) / 1000.0f * 3.0f), 8, saving, true);
 				const auto& boxes = a.vm->particles().screen_rectangles();
 				// The gauges (kind 120) are painted before the images (0x460670, then 0x460600).
 				std::vector<game::particles::screen_image> images = a.vm->particles().screen_bar_images();

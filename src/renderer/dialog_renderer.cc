@@ -472,15 +472,19 @@ namespace openrayman
 				// It hovers gently and beats its wings, as a Lum does in the game.
 				const float seconds = float(SDL_GetTicks()) / 1000.0f;
 				float x = to_edge(496, 496), y = 436 + 1.5f * std::sin(seconds * 3.0f), size = 12;
-				texture_info wings; wings.name = "textures_personnages/divers/lums_aile_adnzw.gf";
-				if(auto wing_texture = texture_for(wings))
+				// The Lums' own wing animation (Fix, visual material frames at 05/01 +0x65D354 in
+				// Learn_10): lum_aile01, 02, 03, 02, 0.035 s each, additive.
+				static const char* const wing_frames[] = { "01", "02", "03", "02" };
+				texture_info frame;
+				frame.name = std::string("textures_personnages/divers/lum_aile") + wing_frames[int(seconds / 0.035f) % 4] + "_ad.gf";
+				frame.flags = texture_flag::additive;
+				if(auto wing_frame = texture_for(frame))
 				{
-					// The texture is one wing: drawn twice, small, on the body's upper sides, the
-					// left one mirrored, beating by folding up and down.
-					const float beat = 0.3f + 0.7f * std::abs(std::sin(seconds * 14.0f));
-					const float w = 15 * area, h = 13 * beat, top = y + 1 + (13 - h) / 2;
-					quad(wing_texture, true, x + 14 * area, top, w, h, {1, 1, 1, saving_alpha}, 0, 1);
-					quad(wing_texture, true, x + 10 * area - w, top, w, h, {1, 1, 1, saving_alpha}, 1, 0);
+					// Each frame is one wing across its card, its root at the card's bottom-left corner:
+					// the right wing as drawn with that corner on the body, the left one mirrored.
+					const float side = 22, cx = x + 12 * area, cy = y + 12, overlap = 3;
+					quad(wing_frame, true, cx - overlap * area, cy - side + overlap, side * area, side, {1, 1, 1, saving_alpha}, 0, 1);
+					quad(wing_frame, true, cx - (side - overlap) * area, cy - side + overlap, side * area, side, {1, 1, 1, saving_alpha}, 1, 0);
 				}
 				SDL_FColor colour{1, 1, 1, saving_alpha};
 				for(int row = 0; row < 2; ++row)
