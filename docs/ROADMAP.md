@@ -153,14 +153,17 @@ source of truth and has the detail; in short:
   the blue "next" arrow's spot (#62), the HUD counters (#3), the font running off the screen (#6)
 - The game's camera (#8, #9, #13, #14, #63): the "turning refused" icon, the exe's orbit search
   around obstacles, snapping back to Rayman, the cutscene camera modes, Rodeo_10's narrow hole
-- Sound (#7): the theme transitions' fades, and music and effect levels (loudness by distance
-  follows the exe already)
+- Sound (#7): music and effect levels (loudness by distance follows the exe already; immediate
+  theme switches fade over a second, #115)
 - The cutscene black bars: an option to turn them off, with darker text behind (#5)
 - Unported exe pieces: particle kinds, their per-particle draw value and screen dimming (#17);
   the end scene's pupils (#10, not reproduced in play, the user to check)
 - The pirate ship (Jail_20): the slide's steering and collision (#86), a frame of the wrong pose at
   the slide's end (#97), the pirates' heads in front of their spines (#98), Rayman and Globox
   snapping left in the cell (#100)
+- Bast_20's pirate fight: the barrels' arc and trail are done (#121); fast objects can still pass
+  through thin scenery (#127)
+- Learn_30: Rayman never leaves swimming in the river (#118)
 - The other levels' first issues: Learn_31's creature and its trailing segments (#66, #81),
   Bast_20's pond and piranhas (#82), Bast_22's barrels and its silent shots and steps (#68),
   Ski_10's swamp creatures and missing kill zone (#69), Chase_22's exit animation and camera
@@ -179,23 +182,28 @@ Everything the PC game has, working before we port it anywhere.
   and the text colours (#80)
 - The cutscene bars, engine side and sliding in (#4, #16)
 - Reading the real saves (#19, #37)
+- Saves (#24, 2026-11-15): New Game writes the slot, the Hall and level exits save, Load from the
+  menu and the name check work, and autosave is a per-slot choice asked on the first save, with
+  the green Lum while saving (#40). Quitting always asks.
+- The Hall of Doors (#39): the star well and lake, the beams between portals and the selection
+  sparkles (#117), red portals for completed levels (#119)
 
 **Open**, in the order the user set (2026-11-02):
 
 1. The main menu ([formats/menu.md](formats/menu.md)): the language prompt, the main menu and
    New Game -> name -> Jail_10 run from the level's scripts (user confirmed, 2026-11-03). New Game
    already gets through the name screen into Jail_10, whose intro plays (the name screen highlights
-   the whole name instead of the picked letter, #105). Left: writing the save
-   (#24), the Load / Delete / Options screens (#25), the menu's scenery, a per-character flash on
+   the whole name instead of the picked letter, #105). Left: the Delete / Options screens (#25), the menu's scenery, a per-character flash on
    the menu text (#26), and the music still missing in a few places (#31).
 2. The new-game intro cutscene in front of the first-visit start (Jail_10, Jail_20); the logos,
    text boxes and bars are in (see 3c), and there is a diagnostic `--start intro` for Learn_10's
    opening scene (#23).
-3. Save games: reading the real saves is done (`--save 1..3`,
-   [formats/saves.md](formats/saves.md)); writing one on New Game is left.
+3. Save games: reading, writing, loading and autosave are done ([formats/saves.md](formats/saves.md));
+   left: erasing a slot (function 92) and checking saves on the later levels as they become
+   playable.
 4. The pause menu and F1 Murfy's help (board #38).
 5. The Hall of Doors: the way from one level to the next (board #39).
-6. Optional autosave, off by default (into IMPROVEMENTS when built; board #40).
+6. ✅ Optional autosave, chosen per slot (docs/IMPROVEMENTS.md; board #40).
 
 Then: cutscenes (board #41), all the levels from start to end (#42), widescreen and high
 resolutions with quality-of-life options (#43, and ultrawide later #94), room for our own options

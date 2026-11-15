@@ -278,6 +278,17 @@ floor spikes (1,254 uses in all levels). A few single-frame entries have odd dur
 they only ever show one image. In every material of all 70 levels the chain is exactly as long as
 the count says.
 
+### 16-bit texture colour (2026-11-15)
+
+The game converts its textures to 16-bit colour for the 3D card (5 bits per red/blue channel),
+so channel values below 8 of 255 become black. Additive textures depend on this: each of the
+Lums' halo frames (gra01..03_lum_my_ad, the HUD Lum's gra02j_my_ad) holds one stray row of
+values 1..9 under the gradient, a different row per frame. At 8 bits it showed as a faint line
+under every Lum that moved as the frames changed (card 124). Both renderers now set additive
+texture channels below 8 to 0 and leave the rest exact. Own analysis (texture data and renders
+with textures hidden one by one); the 16-bit conversion is the 1999 hardware path, not traced in
+the driver DLL.
+
 ## Checks
 
 - Every index of every element in all 70 levels is in range, and each array's size matches its
