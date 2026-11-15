@@ -3559,6 +3559,24 @@ TEST_CASE("real data: sector wake delays the kids and story removal prevents the
 	}
 }
 
+TEST_CASE("real data: Learn_30 swimming surface cast sees the river")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto data = game_data::locate(*dir);
+	REQUIRE(data);
+	auto files = load_level_files(*data, "Learn_30");
+	scene tree(files.memory, read_level_header(files));
+	game::world_collision world(static_collision(files.memory, tree));
+	const vec3 below = { -110, 200, -10 }, above = { -110, 200, 0 };
+	// Behaviour 5 uses function 201 with mask 0x4000 every eight frames to find
+	// the surface above the swimmer; ordinary solid casts must still ignore it.
+	CHECK_FALSE(world.first_hit(below, above));
+	auto water = world.first_hit(below, above, 0x4000);
+	REQUIRE(water);
+	CHECK(water->point[2] == doctest::Approx(-8.339).epsilon(0.001));
+}
+
 TEST_CASE("real data: Bast_20 piranhas only catch Rayman in their wake region")
 {
 	auto dir = real_game_dir();

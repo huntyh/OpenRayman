@@ -272,7 +272,7 @@ namespace openrayman::game
 
 	std::optional<world_collision::segment_hit> world_collision::first_hit(const std::array<float, 3>& start, const std::array<float, 3>& end, std::uint16_t any_of) const
 	{
-		// Every solid triangle the segment crosses (Moller-Trumbore, both faces), keeping the
+		// Every eligible triangle the segment crosses (Moller-Trumbore, both faces), keeping the
 		// nearest. Only the triangles in the grid cells under the segment's box are tried: the
 		// camera's obstacle search casts up to 96 of these a tick, and trying the whole level each
 		// time ran the game at 3 fps whenever the camera lost sight of Rayman.
@@ -291,7 +291,8 @@ namespace openrayman::game
 		for(std::uint32_t i : tried)
 		{
 			const collision_triangle& t = m_geometry->triangles[i];
-			if(!accepts(t) || (t.flags & surface::no_contact) || (any_of && !(t.flags & any_of)))
+			// Ordinary casts ignore water; a flag-filtered cast can explicitly request it.
+			if(!accepts(t) || (t.flags & surface::no_contact & ~any_of) || (any_of && !(t.flags & any_of)))
 				continue;
 			const vec e1 = { t.corners[1][0] - t.corners[0][0], t.corners[1][1] - t.corners[0][1], t.corners[1][2] - t.corners[0][2] };
 			const vec e2 = { t.corners[2][0] - t.corners[0][0], t.corners[2][1] - t.corners[0][1], t.corners[2][2] - t.corners[0][2] };

@@ -268,3 +268,5 @@ contacts, which meet a ceiling like any other face. `ORTOOL_NEAR=x,y,r ortool co
   material → collide material → flags chain. A helper model (DeepSeek, through Reasonix) traced
   these first; the switch and the chain were re-read and checked against the data. Its claim that
   super object +0x34 holds the box in place was wrong: it is a pointer to it.
+
+Rayman's swimming behaviour 5 also calls function 201 (0x479910) every eight frames with mask 0x4000, casting upward from his body to refresh his saved surface height. An ordinary segment cast ignores water, but this explicitly filtered query must include it. If it misses, the script substitutes 32767 and loses the surface. In installed Learn_30 data, node 119 supplies a paired water plane at z=-8.339 near (-110,200). Sources: the level's collision triangles and Rayman's scripts, inspected with ortool floor/brain/run; executable addresses from our prior reading of Rayman2.exe.
