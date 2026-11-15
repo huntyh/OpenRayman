@@ -152,6 +152,7 @@ namespace openrayman
 			uniform vec2 u_uv_offset; // scrolling textures (water, mist, clouds)
 			uniform vec4 u_well; // star depth: enabled, depth scale, slow drift u, v; zero for all other surfaces
 			uniform vec2 u_lake; // the star lake's ripples: enabled, seconds
+			uniform float u_twinkle; // the star layers' stars twinkle (Learn_10's well)
 			uniform vec4 u_falls; // the Hall's river below the waterfall: enabled, the fall's foot (x, y), seconds
 			uniform vec2 u_star_floor; // Hall of Doors: the star field's lowest height, texture tiles per world unit (0: follow the mesh)
 			// Ours (docs/IMPROVEMENTS.md): the star texture of the portal well and the Hall of Doors lake
@@ -169,16 +170,10 @@ namespace openrayman
 				float shimmer = 1.0 + 0.1 * sin(dot(p, vec2(5.0, 3.0)) - t * 1.6) * sin(dot(p, vec2(-3.0, 4.0)) + t * 1.2);
 				return vec3(vec2(a, b) * 0.006, shimmer);
 			}
-			// The overlay's stars twinkle each on its own, and a soft band of light glides slowly over
-			// the water: a few cells of the texture brighten together as it passes.
-			vec4 lake_overlay(vec2 uv, vec2 uv_dx, vec2 uv_dy)
+			// A smooth random phase across the texture (value noise, no cell edges), so each star
+			// twinkles on its own; callers apply it only to bright texels (the stars), the dark sky stays still.
+			float twinkle_at(vec2 at, float t)
 			{
-				vec3 r = lake_ripple(uv);
-				vec2 at = uv + r.xy;
-				vec4 texel = textureGrad(u_texture, at, uv_dx, uv_dy);
-				float t = u_lake.y;
-				// A smooth random phase across the texture (value noise, no cell edges), so each star
-				// twinkles on its own; only bright texels (the stars) take it, the dark sky stays still.
 				vec2 g = at * 12.0, i = floor(g), f = fract(g);
 				f = f * f * (3.0 - 2.0 * f);
 				float h00 = fract(sin(dot(i, vec2(12.9898, 78.233))) * 43758.5453);
@@ -186,7 +181,54 @@ namespace openrayman
 				float h01 = fract(sin(dot(i + vec2(0.0, 1.0), vec2(12.9898, 78.233))) * 43758.5453);
 				float h11 = fract(sin(dot(i + vec2(1.0, 1.0), vec2(12.9898, 78.233))) * 43758.5453);
 				float seed = mix(mix(h00, h10, f.x), mix(h01, h11, f.x), f.y);
-				float twinkle = 0.7 + 0.5 * sin(t * 1.8 + seed * 12.566);
+				return 0.7 + 0.5 * sin(t * 1.8 + seed * 12.566);
+			}
+			// The star texture without its repeating pattern: each tile of it gets its own random shift,
+			// quarter-turn and mirroring, and the four tiles around a point are faded into each other
+			// near their edges. Taking the brightest of them keeps the stars bright (the sky between is
+			// black), so the joins don't show.
+			vec4 scrambled(vec2 st, vec2 dx, vec2 dy)
+			{
+				vec2 cell = floor(st), f = fract(st);
+				vec4 best = vec4(0.0);
+				for(int j = 0; j < 4; j++)
+				{
+					vec2 corner = vec2(float(j & 1), float(j >> 1));
+					vec2 c = cell + corner;
+					float h1 = fract(sin(dot(c, vec2(127.1, 311.7))) * 43758.5453);
+					float h2 = fract(sin(dot(c, vec2(269.5, 183.3))) * 43758.5453);
+					float h3 = fract(sin(dot(c, vec2(419.2, 371.9))) * 43758.5453);
+					int turn = int(h3 * 4.0);
+					mat2 r = turn == 0 ? mat2(1.0, 0.0, 0.0, 1.0) : turn == 1 ? mat2(0.0, 1.0, -1.0, 0.0)
+						: turn == 2 ? mat2(-1.0, 0.0, 0.0, -1.0) : mat2(0.0, -1.0, 1.0, 0.0);
+					if(h1 > 0.5)
+						r = r * mat2(-1.0, 0.0, 0.0, 1.0);
+					// Each corner's tile owns the square of one tile around that corner point, at full
+					// strength, and fades out only in a narrow band at its borders (half-way lines).
+					vec2 w2 = mix(1.0 - f, f, corner);
+					float w = smoothstep(0.4, 0.6, w2.x) * smoothstep(0.4, 0.6, w2.y);
+					vec4 s = textureGrad(u_texture, r * st + vec2(h1, h2), r * dx, r * dy);
+					best = max(best, s * w);
+				}
+				return best;
+			}
+			// One star layer's colour, twinkling when u_twinkle is on.
+			vec3 star_layer(vec2 st, vec2 dx, vec2 dy)
+			{
+				vec3 c = scrambled(st, dx, dy).rgb;
+				if(u_twinkle > 0.5)
+					c *= mix(1.0, twinkle_at(st, u_lake.y), smoothstep(0.25, 0.7, max(c.r, max(c.g, c.b))));
+				return c;
+			}
+			// The overlay's stars twinkle each on its own, and a soft band of light glides slowly over
+			// the water: a few cells of the texture brighten together as it passes.
+			vec4 lake_overlay(vec2 uv, vec2 uv_dx, vec2 uv_dy)
+			{
+				vec3 r = lake_ripple(uv);
+				vec2 at = uv + r.xy;
+				vec4 texel = scrambled(at, uv_dx, uv_dy);
+				float t = u_lake.y;
+				float twinkle = twinkle_at(at, t);
 				vec2 p = at * 6.2831853;
 				float sheen = pow(max(0.0, sin(dot(p, vec2(0.7, 0.4)) - t * 0.35)), 12.0) * 0.6;
 				float star = smoothstep(0.25, 0.7, max(texel.r, max(texel.g, texel.b)));
@@ -234,7 +276,7 @@ namespace openrayman
 						vec2 at = hit.xy * u_star_floor.y + ripple * float(i + 1);
 						vec2 drift = u_well.zw * float(i);
 						vec2 st = at * scale[i] + drift + u_uv_offset;
-						sum += textureGrad(u_texture, st, dFdx(st), dFdy(st)).rgb * weight[i];
+						sum += star_layer(st, dFdx(st), dFdy(st)) * weight[i];
 					}
 					return sum * shimmer;
 				}
@@ -243,7 +285,7 @@ namespace openrayman
 					vec3 step = view * (depth[i] * u_well.y / slant);
 					vec2 at = uv + vec2(dot(to_u, step), dot(to_v, step)) + ripple * float(i + 1);
 					vec2 drift = u_well.zw * float(i);
-					sum += textureGrad(u_texture, at * scale[i] + drift, uv_dx * scale[i], uv_dy * scale[i]).rgb * weight[i];
+					sum += star_layer(at * scale[i] + drift, uv_dx * scale[i], uv_dy * scale[i]) * weight[i];
 				}
 				return sum * shimmer;
 			}
@@ -549,6 +591,7 @@ namespace openrayman
 		m_u_lake = glGetUniformLocation(m_program, "u_lake");
 		m_u_star_floor = glGetUniformLocation(m_program, "u_star_floor");
 		m_u_falls = glGetUniformLocation(m_program, "u_falls");
+		m_u_twinkle = glGetUniformLocation(m_program, "u_twinkle");
 		m_u_swirl = glGetUniformLocation(m_program, "u_swirl");
 		if(const auto* option = std::getenv("OPENRAYMAN_SWIRL_CENTRE"))
 			m_swirl_centre = std::strcmp(option, "0") != 0;
@@ -1285,7 +1328,10 @@ namespace openrayman
 		const char* falls = std::getenv("OPENRAYMAN_FALLS");
 		m_falls_reversed = hall && !(falls && std::strcmp(falls, "0") == 0);
 		const char* flat = std::getenv("OPENRAYMAN_STAR_FLOOR");
-		m_star_flat = m_well && hall && !(flat && std::strcmp(flat, "0") == 0);
+		m_star_flat = m_well && !(flat && std::strcmp(flat, "0") == 0);
+		// Learn_10's well: its stars twinkle (the Hall's lake has its own twinkling overlay).
+		const char* twinkle = std::getenv("OPENRAYMAN_TWINKLE");
+		m_twinkle = m_well && !hall && !(twinkle && std::strcmp(twinkle, "0") == 0);
 		const char* lake = std::getenv("OPENRAYMAN_LAKE");
 		// On in the Hall of Doors; OPENRAYMAN_LAKE=0 off, =2 also in the Learn_10 well.
 		m_lake = m_well && (hall || (lake && std::strcmp(lake, "2") == 0)) && !(lake && std::strcmp(lake, "0") == 0);
@@ -1631,7 +1677,10 @@ namespace openrayman
 				// Ours: the Hall of Doors' river spreads out from the waterfall's foot (u_falls).
 				const bool falls = m_falls_reversed && b.well == 3 && m_fall_foot;
 				glUniform4f(m_u_falls, falls ? 1.0f : 0.0f, falls ? m_fall_foot->x : 0.0f, falls ? m_fall_foot->y : 0.0f, float(std::fmod(m_time, 3600.0)));
-				glm::vec2 offset(std::fmod(b.scroll_offset.x + double(b.scroll.x) * scroll_time, 1.0), std::fmod(b.scroll_offset.y + double(b.scroll.y) * scroll_time, 1.0));
+				// The star materials keep counting past whole widths: their scrambled tiles are picked by
+				// position, so wrapping every width would reshuffle the whole field.
+				const double wrap = m_well && (b.well == 1 || b.well == 2) ? 1000.0 : 1.0;
+				glm::vec2 offset(std::fmod(b.scroll_offset.x + double(b.scroll.x) * scroll_time, wrap), std::fmod(b.scroll_offset.y + double(b.scroll.y) * scroll_time, wrap));
 				glUniform2f(m_u_uv_offset, offset.x, offset.y);
 				glUniform2f(m_u_swirl, m_swirl_centre && m_world_hidden && b.pause_swirl ? 1.0f : 0.0f, float(m_time));
 				if(m_lake && b.well == 2)
@@ -1645,8 +1694,9 @@ namespace openrayman
 					// Star layers below the surface; the deeper ones also drift slowly on their own.
 					// The lake's deep layers drift at a quarter of the well's pace: a lake, not a river.
 					const double drift = m_lake ? 0.25 : 1.0;
-					glUniform4f(m_u_well, 1.0f, m_well_depth, float(std::fmod(m_time * -0.02 * drift, 1.0)), float(std::fmod(m_time * -0.05 * drift, 1.0)));
+					glUniform4f(m_u_well, 1.0f, m_well_depth, float(std::fmod(m_time * -0.02 * drift, 1000.0)), float(std::fmod(m_time * -0.05 * drift, 1000.0)));
 					glUniform2f(m_u_lake, m_lake ? 1.0f : 0.0f, float(std::fmod(m_time, 6283.1853)));
+					glUniform1f(m_u_twinkle, m_twinkle ? 1.0f : 0.0f);
 					const bool flat = m_star_flat && m_star_texels > 0 && m_star_floor < 1e29f;
 					glUniform2f(m_u_star_floor, flat ? m_star_floor : 0.0f, flat ? m_star_texels : 0.0f);
 				}

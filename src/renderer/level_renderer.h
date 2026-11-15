@@ -245,6 +245,8 @@ namespace openrayman
 		GLint m_u_lake = -1;
 		GLint m_u_star_floor = -1;
 		GLint m_u_falls = -1;
+		GLint m_u_twinkle = -1;
+		bool m_twinkle = false; // Learn_10's well stars twinkle (OPENRAYMAN_TWINKLE=0 off)
 		std::optional<glm::vec2> m_fall_foot; // the Hall's waterfall column, its centre seen from above
 		GLint m_u_swirl = -1;
 		bool m_swirl_centre = true;
