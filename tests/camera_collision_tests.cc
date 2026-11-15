@@ -52,6 +52,32 @@ TEST_CASE("screen objects unproject the viewport centre in camera space")
 	CHECK(centre[2] == doctest::Approx(5));
 }
 
+TEST_CASE("screen placement preserves logo handedness and a face in front of its glow")
+{
+	// The fixed screen camera's projection (0x4052C0 / 0x422AB0) makes own +X screen-right,
+	// own +Z upright, and own -Y towards the viewer. Use a turned game camera to check that
+	// these relationships hold independently of the world view, with a nonuniform pulse scale.
+	affine camera;
+	camera.m = {{{0, -1, 0, 3}, {1, 0, 0, 4}, {0, 0, 1, 5}}};
+	affine own;
+	own.m = {{{2, 0, 0, 0}, {0, 3, 0, 0}, {0, 0, 4, 0}}};
+	const auto saved = own;
+	const auto placed = game::screen_object_placement(camera, {500, 200, 10}, own);
+	const auto centre = placed.apply({0, 0, 0});
+	const auto right = placed.apply({1, 0, 0});
+	const auto up = placed.apply({0, 0, 1});
+	const auto face = placed.apply({0, -0.1f, 0});
+	float face_depth = 0;
+	for(int axis = 0; axis < 3; ++axis)
+	{
+		CHECK(right[axis] - centre[axis] == doctest::Approx(-2 * camera.m[axis][0]));
+		CHECK(up[axis] - centre[axis] == doctest::Approx(4 * camera.m[axis][2]));
+		face_depth += (face[axis] - centre[axis]) * -camera.m[axis][1];
+	}
+	CHECK(face_depth < 0); // an additive sprite at the origin is behind the opaque face
+	CHECK(own == saved); // placement must not feed a drawn turn/scale back into the scripted rotation
+}
+
 TEST_CASE("camera collision preserves small movements near a wall")
 {
 	collision_triangle wall;

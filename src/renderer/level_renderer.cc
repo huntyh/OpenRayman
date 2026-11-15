@@ -68,6 +68,7 @@ namespace openrayman
 			uniform vec4 u_light_color[max_lights];
 			uniform vec2 u_light_range[max_lights];  // spherical: near, far
 			out vec2 v_uv;
+			out vec3 v_local_position;
 			flat out vec4 v_uv_bounds;
 			out vec4 v_light;
 			out float v_distance;
@@ -114,6 +115,7 @@ namespace openrayman
 					v_light = vec4(vec3(0.6 + 0.4 * abs(dot(normal, sun))), 1.0);
 				}
 				v_uv = a_uv;
+				v_local_position = a_position;
 				v_uv_bounds = a_uv_bounds;
 				vec3 fog_world = (u_fog_model * world).xyz;
 				v_distance = dot(fog_world - u_camera, u_camera_forward);
@@ -130,6 +132,7 @@ namespace openrayman
 		// Hard-edged alpha (leaves, ferns) is cut out; soft alpha is blended in a second pass.
 		const char* fragment_shader = R"(
 			in vec2 v_uv;
+			in vec3 v_local_position;
 			in vec4 v_light;
 			in float v_distance;
 			in vec3 v_sky_direction;
@@ -144,6 +147,7 @@ namespace openrayman
 			uniform vec3 u_sky_haze_color;
 			uniform vec2 u_uv_offset; // scrolling textures (water, mist, clouds)
 			uniform vec4 u_well; // secondary star strength, scale, and offset; zero for all other surfaces
+			uniform vec2 u_swirl; // optional pause-funnel centre: enabled, animation seconds
 			uniform vec4 u_fog_color;
 			uniform float u_fog_infinite;
 			uniform vec4 u_fog;       // near, far, how much fog covers at near and at far (0..1)
@@ -188,6 +192,25 @@ namespace openrayman
 				}
 				// The level of detail comes from the unclamped coordinates, so clamping doesn't change it.
 				// Scrolling textures tile seamlessly, so their offset goes on after the clamp.
+				float core_fade = 1.0;
+				if(u_swirl.x > 0.5)
+				{
+					// The pause funnel narrows along local +Y; V runs around its circumference.
+					// Twist the angular coordinate progressively inward, without moving the mesh.
+					float radius = length(v_local_position.xz);
+					vec2 twist = vec2(0.0);
+					if(radius < 5.0)
+					{
+						float inward = 1.0 - smoothstep(0.0, 5.0, radius);
+						twist.y = inward * inward * (2.0 * inward + 0.12 * u_swirl.y);
+						core_fade = smoothstep(0.0, 1.1, radius);
+					}
+					// Keep derivatives outside the conditional, but use the original unclamped UVs
+					// plus the twist so the unaffected funnel retains its original mip selection.
+					uv += twist;
+					uv_dx += dFdx(twist);
+					uv_dy += dFdy(twist);
+				}
 				vec4 texel = textureGrad(u_texture, uv + u_uv_offset, uv_dx, uv_dy);
 				if(u_well.x > 0.0)
 				{
@@ -227,6 +250,11 @@ namespace openrayman
 					// its existing colour. The animation's alpha still controls the pulse.
 					const float gain = 4.0;
 					color *= alpha * fade * gain;
+				}
+				if(core_fade < 1.0)
+				{
+					color *= core_fade;
+					alpha = mix(1.0, alpha, core_fade); // a dark opaque tip, rather than a transparent hole
 				}
 				o_color = vec4(color, u_alpha_cut > 0.25 ? 1.0 : alpha);
 			}
@@ -399,6 +427,9 @@ namespace openrayman
 		m_u_model = glGetUniformLocation(m_program, "u_model");
 		m_u_uv_offset = glGetUniformLocation(m_program, "u_uv_offset");
 		m_u_well = glGetUniformLocation(m_program, "u_well");
+		m_u_swirl = glGetUniformLocation(m_program, "u_swirl");
+		if(const auto* option = std::getenv("OPENRAYMAN_SWIRL_CENTRE"))
+			m_swirl_centre = std::strcmp(option, "0") != 0;
 		m_u_sky_haze = glGetUniformLocation(m_program, "u_sky_haze");
 		m_u_fog_model = glGetUniformLocation(m_program, "u_fog_model");
 		m_u_sky_eye = glGetUniformLocation(m_program, "u_sky_eye");
@@ -928,6 +959,14 @@ namespace openrayman
 			add(object, affine{}, triangles, m.sprites, {}, true);
 			m.first = GLint(vertices.size());
 			append(triangles, m.batches);
+			// The shared pause funnel, identified by its two material resources and mesh shape.
+			// Requiring both names avoids affecting other uses of the forest-water texture.
+			const bool swirl = object.vertices.size() == 258 && object.elements.size() == 2 &&
+				object.elements[0].material && object.elements[0].material->texture &&
+				object.elements[1].material && object.elements[1].material->texture &&
+				object.elements[0].material->texture->cnt_path() == "textures_foret/foret_eau_anu_nzwtxy.gf" &&
+				object.elements[1].material->texture->cnt_path() == "textures_cinematique_rhop/bato_vortexnzw_txy.gf";
+			for(auto& b : m.batches) b.pause_swirl = swirl;
 			// 0x42A990 submits elements in stored order, even when both use alpha blending.
 			std::ranges::stable_sort(m.batches, {}, &batch::element_order);
 			if(vertices.size() > std::size_t(m.first))
@@ -1156,6 +1195,7 @@ namespace openrayman
 		glDisable(GL_CULL_FACE); // which faces are double sided isn't decoded yet
 		glUseProgram(m_program);
 		glUniform4f(m_u_well, 0, 0, 0, 0);
+		glUniform2f(m_u_swirl, 0, 0);
 		glm::mat4 view_projection = projection * view;
 		const glm::mat4 fog_identity(1.0f);
 		glUniformMatrix4fv(m_u_fog_model, 1, GL_FALSE, glm::value_ptr(fog_identity));
@@ -1367,7 +1407,7 @@ namespace openrayman
 			// +0x24 list), so it stays out of views where the game doesn't show it.
 			return backdrop_pass ? is_backdrop(sector) && drawn(sector) : !sky && !is_backdrop(sector) && drawn(sector);
 		};
-		auto draw_batches = [&, this](std::span<const batch> batches, blend mode, bool cores = false) {
+		auto draw_batches = [&, this](std::span<const batch> batches, blend mode, bool cores = false, bool screen_depth = false) {
 			for(const batch& b : batches)
 			{
 				if(b.mode != mode || !visible(b.sector))
@@ -1386,7 +1426,7 @@ namespace openrayman
 				use_cull(b.faces);
 				// Depth writes are independent of alpha blending (0x424A00; GliVd1vf 0x10007E18).
 				// Deferred triangles have depth writes cleared by the driver queue (0x1000125F).
-				glDepthMask(cores || (mode == blend::none && b.depth_write) ? GL_TRUE : GL_FALSE);
+				glDepthMask(cores || ((mode == blend::none || screen_depth) && b.depth_write) ? GL_TRUE : GL_FALSE);
 				const GLuint texture = texture_at(b.animation, b.texture);
 				glBindTexture(GL_TEXTURE_2D, texture);
 				static const bool classic_lightning = [] {
@@ -1414,6 +1454,7 @@ namespace openrayman
 				const double scroll_time = m_time * (sky_pass ? m_sky_drift : 1.0f);
 				glm::vec2 offset(std::fmod(b.scroll_offset.x + double(b.scroll.x) * scroll_time, 1.0), std::fmod(b.scroll_offset.y + double(b.scroll.y) * scroll_time, 1.0));
 				glUniform2f(m_u_uv_offset, offset.x, offset.y);
+				glUniform2f(m_u_swirl, m_swirl_centre && m_world_hidden && b.pause_swirl ? 1.0f : 0.0f, float(m_time));
 				if(m_well && b.well)
 				{
 					// A fainter, finer copy moves independently of the original, breaking up its
@@ -1423,6 +1464,7 @@ namespace openrayman
 				glUniform4fv(m_u_material_ambient, 1, glm::value_ptr(b.ambient));
 				glUniform4fv(m_u_material_diffuse, 1, glm::value_ptr(b.diffuse));
 				draw_triangles(b.first, b.count);
+				glUniform2f(m_u_swirl, 0, 0);
 				glDepthMask(mode == blend::none || cores ? GL_TRUE : GL_FALSE);
 				glUniform4f(m_u_well, 0, 0, 0, 0);
 				if(flash_near)
@@ -1756,122 +1798,140 @@ namespace openrayman
 		std::ranges::stable_sort(order, [&](const see_through_draw& a, const see_through_draw& b) {
 			return a.key < b.key;
 		});
-		std::size_t placed = level - 1; // whose model and lights are set
-		for(std::size_t k = 0; k < order.size(); k++)
-		{
-			const see_through_draw& d = order[k];
-			if(d.mode != current)
-				set_blend(current = d.mode);
-			if(d.part != placed)
+		// 0: world transparency, 1: opaque screen cut-outs, 2: deferred screen geometry.
+		auto draw_order = [&](int stage) {
+			std::size_t placed = level - 1; // whose model and lights are set
+			for(std::size_t k = 0; k < order.size(); k++)
 			{
-				if(placed < parts.size()) morph(parts[placed], true);
-				placed = d.part;
-				bool is_level = d.part == level;
-				set_model(is_level ? identity : parts[d.part].model);
-				glUniform1i(m_u_lighting, m_lighting ? (is_level ? 1 : 2) : 0);
-				glUniform1f(m_u_part_alpha, is_level ? 1.0f : parts[d.part].alpha);
-				if(!is_level)
+				const see_through_draw& d = order[k];
+				const bool screen = d.part != level && parts[d.part].screen;
+				const bool solid_screen = screen && d.b->mode == blend::none && parts[d.part].alpha == 1;
+				if(stage != (screen ? (solid_screen ? 1 : 2) : 0)) continue;
+				if(d.mode != current)
+					set_blend(current = d.mode);
+				if(d.part != placed)
+				{
+					if(placed < parts.size()) morph(parts[placed], true);
+					placed = d.part;
+					bool is_level = d.part == level;
+					set_model(is_level ? identity : parts[d.part].model);
+					glUniform1i(m_u_lighting, m_lighting ? (is_level ? 1 : 2) : 0);
+					glUniform1f(m_u_part_alpha, is_level ? 1.0f : parts[d.part].alpha);
+					if(!is_level)
 					{
-					use_lights(part_light[d.part]);
-					use_fog(part_sector[d.part]);
-					morph(parts[d.part], false);
-					if(parts[d.part].screen)
-					{
-						glUniform4f(m_u_fog, 0, 0, 0, 0);
-						fogged = no_sector;
+						use_lights(part_light[d.part]);
+						use_fog(part_sector[d.part]);
+						morph(parts[d.part], false);
+						if(parts[d.part].screen)
+						{
+							glUniform4f(m_u_fog, 0, 0, 0, 0);
+							fogged = no_sector;
+						}
 					}
+					else
+						glUniform1f(m_u_sharpen, 0.0f);
 				}
-				else
-					glUniform1f(m_u_sharpen, 0.0f);
+				// Neighbours in the order that continue the same batch go in one draw call.
+				batch run = *d.b;
+				run.mode = d.mode;
+				run.first = d.first;
+				run.count = 3;
+				while(k + 1 < order.size() && order[k + 1].b == d.b && order[k + 1].first == run.first + run.count)
+					run.count += 3, k++;
+				draw_batches(std::span(&run, 1), run.mode, false, solid_screen);
 			}
-			// Neighbours in the order that continue the same batch go in one draw call.
-			batch run = *d.b;
-			run.mode = d.mode;
-			run.first = d.first;
-			run.count = 3;
-			while(k + 1 < order.size() && order[k + 1].b == d.b && order[k + 1].first == run.first + run.count)
-				run.count += 3, k++;
-			draw_batches(std::span(&run, 1), run.mode);
-		}
-		if(placed < parts.size()) morph(parts[placed], true);
-		set_model(identity);
-		glUniform1f(m_u_sharpen, 0.0f);
-		glUniform1f(m_u_part_alpha, 1.0f);
-		use_fog(m_camera_sector);
-		use_cull(cull::none);
-		// Sprites are glows and flames: they shine by themselves.
-		glUniform1i(m_u_lighting, m_lighting ? 3 : 0);
-		glUniform2f(m_u_uv_offset, 0, 0);
+			if(placed < parts.size()) morph(parts[placed], true);
+			set_model(identity);
+			glUniform1f(m_u_sharpen, 0.0f);
+			glUniform1f(m_u_part_alpha, 1.0f);
+			use_fog(m_camera_sector);
+			use_cull(cull::none);
+			// Sprites are glows and flames: they shine by themselves.
+			glUniform1i(m_u_lighting, m_lighting ? 3 : 0);
+			glUniform2f(m_u_uv_offset, 0, 0);
+		};
+		draw_order(0);
 
-		// The level's sprites, and the actors' where their parts are now.
-		std::vector<sprite_instance> sprites = m_sprites;
-		for(sprite_instance& s : sprites)
-			s.texture = texture_at(s.animation, s.texture);
-		for(const part& p : parts)
-		{
-			float scale = std::cbrt(std::abs(glm::determinant(glm::mat3(p.model))));
-			for(sprite_instance s : m_meshes[p.mesh].sprites)
-			{
-				s.center = glm::vec3(p.model * glm::vec4(s.center, 1.0f));
+		auto draw_sprites = [&](bool screen) {
+			// The level's sprites, and the actors' where their parts are now.
+			std::vector<sprite_instance> sprites = screen ? std::vector<sprite_instance>{} : m_sprites;
+			for(sprite_instance& s : sprites)
 				s.texture = texture_at(s.animation, s.texture);
-				s.half_size *= scale;
-				sprites.push_back(s);
-			}
-		}
-		std::ranges::sort(sprites, [](const sprite_instance& a, const sprite_instance& b) {
-			return std::tie(a.mode, a.texture) < std::tie(b.mode, b.texture);
-		});
-
-		// Sprites: squares facing the camera, built from its right and up directions. Their normal
-		// points at the stand-in sun so they come out fully lit.
-		if(!sprites.empty())
-		{
-			glm::vec3 right(view[0][0], view[1][0], view[2][0]);
-			glm::vec3 up(view[0][1], view[1][1], view[2][1]);
-			glm::vec3 lit = glm::normalize(glm::vec3(0.3f, 0.2f, 0.9f));
-			std::vector<vertex> quads;
-			quads.reserve(sprites.size() * 6);
-			for(const sprite_instance& s : sprites)
+			for(const part& p : parts)
 			{
-				glm::vec3 x = right * s.half_size.x, y = up * s.half_size.y;
-				// v counts up in the game; our textures are uploaded top row first.
-				const float u = s.uv_extent.x, v = s.uv_extent.y;
-				// A plain sprite shows its texture once; a mirrored one spans two copies, unbounded.
-				glm::vec4 bounds{ -1e6f, -1e6f, 1e6f, 1e6f };
-				if(u <= 1)
-					bounds.x = 0, bounds.z = 1;
-				if(v <= 1)
-					bounds.y = 0, bounds.w = 1;
-				vertex bl{ s.center - x - y, { 0, v }, lit, bounds }, br{ s.center + x - y, { u, v }, lit, bounds };
-				vertex tl{ s.center - x + y, { 0, 0 }, lit, bounds }, tr{ s.center + x + y, { u, 0 }, lit, bounds };
-				quads.insert(quads.end(), { bl, tl, br, br, tl, tr });
+				if(p.screen != screen) continue;
+				glm::vec2 scale(std::cbrt(std::abs(glm::determinant(glm::mat3(p.model)))));
+				if(screen)
+				{
+					// 0x4291E0 uses 0x446200/0x446250 on the combined model/view matrix:
+					// screen X and Y row lengths, not a single volume-average scale.
+					const auto mv = glm::mat3(view * p.model);
+					scale = { glm::length(glm::vec3(mv[0][0], mv[1][0], mv[2][0])),
+						glm::length(glm::vec3(mv[0][1], mv[1][1], mv[2][1])) };
+				}
+				for(sprite_instance s : m_meshes[p.mesh].sprites)
+				{
+					s.center = glm::vec3(p.model * glm::vec4(s.center, 1.0f));
+					s.texture = texture_at(s.animation, s.texture);
+					s.half_size *= scale;
+					sprites.push_back(s);
+				}
 			}
-			glBindVertexArray(m_sprite_vao);
-			glBindBuffer(GL_ARRAY_BUFFER, m_sprite_vbo);
-			glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(quads.size() * sizeof(vertex)), quads.data(), GL_STREAM_DRAW);
-			// Additive sprites take no fog: the game's driver clears their fog factor (GliDX6vf.dll
-			// 0x10008F4C for texture flag 0x20 without 0x08, used by the sprite routine 0x1000181D).
-			// Faded by distance, Rayman's shot was too dim to see shrink when it ran out.
-			glm::vec4 fog_was(0.0f);
-			glGetUniformfv(m_program, m_u_fog, glm::value_ptr(fog_was));
-			for(std::size_t first = 0; first < sprites.size();)
-			{
-				std::size_t last = first;
-				while(last < sprites.size() && sprites[last].texture == sprites[first].texture && sprites[last].mode == sprites[first].mode)
-					last++;
-				if(sprites[first].mode != current)
-					set_blend(current = sprites[first].mode);
-				if(sprites[first].mode == blend::additive)
-					glUniform4f(m_u_fog, 0, 0, 0, 0);
-				else
-					glUniform4fv(m_u_fog, 1, glm::value_ptr(fog_was));
-				glBindTexture(GL_TEXTURE_2D, sprites[first].texture);
-				draw_triangles(GLint(first * 6), GLsizei((last - first) * 6));
-				first = last;
-			}
-			glUniform4fv(m_u_fog, 1, glm::value_ptr(fog_was));
-		}
+			std::ranges::sort(sprites, [](const sprite_instance& a, const sprite_instance& b) {
+				return std::tie(a.mode, a.texture) < std::tie(b.mode, b.texture);
+			});
 
+			// Sprites: squares facing the camera, built from its right and up directions. Their normal
+			// points at the stand-in sun so they come out fully lit.
+			if(!sprites.empty())
+			{
+				glm::vec3 right(view[0][0], view[1][0], view[2][0]);
+				glm::vec3 up(view[0][1], view[1][1], view[2][1]);
+				glm::vec3 lit = glm::normalize(glm::vec3(0.3f, 0.2f, 0.9f));
+				std::vector<vertex> quads;
+				quads.reserve(sprites.size() * 6);
+				for(const sprite_instance& s : sprites)
+				{
+					glm::vec3 x = right * s.half_size.x, y = up * s.half_size.y;
+					// v counts up in the game; our textures are uploaded top row first.
+					const float u = s.uv_extent.x, v = s.uv_extent.y;
+					// A plain sprite shows its texture once; a mirrored one spans two copies, unbounded.
+					glm::vec4 bounds{ -1e6f, -1e6f, 1e6f, 1e6f };
+					if(u <= 1)
+						bounds.x = 0, bounds.z = 1;
+					if(v <= 1)
+						bounds.y = 0, bounds.w = 1;
+					vertex bl{ s.center - x - y, { 0, v }, lit, bounds }, br{ s.center + x - y, { u, v }, lit, bounds };
+					vertex tl{ s.center - x + y, { 0, 0 }, lit, bounds }, tr{ s.center + x + y, { u, 0 }, lit, bounds };
+					quads.insert(quads.end(), { bl, tl, br, br, tl, tr });
+				}
+				glBindVertexArray(m_sprite_vao);
+				glBindBuffer(GL_ARRAY_BUFFER, m_sprite_vbo);
+				glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(quads.size() * sizeof(vertex)), quads.data(), GL_STREAM_DRAW);
+				// Additive sprites take no fog: the game's driver clears their fog factor (GliDX6vf.dll
+				// 0x10008F4C for texture flag 0x20 without 0x08, used by the sprite routine 0x1000181D).
+				// Faded by distance, Rayman's shot was too dim to see shrink when it ran out.
+				glm::vec4 fog_was(0.0f);
+				glGetUniformfv(m_program, m_u_fog, glm::value_ptr(fog_was));
+				for(std::size_t first = 0; first < sprites.size();)
+				{
+					std::size_t last = first;
+					while(last < sprites.size() && sprites[last].texture == sprites[first].texture && sprites[last].mode == sprites[first].mode)
+						last++;
+					if(sprites[first].mode != current)
+						set_blend(current = sprites[first].mode);
+					if(sprites[first].mode == blend::additive)
+						glUniform4f(m_u_fog, 0, 0, 0, 0);
+					else
+						glUniform4fv(m_u_fog, 1, glm::value_ptr(fog_was));
+					glBindTexture(GL_TEXTURE_2D, sprites[first].texture);
+					draw_triangles(GLint(first * 6), GLsizei((last - first) * 6));
+					first = last;
+				}
+				glUniform4fv(m_u_fog, 1, glm::value_ptr(fog_was));
+			}
+		};
+		draw_sprites(false);
 		// Particles, farthest first: each fades on its own, so each is its own draw.
 		if(!m_particles.empty() && !m_effect_materials.empty())
 		{
@@ -1917,6 +1977,17 @@ namespace openrayman
 				glBindTexture(GL_TEXTURE_2D, age >= 0 ? texture_once(m.animation, m.texture, age) : texture_at(m.animation, m.texture));
 				draw_triangles(GLint(i * 6), 6);
 			}
+		}
+
+		if(std::ranges::any_of(parts, [](const part& p) { return p.screen; }))
+		{
+			// 0x419A30 / 0x45CC80: a separate view. Keyed faces write depth before deferred glows.
+			glDepthMask(GL_TRUE);
+			glClear(GL_DEPTH_BUFFER_BIT);
+			glBindVertexArray(m_vao);
+			draw_order(1);
+			draw_order(2);
+			draw_sprites(true);
 		}
 
 		// The collision overlay, last and slightly pulled forward so it shows on the surfaces it

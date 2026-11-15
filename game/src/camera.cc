@@ -44,12 +44,12 @@ namespace openrayman::game
 		// at (0, 0, 5), turned a quarter about X by 0x445BE0 and a half about Z by 0x445C70), so an
 		// object keeps the orientation it has in front of that camera whatever the game camera does
 		// (identity for the intro's Ubisoft logo; 409 sets only its scale, which we leave). Ours draws it in the world
-		// in front of the game camera, so it turns with that camera. Relative to our camera super
-		// object's axes that comes out as a half turn about the camera's up axis (col 2): the two
-		// camera matrices differ by a quarter turn about X, settled by eye on the logo (it reads
-		// left to right and stands upright only this way). Left in its world orientation, the logo
-		// showed its back, mirrored (#65). The menu camera looks along +Y, where this turn is close
-		// to none: that is why the menu butterfly already matched with its world orientation.
+		// in front of the game camera, so it turns with that camera. The fixed view maps the object's
+		// X, Y, Z to -view X, view depth, view Y. Including the negative projection factors at
+		// 0x422AB0 gives screen right = own +X and up = own +Z. In our camera-super-object axes
+		// (right=-X, forward=-Y, up=Z), this is the half turn below. This agrees with the earlier
+		// logo comparison: changing it would mirror the lettering. Preserve the object's own scale
+		// and rotation; the screen draw's depth/order rules apply separately (0x45CC80).
 		affine turn;
 		for(int r = 0; r < 3; r++)
 		{

@@ -168,6 +168,7 @@ namespace openrayman
 			bool depth_write = true;
 			glm::vec2 scroll_offset{ 0 };
 			std::size_t element_order = 0;
+			bool pause_swirl = false;
 		};
 		static constexpr std::size_t no_sector = std::size_t(-1);
 
@@ -241,6 +242,8 @@ namespace openrayman
 		GLint m_u_fog_model = -1;
 		GLint m_u_uv_offset = -1;
 		GLint m_u_well = -1;
+		GLint m_u_swirl = -1;
+		bool m_swirl_centre = true;
 		bool m_well = false;
 		GLint m_u_camera = -1, m_u_camera_forward = -1, m_u_lighting = -1;
 		GLint m_u_light_count = -1, m_u_light_kind = -1, m_u_light_vector = -1, m_u_light_color = -1, m_u_light_range = -1;

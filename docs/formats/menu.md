@@ -366,8 +366,8 @@ logo (Jail_10 node 4 spawns actor `04/01 +0x680` with var3 = 1; object list `04/
 "Ubi Soft"/"Entertainment" plate and the arc, both lying in their XZ plane facing -Y) has an
 identity transform. Left in its world orientation in front of the Jail_10 camera it showed its back,
 mirrored. OpenRayman now turns each screen object's own orientation with the game camera,
-followed by a half turn about the camera's up axis (the quarter turn between the camera object's
-matrix and our camera super object's axes was settled by eye on the logo). The menu camera looks
+followed by a half turn about the camera's up axis. Originally settled by eye on the logo, this
+orientation is now checked against the fixed view and projection signs (see below). The menu camera looks
 along +Y, where that turn is nearly none. Since the pass is a world of its own, the level's lights
 don't reach it. The logo arc's white-to-yellow gradient comes from its saved vertex colours,
 selected by procedure 393; its own light is switched off by procedure 387. OpenRayman applies
@@ -542,3 +542,50 @@ Own analysis of the installed GOG executable, the game's Fix and Learn_10 script
 above are executable virtual addresses unless marked as data block offsets. No original
 code or game assets are included here. This describes observed script and executable
 paths, not a claim that OpenRayman implements them all.
+
+### Selection Lum: screen depth and ordering (follow-up to card 38)
+
+The generated selection Lum is `04/00 +0x1B40C`. Procedure 409 keeps it in the persistent
+screen-object list while procedure 173 pulses its scale. Animation 287 supplies channels 57
+(face, object 7) and 58 (orange body sprite, object 8, channel scale 1.95). The face mesh is
+`05/01 +0x65C97C`: keyed teeth/eyes plus additive wings; the body sprite is `+0x65DCB4`.
+
+The fixed camera at `0x4052C0` composes a quarter turn about X and a half turn about Z
+(`0x445BE0`, `0x445C70`, `0x445130`), then orthonormalizes it (`0x444F90`). Including the
+projection signs from `0x422AB0`, own +X goes screen-right and own +Z goes upward. The
+existing equivalent turn in `screen_object_placement` is therefore retained; flipping it would
+mirror the Ubisoft logo. The placement still preserves the actor's own scripted rotation and
+scale independently of the matrix drawn after reprojection. A regression checks handedness,
+upright orientation, nonuniform scale, and that a face in front of a sprite stays nearer.
+
+The keyed teeth and eyes must occlude the orange body. Texture binding (`0x424A00`) keeps
+material depth writes unless texture `0x40` suppresses them; the Glide material setup applies
+that bit at `0x10007E18`. Source flags `0x12` on these textures include keyed-edge preparation:
+exe `0x425240` prepares transparent texels, and the driver can clear `0x10` during loading
+(`GliVd1vf.dll 0x1000894F`). The keyed material can then draw immediately, while the additive
+body/wings are deferred (`0x10007EAD`). OpenRayman had instead blended every screen cut-out
+without writing depth to keep its sharpened edges smooth, then added all sprites afterwards.
+It now writes depth for opaque screen cut-outs while retaining their smooth edges, before the
+screen view's deferred glow draws. Faded screen objects continue to blend without depth writes.
+Screen sprite width and height also use separate row lengths of the model/view matrix
+(`0x4291E0` calling `0x446200`/`0x446250`); the old volume-average scale made this Lum's
+nonuniformly pulsing glow too wide. Its channel scale of 1.95 and sprite half size 1.10 are retained.
+
+World particles also precede screen objects: `0x44BBFB` calls `0x4607E0`, which updates and
+draws them through `0x461120` and `0x460A10`. The later `0x40B1A4` calls `0x419A30`, drawing
+the screen list through `0x45CC80`/`0x45CA30`, without sector fog. Ours previously drew world
+particles after screen objects, allowing a blue pause sparkle to burn over the Lum's face even
+after the orange glow was correctly occluded. Screen meshes and their sprites now share their
+own depth pass after world geometry, sprites and particles.
+
+The optional swirl-centre twist and dark tip are a deliberate renderer improvement, separate
+from these executable findings; see [IMPROVEMENTS](../IMPROVEMENTS.md). Its switch is
+`OPENRAYMAN_SWIRL_CENTRE=0`. Identification requires both funnel materials, its 258-vertex,
+two-element shape, and the active pause background; ordinary water is unaffected.
+
+Where this came from: own reading of the installed GOG executable and `GliVd1vf.dll` at the
+addresses above, `ortool mesh`/`anim`/`peek`, renderer winding/normal diagnostics, and before/after
+captures of Learn_10's pause, Jail_10's Ubisoft logo at 2 seconds, and Menu at 4 seconds
+(Codex, 2026-11-15). Compared with the user's `real_pause2.webp` and `lum_cmp.png`; captures
+are not synchronized to the real game's animation phase. No executable code or assets copied
+into sources. Images, diagnostic output and the progress report stay in `build/helpers/`.
