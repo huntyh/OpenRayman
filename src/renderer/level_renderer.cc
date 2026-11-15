@@ -69,6 +69,7 @@ namespace openrayman
 			uniform vec2 u_light_range[max_lights];  // spherical: near, far
 			out vec2 v_uv;
 			out vec3 v_local_position;
+			out vec3 v_world_position;
 			flat out vec4 v_uv_bounds;
 			out vec4 v_light;
 			out float v_distance;
@@ -116,6 +117,7 @@ namespace openrayman
 				}
 				v_uv = a_uv;
 				v_local_position = a_position;
+				v_world_position = world.xyz;
 				v_uv_bounds = a_uv_bounds;
 				vec3 fog_world = (u_fog_model * world).xyz;
 				v_distance = dot(fog_world - u_camera, u_camera_forward);
@@ -133,6 +135,8 @@ namespace openrayman
 		const char* fragment_shader = R"(
 			in vec2 v_uv;
 			in vec3 v_local_position;
+			in vec3 v_world_position;
+			uniform vec3 u_camera;
 			in vec4 v_light;
 			in float v_distance;
 			in vec3 v_sky_direction;
@@ -146,7 +150,39 @@ namespace openrayman
 			uniform float u_sky_haze;
 			uniform vec3 u_sky_haze_color;
 			uniform vec2 u_uv_offset; // scrolling textures (water, mist, clouds)
-			uniform vec4 u_well; // secondary star strength, scale, and offset; zero for all other surfaces
+			uniform vec4 u_well; // star depth: enabled, depth scale, slow drift u, v; zero for all other surfaces
+			// Ours (docs/IMPROVEMENTS.md): the star texture of the portal well and the Hall of Doors lake
+			// is seen as layers lying below the surface. Each pixel follows the view ray through the
+			// surface down to each layer, so the stars slide against the camera as it moves, like deep
+			// space seen through a hole. The texture coordinates' change per world unit comes from the
+			// screen derivatives, so it works on any surface (the well's floor and walls alike).
+			vec3 star_depth(vec2 uv, vec2 uv_dx, vec2 uv_dy)
+			{
+				vec3 dp1 = dFdx(v_world_position), dp2 = dFdy(v_world_position);
+				vec3 n = cross(dp1, dp2);
+				if(dot(n, n) < 1e-12)
+					return textureGrad(u_texture, uv, uv_dx, uv_dy).rgb;
+				n = normalize(n);
+				vec3 view = normalize(v_world_position - u_camera);
+				if(dot(n, view) > 0.0)
+					n = -n; // facing the camera
+				float det = dot(n, cross(dp1, dp2));
+				vec3 to_u = (cross(dp2, n) * uv_dx.x + cross(n, dp1) * uv_dy.x) / det;
+				vec3 to_v = (cross(dp2, n) * uv_dx.y + cross(n, dp1) * uv_dy.y) / det;
+				float slant = max(dot(-view, n), 0.2);
+				const vec3 depth = vec3(2.0, 8.0, 25.0);   // world units below the surface
+				const vec3 scale = vec3(1.0, 1.45, 2.1);   // farther layers: finer stars
+				const vec3 weight = vec3(1.0, 0.6, 0.45);
+				vec3 sum = vec3(0.0);
+				for(int i = 0; i < 3; i++)
+				{
+					vec3 step = view * (depth[i] * u_well.y / slant);
+					vec2 at = uv + vec2(dot(to_u, step), dot(to_v, step));
+					vec2 drift = u_well.zw * float(i);
+					sum += textureGrad(u_texture, at * scale[i] + drift, uv_dx * scale[i], uv_dy * scale[i]).rgb * weight[i];
+				}
+				return sum;
+			}
 			uniform vec2 u_swirl; // optional pause-funnel centre: enabled, animation seconds
 			uniform vec4 u_fog_color;
 			uniform float u_fog_infinite;
@@ -221,10 +257,7 @@ namespace openrayman
 				if(polar_mix > 0.0)
 					texel = mix(texel, textureGrad(u_texture, polar_uv + u_uv_offset, polar_dx, polar_dy), polar_mix);
 				if(u_well.x > 0.0)
-				{
-					vec3 stars = textureGrad(u_texture, uv * u_well.y + u_well.zw, uv_dx * u_well.y, uv_dy * u_well.y).rgb;
-					texel.rgb = texel.rgb * 0.8 + stars * u_well.x;
-				}
+					texel.rgb = star_depth(uv + u_uv_offset, uv_dx, uv_dy);
 				if(u_sharpen > 0.5)
 					texel.a = sharpened(texel.a, v_uv);
 				if(v_culled > 0.5)
@@ -1128,7 +1161,15 @@ namespace openrayman
 	void level_renderer::set_backdrop(const std::string& level)
 	{
 		const char* well = std::getenv("OPENRAYMAN_WELL");
-		m_well = level == "Learn_10" && !(well && std::strcmp(well, "0") == 0);
+		m_well = (level == "Learn_10" || level == "mapmonde") && !(well && std::strcmp(well, "0") == 0);
+		m_well_depth = 1.0f;
+		if(const char* depth = std::getenv("OPENRAYMAN_WELL_DEPTH"))
+		{
+			char* end = nullptr;
+			const float f = std::strtof(depth, &end);
+			if(end != depth && *end == '\0' && std::isfinite(f) && f >= 0 && f <= 20)
+				m_well_depth = f;
+		}
 		m_backdrop_sectors.clear();
 		m_backdrop_skies.clear();
 		const char* enabled = std::getenv("OPENRAYMAN_BACKDROP");
@@ -1465,9 +1506,8 @@ namespace openrayman
 				glUniform2f(m_u_swirl, m_swirl_centre && m_world_hidden && b.pause_swirl ? 1.0f : 0.0f, float(m_time));
 				if(m_well && b.well)
 				{
-					// A fainter, finer copy moves independently of the original, breaking up its
-					// uniform sideways drift without blurring either layer or adding a draw.
-					glUniform4f(m_u_well, 0.35f, 2.0f, float(std::fmod(m_time * -0.035, 2.0)), float(std::fmod(m_time * -0.09, 2.0)));
+					// Star layers below the surface; the deeper ones also drift slowly on their own.
+					glUniform4f(m_u_well, 1.0f, m_well_depth, float(std::fmod(m_time * -0.02, 1.0)), float(std::fmod(m_time * -0.05, 1.0)));
 				}
 				glUniform4fv(m_u_material_ambient, 1, glm::value_ptr(b.ambient));
 				glUniform4fv(m_u_material_diffuse, 1, glm::value_ptr(b.diffuse));
