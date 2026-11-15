@@ -1,4 +1,5 @@
 ﻿#include <audio/sound_player.h>
+#include <audio/music_fade.h>
 
 #include <SDL3/SDL_log.h>
 #include <openrayman/apm_audio.h>
@@ -65,8 +66,8 @@ namespace openrayman
 		// 0x452D50 and 0x451E20: stop voices by their originating event.
 		if(event->type == bnm_event_type::stop)
 		{
-			if(m_theme.event == event->target) { m_music_index = -1; m_pending_theme.reset(); }
-			else if(m_pending_theme && m_pending_theme->event == event->target) m_pending_theme.reset();
+			if(m_theme.event == event->target) { m_music_index = -1; m_pending_theme.reset(); m_fade_remaining = 0; }
+			else if(m_pending_theme && m_pending_theme->event == event->target) { m_pending_theme.reset(); m_fade_remaining = 0; }
 			if(m_loading_theme && m_loading_event == event->target)
 			{
 				++m_theme_serial; // the theme still being decoded is dropped too
@@ -287,10 +288,10 @@ namespace openrayman
 		else
 		{
 			// 0x4595D0: transition 2 uses the old theme's tail; 1 waits for the boundary.
-			// Transition 0 asks the DLL for an immediate switch, approximated here as a cut.
+			// Transition 0 asks the DLL to transition immediately. Bast_20 records a one-second fade.
 			auto mode = m_music_tail ? 1u : m_theme.entries[m_music_index][4];
 			m_pending_theme = std::make_unique<theme>(std::move(next));
-			if(mode == 0) next_music_segment();
+			m_fade_remaining = mode == 0 ? music_fade_frames : 0;
 		}
 	}
 
@@ -301,7 +302,7 @@ namespace openrayman
 
 	void sound_player::start_theme(theme next)
 	{
-		m_theme = std::move(next); m_music_index = 0; m_music_tail = false;
+		m_theme = std::move(next); m_music_index = 0; m_music_tail = false; m_fade_remaining = 0;
 		m_music_position = 0; m_repeat_index = -1; m_repeat = 0xffffffff; m_cycles = 0;
 		if(m_theme.entries[0][1]) { m_repeat_index = 0; m_repeat = m_theme.entries[0][3]; }
 		log_music(m_theme.segments[0], 0);
@@ -310,7 +311,7 @@ namespace openrayman
 	void sound_player::next_music_segment()
 	{
 		m_music_position = 0;
-		if(m_pending_theme)
+		if(m_pending_theme && !m_fade_remaining)
 		{
 			if(!m_music_tail && m_music_index >= 0 && m_theme.entries[m_music_index][4] == 2 && m_theme.tail)
 			{
@@ -370,6 +371,7 @@ namespace openrayman
 		m_voices.clear();
 		m_pause_group = 1;
 		m_music_index = -1;
+		m_fade_remaining = 0;
 		m_pending_theme.reset();
 		++m_theme_serial;
 		m_loading_theme = 0;
@@ -449,10 +451,17 @@ namespace openrayman
 					for(unsigned c = 0; c < 2; ++c)
 					{
 						unsigned input = segment->channels == 1 ? 0 : c;
-						mix[c] += (segment->samples[a * segment->channels + input] * (1 - fraction) + segment->samples[b * segment->channels + input] * fraction) * segment->volume * player.m_theme.volume * music_gain;
+						mix[c] += (segment->samples[a * segment->channels + input] * (1 - fraction) + segment->samples[b * segment->channels + input] * fraction) * segment->volume * player.m_theme.volume * music_gain *
+							(player.m_fade_remaining ? music_fade_gain(player.m_fade_remaining) : 1.0f);
 					}
 					player.m_music_position += static_cast<double>(segment->rate) / 22050.0;
 				}
+			}
+			if(player.m_fade_remaining && --player.m_fade_remaining == 0 && player.m_pending_theme)
+			{
+				auto next = std::move(*player.m_pending_theme);
+				player.m_pending_theme.reset();
+				player.start_theme(std::move(next));
 			}
 			++player.m_music_frames;
 			for(auto& v : player.m_voices)

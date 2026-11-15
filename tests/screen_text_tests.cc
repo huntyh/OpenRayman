@@ -1,4 +1,5 @@
 #include <openrayman/game/screen_text.h>
+#include "../src/audio/music_fade.h"
 #include <openrayman/game/sound_placement.h>
 
 #include <doctest/doctest.h>
@@ -152,4 +153,13 @@ TEST_CASE("screen slot alpha ramps move 200 a second, truncated like the executa
 	text.set_field(0, 0, 0);
 	text.step(1.0f / 60);
 	CHECK(text.at(0).alpha == 0);
+}
+
+TEST_CASE("music transition fade lasts one second at the mixer rate")
+{
+	using namespace openrayman;
+	CHECK(music_fade_frames == 22050);
+	CHECK(music_fade_gain(music_fade_frames) == doctest::Approx(1.0f));
+	CHECK(music_fade_gain(music_fade_frames / 2) == doctest::Approx(0.5f));
+	CHECK(music_fade_gain(0) == doctest::Approx(0.0f));
 }

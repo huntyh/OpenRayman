@@ -106,6 +106,7 @@ namespace openrayman
 		std::uint32_t m_repeat = 0, m_cycles = 0;
 		double m_music_position = 0;
 		std::uint64_t m_music_frames = 0;
+		std::uint32_t m_fade_remaining = 0;
 		bool m_music_tail = false, m_music_log = false;
 		// The loader thread and its one waiting job (a newer request replaces it); the serial drops
 		// themes that a stop or a newer request made stale while they were decoding.

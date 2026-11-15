@@ -206,7 +206,7 @@ whose loop handling still needs tracing. No sample loop points have been establi
 - Examples: `Bnk_106` theme 2 is `PL301.apm` … `PL312.apm` with tail `PL3F.apm`; theme 16 is
   `PL501`–`PL504`; theme 21 is `PL505`–`PL514` then `PL501`–`PL504` again, 14 entries, so a list
   may repeat a piece. `Bnk_0` theme 15 is `JINGLE8.apm`, `silence.apm`; theme 203 is `new01.apm`,
-  `silence.apm`. A `silence.apm` segment is how a theme fades out.
+  `silence.apm`. A transition to `silence.apm` can make a theme fade out.
 - Playing one: an event whose resource is type 11 goes `0x457E60` case 0xb → `0x459950`, which
   sets up the theme state at `DAT_004B95B8` and starts a segment through the APM decoder.
   `_SND_fn_lPlayTransitionSxd` and `_SND_fn_bSetNextTransitionSxd` change segment, and
@@ -321,8 +321,22 @@ by `Snd_Cpa.ini`'s `[DLL_Adpcm]` section); the in-process side is the `_SND_fn_l
 The executable prepares the next segment in advance and advances at segment boundaries. A request
 uses the current entry's transition word: 1 schedules the new theme at the boundary, 2 schedules
 this theme's tail first when one exists, and 0 calls the transition DLL's immediate path. The DLL's
-fade shape and timing have not been traced. `SXD_DIST_SATUR` and `SXD_DIST_FADE` relate to sound
+exact fade shape has not been traced; the Bast_20 timing is described below. `SXD_DIST_SATUR` and `SXD_DIST_FADE` relate to sound
 placement and do not establish a music transition rule.
+
+For Bast_20, sector sound entries are dispatched by 0x412880; event 251:0 requests theme
+404:0, whose sole entry is resource 0:237 (`silence.apm`). In the real-game recording the request
+at 5.266 s is followed by the theme-player switch at 6.266 s. The immediate transition path in
+0x459950 calls 0x4583C0 with the value at 0x4B74A4; procedure 363 (0x46FEC0) supplies a float to
+0x453850, which multiplies it by 65536 and stores the resulting fixed-point value there. This is
+passed through 0x455350/0x455820 to the mixer DLL. The recording supports a one-second transition
+for this case, but does not establish the script value used or the DLL gain curve. OpenRayman uses
+a one-second linear fade as an approximation for mode 0; other durations and the exact curve remain
+to be traced. Event type 2 stops are a separate path and are not established as this transition.
+
+Where this came from: Rayman2.exe functions 0x412880, 0x4595D0, 0x459950, 0x4583C0,
+0x455350, 0x455820, 0x46FEC0 and 0x453850; bank 251 and bank 404; and the read-only
+`rec_bast20music` sound and theme-player logs. No mixer DLL curve was inferred from the timestamps.
 
 The theme player's state is a block at 0x4B95B8 (`dbgSND_fn_bGetThemePosition`, 0x459760, returns
 +0x14, +0x2C, +0x20): +0 active, +0x14 the theme resource, +0x18 a remembered repeat entry and +0x1C
