@@ -2288,7 +2288,18 @@ namespace
 				}
 				float saving = game::saving_alpha(*a.saves);
 				// It floats with the Lum beside it (the same gentle bob).
-				if(saving > 0) add_save_text("Saving...", 815, 920 + 3.1f * std::sin(float(SDL_GetTicks()) / 1000.0f * 3.0f), 8, saving, true);
+				if(saving > 0)
+				{
+					const float seconds = float(SDL_GetTicks()) / 1000.0f, bob = 3.1f * std::sin(seconds * 3.0f);
+					add_save_text("Saving", 815, 920 + bob, 8, saving, true);
+					// The dots hop one after another, as if a wave ran under them (each character is 18 units
+					// wide at this size, screen_slot_metrics).
+					for(int dot = 0; dot < 3; ++dot)
+					{
+						const float hop = std::max(0.0f, std::sin(seconds * 5.0f - float(dot) * 0.8f));
+						add_save_text(".", 815 + 18.0f * float(6 + dot), 920 + bob - 14.0f * hop * hop, 8, saving, true);
+					}
+				}
 				const auto& boxes = a.vm->particles().screen_rectangles();
 				// The gauges (kind 120) are painted before the images (0x460670, then 0x460600).
 				std::vector<game::particles::screen_image> images = a.vm->particles().screen_bar_images();
