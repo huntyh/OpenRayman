@@ -492,17 +492,48 @@ How the pause works (implemented 2026-11-15):
   only the menu shows. Each time the byte changes, the particle update `0x4607E0` empties the
   whole particle pool (its copy of the byte is `0x4B9B14`).
 - **The swirl** behind the menu: the Esc rule generates actor `04/00 +0x1B0A4` (function 66)
-  at the camera. That actor hides its own body (312) and calls 503 with op 83 every frame:
+  at the camera. Its script also calls 503 with op 83 every frame:
   `0x463030` emits one particle (flags 0x87007) every 0.05 s, 5 units along the camera's
   sight and 4 below, up to 4 to either side, rising 2.5..4.5 units a second. Fade 0x7000
   starts at alpha 5 and rises 350 a second; at 255 it holds (0x8000) for the particle's
   life (0.5 s), then fades out at 260 a second (0x3000) (`0x4600C0`, `0x461120`).
 
 Before this, ours ran every actor during the pause, so the swirl's generated actor drifted
-off as the camera moved (the "stuck swirl") and Rayman kept moving. Not checked against
-the game yet: the background colour behind the menu (ours is the fog's clear colour). Ours now freezes the world, lets the menu run
+off as the camera moved (the "stuck swirl") and Rayman kept moving. Ours now freezes the world, lets the menu run
 (selection skips the disabled Load) and resumes on Esc. Still open: the F1 glossary, and
 checking Abandon / Hall of Doors against the game.
+
+### Pause swirl colours (card 38, 2026-11-15)
+
+The generated swirl actor `04/00 +0x1B0A4` places mesh `05/01 +0x656BB4` at the camera,
+turned along its view. Its physical object is `+0x65BF84`; there are 258 vertices, a saved colour
+set starting with `(109,109,109,255)`, and two 240-triangle elements. The pale water material
+`+0x659B68` (`0x45DC03FF`, `foret_eau_anu_nzwtxy`, texture flags `0x80000048`) is submitted
+before the darker vortex material `+0x65B3D0` (`0x4DDC03FF`, `bato_vortexnzw_txy`, texture flags
+`0x80000008`). Both use ordinary alpha blending. Texture `0x40` controls depth writes; the
+deferred alpha queue ultimately disables writes for both. Equal-depth triangles draw in reverse
+submission order, placing pale water over vortex; see [geometry.md](geometry.md#texture-binding-and-deferred-alpha-triangles-card-38).
+
+The actor's super-object flag `0x20000` disables sector **lights**, not depth testing
+(`0x45C450` -> `0x426BD0`). Its single-LOD object selects its saved colour set automatically
+(`0x45CDD0`), with the usual ambient/diffuse conversion and no specular contribution. Sector fog
+remains independent. The material scroll offsets start at `(0.01,0)` and `(0.005,0)` respectively;
+their speeds are the same values per nominal frame, advancing at the renderer's 60 Hz clock.
+
+There is also a separate **dark animated background**, not just the level's fog-clear colour.
+After the sector draw, `0x40B003` tests pause byte `0x4B9BC8` and calls `0x424440`. It submits
+a full-screen grid of 6 by 5 vertices, before the alpha queue flush. `0x4241C0` generates
+horizontal and vertical sine waves, interpolating byte RGB between cool `(8,23,34)`, dark
+`(5,5,5)` and warm `(94,17,9)`, with four central vertices fixed at the dark colour. Its five
+phases advance per paused render frame. The transparent swirl reveals this grid; leaving the
+teal level clear underneath was the main source of OpenRayman's wrong colours. Missing default
+saved colours, actor light suppression and the queue's layer ordering also needed correction.
+
+Where this came from: own analysis of the installed GOG executable and Glide driver at the
+addresses above, `ortool mesh`/`peek` on Learn_10, and comparison with the user's
+`real_pause.webp` and local before/after screenshots (Codex, 2026-11-15). The captures are not
+at a synchronized animation phase. The renderer implements these general draw rules without
+recolouring either texture. Images and the detailed report stay under git-ignored `build/helpers/`.
 
 ### Where this came from
 

@@ -41,6 +41,16 @@ namespace openrayman
 		// How far the texture slides each frame, in texture widths along u and v as the game
 		// stores them (v up from the bottom): water, mist, clouds. Zero for most materials.
 		std::array<float, 2> scroll{};
+		std::array<float, 2> scroll_offset{}; // saved current offset (+0x4C), separate from speed (+0x54)
+		// 0x424A00 changes these flags when binding a texture; preserve flags as stored above.
+		std::uint32_t texture_draw_flags() const
+		{
+			auto result = flags;
+			if(texture && (texture->flags & texture_flag::alpha)) result &= ~0x400u;
+			if(texture && (texture->flags & texture_flag::no_depth_write)) result &= ~0x08000000u;
+			else result |= 0x08000000u;
+			return result;
+		}
 	};
 
 	// Element types inside a geometric object.
@@ -86,6 +96,7 @@ namespace openrayman
 		std::vector<sprite> sprites;
 		std::vector<std::uint16_t> skipped_types; // elements of types not decoded yet
 		std::vector<colour_set> colour_sets; // from the visual set, for actor meshes
+		std::uint32_t lod_count = 1; // physical object's visual set; only single LODs select colours implicitly
 		// Cards that turn towards the camera. They lie flat in their own YZ plane and face +X.
 		look_at look = look_at::none;
 		// The physical object's bounding-sphere centre (physical object +8 -> centre, radius), in

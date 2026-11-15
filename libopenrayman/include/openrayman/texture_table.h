@@ -20,6 +20,7 @@ namespace openrayman
 		constexpr std::uint32_t color_key = 0x2;
 		constexpr std::uint32_t alpha = 0x8;     // "_aaa", "_anu": uses its alpha channel
 		constexpr std::uint32_t additive = 0x20; // "_ad": added to what's behind, like light
+		constexpr std::uint32_t no_depth_write = 0x40; // clears material depth writes (exe 0x424A00)
 	}
 
 	// Bits of texture_info::tiling, matched against name suffixes: "_txy" is 3, "_mxy" is 15.

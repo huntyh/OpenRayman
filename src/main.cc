@@ -1297,7 +1297,9 @@ namespace
 		std::vector<posed_part> parts;
 		std::vector<bool> screen_parts; // per part: drawn by the exe's screen pass (procedure 409)
 		std::vector<float> part_alpha;  // per part: its actor's transparency level
-		std::vector<std::uint8_t> part_colour_set;
+		std::vector<std::optional<std::uint8_t>> part_colour_set;
+		std::vector<bool> part_no_lights;
+		std::vector<std::optional<std::size_t>> part_sector;
 		for(std::size_t i = 0; i < a.actors.actors.size(); i++)
 		{
 			actor_set::entry& actor = a.actors.actors[i];
@@ -1416,7 +1418,8 @@ namespace
 				if(std::uint32_t so = a.super_object_at[i]; so && a.live->contains(so + 0x2C, 0x10) && !(a.live->u32(so + 0x2C) & 8))
 					alpha = std::clamp(a.live->f32(so + 0x38) / 255.0f, 0.0f, 1.0f);
 			part_alpha.resize(parts.size(), alpha);
-			std::uint8_t selected = 0;
+			// 0x45CDD0 selects the first saved colour set by default for a single-LOD object.
+			std::optional<std::uint8_t> selected;
 			if(a.vm && a.scripts && i < a.actor_at.size() && a.actor_at[i] && a.live->contains(a.actor_at[i] + 0x1C, 4))
 			{
 				std::uint32_t state = a.live->u32(a.actor_at[i] + 0x1C);
@@ -1424,6 +1427,18 @@ namespace
 					selected = a.live->u8(state + 0x39);
 			}
 			part_colour_set.resize(parts.size(), selected);
+			const bool no_lights = a.vm && a.scripts && i < a.super_object_at.size() &&
+				(a.live->u32(a.super_object_at[i] + 0x30) & 0x20000);
+			part_no_lights.resize(parts.size(), no_lights);
+			std::optional<std::size_t> sector;
+			if(a.vm && a.scripts && i < a.super_object_at.size())
+			{
+				const auto followed = a.vm->actor_sector(a.super_object_at[i]);
+				const auto found = std::ranges::find(a.sound_sector_super_objects, followed);
+				if(found != a.sound_sector_super_objects.end())
+					sector = std::size_t(found - a.sound_sector_super_objects.begin());
+			}
+			part_sector.resize(parts.size(), sector);
 		}
 		std::vector<level_renderer::part> out;
 		out.reserve(parts.size());
@@ -1436,7 +1451,7 @@ namespace
 				for(int c = 0; c < 4; c++)
 					model[c][r] = part.world.m[r][c];
 			}
-			out.push_back({ part.mesh, model, {}, part.morph_mesh, part.morph_amount, n < screen_parts.size() && screen_parts[n], n < part_alpha.size() ? part_alpha[n] : 1.0f, part_colour_set[n] });
+			out.push_back({ part.mesh, model, part_sector[n], part.morph_mesh, part.morph_amount, n < screen_parts.size() && screen_parts[n], n < part_alpha.size() ? part_alpha[n] : 1.0f, part_colour_set[n], part_no_lights[n] });
 		}
 		a.level->set_parts(std::move(out));
 		a.level->set_world_hidden(a.vm && a.scripts && a.vm->effects_paused);

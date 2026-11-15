@@ -61,7 +61,8 @@ namespace openrayman
 			bool screen = false;
 			// Its actor's transparency level (procedures 11 and 12), 0..1; below 1 it's drawn blended.
 			float alpha = 1;
-			std::uint8_t colour_set = 0; // one-based, zero means no saved colours
+			std::optional<std::uint8_t> colour_set; // absent: single-LOD default; zero explicitly disables it
+			bool no_lights = false; // super object +0x30 bit 0x20000, exe 0x45C450 / 0x426BD0
 		};
 
 		// What to draw of the actors this frame. Parts naming a mesh that wasn't loaded are skipped.
@@ -164,6 +165,9 @@ namespace openrayman
 			std::size_t sector = no_sector; // the level's own geometry: the sector it belongs to
 			cull faces = cull::none;
 			bool well = false; // Learn_10's identified star material, kept separate from other batches
+			bool depth_write = true;
+			glm::vec2 scroll_offset{ 0 };
+			std::size_t element_order = 0;
 		};
 		static constexpr std::size_t no_sector = std::size_t(-1);
 
@@ -260,6 +264,7 @@ namespace openrayman
 			glm::vec3 centre;
 			std::size_t object; // in m_see_through
 			GLint first;        // its first corner in the vertex buffer
+			std::array<glm::vec3, 3> corners;
 		};
 		std::vector<see_through_triangle> m_see_through_triangles; // sorted far to near every frame
 		std::vector<mesh> m_meshes;
@@ -299,6 +304,7 @@ namespace openrayman
 		mutable std::vector<bool> m_drawn_sectors;
 		mutable std::optional<glm::vec3> m_background; // the last screen clear colour a fog gave
 		bool m_world_hidden = false;
+		mutable std::uint32_t m_pause_background_frame = 0;
 		bool drawn(std::size_t sector) const
 		{
 			// Actors' meshes have no sector and stay; the pause hides the level's sectors only.

@@ -225,6 +225,8 @@ namespace openrayman
 					set.mesh_physical_at.push_back(*object.physical_object);
 					set.meshes.push_back(read_geometric_object(memory, *at));
 					set.meshes.back().colour_sets = physical_object_colour_sets(memory, *object.physical_object);
+					if(auto visual = memory.follow(*object.physical_object))
+						set.meshes.back().lod_count = memory.read_u32(*visual + 4);
 					set.meshes.back().bounding_centre = physical_object_bounding_centre(memory, *object.physical_object);
 					found = set.mesh_physical_at.end() - 1;
 				}

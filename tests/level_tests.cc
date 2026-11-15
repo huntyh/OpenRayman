@@ -1,5 +1,6 @@
 #include "test_util.h"
 #include "../src/renderer/backdrop.h"
+#include "../src/renderer/transparent_order.h"
 
 #include <openrayman/actor.h>
 #include <openrayman/animation.h>
@@ -39,6 +40,59 @@
 #include <tuple>
 
 using namespace openrayman;
+
+TEST_CASE("transparent triangles use corner depth and reverse equal-depth submission")
+{
+	// A long triangle reaches behind the nearer one even though two of its corners are close.
+	const auto spanning = transparent_sort_key::from_depths({2, 3, 100}, 0, false);
+	const auto near = transparent_sort_key::from_depths({20, 20, 20}, 1, false);
+	CHECK(spanning < near);
+	// Coincident layers: the water is submitted first, the vortex second. The queue is a stack.
+	const auto water = transparent_sort_key::from_depths({20, 25, 30}, 0, false);
+	const auto vortex = transparent_sort_key::from_depths({20, 25, 30}, 1, false);
+	CHECK(vortex < water);
+	CHECK_FALSE(water < vortex);
+	const auto screen = transparent_sort_key::from_depths({1000, 1000, 1000}, 2, true);
+	CHECK(near < screen);
+}
+
+TEST_CASE("real data: pause swirl materials retain offsets, depth rules and saved grey colours")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Learn_10");
+	const auto* block = files.memory.find({5, 1}); REQUIRE(block);
+	actor_object object;
+	object.physical_object = memory_location{block, 0x65BF84};
+	actor_set actors;
+	std::vector<std::optional<std::size_t>> meshes;
+	std::vector<std::optional<vec3>> scales;
+	add_meshes(actors, files.memory, {object}, meshes, scales);
+	REQUIRE(actors.meshes.size() == 1);
+	const auto& mesh = actors.meshes[0];
+	CHECK(mesh.lod_count == 1);
+	CHECK(mesh.vertices.size() == 258);
+	REQUIRE(mesh.colour_sets.size() == 1);
+	REQUIRE(mesh.colour_sets[0].size() == 1);
+	REQUIRE(mesh.colour_sets[0][0].size() == 258);
+	CHECK((mesh.colour_sets[0][0][0] == saved_vertex_colour{109,109,109,255}));
+	REQUIRE(mesh.elements.size() == 2);
+	for(std::size_t i = 0; i < 2; ++i)
+	{
+		CHECK(mesh.elements[i].triangles.size() == 240);
+		REQUIRE(mesh.elements[i].material);
+		const auto& material = *mesh.elements[i].material;
+		REQUIRE(material.texture);
+		CHECK(material.flags == (i == 0 ? 0x45DC03FFu : 0x4DDC03FFu));
+		CHECK(material.texture->flags == (i == 0 ? 0x80000048u : 0x80000008u));
+		CHECK(bool(material.texture_draw_flags() & 0x08000000) == (i == 1));
+		CHECK((material.texture_draw_flags() & 0x400) == 0);
+		CHECK(material.scroll[0] == doctest::Approx(i == 0 ? 0.01f : 0.005f));
+		CHECK(material.scroll_offset == material.scroll);
+		CHECK(material.scroll[1] == 0);
+	}
+}
 
 TEST_CASE("real data: Jail_10 far backdrop sector contains only static mountain scenery")
 {

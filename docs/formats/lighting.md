@@ -127,6 +127,19 @@ draws all, `OPENRAYMAN_SECTORS=1` logs each change of the camera's sector.
 Static geometry is lit once when the level loads. Actors move between lights, so they're lit every
 frame by the strongest 8 lights of the sector they stand in.
 
+Super object `+0x30` bit `0x20000` suppresses submitted lights for its actor/part subtree
+(`0x45C450`, `0x45C360`, `0x45CA30`). The helper `0x426BD0` writes each light's `+0xA4`
+enable byte; it does **not** switch the Z buffer. Saved vertex colours still initialize the light
+sum (`0x42AAE0`, `0x428DA0`, `0x431400`, signed components divided by 256), and the ordinary
+material ambient/diffuse conversion still runs (`0x42A410`, `0x42D680`/`0x42D520`). There is
+no specular contribution on this element path, even though the material stores specular values.
+Fog is installed separately by `0x44B1B0`/`0x44AE80`, so this flag does not suppress fog.
+OpenRayman carries the actor's tracked sector into rendering and honours its light-suppression flag.
+
+Where this came from: own analysis of the executable at the addresses above while investigating
+the pause swirl (Codex, 2026-11-15). Its generated actor has this flag and a saved grey colour
+set; before/after captures and the installed-data regression check accompany card 38. No code copied.
+
 **Fog**: the fog light of the sector being drawn. Before each drawn sector's scenery (0x44AF30) and its
 actors (0x44B1B0) the exe sets the first fog light of that sector's own list, or turns fog off when
 it has none (0x44AE80). So from the intro's cave, which has no fog, the valley outside is still
