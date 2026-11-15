@@ -72,6 +72,16 @@ namespace openrayman::game
 		// 0x4B9C44 tested at 0x48E820).
 		std::optional<segment_hit> first_hit(const std::array<float, 3>& start, const std::array<float, 3>& end, std::uint16_t any_of = 0) const;
 
+		struct sweep_hit : segment_hit
+		{
+			float fraction = 0; // centre's travel, in [0, 1]
+			std::uint32_t actor = 0;
+		};
+		// First contact of a translating sphere (radius zero: point) with solid triangles.
+		// Tests faces, edges and vertices analytically, using cells covering the swept bounds.
+		// Surfaces are approached from their front; initial overlap blocks inward motion only.
+		std::optional<sweep_hit> sweep_sphere(const std::array<float, 3>& start, const std::array<float, 3>& end, float radius) const;
+
 		// Moves a sphere of `radius` from `start` towards `end` and slides it along what it meets, the
 		// way the exe moves its camera (0x434660): it stops 0.02 short of a surface and carries on
 		// with what is left of the movement along it (along the crease of two), at most five times,
@@ -136,7 +146,7 @@ namespace openrayman::game
 	// Live kind-3 zones and posed physical parts, excluding the mover itself (0x494420). Actors
 	// whose surfaces are further than `reach` from the mover are left out.
 	constexpr float actor_surface_reach = 10.0f;
-	std::vector<collision_triangle> actor_collision_triangles(interpreter& vm, std::uint32_t mover);
+	std::vector<collision_triangle> actor_collision_triangles(interpreter& vm, std::uint32_t mover, const vec3* target = nullptr);
 	// One tick of an actor's mechanics (0x431AD0, docs/formats/dynamics.md): the speeds the scripts
 	// set and gravity give a target position, the floor stops it, and the result becomes the speed
 	// the scripts read back (dynamics base +0x3C) and the contact word they test (conditions 27..32).

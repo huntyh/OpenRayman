@@ -297,3 +297,85 @@ The other projectile, template `04/01+0x8B0`, uses state `04/00+0x1551C` and
 mechanics `05/01+0x62A454`, flags `0x300`, gravity zero, with fast mechanics and
 no scenery collision bit. Procedure 182 sets world-axis components once;
 0x43E350 replaces those components and 0x431AD0 carries the resulting speed.
+
+## Swept basic actor collision (card 127, 2026-11-16)
+
+Sources: own read-only inspection of the installed GOG executable's decompilation
+in `H:/r2export/re/decomp`, functions listed below; `handler.py condition 6`
+and `handler.py function 184`; local installation data inspected with `ortool
+peek` for Bast_20. No executable implementation or game assets are included here.
+
+Dispatch at **0x431AD0** is significant. End flag `0x200` selects fast movement,
+which only calls **0x431960** when base flag `0x2` enables collision. Ordinary
+movement prefers base flag `0x10` (**0x439730**), `0x40` (**0x43A260**), `0x20`
+(**0x431A10**), end flag `0x100` (**0x43D440**), then flag `0x2`
+(**0x431960**). Thus neither speed nor actor identity enables collision by itself.
+
+**0x431960 -> 0x439660 -> 0x43EEC0 -> 0x494290** passes previous/target
+matrices to collision. **0x494610** expands the broad-phase bounds by the move,
+visits the current sector and its collision neighbours, and gathers scenery and
+actor surfaces. **0x494420** includes selected receiving kind-3 geometry and
+physical parts; both feed **0x4990F0 -> 0x499070 -> 0x49A690**. The mover's kind-1
+zones are selected by **0x40DBD0** from the current state group, with 2-bit script
+overrides (kind 1: group at collide set `+0x2C`, overrides at `+0x38`, confirmed
+by **0x417BC0/0x417C10**). These are list-node/selection properties, not an
+extra word in each sphere: **0x499A80** iterates **12-byte** sphere entries
+(radius, game material, vertex index), transforms each vertex with both
+matrices, and forms its displacement. **0x49AA20** tests triangle features;
+**0x491D50** supplies swept edge intersections. This is continuous zone travel,
+not an overlap check at the destination. Radius-zero casts are supported by our
+query, but original radius-zero behavior has not been established separately.
+
+**0x43EEC0** filters report-only probes/water and special material contacts;
+**0x437520/0x437780** remove invalid/away-facing contacts. **0x43FF20** handles
+coincident edge normals. **0x437E60** selects the first valid contact, computes
+correction (**0x43FA40**) and the response over the remaining travel fraction.
+It adjusts the reference position before **0x436A30** recomputes speed. Default
+tangent/rebound coefficients come from material bits `0x1/0x2`, otherwise zero;
+explicit response data can override them, then base flag `0x80` selects actor
+coefficients `+0x1C/+0x20` (**0x4360B0/0x436130**).
+
+**0x43F510** classifies the selected contact by normal.z and base `+0x18`:
+ground bit `0x1`/slot 1, wall `0x4`/slot 2, ceiling `0x10`/slot 5. **0x43F940**
+publishes first-contact slot 0 and category slots to the script report. Entries
+carry normal, surface point, own/hit materials and receiving actor. No contact
+clears the simple resolver's end flag `0x10000` (**0x439660**); base end flag
+`0x4000` gates report publication. The `0x2000000` resolved bit belongs to the
+specialized slope path; it is not fabricated for this simple sweep. End flag
+`0x20000` reflects nonzero ground tangent response at the end of `0x431AD0`.
+
+OpenRayman's initial rollout selects **basic dynamics** (end flag `0x2`, without
+full dynamics `0x4`) with base collision bit `0x2`, no specialized resolver
+bits `0x10/0x20/0x40`, and no end flag `0x100`. It gathers every sphere in the
+selected kind-1 zones, keeps the earliest sphere/triangle hit across scenery and
+actor surfaces, stops the actor at that travel fraction, and publishes the
+contact and response speed. Candidates reuse the existing 4-unit cell grid over
+the swept bounds; each triangle is tried once per sphere, with analytic face,
+edge and vertex roots, no speed-dependent substeps. Actor surface reach also
+covers the destination so a surface more than 10 units from the start can stop
+a long move. Disabled zones are honored. Full dynamics, including Rayman's
+walking, jumps, slide and ledge logic, keeps its existing approximation.
+
+Bast_20's gravity barrel `04/01+0x1F04`, state `04/01+0x228C`, uses mechanics
+flags `0x1A06` and basic dynamics (initial end flags `0x4083`): it is in this
+rollout. Its selected sphere has radius 0.6, centered at the local origin (confirmed
+by the generated-barrel regression test against the installation data). The cited
+`04/01+0x8B0`, state `04/00+0x1551C`, has fast mechanics flags `0x300`, without
+collision bit `0x2`: it still flies without mechanics scenery collision, as
+shown by the executable dispatch. Function **184** at **0x47C350**, case `0xB8`,
+is vector length; its condition-6 distance check does not enable collision.
+`ortool brain` for this template confirms behavior 0 computes var3 with function
+198 from its position along normalized var2 times 100, then imposes speed once.
+Behavior 2 tests distance to that precomputed point (<1), the separate distance
+to its target actor, and a 4500 ms lifetime; it does not test scenery contact
+report bits. Its intended live pre-cast/proximity behavior still needs checking.
+Rayman's non-colliding fast shots likewise retain their path.
+
+Remaining differences: first-contact stopping is implemented; a nonzero response
+retains the response velocity for the following tick rather than recursively
+consuming the remaining tick against more surfaces. Explicit material response
+records, initial deep penetration correction, relative motion of receiving actors,
+rotation/scale changes between the two transforms, receiving spheres/boxes/capsules,
+and the full/specialized resolvers are not implemented by this change. Water keeps
+its previous query path rather than gaining continuous sensor reporting. Visual
+verification of the bottom-right pirate throw remains outstanding.

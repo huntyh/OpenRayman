@@ -371,6 +371,86 @@ namespace openrayman::game
 		}
 	}
 
+	std::optional<world_collision::sweep_hit> world_collision::sweep_sphere(const vec& start, const vec& end, float radius) const
+	{
+		if(radius < 0 || !std::isfinite(radius)) return std::nullopt;
+		const vec d = vsub(end, start);
+		const float length2 = vdot(d, d);
+		if(length2 < 1e-14f) return std::nullopt;
+		std::vector<std::uint32_t> near;
+		for(int x = int(std::floor((std::min(start[0], end[0]) - radius) / cell));
+			x <= int(std::floor((std::max(start[0], end[0]) + radius) / cell)); x++)
+			for(int y = int(std::floor((std::min(start[1], end[1]) - radius) / cell));
+				y <= int(std::floor((std::max(start[1], end[1]) + radius) / cell)); y++)
+				if(auto it = m_geometry->cells.find({ x, y }); it != m_geometry->cells.end())
+					near.insert(near.end(), it->second.begin(), it->second.end());
+		std::ranges::sort(near);
+		near.erase(std::unique(near.begin(), near.end()), near.end());
+		std::optional<sweep_hit> best;
+		float nearest = 1;
+		for(auto i : near)
+		{
+			const auto& t = m_geometry->triangles[i];
+			if(!accepts(t) || (t.flags & surface::no_contact)) continue;
+			// Reject triangles outside the vertical swept bounds before the narrow phase.
+			if(std::min({ t.corners[0][2], t.corners[1][2], t.corners[2][2] }) > std::max(start[2], end[2]) + radius ||
+				std::max({ t.corners[0][2], t.corners[1][2], t.corners[2][2] }) < std::min(start[2], end[2]) - radius) continue;
+			const float distance = vdot(vsub(start, t.corners[0]), t.normal);
+			if(distance < -1e-5f) continue;
+			auto contact = [&](float f, const vec& q, vec n) {
+				if(f < 0 || f > nearest) return;
+				float l = vlen(n);
+				n = l > 1e-6f ? vmul(n, 1 / l) : t.normal;
+				if(vdot(d, n) >= -1e-7f) return; // touching while leaving is free
+				nearest = f;
+				best = sweep_hit{ { q, n, t.material }, f, m_actor_geometry ? std::uint32_t(t.node) : 0 };
+			};
+			vec q = closest_on_triangle(start, t.corners[0], t.corners[1], t.corners[2]);
+			if(vdot(vsub(start, q), vsub(start, q)) <= radius * radius)
+				contact(0, q, vsub(start, q));
+			const float into = vdot(d, t.normal);
+			if(into < -1e-7f)
+			{
+				float f = (radius - distance) / into;
+				if(f >= 0 && f <= nearest)
+				{
+					vec p = vsub(vadd(start, vmul(d, f)), vmul(t.normal, radius));
+					q = closest_on_triangle(p, t.corners[0], t.corners[1], t.corners[2]);
+					if(vdot(vsub(p, q), vsub(p, q)) < 1e-10f) contact(f, q, t.normal);
+				}
+			}
+			if(radius == 0) continue;
+			// Solve distance to each vertex and each edge's infinite line, retaining an edge
+			// root only when the closest point lies inside that edge. No distance-based substeps.
+			auto root = [&](const vec& offset, const vec& velocity) -> std::optional<float> {
+				const double a = vdot(velocity, velocity), b = vdot(offset, velocity);
+				const double c = double(vdot(offset, offset)) - double(radius) * radius;
+				const double disc = b * b - a * c;
+				if(a <= 1e-14 || b >= 0 || disc < 0) return std::nullopt;
+				return float((-b - std::sqrt(disc)) / a);
+			};
+			for(int edge = 0; edge < 3; edge++)
+			{
+				const vec a = t.corners[std::size_t(edge)], e = vsub(t.corners[std::size_t((edge + 1) % 3)], a);
+				const vec offset = vsub(start, a);
+				if(auto f = root(offset, d)) contact(*f, a, vsub(vadd(start, vmul(d, *f)), a));
+				float ee = vdot(e, e);
+				if(ee < 1e-12f) continue;
+				if(auto f = root(vsub(offset, vmul(e, vdot(offset, e) / ee)), vsub(d, vmul(e, vdot(d, e) / ee))))
+				{
+					vec centre = vadd(start, vmul(d, *f));
+					float along = vdot(vsub(centre, a), e) / ee;
+					if(along >= 0 && along <= 1)
+					{
+						q = vadd(a, vmul(e, along));
+						contact(*f, q, vsub(centre, q));
+					}
+				}
+			}
+		}
+		return best;
+	}
+
 	std::optional<world_collision::segment_hit> world_collision::sphere_touch(const std::array<float, 3>& centre, float radius, std::uint16_t flags, const std::function<bool(const segment_hit&)>& accept) const
 	{
 		std::optional<segment_hit> best;
@@ -639,6 +719,114 @@ namespace openrayman::game
 			return collide && m.contains(collide + 2, 2) ? m.read<std::uint16_t>(collide + 2) : 0;
 		}
 
+		// Gather the selected kind-1 zones, independently of the legacy body/ledge probes.
+		// 0x40DBD0 selects the state group unless a 2-bit script override is present.
+		std::vector<zone_sphere> sweep_zones(const live_memory& m, std::uint32_t actor)
+		{
+			auto word = [&](std::uint32_t at) { return m.contains(at, 4) ? m.u32(at) : 0u; };
+			auto half = [&](std::uint32_t at) { return m.contains(at, 2) ? m.read<std::uint16_t>(at) : std::uint16_t(0); };
+			std::vector<zone_sphere> out;
+			const auto set = word(actor + 0x14), head = set ? word(set + 8) : 0;
+			const auto group = set ? word(set + 0x2C) : 0, modes = set ? word(set + 0x38) : 0;
+			for(std::uint32_t node = word(head), index = 0; node && index < 16; node = word(node), index++)
+			{
+				const auto mode = (modes >> (index * 2)) & 3;
+				bool active = mode == 1;
+				if(mode == 0)
+					for(std::uint32_t entry = word(group), n = 0; entry && n < word(group + 8); entry = word(entry), n++)
+						if(half(entry + 4) == index) { active = true; break; }
+				if(!active) continue;
+				const auto zone = word(node + 4), vertices = word(zone), kinds = word(zone + 0x10), data = word(zone + 0x14);
+				for(std::uint32_t element = 0; element < half(zone + 0x2E); element++)
+				{
+					if(half(kinds + element * 2) != 7) continue;
+					const auto list = word(data + element * 4), entries = word(list);
+					for(std::uint32_t n = 0; n < half(list + 4); n++)
+					{
+						const auto entry = entries + n * 12, vertex = vertices + half(entry + 8) * 12;
+						if(!entries || !vertices || !m.contains(entry, 12) || !m.contains(vertex, 12)) continue;
+						const auto material = word(entry + 4);
+						// Ledge probes and water sensors are report-only, not blocking spheres.
+						if(material_flags(m, material) & ledge_probe) continue;
+						if(material_flags(m, material) == surface::water) continue;
+						out.push_back({ read_vec(m, vertex), m.f32(entry), material, true });
+					}
+				}
+			}
+			return out;
+		}
+
+		// Initial rollout: basic dynamics' simple resolver only. Full dynamics (including
+		// Rayman), slope/hold/complex resolvers and non-colliding fast shots retain their paths.
+		bool basic_sweep_enabled(const live_memory& m, std::uint32_t b, std::uint32_t flags)
+		{
+			return (flags & 2) && !(flags & 0x70) && (m.u32(b + base::end_flags) & 0x106) == 2;
+		}
+
+		bool sweep_basic_actor(live_memory& m, std::uint32_t actor, std::uint32_t b, std::uint32_t transform,
+			const vec& start, vec& target, vec& speed, const world_collision& world, const world_collision& actors)
+		{
+			const auto zones = sweep_zones(m, actor);
+			if(zones.empty() && !m.u32(actor + 0x14)) return false;
+			std::optional<world_collision::sweep_hit> best;
+			std::uint32_t own = 0;
+			for(const auto& zone : zones)
+			{
+				vec offset{};
+				for(std::uint32_t axis = 0; axis < 3; axis++)
+					offset = vadd(offset, vmul(read_vec(m, transform + 0x10 + axis * 12), zone.centre[axis]));
+				for(const auto* geometry : { &world, &actors })
+					if(auto hit = geometry->sweep_sphere(vadd(start, offset), vadd(target, offset), zone.radius);
+						hit && (!best || hit->fraction < best->fraction))
+					{
+						best = hit;
+						own = zone.material;
+					}
+			}
+			set_bit(m, b + base::end_flags, 0x10000, false); // 0x439660, no blocked hold
+			std::uint32_t word = 0, slot = 0;
+			m.write<float>(b + 0x174, 0);
+			set_bit(m, b + base::end_flags, 0x20000, false);
+			if(best)
+			{
+				target = vadd(start, vmul(vsub(target, start), best->fraction));
+				const float threshold = m.f32(b + 0x18) > 0 ? m.f32(b + 0x18) : floor_normal;
+				slot = best->normal[2] > threshold ? 1u : best->normal[2] < -threshold ? 5u : 2u;
+				word = slot == 1 ? 1u : slot == 5 ? 0x10u : 4u;
+				// 0x437E60/0x4360B0/0x436130: default coefficients, or actor override.
+				const auto flags = m.u32(b + base::flags);
+				const auto material = material_flags(m, best->material);
+				const float tangent = flags & 0x80 ? m.f32(b + 0x1C) : (material & 1 ? 1.0f : 0.0f);
+				const float bounce = flags & 0x80 ? m.f32(b + 0x20) : (material & 2 ? 1.0f : 0.0f);
+				const float into = std::min(vdot(speed, best->normal), 0.0f);
+				speed = vsub(vmul(vsub(speed, vmul(best->normal, into)), tangent), vmul(best->normal, into * bounce));
+				if(m.u32(b + base::end_flags) & 2) m.write<float>(b + 0x174, tangent);
+				set_bit(m, b + base::end_flags, 0x20000, slot == 1 && tangent != 0);
+			}
+			const auto block = m.u32(b + base::contacts);
+			auto water = world.water_at(target[0], target[1], target[2] + body_height, target[2]);
+			if(auto other = actors.water_at(target[0], target[1], target[2] + body_height, target[2]);
+				other && (!water || other->height > water->height)) water = other;
+			if(water) word |= in_water;
+			if((m.u32(b + base::end_flags) & 0x4000) && block && m.contains(block, contacts_size))
+			{
+				m.write<std::uint32_t>(block, word);
+				m.write<std::uint32_t>(block + 4, word);
+				for(std::uint32_t i = 0; i < 6; i++)
+				{
+					const auto entry = block + slots_at + i * slot_size;
+					const bool contact = best && (i == 0 || i == slot);
+					const bool wet = water && i == water_slot;
+					write_vec(m, entry + slot_normal, contact ? best->normal : wet ? water->normal : vec{});
+					write_vec(m, entry + slot_point, contact ? best->point : wet ? vec{ target[0], target[1], water->height } : vec{});
+					m.write<std::uint32_t>(entry + slot_own, contact ? own : 0);
+					m.write<std::uint32_t>(entry + slot_material, contact ? best->material : wet ? water->material : 0);
+					m.write<std::uint32_t>(entry + 0x24, contact ? best->actor : 0);
+				}
+			}
+			return true;
+		}
+
 		// How far walls keep the actor away: the radius of its first kind-1 sphere. Rayman's is 0.8,
 		// centred 0.8 above his feet (his body: collide flags 0x4001), and the real game leaves him
 		// that far from the wall by the Learn_10 portal. The exe takes the zones the scripts switched
@@ -650,7 +838,7 @@ namespace openrayman::game
 		}
 	}
 
-	std::vector<collision_triangle> actor_collision_triangles(interpreter& vm, std::uint32_t mover)
+	std::vector<collision_triangle> actor_collision_triangles(interpreter& vm, std::uint32_t mover, const vec3* target)
 	{
 		profiler::scope timed(profiler::zone::actor_floor);
 		profiler::add(profiler::counter::collision_gathers);
@@ -836,7 +1024,8 @@ namespace openrayman::game
 			{
 				bool near = true;
 				for(std::size_t i = 0; i < 3; i++)
-					near = near && (*mover_at)[i] >= surfaces.low[i] - actor_surface_reach && (*mover_at)[i] <= surfaces.high[i] + actor_surface_reach;
+					near = near && std::max((*mover_at)[i], target ? (*target)[i] : (*mover_at)[i]) >= surfaces.low[i] - actor_surface_reach &&
+						std::min((*mover_at)[i], target ? (*target)[i] : (*mover_at)[i]) <= surfaces.high[i] + actor_surface_reach;
 				if(!near) continue;
 			}
 			if(!sectors.empty() && std::ranges::find(sectors, surfaces.sector) == sectors.end()) continue;
@@ -998,8 +1187,14 @@ namespace openrayman::game
 				}
 			}
 			vec target = read_vec(m, t + 4);
+			const vec start = target;
 			for(std::size_t i = 0; i < 3; i++)
 				target[i] += speed[i] * dt;
+			if(basic_sweep_enabled(m, b, flags))
+			{
+				const world_collision actors(vm ? actor_collision_triangles(*vm, super_object, &target) : std::vector<collision_triangle>{}, true);
+				sweep_basic_actor(m, actor, b, t, start, target, speed, world, actors);
+			}
 			write_vec(m, b + base::speed, speed);
 			write_vec(m, t + 4, target);
 			write_vec(m, b + base::previous_position, target);
@@ -1011,7 +1206,7 @@ namespace openrayman::game
 		bool gravity =(flags & has_gravity) && !(m.u32(b + base::end_flags) & no_gravity);
 		if(!gravity && !(flags & (has_animation_motion | uses_imposed | uses_proposed | uses_third)) && !(vm && vm->supports().contains(super_object)))
 			return;
-		auto actor_triangles = vm && (flags & collides) ? actor_collision_triangles(*vm, super_object) : std::vector<collision_triangle>{};
+		auto actor_triangles = vm && (flags & collides) && !basic_sweep_enabled(m, b, flags) ? actor_collision_triangles(*vm, super_object) : std::vector<collision_triangle>{};
 		bool support_active = false;
 		if(vm && vm->supports().contains(super_object))
 			support_active = std::ranges::any_of(actor_triangles, [&](const collision_triangle& tri) {
@@ -1274,13 +1469,20 @@ namespace openrayman::game
 		// where the actor ends up is the one it lands on.
 		vec wall_normal{};
 		const vec asked = move();
-		const std::vector<zone_sphere> zones = zone_spheres(m, actor);
+		vec swept_speed = vmul(asked, 1 / dt);
+		bool swept = false;
+		if(basic_sweep_enabled(m, b, flags))
+		{
+			const world_collision swept_actors(vm ? actor_collision_triangles(*vm, super_object, &target) : std::vector<collision_triangle>{}, true);
+			swept = sweep_basic_actor(m, actor, b, t, current, target, swept_speed, world, swept_actors);
+		}
+		const auto zones = swept ? std::vector<zone_sphere>{} : zone_spheres(m, actor);
 		// Climbing over a ledge (end flag 0x400000, procedure 297): the exe leaves out floor contacts
 		// and those below the height at +0x1EC (0x43EEC0 -> 0x4377F0), so the ledge's own face
 		// doesn't hold the actor back while the climb animation carries it over the edge.
 		const bool climbing = (m.u32(b + base::end_flags) & 0x400000) != 0;
 		const float climb_height = climbing ? m.f32(b + 0x1EC) : 0.0f;
-		if((flags & collides) && has_collision && !placed)
+		if(!swept && (flags & collides) && has_collision && !placed)
 		{
 			const float radius = body_radius(zones);
 			const float wall_bottom = climbing ? std::max(target[2] + climb_up, climb_height) : target[2] + climb_up;
@@ -1308,7 +1510,7 @@ namespace openrayman::game
 		// 2026-11-08). So any surface facing down between the step height and the top of the head at
 		// the target counts: in the air it pushes the actor down under it, on the ground it stops
 		// the move across instead (a low roof mustn't press it into the floor).
-		if((flags & collides) && has_collision && !climbing)
+		if(!swept && (flags & collides) && has_collision && !climbing)
 		{
 			const bool rising = target[2] > current[2];
 			const float bottom = std::min(current[2] + head_height - 0.05f, target[2] + climb_up);
@@ -1334,7 +1536,7 @@ namespace openrayman::game
 		bool slope_move = false;
 		vec slope_displacement{};
 		world_collision::surface_hit ground{};
-		if((flags & collides) && has_collision && !climbing)
+		if(!swept && (flags & collides) && has_collision && !climbing)
 		{
 			bool was_grounded = has_block && stood_last_tick;
 			float top = std::max(current[2] + carried[2], target[2]) + climb_up;
@@ -1463,6 +1665,7 @@ namespace openrayman::game
 			speed[2] = (target[2] - current[2]) / dt;
 		else if(landed)
 			speed[2] = carried[2] / dt;
+		if(swept) speed = swept_speed;
 		if(vm)
 		{
 			std::uint32_t support = landed ? ground.actor : 0;
@@ -1490,7 +1693,7 @@ namespace openrayman::game
 			write_vec(m, block + 0x114, speed);
 			write_vec(m, block + 0x14C, target);
 		}
-		if(has_block && (flags & collides))
+		if(!swept && has_block && (flags & collides))
 		{
 			// The word at +4 is what the scripts read; +0 is this tick's, published at its end
 			// (0x43F940). Slot 1 (the ground) and slot 0 (the tick's first contact, the ground

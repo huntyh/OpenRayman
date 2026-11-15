@@ -4133,3 +4133,36 @@ TEST_CASE("fast mechanics applies an imposed world speed once and retains it")
 	game::move_actor(m, so, actor, 1000, world);
 	CHECK((m.u32(base + 0x0C) & 0x01000000) == 0);
 }
+
+TEST_CASE("real data: Bast_20 gravity barrel sweeps its selected collision sphere")
+{
+	auto dir = real_game_dir(); if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Bast_20");
+	const auto* templates = files.memory.find({4, 1}); REQUIRE(templates);
+	game::live_memory m(files.memory);
+	game::generated_actors generated;
+	const auto so = generated.create(m, templates->base + 0x1F04, 0, {0,0,4}, 0);
+	REQUIRE(so);
+	const auto actor = m.u32(so + 4), actor_data = m.u32(actor);
+	m.write(actor_data + 4, templates->base + 0x228C);
+	game::select_zone_groups(m, actor);
+	game::reinstall_state_mechanics(m, actor);
+	const auto base = m.u32(m.u32(actor + 8));
+	CHECK((m.u32(base + 8) & 0x72) == 2); // simple resolver
+	CHECK((m.u32(base + 0xC) & 6) == 2); // basic dynamics, not Rayman's full dynamics
+	// Isolate the movement from AI, gravity, inertia and speed caps: keep the real state,
+	// collision selection, sphere vertices and radius. No proprietary geometry in the test.
+	m.write<std::uint32_t>(base + 8, 2 | 0xE4000);
+	m.write<std::uint32_t>(base + 0xC, m.u32(base + 0xC) & ~0x80u);
+	m.write(base + 0x24, vec3{ 0, 0, -12 });
+	collision_triangle floor;
+	floor.corners = { vec3{-10,-10,0}, vec3{10,-10,0}, vec3{0,10,0} };
+	floor.normal = {0,0,1};
+	game::move_actor(m, so, actor, 1000, game::world_collision({floor}));
+	const auto transform = m.u32(so + 0x24), report = m.u32(base + 0x150);
+	CHECK(m.f32(transform + 12) == doctest::Approx(0.6f).epsilon(0.001));
+	REQUIRE(report);
+	CHECK((m.u32(report + 4) & 1) != 0);
+	CHECK(m.f32(base + 0x44) == doctest::Approx(0));
+}

@@ -46,7 +46,7 @@ Confirmed in the game (Learn_10, by comparing the collision overlay with what Ra
 | --- | --- |
 | 0x0004 | grabbable: Rayman hangs from the edge of such a surface (the ledge by the Globox children, the tops of the columns near the end); he doesn't grab plain edges. Whole floors carry it, and also some ceilings, where it does nothing |
 | 0x4000 | water |
-| 0x0008 | on an actor's own zone: a ledge probe. Rayman's are four spheres (radius 1) 2 units ahead, behind and to each side at 1.9 up; only the front one is in use (its entry's last word is 5, the others 2) |
+| 0x0008 | on an actor's own zone: a ledge probe. Rayman's are four spheres (radius 1) 2 units ahead, behind and to each side at 1.9 up; only the front one is in use in the observed state |
 
 ## Actor zones and ledges
 
@@ -57,8 +57,14 @@ vertical point casts. This observation alone does not establish the complete sli
 response. Provenance: own inspection of the installed Rayman2.exe, including capstone
 at 0x43B360, 2026-11-08; no executable code was copied.
 
-An actor's kind-1 zone list (collide set +8) holds spheres (element kind 7; entry: radius, game
-material, u16 vertex index, a word 5 for zones in use, 2 for the others). Their materials' collide
+An actor's kind-1 zone list (collide set +8) holds spheres (element kind 7; 12-byte entry: radius,
+game material, u16 vertex index and an undecoded u16 at +0xA). Selection uses the state's zone group and script
+overrides, not a trailing activation word. Card 127: read-only inspection of 0x499A80 establishes
+the stride; 0x40DBD0, 0x417BC0 and 0x417C10 establish selection. The previously observed word at
+entry +0xC (5 versus 2) is adjacent data; the legacy Rayman probe still uses that heuristic,
+pending a separate motion-preserving update. The new basic-actor sweep reads the selected
+group and overrides; see [dynamics.md](dynamics.md#swept-basic-actor-collision-card-127-2026-11-16).
+Their materials' collide
 flags say what each is: Rayman's body 0x4001 (radius 0.8, centred 0.8 up), water sensor 0x4000,
 ledge probes 0x8. The dynamics contact report's slots hold, besides the touched surface's game
 material (+0x20), the actor's own zone that touched (+0x1C); conditions 34..37 test its collide

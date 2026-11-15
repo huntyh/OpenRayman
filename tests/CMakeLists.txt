@@ -10,6 +10,7 @@ add_executable(openrayman_tests
 	particle_tests.cc
 	level_tests.cc
 	camera_collision_tests.cc
+	actor_sweep_tests.cc
 	screen_text_tests.cc
 )
 target_link_libraries(openrayman_tests PRIVATE openrayman::lib openrayman::game doctest::doctest)
