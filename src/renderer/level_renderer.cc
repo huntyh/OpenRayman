@@ -1648,7 +1648,15 @@ namespace openrayman
 					order.push_back({ distance, &b, i, -1, b.mode == blend::none ? blend::alpha : b.mode });
 			}
 		}
-		std::ranges::stable_sort(order, [](const see_through_draw& a, const see_through_draw& b) { return a.distance > b.distance; });
+		// Screen objects come after everything of the world: the exe draws them in a view of their
+		// own (0x419A30 -> 0x45CC80) once the world is done. Sorted by distance with the rest, the
+		// pause menu's swirl (an actor around the camera) painted over the menu's Lum.
+		auto on_screen = [&](const see_through_draw& d) { return d.part != level && parts[d.part].screen; };
+		std::ranges::stable_sort(order, [&](const see_through_draw& a, const see_through_draw& b) {
+			if(on_screen(a) != on_screen(b))
+				return on_screen(b);
+			return a.distance > b.distance;
+		});
 		std::size_t placed = level - 1; // whose model and lights are set
 		for(std::size_t k = 0; k < order.size(); k++)
 		{

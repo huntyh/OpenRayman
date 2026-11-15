@@ -704,7 +704,21 @@ namespace openrayman::game
 							object.own = *placed;
 						object.shown = screen_object_placement(*camera, object.at, object.own);
 						object.placed = true;
-						set_global_placement(m, self, object.shown);
+						// Only the position and the drawn matrix (+0x34) change. The rotation copy
+						// (+0x10) stays the object's own: procedure 173 builds the drawn matrix from
+						// it every tick (the pause menu's Lum pulses this way), and with our turned,
+						// scaled matrix written there each tick's scale and turn piled up on the last
+						// until the Lum had no width left.
+						if(std::uint32_t at = m.u32(self + 0x24); at && m.contains(at, 0x58))
+						{
+							m.write<std::uint32_t>(at, 4);
+							for(int r = 0; r < 3; r++)
+							{
+								m.write<float>(at + 4 + std::uint32_t(r) * 4, object.shown.m[r][3]);
+								for(int c = 0; c < 3; c++)
+									m.write<float>(at + 0x34 + std::uint32_t(c * 3 + r) * 4, object.shown.m[r][c]);
+							}
+						}
 					}
 		// The pool's sweep (0x40C2F0, from 0x40ADEF): a generated actor whose custom bits carry
 		// 0x20000 goes once its animation has played out with nothing after it (0x410310: 3D data

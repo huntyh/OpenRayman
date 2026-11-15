@@ -2223,6 +2223,11 @@ namespace
 				// The gauge's actor is the in-game HUD's: its pictures and counters are the edge HUD.
 				for(auto image : a.vm->particles().screen_images())
 				{
+					// 0x460600: while the game is paused (procedure 306, byte 0x500FAA) only slots
+					// 15..24 are painted: the pause menu's cage and the masks stay, Rayman's head
+					// (slot 0) and the rest of the in-game HUD's pictures go.
+					if(a.vm->paused() && (image.slot < 15 || image.slot > 24))
+						continue;
 					image.edge = a.vm->particles().draws_gauge(image.owner);
 					images.push_back(image);
 				}
