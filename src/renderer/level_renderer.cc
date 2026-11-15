@@ -193,25 +193,33 @@ namespace openrayman
 				// The level of detail comes from the unclamped coordinates, so clamping doesn't change it.
 				// Scrolling textures tile seamlessly, so their offset goes on after the clamp.
 				float core_fade = 1.0;
+				float polar_mix = 0.0;
+				vec2 polar_uv = vec2(0.0), polar_dx = vec2(0.0), polar_dy = vec2(0.0);
 				if(u_swirl.x > 0.5)
 				{
-					// The pause funnel narrows along local +Y; V runs around its circumference.
-					// Twist the angular coordinate progressively inward, without moving the mesh.
+					// The pause funnel narrows along local +Y; its mesh's own mapping changes from ring
+					// to ring, which shows as seams where it pinches. Near the axis, sample the texture by
+					// angle and distance instead (seamless: whole turns of a tiling texture), turning
+					// faster inward and over time, and cross-fade to it; the tip fades to dark.
 					float radius = length(v_local_position.xz);
-					vec2 twist = vec2(0.0);
-					if(radius < 5.0)
-					{
-						float inward = 1.0 - smoothstep(0.0, 5.0, radius);
-						twist.y = inward * inward * (2.0 * inward + 0.12 * u_swirl.y);
-						core_fade = smoothstep(0.0, 1.1, radius);
-					}
-					// Keep derivatives outside the conditional, but use the original unclamped UVs
-					// plus the twist so the unaffected funnel retains its original mip selection.
-					uv += twist;
-					uv_dx += dFdx(twist);
-					uv_dy += dFdy(twist);
+					float inward = 1.0 - smoothstep(0.0, 6.0, radius);
+					float turn = atan(v_local_position.z, v_local_position.x) / 6.2831853;
+					polar_uv = vec2(turn * 3.0 + inward * inward * 2.5 + 0.04 * u_swirl.y, radius * 0.35 + turn - 0.06 * u_swirl.y); // + turn: the bands wind into a spiral
+					// The angle jumps by a whole turn across one line; its derivatives must not.
+					vec2 ddx_p = dFdx(polar_uv), ddy_p = dFdy(polar_uv);
+					float dtx = dFdx(turn), dty = dFdy(turn);
+					ddx_p.x -= 3.0 * round(dtx);
+					ddy_p.x -= 3.0 * round(dty);
+					ddx_p.y -= round(dtx);
+					ddy_p.y -= round(dty);
+					polar_dx = ddx_p;
+					polar_dy = ddy_p;
+					polar_mix = smoothstep(0.15, 0.75, inward);
+					core_fade = smoothstep(0.0, 1.8, radius);
 				}
 				vec4 texel = textureGrad(u_texture, uv + u_uv_offset, uv_dx, uv_dy);
+				if(polar_mix > 0.0)
+					texel = mix(texel, textureGrad(u_texture, polar_uv + u_uv_offset, polar_dx, polar_dy), polar_mix);
 				if(u_well.x > 0.0)
 				{
 					vec3 stars = textureGrad(u_texture, uv * u_well.y + u_well.zw, uv_dx * u_well.y, uv_dy * u_well.y).rgb;
