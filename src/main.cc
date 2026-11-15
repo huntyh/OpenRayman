@@ -1518,8 +1518,17 @@ namespace
 				// 0x460A10: flag 0x10000000 lies flat on the ground; 0x8000000 stands on its point.
 				const bool flat = (p.flags & 0xF0000000) == 0x10000000;
 				const float lift = !flat && (p.flags & 0x8000000) ? p.height : 0.0f;
-				particles.push_back({ glm::vec3(at[0], at[1], at[2] + lift), p.size, std::min(p.alpha, 255.0f) / 255.0f, p.material,
-					p.flags ? p.height : -1.0f, flat, float(now - p.born) });
+				// Kind 163: a segment between its two points, drawn as a ribbon.
+				const bool segment = openrayman::game::particles::is_segment(p);
+				level_renderer::particle drawn{ glm::vec3(at[0], at[1], at[2] + lift), p.size,
+					std::min(p.alpha, 255.0f) / 255.0f, p.material, p.flags ? p.height : -1.0f, flat,
+					float(now - p.born) };
+				if(segment)
+				{
+					drawn.end = glm::vec3(p.end[0], p.end[1], p.end[2] + lift);
+					drawn.segment = true;
+				}
+				particles.push_back(drawn);
 			}
 		}
 		a.level->set_particles(std::move(particles));

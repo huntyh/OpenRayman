@@ -6,6 +6,23 @@
 
 using openrayman::game::particles;
 
+TEST_CASE("particles: portal segments persist and deduplicate either endpoint order")
+{
+	particles p;
+	const particles::vec3 a{1, 2, 3}, b{4, 5, 6}, c{7, 8, 9};
+	p.start(163, a, b, 42, 1, 0);
+	p.start(163, b, a, 42, 1, 1);
+	REQUIRE(p.all().size() == 1);
+	CHECK(particles::is_segment(p.all()[0]));
+	CHECK(p.all()[0].position == a);
+	CHECK(p.all()[0].end == b);
+	p.start(163, b, c, 42, 1, 1);
+	p.update(10, 1);
+	p.set_paused(true);
+	p.set_paused(false);
+	CHECK(p.all().size() == 2);
+}
+
 TEST_CASE("particles: screen rectangle lasts one tick and keeps its coordinates and opacity")
 {
 	particles p;

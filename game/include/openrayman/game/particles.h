@@ -21,6 +21,9 @@ namespace openrayman::game
 		{
 			int type = 0;          // the exe's particle type (low byte of its flags)
 			vec3 position{};
+			// Kind 163 (the Hall of Doors' beams, flags 0x60000000) is a segment: the exe keeps its
+			// second point at +0x18 and draws a ribbon between the two instead of a square.
+			vec3 end{};
 			vec3 motion{};         // type 11: a speed; type 14: the point it glides to
 			float size = 0;        // half its width and height
 			float alpha = 0;       // 0..255
@@ -79,6 +82,9 @@ namespace openrayman::game
 		// `owner` is the actor whose script made the call (kept for the screen pictures and gauges).
 		void start(int kind, const vec3& point, const vec3& vector, std::uint32_t material, float number, double now, std::uint32_t owner = 0);
 		void set_animation_lengths(std::function<float(std::uint32_t)> lengths) { m_animation_length = std::move(lengths); }
+		// A kind-163 beam (flags 0x60000000): the exe draws it as a ribbon between `position` and
+		// `end` instead of a camera-facing square (0x460A10 case 0x60000000).
+		static bool is_segment(const particle& p) { return (p.flags & 0x60000000) == 0x60000000; }
 		// One tick: moves and fades every particle, and drops those that are done.
 		void update(double now, double seconds);
 
@@ -118,6 +124,9 @@ namespace openrayman::game
 		double m_ripple_clock = 0; // effect 7 starts at most one ripple every 0.2 s (0x4B9B0C)
 		std::uint32_t m_ripple_material = 0; // effect 7's material, which falling drops become (0x4B9AD8)
 		bool m_fewer = false;      // effect 167's switch (0x4B9AF8): no drops, quieter ripples
+		// 0x4B9AE0: set once a kind-163 beam has started. From then on 0x4607E0 never empties the
+		// pool when the pause menu's flag changes, so the beams survive panel 504.
+		bool m_persistent = false;
 
 		// Adds a particle the way 0x4600C0 does for the flag-word effects.
 		void add(std::uint32_t flags, const vec3& point, const vec3& motion, float life, float size, std::uint32_t material, double now);
@@ -127,10 +136,11 @@ namespace openrayman::game
 		double m_swirl_next = -1; // op 83: when the next particle is due (0x4B9B24)
 		bool m_paused = false;    // the pool's copy of procedure 504's flag (0x4B9B14)
 	public:
-		// 0x4607E0: when procedure 504's flag changes either way, the pool is emptied.
+		// 0x4607E0: when procedure 504's flag changes either way, the pool is emptied — unless a
+		// kind-163 beam has started (0x4B9AE0), which keeps the whole pool alive.
 		void set_paused(bool paused)
 		{
-			if(paused != m_paused)
+			if(paused != m_paused && !m_persistent)
 			{
 				m_particles.clear();
 				m_swirl_next = -1;

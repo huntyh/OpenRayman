@@ -92,6 +92,10 @@ namespace openrayman
 			bool flat = false;          // in the world's X/Y plane instead of facing the camera
 			float age = -1;             // seconds since it began: an animated texture plays once from
 			                            // there; below 0 it follows the level's clock
+			// Kind 163 (flags 0x60000000): a beam drawn as a flat ribbon from center to here, 0.8
+			// wide, instead of a square (0x460A10 case 0x60000000).
+			glm::vec3 end{ 0 };
+			bool segment = false;
 		};
 		void set_particles(std::vector<particle> particles) { m_particles = std::move(particles); }
 

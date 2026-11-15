@@ -191,3 +191,9 @@ Case 49 adds one stationary sprite at the point, flags 0x5A00, supplied material
 At 0x464B33 one flash and trunc((number + 1) * 4) sparks start at the point, all with the supplied material. The flash is stationary, flags 0x4500, size 0.5 to 0.8, shrinking 0.5 and fading 350 per second. Sparks have flags 0x3001, size 0.19 to 0.35 and world velocity -2 to 2 on X and Y, -0.2 to 6 on Z; they fall and fade at 260 per second. The vector is unused; the number is stored as life but timed expiry is not enabled. This matches kind 9's flash and spark ranges, with four sparks for number 0 versus kind 9's eight. Nonnegative counts are assumed by the executable.
 
 **Where this came from:** own analysis of Rayman2.exe 0x4648B0, especially the instructions at 0x464B77 through 0x464B8D (the decompiler omits the count expression), 0x4600C0 and 0x461120. Constants at 0x49CB50, 0x49CA14, 0x49CB0C, 0x49CB2C, 0x49CB78, 0x49CB18, 0x49CAE4 and 0x49CB7C establish the ranges.
+
+## Hall of Doors links
+
+Mapmonde door scripts call procedure 503 with kind 163, two door positions, and the faisceaumm game material. Executable 0x4648B0 case 0xA3 creates a persistent particle with flags 0x60000000 and rejects duplicate endpoint pairs in either order (exact comparisons at 0x4632F0). The 0.1 argument is its life field, not its ribbon width. Drawing at 0x460A10 flattens the endpoint difference vertically and calls 0x429CF0 with half-width 0.4. The pool's pause transition behavior is at 0x4607E0. Findings come from the Mapmonde door scripts and executable decompilation.
+
+The selection actor's kind 9 uses the Fix texture lums_corps_ad_mxy.tga, whose tiling mirrors both axes. Its UV extent spans two copies per axis; clamping particle UVs to one copy produces a square edge. This comes from the Mapmonde selection script and its material and texture records.

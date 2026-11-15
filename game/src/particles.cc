@@ -312,6 +312,31 @@ namespace openrayman::game
 			}
 			return;
 		}
+		if(kind == 163)
+		{
+			// 0x4648B0 case 0xA3: the Hall of Doors' beams. A persistent segment from the point to
+			// the vector (flags 0x60000000, both ends kept, life 0.1, equal sizes 1.0). The pool
+			// rejects a pair it already holds in either order, so a script that calls this every
+			// tick keeps exactly one beam per pair of doors.
+			if(m_particles.size() >= capacity)
+				return;
+			auto same = [](const vec3& a, const vec3& b) {
+				return a[0] == b[0] && a[1] == b[1] && a[2] == b[2];
+			};
+			for(const particle& existing : m_particles)
+			{
+				if(!is_segment(existing))
+					continue;
+				if((same(existing.position, point) && same(existing.end, vector)) ||
+					(same(existing.position, vector) && same(existing.end, point)))
+					return;
+			}
+			add(0x60000000, point, {}, 0.1f, 1.0f, material, now);
+			if(!m_particles.empty())
+				m_particles.back().end = vector;
+			m_persistent = true;
+			return;
+		}
 		if(kind == 167)
 		{
 			// 0x4648B0 case 0xA7: fewer water effects while the number is over 0.01.

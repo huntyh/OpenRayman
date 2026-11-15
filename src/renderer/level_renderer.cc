@@ -2287,11 +2287,42 @@ namespace openrayman
 			for(const particle* p : farthest_first)
 			{
 				const sprite_instance& m = m_effect_materials.at(p->material);
+				if(p->segment)
+				{
+					// 0x460A10 case 0x60000000: a beam. Both ends count, the height difference is
+					// dropped (the line stays level), and it is drawn as a rectangle centred on the
+					// two points' midpoint: 0.8 wide (0x429CF0 is given 0.4) and as long as the gap,
+					// its long axis along the beam and its width square to it. u runs across the
+					// beam, v along it, so the 32x64 faisceaumm texture reads as a soft streak.
+					glm::vec3 d = p->end - p->center;
+					d.z = 0;
+					const float length = glm::length(d);
+					if(length < 1e-4f)
+						continue;
+					glm::vec3 mid = (p->center + p->end) * 0.5f;
+					mid.z = p->end.z; // 0x460A10 flattens the delta before finding the midpoint.
+					const glm::vec3 along = d / length * (length * 0.5f);
+					const glm::vec3 across = glm::vec3(-d.y, d.x, 0) / length * 0.4f;
+					glm::vec4 bounds{ 0, 0, 1, 1 };
+					const vertex a{ mid - along - across, { 0, 0 }, lit, bounds }, b{ mid - along + across, { 1, 0 }, lit, bounds };
+					const vertex c{ mid + along - across, { 0, 1 }, lit, bounds }, e{ mid + along + across, { 1, 1 }, lit, bounds };
+					quads.insert(quads.end(), { a, b, c, c, b, e });
+					continue;
+				}
 				const float half_height = p->half_height < 0 ? p->half_size : p->half_height;
 				glm::vec3 x = (p->flat ? glm::vec3(1, 0, 0) : right) * p->half_size;
 				glm::vec3 y = (p->flat ? glm::vec3(0, 1, 0) : up) * half_height;
 				const float u = m.uv_extent.x, v = m.uv_extent.y;
-				glm::vec4 bounds{ 0, 0, 1, 1 };
+				// A mirrored texture ("_mxy") holds a quarter of the image, so the quad spans two
+				// copies and has no single copy to clamp to. Bounding it to 0..1 clipped the second
+				// copy to one edge texel, which showed as a flat-edged square around every sparkle
+				// of the Hall's selection burst (its material is lums_corps_ad_mxy). Sprites already
+				// pick their bounds this way.
+				glm::vec4 bounds{ -1e6f, -1e6f, 1e6f, 1e6f };
+				if(u <= 1)
+					bounds.x = 0, bounds.z = 1;
+				if(v <= 1)
+					bounds.y = 0, bounds.w = 1;
 				vertex bl{ p->center - x - y, { 0, v }, lit, bounds }, br{ p->center + x - y, { u, v }, lit, bounds };
 				vertex tl{ p->center - x + y, { 0, 0 }, lit, bounds }, tr{ p->center + x + y, { u, 0 }, lit, bounds };
 				quads.insert(quads.end(), { bl, tl, br, br, tl, tr });
