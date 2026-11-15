@@ -51,6 +51,13 @@ namespace openrayman
 			else result |= 0x08000000u;
 			return result;
 		}
+		// 0x42A410: additive surfaces with these draw flags use a constant white
+		// material, independent of their saved ambient and diffuse colours.
+		bool additive_fullbright() const
+		{
+			return texture && (texture->flags & texture_flag::additive) &&
+				(flags & 0x04000008u) == 0x04000008u;
+		}
 	};
 
 	// Element types inside a geometric object.

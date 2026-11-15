@@ -94,6 +94,22 @@ TEST_CASE("real data: pause swirl materials retain offsets, depth rules and save
 	}
 }
 
+TEST_CASE("additive fullbright requires the texture and both material flags")
+{
+	visual_material m;
+	m.texture.emplace();
+	m.texture->flags = texture_flag::additive;
+	m.flags = 0x4DDC03FF;
+	CHECK(m.additive_fullbright());
+	m.flags &= ~0x04000000u;
+	CHECK_FALSE(m.additive_fullbright());
+	m.flags = 0x4DDC03FF & ~8u;
+	CHECK_FALSE(m.additive_fullbright());
+	m.flags = 0x4DDC03FF;
+	m.texture->flags = 0;
+	CHECK_FALSE(m.additive_fullbright());
+}
+
 TEST_CASE("real data: Jail_10 far backdrop sector contains only static mountain scenery")
 {
 	auto dir = real_game_dir();

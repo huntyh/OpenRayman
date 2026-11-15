@@ -226,3 +226,8 @@ out on purpose.
   texture, which no geometry uses, to the open-air sectors).
 - By eye against the real game (Learn_10): the river tablet, the stone doors, the mushroom cave and
   the stream, which is how the earlier guesses were found wrong.
+
+### Additive fullbright material (card 119)
+
+Own analysis of Rayman2.exe 0x42A410 and Mapmonde node 7, Codex, 2026-11-15: when a texture has flag 0x20 and effective material draw flags contain 0x04000000 and 0x8, the executable replaces ambient RGBA with 1 and diffuse RGBA with 0 before lighting. The constant at 0x49C63C is 1.0. The completed door's object 1 uses this path: its saved material is green but its red texture is drawn without that green tint. Other opacity cases of the same branch remain unverified. No executable code copied.
+

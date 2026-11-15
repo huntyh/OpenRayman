@@ -1058,6 +1058,7 @@ namespace openrayman
 				{
 					const visual_material& m = *element.material;
 					colors = { m.ambient[0], m.ambient[1], m.ambient[2], m.ambient[3], m.diffuse[0], m.diffuse[1], m.diffuse[2], m.diffuse[3] };
+					if(m.additive_fullbright()) colors = { 1, 1, 1, 1, 0, 0, 0, 0 };
 					const auto flags = m.texture_draw_flags();
 					faces = cull_for(flags);
 					depth_write = (flags & 0x08000000) != 0;
