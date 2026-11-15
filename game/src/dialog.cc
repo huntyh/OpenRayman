@@ -56,6 +56,13 @@ namespace openrayman::game
 				case 'w': width = n * 0.001f; break;
 				case 'z': scale = n * 0.001f; break;
 				case 'o':
+					// Ours: /O-1: returns to the text's own tint (the game's strings never use it).
+					if(n < 0)
+					{
+						screen_colour = -1;
+						offset = 0;
+						break;
+					}
 					if(dialog.screen && dialog.tint)
 					{
 						if(n == 0 || n == 200 || n == 400 || n == 600) screen_colour = n;

@@ -289,7 +289,7 @@ TEST_CASE("real data: Hall of Doors prompt writes the active slot and reports su
 	CHECK(std::filesystem::exists(root / "Slot2/Mapmonde_0.sav"));
 	if(automatic)
 	{
-		CHECK(session->saving_ticks == 150);
+		CHECK(session->saving_ticks == 390);
 		CHECK_FALSE(vm.screen_text().at(9).used);
 		for(unsigned tick = 0; tick < 30; ++tick) { vm.next_tick(); keys.step(); vm.think(prompt); }
 		CHECK_FALSE(vm.paused());

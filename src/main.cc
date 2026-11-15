@@ -2228,6 +2228,10 @@ namespace
 			if(a.vm && a.dialog_overlay)
 			{
 				auto dialogs = game::visible_dialogs(*a.vm);
+				// Paused (procedure 306), the speech boxes (Murfy's tutorial subtitles) wait with the
+				// world; only the pause menu's text shows (user, 2026-11-15, card 38).
+				if(a.vm->paused())
+					dialogs.clear();
 				// Screen slots are the separate menu/HUD text path (0x465C10). Their
 				// text IDs are resolved by the script handlers before reaching here.
 				if(a.screen_font_actor)
@@ -2284,7 +2288,7 @@ namespace
 					add_save_text("/C:When this Lum is shown,", 500, 400, 12, 1, false);
 					add_save_text("/C:the game is saving.", 500, 480, 12, 1, false);
 					add_save_text("/C:Please do not turn off your system.", 500, 560, 10, 1, false);
-					add_save_text("/C:Press Enter to continue.", 500, 660, 10, 1, false);
+					add_save_text("/C:Press /O200:Enter/O-1: to continue.", 500, 660, 10, 1, false);
 				}
 				float saving = game::saving_alpha(*a.saves);
 				// It floats with the Lum beside it (the same gentle bob).

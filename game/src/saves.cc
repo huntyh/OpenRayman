@@ -395,7 +395,7 @@ namespace openrayman::game
 					session->levels = std::move(levels);
 					session->new_game = index == 93;
 					session->first_save = index == 93;
-					if(session->automatic_actor == c.self) session->saving_ticks = 150;
+					if(session->automatic_actor == c.self) session->saving_ticks = 390; // about 6.5 s, the last half second fading
 					session->error.clear();
 					out = value::integer(1);
 				}

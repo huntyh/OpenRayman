@@ -1293,7 +1293,12 @@ namespace openrayman::game
 			// game (r2live, user recording 2026-11-08) and leaves the slope, which falls away faster.
 			// Following the floor down there snapped Rayman back onto it, the slide took him again
 			// and the jump fired a second time from a vertical speed of 0, launching him upward.
-			const bool taking_off = target[2] > current[2] + carried[2] ||
+			// On the ground, rising alone is not a take-off: walking uphill carries the slope's climb
+			// in the vertical speed, and at a crest that extrapolated climb overshot the ground, which
+			// left it and played the landing roll (Learn_10's small rise by the start and Murfy's
+			// stones, user 2026-11-15; the Bast_20 camera bob of card 120). A jump still shows as
+			// the sudden gain in vertical speed below.
+			const bool taking_off = (!was_grounded && target[2] > current[2] + carried[2]) ||
 				(dt > 0 && (target[2] - current[2] - carried[2]) / dt > m.f32(b + base::speed + 8) + 4.0f);
 			float bottom = target[2] - ((was_grounded || external_placement) && !taking_off ? follow_down : 0.0f);
 			// Prefer the floor under the origin. Rim probes provide support at edges; a higher
