@@ -132,3 +132,195 @@ TEST_CASE("real data: registry layout and generated mock restoration")
 	CHECK(game::capture_save_entries(target, registry.general, registry.general_size) == general);
 	CHECK(game::capture_save_entries(target, registry.level, registry.level_size) == level);
 }
+#include <openrayman/game/handlers.h>
+#include <openrayman/game/animation_player.h>
+#include <openrayman/game/dialog.h>
+#include <openrayman/game/input.h>
+#include <openrayman/brain.h>
+
+TEST_CASE("save slot publication preserves other levels, clears a new game and rejects unsafe destinations")
+{
+	auto root = game::save_root() / ("write-test-" + std::to_string(std::random_device{}()));
+	auto forbidden = root / "game";
+	std::vector<std::byte> general{std::byte(12), std::byte(30)};
+	game::write_save_slot(root, forbidden, 1, general, {{"Learn_10", {std::byte(3)}}}, "RAY", 250);
+	CHECK(save_file(root / "Slot1/General.sav").bytes == general);
+	CHECK_THROWS_AS(save_file::write(root / "Slot1", general), format_error);
+	game::write_save_slot(root, forbidden, 1, general, {{"Learn_30", {std::byte(1)}}}, "ABC", 300);
+	CHECK(save_file(root / "Slot1/Learn_10_0.sav").bytes == std::vector<std::byte>{std::byte(3)});
+	CHECK(save_file(root / "Slot1/Learn_30_0.sav").bytes == std::vector<std::byte>{std::byte(1)});
+	CHECK_THROWS(game::write_save_slot(root, forbidden, 4, {}, {}, "BAD", 0));
+	CHECK_THROWS(game::write_save_slot(root, forbidden, 1, {}, {{"../escape", {}}}, "BAD", 0));
+	CHECK(save_file(root / "Slot1/General.sav").bytes == general);
+	CHECK_THROWS(game::write_save_slot(forbidden / "saves", forbidden, 1, {}, {}, "BAD", 0));
+	CHECK_FALSE(std::filesystem::exists(forbidden));
+	game::write_save_slot(root, forbidden, 1, {}, {{"Menu", {}}}, "NEW", 0, true);
+	CHECK_FALSE(std::filesystem::exists(root / "Slot1/Learn_10_0.sav"));
+	CHECK(save_file(root / "Slot1/General.sav").bytes.empty());
+	std::filesystem::remove_all(root);
+}
+
+TEST_CASE("real data: scripted new game saves successfully and registered fields round trip")
+{
+	auto dir = real_game_dir(); if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Menu");
+	auto header = read_level_header(files);
+	scene tree(files.memory, header);
+	auto registry = read_save_registry(files.memory, header, tree);
+	game::live_memory memory(files.memory);
+	game::interpreter vm(memory, header.main_actor->address());
+	game::register_handlers(vm);
+	game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+	auto root = game::save_root() / ("script-test-" + std::to_string(std::random_device{}()));
+	vm.save_folder = root.string();
+	auto session = std::make_shared<game::save_session>();
+	game::install_save_handlers(vm, files, header, tree, *dir, session);
+	std::vector<std::uint32_t> actors;
+	for(const auto& n : tree.nodes()) if(n.type == super_object_type::actor) actors.push_back(n.at.address());
+	vm.set_actors(actors);
+	game::input keys(memory, read_input_actions(files));
+	for(unsigned tick = 0; tick < 1000; ++tick)
+	{
+		keys.set_key(0x1C, tick == 240 || tick == 600 || tick == 900);
+		keys.step();
+		game::step(vm, actors, [](std::uint32_t, const std::exception& e) { FAIL(e.what()); });
+	}
+	INFO(session->error);
+	REQUIRE(session->slot == 1);
+	CHECK(vm.get_variable(tree.node(6).at.address(), 33).as_int() == 1);
+	// Autosave must not answer the separate Quit confirmation or turn it into another save.
+	session->autosave = true;
+	auto menu = tree.node(6).at.address();
+	vm.set_variable(menu, 55, game::value::integer(6));
+	vm.set_variable(menu, 40, game::value::integer(0));
+	CHECK_FALSE(vm.on_screen_text(menu, game::value::of(game::value_type::id, 0x5043)));
+	vm.set_variable(menu, 40, game::value::integer(1));
+	CHECK(vm.on_screen_text(menu, game::value::of(game::value_type::id, 0x5043)));
+	session->automatic_actor = 0;
+	REQUIRE(std::filesystem::exists(root / "Slot1/General.sav"));
+	// The new-game save contains the general values the executable resets on continue.
+	for(auto so : actors) vm.reset_variables(so, 0);
+	for(const auto& e : registry.general)
+		if(e.standard_offset == 0x21u) memory.write<std::uint8_t>(e.address, 15);
+	auto expected = game::capture_save_entries(memory, registry.general, registry.general_size);
+	auto written = save_file(root / "Slot1/General.sav").bytes;
+	for(std::size_t i = 0; i < expected.size(); ++i)
+	{
+		INFO("general byte ", i);
+		CHECK(written[i] == expected[i]);
+	}
+	// Load through the public --save path into another level's independently built registry.
+	auto learn = load_level_files(*data, "Learn_10");
+	auto learn_header = read_level_header(learn);
+	scene learn_tree(learn.memory, learn_header);
+	auto learn_registry = read_save_registry(learn.memory, learn_header, learn_tree);
+	game::live_memory restored_memory(learn.memory);
+	game::interpreter restored(restored_memory, learn_header.main_actor->address());
+	game::load_save_slot(restored, root, learn, learn_header, learn_tree, 1);
+	CHECK(game::capture_save_entries(restored_memory, learn_registry.general, learn_registry.general_size) == expected);
+	// Current-state writing includes scalar, reversed-array and packed always/placed actor bits.
+	auto script = restored_memory.allocate(24);
+	restored_memory.write<std::uint32_t>(script, 90);
+	restored_memory.write<std::uint8_t>(script + 7, std::uint8_t(node_type::function));
+	restored_memory.write<std::uint32_t>(script + 8, 1);
+	restored_memory.write<std::uint8_t>(script + 14, 1);
+	restored_memory.write<std::uint8_t>(script + 15, std::uint8_t(node_type::integer));
+	restored.save_folder = root.string();
+	game::install_save_handlers(restored, learn, learn_header, learn_tree, *dir, session);
+	for(const auto& e : learn_registry.general)
+		if(!e.standard_offset) restored_memory.write<std::uint8_t>(e.address, 77);
+	for(const auto& e : learn_registry.level) restored_memory.write<std::uint8_t>(e.address, 1);
+	game::value result;
+	CHECK(restored.eval(learn_header.main_actor->address(), script, result) == script + 16);
+	REQUIRE(result.as_int() == 1);
+	CHECK(save_file(root / "Slot1/General.sav").bytes == game::capture_save_entries(restored_memory, learn_registry.general, learn_registry.general_size));
+	CHECK(save_file(root / "Slot1/Learn_10_0.sav").bytes == game::capture_save_entries(restored_memory, learn_registry.level, learn_registry.level_size));
+	// An invalid slot consumes the argument and reports failure without publishing files.
+	restored_memory.write<std::uint32_t>(script + 8, 4);
+	CHECK(restored.eval(learn_header.main_actor->address(), script, result) == script + 16);
+	CHECK(result.as_int() == 0);
+	CHECK_FALSE(session->error.empty());
+	std::filesystem::remove_all(root);
+}
+
+TEST_CASE("real data: Hall of Doors prompt writes the active slot and reports success")
+{
+	auto dir = real_game_dir(); if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Mapmonde");
+	auto header = read_level_header(files);
+	scene tree(files.memory, header);
+	game::live_memory memory(files.memory);
+	game::interpreter vm(memory, header.main_actor->address());
+	game::register_handlers(vm);
+	game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+	auto root = game::save_root() / ("hall-test-" + std::to_string(std::random_device{}()));
+	game::write_save_slot(root, *dir, 2, {}, {}, "RAY", 0);
+	vm.save_folder = root.string();
+	bool automatic = false;
+	SUBCASE("original prompts") {}
+	SUBCASE("autosave") { automatic = true; }
+	REQUIRE(game::write_autosave(root, automatic));
+	auto session = std::make_shared<game::save_session>(); session->slot = 2;
+	game::install_save_handlers(vm, files, header, tree, *dir, session);
+	game::input keys(memory, read_input_actions(files));
+	auto prompt = tree.node(89).at.address();
+	vm.set_variable(prompt, 0, game::value::integer(1));
+	vm.set_variable(tree.node(90).at.address(), 1, game::value::integer(0));
+	keys.step(); vm.think(prompt);
+	CHECK(vm.paused());
+	CHECK(vm.get_variable(prompt, 7).as_int() == 1);
+	if(automatic)
+	{
+		// A direction held during arrival can toggle the script's choice to No.
+		// Autosave must restore Yes before supplying its confirmation.
+		vm.set_variable(prompt, 7, game::value::integer(0));
+		CHECK(vm.on_screen_text(prompt, game::value::of(game::value_type::id, 0x190)));
+		CHECK(vm.get_variable(prompt, 7).as_int() == 1);
+	}
+	keys.set_key(0x1C, !automatic); keys.step(); vm.think(prompt);
+	INFO(session->error);
+	CHECK(vm.get_variable(prompt, 8).as_int() == 1);
+	auto registry = read_save_registry(files.memory, header, tree);
+	CHECK(save_file(root / "Slot2/General.sav").bytes == game::capture_save_entries(memory, registry.general, registry.general_size));
+	CHECK(std::filesystem::exists(root / "Slot2/Mapmonde_0.sav"));
+	if(automatic)
+	{
+		CHECK(session->saving_ticks == 150);
+		CHECK_FALSE(vm.screen_text().at(9).used);
+		for(unsigned tick = 0; tick < 30; ++tick) { vm.next_tick(); keys.step(); vm.think(prompt); }
+		CHECK_FALSE(vm.paused());
+		CHECK(session->automatic_actor == 0);
+	}
+	std::filesystem::remove_all(root);
+}
+
+TEST_CASE("autosave preference is asked once, persists both choices and fades the indicator")
+{
+	auto root = game::save_root() / ("autosave-test-" + std::to_string(std::random_device{}()));
+	CHECK_FALSE(game::read_autosave(root));
+	game::save_session session;
+	session.question = true;
+	game::update_save_ui(session, root, false, true, false);
+	CHECK(session.choice);
+	game::update_save_ui(session, root, false, false, true);
+	CHECK_FALSE(session.question);
+	CHECK(session.autosave == true);
+	CHECK(game::read_autosave(root) == true);
+	REQUIRE(game::write_autosave(root, false));
+	CHECK(game::read_autosave(root) == false);
+	{ std::ofstream out(root / "autosave.txt"); out << "1 garbage"; }
+	CHECK_FALSE(game::read_autosave(root));
+	session.saving_ticks = 150;
+	CHECK(game::saving_alpha(session) == 1);
+	for(unsigned tick = 0; tick < 120; ++tick) game::update_save_ui(session, root, false, false, false);
+	CHECK(game::saving_alpha(session) == 1);
+	for(unsigned tick = 0; tick < 15; ++tick) game::update_save_ui(session, root, false, false, false);
+	CHECK(game::saving_alpha(session) == doctest::Approx(0.5));
+	for(unsigned tick = 0; tick < 15; ++tick) game::update_save_ui(session, root, false, false, false);
+	CHECK(game::saving_alpha(session) == 0);
+	std::filesystem::remove_all(root);
+}

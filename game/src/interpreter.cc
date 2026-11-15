@@ -1540,6 +1540,15 @@ namespace openrayman::game
 			std::uint32_t schedule = behaviour ? m_memory.u32(behaviour + behaviour_field::schedule) : 0;
 			m_memory.write<std::uint32_t>(intelligence + intelligence_field::schedule_at, schedule ? m_memory.u32(schedule) : 0);
 		}
+		reset_variables(self, 4);
+	}
+
+	void interpreter::reset_variables(std::uint32_t self, unsigned reset_level)
+	{
+		auto actor = actor_of(self);
+		auto brain = actor ? m_memory.u32(actor + actor_field::brain) : 0;
+		auto mind = brain ? m_memory.u32(brain) : 0;
+		if(!mind) return;
 		// 0x466950 with level 4: a variable whose reset level (declaration +0xC) is 4 or more gets
 		// its initial value back; type 10 clears its first byte and takes the second.
 		std::uint32_t variables = m_memory.u32(mind + mind_field::variables);
@@ -1559,8 +1568,15 @@ namespace openrayman::game
 				m_memory.write<std::uint8_t>(current + offset + 1, m_memory.u8(initial + offset + 1));
 				continue;
 			}
-			if(m_memory.u32(entry + 0x0C) < 4)
+			if(m_memory.u32(entry + 0x0C) < reset_level)
 				continue;
+			if(type >= 18 && type <= 23)
+			{
+				auto element_type = m_memory.u32(initial + offset);
+				auto size = 8u + (element_type == 11 ? 12u : 4u) * m_memory.u8(initial + offset + 4);
+				std::ranges::copy(m_memory.span(initial + offset, size), m_memory.span(current + offset, size).begin());
+				continue;
+			}
 			try
 			{
 				write_variable({ current + offset, type }, read_variable({ initial + offset, type }));

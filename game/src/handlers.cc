@@ -199,6 +199,8 @@ namespace openrayman::game
 		{
 			value a;
 			next_arg(c, a);
+			if(c.vm.on_input_condition)
+				if(auto override = c.vm.on_input_condition(c.self, c.index, a.word())) { result = *override; return c.args; }
 			std::int32_t held = a.word() ? c.vm.memory().read<std::int32_t>(a.word() + 0x0C) : 0;
 			switch(c.index)
 			{
@@ -4832,6 +4834,7 @@ namespace openrayman::game
 			next_arg(c, position);
 			next_arg(c, text);
 			next_arg(c, alpha);
+			if(c.vm.on_screen_text && c.vm.on_screen_text(c.self, text)) return c.args;
 			vec3 p = vec_of(position);
 			c.vm.screen_text().set(text_slot(slot), p[0], p[1], text_of(c.vm, text), std::uint8_t(alpha.as_int()), p[2], c.self);
 			return c.args;

@@ -258,7 +258,7 @@ namespace openrayman
 		std::span<const game::particles::screen_rectangle> boxes,
 		std::span<const game::particles::screen_image> images,
 		const glm::mat4& view_projection, const glm::mat4& projection, int width, int height, double time,
-		const game::interpreter::view_bounds& bounds, bool show_bars)
+		const game::interpreter::view_bounds& bounds, bool show_bars, float saving_alpha)
 	{
 		if(width <= 0 || height <= 0) return;
 		m_batches.clear();
@@ -459,6 +459,31 @@ namespace openrayman
 						}
 					if(!vertices.empty()) append(g->texture, element.material && element.material->texture && (element.material->texture->flags & texture_flag::additive), vertices);
 				}
+			}
+		}
+		// Card 40: the green Lum's own sprite, read from Textures.cnt at runtime.
+		// Its mxy body is a quarter texture; reflect both axes as the material does.
+		if(saving_alpha > 0)
+		{
+			texture_info body; body.name = "textures_personnages/divers/lums_corpsvert_mxy.gf";
+			body.flags = texture_flag::color_key;
+			if(auto texture = texture_for(body))
+			{
+				float x = to_edge(496, 496), y = 436, size = 12;
+				texture_info wings; wings.name = "textures_personnages/divers/lums_aile_adnzw.gf";
+				if(auto wing_texture = texture_for(wings))
+					quad(wing_texture, true, x - 6 * area, y - 2, 36 * area, 22, {1, 1, 1, saving_alpha}, 0, 1);
+				SDL_FColor colour{1, 1, 1, saving_alpha};
+				for(int row = 0; row < 2; ++row)
+					for(int col = 0; col < 2; ++col)
+					{
+						float x0 = x + col * size * area, x1 = x0 + size * area;
+						float y0 = y + row * size, y1 = y0 + size;
+						float u0 = float(col), u1 = float(1-col), v0 = float(row), v1 = float(1-row);
+						SDL_Vertex vertices[] = {{{x0,y0},colour,{u0,v0}},{{x1,y0},colour,{u1,v0}},{{x1,y1},colour,{u1,v1}},
+							{{x0,y0},colour,{u0,v0}},{{x1,y1},colour,{u1,v1}},{{x0,y1},colour,{u0,v1}}};
+						append(texture, false, vertices);
+					}
 			}
 		}
 		glDisable(GL_DEPTH_TEST); glEnable(GL_BLEND); glDisable(GL_CULL_FACE);

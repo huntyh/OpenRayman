@@ -43,6 +43,7 @@ of them off may come later.
 | Ticks and frame rate | 60 ticks per second | The same 60 ticks per second; drawing runs at any frame rate, smoothed between ticks | 3b |
 | The menu's "Site Rayman2" entry | Procedure 369 hands the level's string `http://www.rayman2.com/` to `ShellExecuteA`, and that address has not worked for years (the shipped `.text` copy has the call NOPped out anyway, see docs/formats/menu.md) | The entry reads "OpenRayman 0.1.0" (the project version; text id 0x16A, as Ray2Fix renames it), and any URL procedure 369 asks to open becomes `https://github.com/huntyh/OpenRayman`, opened with the desktop's default browser (`SDL_OpenURL`); the engine logs which address it opens | 3c |
 | Language preference | Procedure 242 writes the choice to the original game's ini, but the menu asks again on every start: whether the prompt shows depends on story bit 1006, which isn't kept between starts | The choice is kept in OpenRayman's save folder as `language.txt`; a valid choice sets bit 1006 at startup, so the prompt is skipped on later launches | 4 |
+| Optional autosave (card 40) | Asks whether to save on arrival in the Hall of Doors and before leaving the game | Asks once after the first new-game save (default No). Keeps the answer in our save folder as `autosave.txt`; `--autosave on/off` changes it later. When on, the original save scripts run without confirmation and a green Lum loaded from game data with Saving... appears at the bottom right for two seconds, then fades over half a second. When off the original prompts remain. | 4 |
 
 Not changed yet, candidates for later: the every-2/4/8/16-frames checks in scripts (keywords 2 to 5)
 are kept as the game has them, since changing their timing could change gameplay.
@@ -91,3 +92,10 @@ the saved sum without that stand-in, as needed by the intro logo, whose own ligh
   slide downhill but with the wrong acceleration.
 
 OpenRayman saves live in its per-user folder rather than the game installation's Data/SaveGame. A `portable.txt` next to the executable selects a local SaveGame folder; `OPENRAYMAN_SAVE_DIR` overrides both.
+
+
+Where this came from (card 40): user-requested OpenRayman addition, 2026-11-15. The save
+prompt paths were independently traced at executable addresses 0x47D830, 0x47D730, 0x4702A0
+and in Menu node 6 / Mapmonde node 89 bytecode; see formats/saves.md. The green Lum sprite
+and wings are read from Textures.cnt at runtime. No game assets or executable code are stored
+in the repository.

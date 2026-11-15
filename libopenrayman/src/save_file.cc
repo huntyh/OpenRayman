@@ -51,6 +51,8 @@ namespace openrayman
 		std::ofstream out(path, std::ios::binary | std::ios::trunc);
 		if(!out || !out.write(reinterpret_cast<const char*>(encoded.data()), std::streamsize(encoded.size())))
 			throw format_error("cannot write save file: " + path.string());
+		out.close();
+		if(!out) throw format_error("cannot close save file: " + path.string());
 	}
 
 	save_file save_file::decode(std::span<const std::byte> encoded)

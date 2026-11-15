@@ -1,8 +1,8 @@
 # Saves
 
 OpenRayman saves can be restored in game mode with `--save 1`, `--save 2` or `--save 3`.
-Without that option the interim revisit snapshot remains the default. Reading saves is separate
-from writing saves (functions 90/93/95, card #24), which is not implemented.
+Without that option the interim revisit snapshot remains the default. Scripted writing
+(functions 90/93/95, card #24) now drives the original success and failure screens.
 
 ## Files and loading
 
@@ -19,7 +19,7 @@ first script tick and adjusts type-5 activity. With a slot selected, neither the
 nor first-visit hand-over runs. Explicit `--story-bits` overrides run after restoration. The slot
 seeds the initial load. Script-requested level changes carry registered general progress and
 retain registered state for visited levels in memory; they do not reread the initial slot over
-new progress. Progress is not written back to disk.
+new progress. Function 90 writes the general registry and visited levels to the active slot.
 
 On Windows the root is `%APPDATA%\OpenRayman\OpenRayman\SaveGame`. A `portable.txt` beside the executable selects its `SaveGame` folder; `OPENRAYMAN_SAVE_DIR` overrides either location. The game?s own saves are never used by default. `ortool mksave <level> <slot> [--story-bits a,b,...]` writes a synthetic revisit state and refuses destinations inside the game folder.
 
@@ -166,3 +166,70 @@ The exact meaning of standard +0x23, visual parity with the real game and Slot2/
 unverified. Earlier HUD/story/snapshot observations came from independent executable and
 Fix/Learn_10 analysis (2026-11-02), including `ortool run` with `ORTOOL_IDS=1` /
 `ORTOOL_VARS=6:4,5,43,44`.
+
+## Scripted writing (card 24, 2026-11-15)
+
+Function **90** (`0x47D830`) evaluates one slot argument. The executable writes the level
+and general registries to HiddenSlot (`0x4103A0`, `0x410360`, `0x449EC0`, `0x449EA0`),
+then publishes the working files to the selected slot (`0x410870`). It returns a nonzero
+byte on success. Function **94** returns the active slot without arguments. In OpenRayman,
+a zero write argument selects the active slot, or Slot1 before one has been selected.
+
+Function **93**, in the same handler, starts a fresh slot: `0x4110E0` clears the working
+folder and the handler sets a deferred reset flag. The next level request (`0x4054D0`)
+runs `0x47D9C0`/`0x47D9E0` and restores designer values with reset level zero
+(`0x466D30`, `0x466950`). OpenRayman clears carried level progress and performs that reset
+on transition. To make the initial save immediately loadable, it writes registered initial
+designer values at name confirmation, with the 15/30 health/max that Menu behaviour 16 sets
+on Continue. This snapshot is our equivalent of the fresh working folder. Array reset now
+copies the full runtime storage; serialization still omits its header and reverses elements.
+
+Function **95** (`0x47D730`) evaluates a name, an unused value and an excluded slot. It skips
+leading formatting commands, keeps **three bytes** of the name and returns a colliding slot,
+or zero. Procedure **431** (`0x4702A0`) sets the name and completion count (0..1000).
+Functions **215..217** (`0x478E10`) supply the scripts' slot text. The original options file's
+11-byte display record per slot (`0x407B80`) does not allow an 11-character player name.
+Typed name entry (card 74, including function 218) is unchanged. Functions 91/92 (menu
+Load/Delete) remain outside this writing change; `--save` uses the existing loader.
+
+The writer stages a complete slot beside its destination, keeping unchanged level saves on
+ordinary saves and discarding them for a new game. It encodes the original payload format,
+closes every file, then replaces the destination directory, rolling back failed publication.
+A failure returns zero to the scripts. Destinations and copied files must be outside the game
+installation. Labels/completion use our own `SlotN/slot.txt`; original options are not applied
+or modified. A process/power failure between the two directory renames can leave a
+`.SlotN-*.previous` backup next to the slots.
+
+Mapmonde actor **89**, model `0d/01 +0x1C178`, owns the Hall of Doors save question.
+Behaviour 1 calls 431, 94, 216 and 90; success displays text **0x183**, and behaviour 2
+waits for Enter before restoring the clock, screen-object stack and world. Menu node 6 uses
+the same success text after name confirmation. These original branches now run.
+
+## Optional autosave (card 40, ours)
+
+The first new-game success screen asks **Enable autosave?** Left/right selects Yes/No
+(default No); Enter stores the answer and continues. `autosave.txt` in our save root contains
+`1` for on or `0` for off. A missing/invalid file asks again on a new game's first success
+screen. Change it later with `--autosave on` or `--autosave off`, or edit the file while closed.
+
+With autosave on, the Hall question (0x18F/0x190) and Menu save-before-exit question
+(node 6 var55 = 6, composed text 0x5043) use the scripts' original Yes/write/success/cleanup
+path. Only that actor's Enter conditions are supplied automatically; the question and success
+acknowledgement are hidden. Failed writes follow the original failure branch. With autosave
+off none of these substitutions run. Successful automatic writes show **Saving...** with the
+game's `lums_corpsvert_mxy.gf` and `lums_aile_adnzw.gf`, loaded from Textures.cnt at runtime.
+The bottom-right indicator holds for two seconds, then fades over half a second; its timer
+survives level changes. No game assets are included in sources.
+
+### Where this came from
+
+Own independent reading of the GOG executable's function table at `0x4A5460` and the handlers
+and callees listed above (2026-11-15), plus Menu node 6 and Mapmonde node 89 bytecode read with
+`ortool brain`. The deferred reset was traced through `0x4054D0`. Tests run Menu through name
+confirmation, compare all 196 general bytes with the reset state, restore them through
+Learn_10's independent registry, and exercise current scalar/array/packed level writing.
+Hall tests run both manual confirmation and input-free autosave through its bytecode.
+Captures and progress notes: `build/helpers/saves_report.md`. Installed-save observations
+elsewhere in this document are historical: this work reads no installed saves. All generated
+saves use OpenRayman's isolated save root. Autosave UI, metadata and publication are our own
+design. No executable code or other project's implementation was copied.

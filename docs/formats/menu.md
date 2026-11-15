@@ -602,3 +602,24 @@ captures of Learn_10's pause, Jail_10's Ubisoft logo at 2 seconds, and Menu at 4
 (Codex, 2026-11-15). Compared with the user's `real_pause2.webp` and `lum_cmp.png`; captures
 are not synchronized to the real game's animation phase. No executable code or assets copied
 into sources. Images, diagnostic output and the progress report stay in `build/helpers/`.
+
+## Menu saves (cards 24 and 40, 2026-11-15)
+
+Menu node 6's name-confirmation rules call function 95 (collision), procedure 431
+(name/completion), then 93 for a new game or 90 for current progress. A nonzero return
+shows text 0x183, **The game has been saved successfully / press Enter to continue**,
+and enters behaviour 16. The previous zero stub skipped that screen on a new game.
+The handlers now write into OpenRayman's own save root; see [saves.md](saves.md).
+Name storage is three bytes; typed name entry (card 74) remains unchanged.
+
+Our optional autosave asks once below the first success message. Left/right selects Yes/No,
+Enter persists it and continues; a known preference adds no question. `--autosave on|off`
+changes it later. When on, the Hall and save-before-exit questions use automatic confirmation
+only for the actor handling the save. Its original write and cleanup branches still run;
+a runtime green Lum and Saving... replace the prompts. When off the original prompts run.
+
+Where this came from: own analysis of executable handlers 0x47D830 (90/93/94),
+0x47D730 (95), 0x4702A0 (431), 0x478E10 (215..217), and Menu node 6 / Mapmonde node 89
+bytecode. Scripted tests and screenshots are recorded in `build/helpers/saves_report.md`.
+Autosave UI and settings are our own additions, listed in IMPROVEMENTS.md. No executable
+code, external implementation or game assets were copied into source files.

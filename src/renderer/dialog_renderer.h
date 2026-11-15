@@ -33,7 +33,7 @@ namespace openrayman
 			std::span<const game::particles::screen_rectangle> boxes,
 			std::span<const game::particles::screen_image> images,
 			const glm::mat4& view_projection, const glm::mat4& projection, int width, int height, double time,
-			const game::interpreter::view_bounds& bounds, bool show_bars);
+			const game::interpreter::view_bounds& bounds, bool show_bars, float saving_alpha = 0);
 	private:
 		struct glyph { geometric_object object; GLuint texture = 0; std::vector<SDL_FColor> colours; };
 		struct font { std::vector<actor_object> objects; std::map<int, std::optional<glyph>> glyphs; };

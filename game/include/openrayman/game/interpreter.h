@@ -311,6 +311,9 @@ namespace openrayman::game
 		std::function<void(unsigned)> on_language_selected;
 		// Function 265: the save folder, whose `Slot*` folders are the save slots (Data/SaveGame).
 		std::string save_folder;
+		// Host UI hooks for optional autosave; unset preserves the original script flow.
+		std::function<bool(std::uint32_t, const value&)> on_screen_text;
+		std::function<std::optional<bool>(std::uint32_t, unsigned, std::uint32_t)> on_input_condition;
 		// Actors with a native startup probe (custom bit 25, the copy protection's hiding place) and
 		// whether it has the probe layout we answer (as passed): any other is left as a failed check.
 		struct native_check
@@ -336,6 +339,7 @@ namespace openrayman::game
 		// 4): its first placement, both intelligences in their initial behaviours, the designer
 		// variables that reset at this level, and its initial state and object list.
 		void reset_actor(std::uint32_t super_object);
+		void reset_variables(std::uint32_t super_object, unsigned reset_level);
 		// The actor ("perso") of a super object, and back.
 		std::uint32_t actor_of(std::uint32_t super_object) const;
 		std::uint32_t super_object_of(std::uint32_t actor) const;

@@ -215,6 +215,7 @@ namespace
 		// --keys Up:60-200,A:100-110: keys held over script ticks, to replay input for screenshots.
 		struct held_key { std::uint8_t key; long from, to; };
 		std::vector<held_key> held_keys;
+		std::shared_ptr<openrayman::game::save_session> saves = std::make_shared<openrayman::game::save_session>();
 		unsigned save_slot = 0; // --save 1..3: restore the installed slot at level load
 		bool new_game = false; // --start new: levels start as on a new game, not as reached from the hub
 		bool intro_start = false; // run the level's opening scene
@@ -768,6 +769,13 @@ namespace
 			SDL_Log("The scripts asked for level %s, which Game.dsb doesn't list", name.c_str());
 			return;
 		}
+		if(a.saves->new_game)
+		{
+			for(auto so : a.vm->actors()) a.vm->reset_variables(so, 0);
+			a.level_progress.clear();
+			a.saves->new_game = false;
+		}
+		a.saves->levels[a.game->game_dsb().levels[a.level_index]] = openrayman::game::capture_save_entries(*a.live, a.registry.level, a.registry.level_size);
 		a.carried_story = a.vm->story_words(a.fix_actors);
 		a.carried_entry = a.vm->menu_request;
 		a.carried_general = openrayman::game::capture_save_entries(*a.live, a.registry.general, a.registry.general_size);
@@ -1013,6 +1021,7 @@ namespace
 						a.input->set_key(h.key, down[h.key]);
 				}
 				a.input->step();
+				openrayman::game::update_save_ui(*a.saves, openrayman::game::save_root(), a.input->key(0xCB), a.input->key(0xCD), a.input->key(0x1C));
 			}
 			a.tick++;
 			// A --time run has no rendered frames between ticks. Refresh the same
@@ -1823,6 +1832,8 @@ namespace
 			}
 			a.vm->set_actors(a.thinkers);
 			a.registry = read_save_registry(files.memory, header, tree);
+			if(a.save_slot) a.saves->slot = a.save_slot;
+			openrayman::game::install_save_handlers(*a.vm, files, header, tree, a.game->data_dir().parent_path(), a.saves);
 			if(a.carried_general)
 			{
 				openrayman::game::apply_save_entries(*a.vm, tree, a.registry.general, *a.carried_general, a.registry.general_size);
@@ -2236,6 +2247,23 @@ namespace
 								text.pulse = std::sin(float(a.vm->clock()) / 1000.0f * 5.0f) * 7.0f;
 							dialogs.push_back(std::move(text));
 						}
+				auto add_save_text = [&](const std::string& message, float x, float y, float size, float alpha, bool edge) {
+					game::dialog_text text;
+					text.prepared = message; text.revealed = int(message.size()); text.template_actor = a.screen_font_actor;
+					auto metrics = game::screen_slot_metrics(size);
+					text.widths.fill(float(metrics.advance)); text.widths[0] = float(metrics.space);
+					text.default_scale = 1; text.line_height = float(metrics.line_height);
+					text.screen = true; text.x = x; text.y = y; text.z = size;
+					text.tint = std::array<float, 4>{0.5f, 1.0f, 0.5f, alpha}; text.edge = edge;
+					dialogs.push_back(std::move(text));
+				};
+				if(a.saves->question)
+				{
+					add_save_text("/C:Enable autosave?", 500, 780, 12, 1, false);
+					add_save_text(a.saves->choice ? "/C:/O400:Yes  /O600:No" : "/C:/O600:Yes  /O400:No", 500, 870, 12, 1, false);
+				}
+				float saving = game::saving_alpha(*a.saves);
+				if(saving > 0) add_save_text("Saving...", 815, 920, 8, saving, true);
 				const auto& boxes = a.vm->particles().screen_rectangles();
 				// The gauges (kind 120) are painted before the images (0x460670, then 0x460600).
 				std::vector<game::particles::screen_image> images = a.vm->particles().screen_bar_images();
@@ -2267,7 +2295,7 @@ namespace
 				}
 				if(!dialogs.empty() || !boxes.empty() || !images.empty() ||
 					(a.show_cutscene_bars && (a.vm->world_view_bounds().top > 0 || a.vm->world_view_bounds().bottom < 1000)))
-					a.dialog_overlay->draw(dialogs, boxes, images, projection * view, projection, w, h, a.animation_time, a.vm->world_view_bounds(), a.show_cutscene_bars);
+					a.dialog_overlay->draw(dialogs, boxes, images, projection * view, projection, w, h, a.animation_time, a.vm->world_view_bounds(), a.show_cutscene_bars, saving);
 			}
 		}
 		else if(a.texture && w > 0 && h > 0)
@@ -2604,6 +2632,12 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 				a->start_place = p;
 				a->start_place_tick = read == 5 ? long(at * 60.0f + 0.5f) : 0;
 			}
+		}
+		else if(arg == "--autosave")
+		{
+			std::string option = argv[n + 1];
+			if(option != "on" && option != "off") { SDL_Log("--autosave expects on or off"); return SDL_APP_FAILURE; }
+			if(!openrayman::game::write_autosave(openrayman::game::save_root(), option == "on")) { SDL_Log("cannot store autosave preference"); return SDL_APP_FAILURE; }
 		}
 		else if(arg == "--lighting") // on (default) or off: the game's lights and fog, or a plain light; L in the viewer
 			a->level->set_lighting(std::string(argv[n + 1]) != "off");

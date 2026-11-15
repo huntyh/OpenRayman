@@ -1564,6 +1564,8 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	}
 	game::set_dialog_resolver(vm, files);
 	vm.save_folder = game::save_root().string();
+	auto saves = std::make_shared<game::save_session>();
+	game::install_save_handlers(vm, files, header, tree, folder, saves);
 	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
 	vm.set_animations(&bank);
 	// As the viewer does (first_visit.h): a revisit, unless ORTOOL_START=new asks for a first visit
@@ -1581,8 +1583,11 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	// the start's story bits and the interim revisit snapshot.
 	const unsigned save_slot = std::getenv("ORTOOL_SAVE") ? unsigned(std::atoi(std::getenv("ORTOOL_SAVE"))) : 0;
 	if(save_slot)
+	{
+		saves->slot = save_slot;
 		first_visit = intro = false;
-	else
+	}
+	else if(name != "Menu" && name != "menu")
 	for(std::uint32_t bit : intro && !game::only_new_game(name) ? std::span<const std::uint32_t>(game::intro_story_bits) : game::start_story_bits(name, first_visit))
 		vm.set_story_bit(fix_actors, bit);
 	// ORTOOL_STORY_BITS=a,b: explicit story input, also useful with ORTOOL_START=new
@@ -1968,6 +1973,7 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 		for(const held& h : holds)
 			keys.set_key(h.key, down[h.key]);
 		keys.step();
+		game::update_save_ui(*saves, game::save_root(), keys.key(0xCB), keys.key(0xCD), keys.key(0x1C));
 		std::vector<std::uint32_t> replay_actors;
 		if(auto sample = camera_target_samples.find(f); sample != camera_target_samples.end())
 		{
