@@ -357,7 +357,21 @@ namespace openrayman
 									(image.second[0] - image.first[0]) * 6.4f, (image.second[1] - image.first[1]) * 4.8f};
 								// The edge HUD about its screen edge, so pieces that touch (the gauge's fill
 								// and rest) still do; the rest with the centred block.
-								if(image.edge) { r.x = to_edge(r.x, r.x + r.w * 0.5f); r.w *= area; }
+								if(image.edge)
+								{
+									// Pieces of one gauge decide their edge together: the middle of every edge piece of
+									// the same owner on the same row. Decided per piece, a bar near the screen's middle (the
+									// oxygen bar) had its fill pulled to one edge and its rest to the other (card 130).
+									float left = image.first[0], right = image.second[0];
+									for(const auto& other : images)
+										if(other.edge && other.owner == image.owner && other.first[1] < image.second[1] && image.first[1] < other.second[1])
+										{
+											left = std::min(left, other.first[0]);
+											right = std::max(right, other.second[0]);
+										}
+									r.x = to_edge(r.x, (left + right) * 0.5f * 6.4f);
+									r.w *= area;
+								}
 								else if(!full_width(image)) { r.x = block(r.x); r.w *= area; }
 								SDL_FColor colour{1,1,1,std::clamp(image.second[2] / 255.0f, 0.0f, 1.0f)};
 								bool additive = (frame->flags & texture_flag::additive) != 0;
