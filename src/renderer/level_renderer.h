@@ -164,7 +164,7 @@ namespace openrayman
 			glm::vec4 ambient{ 0 }, diffuse{ 1 }; // the material's colours and alpha
 			std::size_t sector = no_sector; // the level's own geometry: the sector it belongs to
 			cull faces = cull::none;
-			bool well = false; // Learn_10's identified star material, kept separate from other batches
+			int well = 0; // the star well/lake materials (1 star field, 2 overlay), kept separate from other batches
 			bool depth_write = true;
 			glm::vec2 scroll_offset{ 0 };
 			std::size_t element_order = 0;
@@ -242,9 +242,18 @@ namespace openrayman
 		GLint m_u_fog_model = -1;
 		GLint m_u_uv_offset = -1;
 		GLint m_u_well = -1;
+		GLint m_u_lake = -1;
+		GLint m_u_star_floor = -1;
+		GLint m_u_falls = -1;
+		std::optional<glm::vec2> m_fall_foot; // the Hall's waterfall column, its centre seen from above
 		GLint m_u_swirl = -1;
 		bool m_swirl_centre = true;
 		bool m_well = false;
+		bool m_falls_reversed = false; // the Hall's waterfall foot flows away from the fall (OPENRAYMAN_FALLS=0 off)
+		bool m_star_flat = false;   // the Hall's star field as flat planes below its bowl (OPENRAYMAN_STAR_FLOOR=0 off)
+		float m_star_floor = 1e30f; // the star field's lowest height, measured at load
+		float m_star_texels = 0;    // its texture tiles per world unit, measured at load
+		bool m_lake = false;       // the Hall of Doors star lake ripples (OPENRAYMAN_LAKE=0 off)
 		float m_well_depth = 1.0f; // OPENRAYMAN_WELL_DEPTH scales how deep the star layers lie
 		GLint m_u_camera = -1, m_u_camera_forward = -1, m_u_lighting = -1;
 		GLint m_u_light_count = -1, m_u_light_kind = -1, m_u_light_vector = -1, m_u_light_color = -1, m_u_light_range = -1;

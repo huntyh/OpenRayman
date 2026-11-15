@@ -151,11 +151,48 @@ namespace openrayman
 			uniform vec3 u_sky_haze_color;
 			uniform vec2 u_uv_offset; // scrolling textures (water, mist, clouds)
 			uniform vec4 u_well; // star depth: enabled, depth scale, slow drift u, v; zero for all other surfaces
+			uniform vec2 u_lake; // the star lake's ripples: enabled, seconds
+			uniform vec4 u_falls; // the Hall's river below the waterfall: enabled, the fall's foot (x, y), seconds
+			uniform vec2 u_star_floor; // Hall of Doors: the star field's lowest height, texture tiles per world unit (0: follow the mesh)
 			// Ours (docs/IMPROVEMENTS.md): the star texture of the portal well and the Hall of Doors lake
 			// is seen as layers lying below the surface. Each pixel follows the view ray through the
 			// surface down to each layer, so the stars slide against the camera as it moves, like deep
 			// space seen through a hole. The texture coordinates' change per world unit comes from the
 			// screen derivatives, so it works on any surface (the well's floor and walls alike).
+			// The lake's surface: a sideways bend of the view (xy, in texture units) and a brightness factor.
+			vec3 lake_ripple(vec2 uv)
+			{
+				float t = u_lake.y;
+				vec2 p = uv * 6.2831853;
+				float a = sin(dot(p, vec2(3.0, 2.0)) + t * 0.9) + 0.6 * sin(dot(p, vec2(-2.0, 5.0)) + t * 1.3);
+				float b = sin(dot(p, vec2(-4.0, 1.0)) + t * 0.7) + 0.6 * sin(dot(p, vec2(1.0, -6.0)) + t * 1.1);
+				float shimmer = 1.0 + 0.1 * sin(dot(p, vec2(5.0, 3.0)) - t * 1.6) * sin(dot(p, vec2(-3.0, 4.0)) + t * 1.2);
+				return vec3(vec2(a, b) * 0.006, shimmer);
+			}
+			// The overlay's stars twinkle each on its own, and a soft band of light glides slowly over
+			// the water: a few cells of the texture brighten together as it passes.
+			vec4 lake_overlay(vec2 uv, vec2 uv_dx, vec2 uv_dy)
+			{
+				vec3 r = lake_ripple(uv);
+				vec2 at = uv + r.xy;
+				vec4 texel = textureGrad(u_texture, at, uv_dx, uv_dy);
+				float t = u_lake.y;
+				// A smooth random phase across the texture (value noise, no cell edges), so each star
+				// twinkles on its own; only bright texels (the stars) take it, the dark sky stays still.
+				vec2 g = at * 12.0, i = floor(g), f = fract(g);
+				f = f * f * (3.0 - 2.0 * f);
+				float h00 = fract(sin(dot(i, vec2(12.9898, 78.233))) * 43758.5453);
+				float h10 = fract(sin(dot(i + vec2(1.0, 0.0), vec2(12.9898, 78.233))) * 43758.5453);
+				float h01 = fract(sin(dot(i + vec2(0.0, 1.0), vec2(12.9898, 78.233))) * 43758.5453);
+				float h11 = fract(sin(dot(i + vec2(1.0, 1.0), vec2(12.9898, 78.233))) * 43758.5453);
+				float seed = mix(mix(h00, h10, f.x), mix(h01, h11, f.x), f.y);
+				float twinkle = 0.7 + 0.5 * sin(t * 1.8 + seed * 12.566);
+				vec2 p = at * 6.2831853;
+				float sheen = pow(max(0.0, sin(dot(p, vec2(0.7, 0.4)) - t * 0.35)), 12.0) * 0.6;
+				float star = smoothstep(0.25, 0.7, max(texel.r, max(texel.g, texel.b)));
+				float glow = mix(1.0, max(twinkle + sheen, 0.0), star) * r.z;
+				return vec4(texel.rgb * glow, texel.a * clamp(glow, 0.0, 1.0));
+			}
 			vec3 star_depth(vec2 uv, vec2 uv_dx, vec2 uv_dy)
 			{
 				vec3 dp1 = dFdx(v_world_position), dp2 = dFdy(v_world_position);
@@ -173,15 +210,42 @@ namespace openrayman
 				const vec3 depth = vec3(2.0, 8.0, 25.0);   // world units below the surface
 				const vec3 scale = vec3(1.0, 1.45, 2.1);   // farther layers: finer stars
 				const vec3 weight = vec3(1.0, 0.6, 0.45);
+				// The Hall of Doors lake (u_lake.x): slow ripples bend the view down to the stars, the
+				// deeper layers more, and the surface shimmers faintly. Nothing flows; it moves in place.
+				vec2 ripple = vec2(0.0);
+				float shimmer = 1.0;
+				if(u_lake.x > 0.5)
+				{
+					vec3 r = lake_ripple(uv);
+					ripple = r.xy;
+					shimmer = r.z;
+				}
 				vec3 sum = vec3(0.0);
+				if(u_star_floor.y > 0.0)
+				{
+					// The Hall's star field is a bowl whose sides curve up into view. Instead of its
+					// surface, every pixel of it is a window: the view ray goes on down to flat star
+					// planes below the bowl's lowest point, which reach as far as the eye can see.
+					for(int i = 0; i < 3; i++)
+					{
+						float plane = u_star_floor.x - depth[i] * u_well.y;
+						float down = max(-view.z, 0.03);
+						vec3 hit = v_world_position + view * ((v_world_position.z - plane) / down);
+						vec2 at = hit.xy * u_star_floor.y + ripple * float(i + 1);
+						vec2 drift = u_well.zw * float(i);
+						vec2 st = at * scale[i] + drift + u_uv_offset;
+						sum += textureGrad(u_texture, st, dFdx(st), dFdy(st)).rgb * weight[i];
+					}
+					return sum * shimmer;
+				}
 				for(int i = 0; i < 3; i++)
 				{
 					vec3 step = view * (depth[i] * u_well.y / slant);
-					vec2 at = uv + vec2(dot(to_u, step), dot(to_v, step));
+					vec2 at = uv + vec2(dot(to_u, step), dot(to_v, step)) + ripple * float(i + 1);
 					vec2 drift = u_well.zw * float(i);
 					sum += textureGrad(u_texture, at * scale[i] + drift, uv_dx * scale[i], uv_dy * scale[i]).rgb * weight[i];
 				}
-				return sum;
+				return sum * shimmer;
 			}
 			uniform vec2 u_swirl; // optional pause-funnel centre: enabled, animation seconds
 			uniform vec4 u_fog_color;
@@ -254,9 +318,23 @@ namespace openrayman
 					core_fade = mix(0.35, 1.0, smoothstep(0.0, 1.4, radius));
 				}
 				vec4 texel = textureGrad(u_texture, uv + u_uv_offset, uv_dx, uv_dy);
+				if(u_falls.x > 0.5)
+				{
+					// The water spreads out from the waterfall's foot: the texture laid in rings around
+					// it (8 repeats a turn, the seam behind the fall), moving outward over time.
+					vec2 d = v_world_position.xy - u_falls.yz;
+					float turn = atan(-d.x, -d.y) / 6.2831853;
+					vec2 fuv = vec2(turn * 8.0, length(d) / 8.0 - u_falls.w * 0.25);
+					vec2 fdx = dFdx(fuv), fdy = dFdy(fuv);
+					fdx.x -= 8.0 * round(dFdx(turn));
+					fdy.x -= 8.0 * round(dFdy(turn));
+					texel = textureGrad(u_texture, fuv, fdx, fdy);
+				}
 				if(polar_mix > 0.0)
 					texel = mix(texel, textureGrad(u_texture, polar_uv + u_uv_offset, polar_dx, polar_dy), polar_mix);
-				if(u_well.x > 0.0)
+				if(u_well.x > 1.5)
+					texel = lake_overlay(uv + u_uv_offset, uv_dx, uv_dy);
+				else if(u_well.x > 0.0)
 					texel.rgb = star_depth(uv + u_uv_offset, uv_dx, uv_dy);
 				if(u_sharpen > 0.5)
 					texel.a = sharpened(texel.a, v_uv);
@@ -468,6 +546,9 @@ namespace openrayman
 		m_u_model = glGetUniformLocation(m_program, "u_model");
 		m_u_uv_offset = glGetUniformLocation(m_program, "u_uv_offset");
 		m_u_well = glGetUniformLocation(m_program, "u_well");
+		m_u_lake = glGetUniformLocation(m_program, "u_lake");
+		m_u_star_floor = glGetUniformLocation(m_program, "u_star_floor");
+		m_u_falls = glGetUniformLocation(m_program, "u_falls");
 		m_u_swirl = glGetUniformLocation(m_program, "u_swirl");
 		if(const auto* option = std::getenv("OPENRAYMAN_SWIRL_CENTRE"))
 			m_swirl_centre = std::strcmp(option, "0") != 0;
@@ -789,13 +870,17 @@ namespace openrayman
 	{
 		clear();
 		m_lights = std::move(lights);
+		m_star_floor = 1e30f;
+		m_star_texels = 0;
+		double star_uv_length = 0, star_world_length = 0;
+		glm::vec2 fall_min(1e30f), fall_max(-1e30f);
 		statistics stats;
 		stats.min = glm::vec3(1e30f);
 		stats.max = glm::vec3(-1e30f);
 
 		// Triangles grouped by texture. Corners are expanded into separate vertices, because a
 		// corner's UV is indexed separately from its position.
-		using by_texture = std::map<std::tuple<blend, GLuint, int, std::array<float, 2>, std::array<float, 8>, cull, bool,
+		using by_texture = std::map<std::tuple<blend, GLuint, int, std::array<float, 2>, std::array<float, 8>, cull, int,
 			bool, std::array<float, 2>, std::size_t>, std::vector<vertex>>;
 		// Static geometry is lit once here, by the lights its sector lists for scenery; meshes placed
 		// per frame (`lit` empty) are lit as they're drawn.
@@ -813,8 +898,14 @@ namespace openrayman
 			{
 				++ordinal;
 				// The portal well's star texture: our own deeper look (docs/IMPROVEMENTS.md, OPENRAYMAN_WELL=0 off).
-				const bool well = element.material && element.material->texture &&
-					element.material->texture->name == "textures_foret\\foret_fondetoiles_txy.tga";
+				// 1: the star field itself; 2: the Hall of Doors' see-through star overlay above it.
+				const std::string* star_name = element.material && element.material->texture ? &element.material->texture->name : nullptr;
+				// 3: the Hall of Doors' river surface below the waterfall, whose mapping the original lays
+				// in a V that flows into itself; 4: the waterfall column (only measured, for its foot).
+				const int well = !star_name ? 0 : *star_name == "textures_foret\\foret_fondetoiles_txy.tga" ? 1
+					: *star_name == "textures_background\\stars_txy_aaa.tga" ? 2
+					: *star_name == "textures_temple_eau\\eau_morf_anu_nzwtxy.tga" ? 3
+					: *star_name == "textures_temple_eau\\eau_bouillon_anu_nzwtxy.tga" ? 4 : 0;
 				gpu_texture texture{ m_white, blend::none };
 				int animation = -1;
 				std::array<float, 2> scroll{};
@@ -856,6 +947,30 @@ namespace openrayman
 						uvs[k] = glm::vec2(uv[0], 1.0f - uv[1]);
 					}
 					glm::vec4 bounds = uv_bounds(uvs);
+					if(well == 4)
+						for(int k = 0; k < 3; k++)
+						{
+							vec3 p = world.apply(object.vertices[element.triangles[t][k]]);
+							fall_min = glm::min(fall_min, glm::vec2(p[0], p[1]));
+							fall_max = glm::max(fall_max, glm::vec2(p[0], p[1]));
+						}
+					if(well == 1)
+					{
+						// The star field's lowest point, and how long a texture tile is in the world,
+						// for the Hall of Doors' flat star floor (see star_depth).
+						glm::vec3 c[3];
+						for(int k = 0; k < 3; k++)
+						{
+							vec3 p = world.apply(object.vertices[element.triangles[t][k]]);
+							c[k] = glm::vec3(p[0], p[1], p[2]);
+							m_star_floor = std::min(m_star_floor, c[k].z);
+						}
+						for(int k = 0; k < 3; k++)
+						{
+							star_uv_length += glm::length(uvs[(k + 1) % 3] - uvs[k]);
+							star_world_length += glm::length(c[(k + 1) % 3] - c[k]);
+						}
+					}
 					for(int k = 0; k < 3; k++)
 					{
 						std::uint16_t index = element.triangles[t][k];
@@ -1073,6 +1188,9 @@ namespace openrayman
 		glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(vertices.size() * sizeof(vertex)), vertices.data(), GL_STATIC_DRAW);
 		if(stats.min.x > stats.max.x) // no level vertices
 			stats.min = stats.max = glm::vec3(0);
+		if(star_world_length > 0)
+			m_star_texels = float(star_uv_length / star_world_length);
+		m_fall_foot = fall_min.x <= fall_max.x ? std::optional<glm::vec2>(0.5f * (fall_min + fall_max)) : std::nullopt;
 		return stats;
 	}
 
@@ -1161,8 +1279,16 @@ namespace openrayman
 	void level_renderer::set_backdrop(const std::string& level)
 	{
 		const char* well = std::getenv("OPENRAYMAN_WELL");
-		m_well = (level == "Learn_10" || level == "mapmonde") && !(well && std::strcmp(well, "0") == 0);
+		const bool hall = level == "Mapmonde" || level == "mapmonde"; // the game's own name is "Mapmonde"
+		m_well = (level == "Learn_10" || hall) && !(well && std::strcmp(well, "0") == 0);
 		m_well_depth = 1.0f;
+		const char* falls = std::getenv("OPENRAYMAN_FALLS");
+		m_falls_reversed = hall && !(falls && std::strcmp(falls, "0") == 0);
+		const char* flat = std::getenv("OPENRAYMAN_STAR_FLOOR");
+		m_star_flat = m_well && hall && !(flat && std::strcmp(flat, "0") == 0);
+		const char* lake = std::getenv("OPENRAYMAN_LAKE");
+		// On in the Hall of Doors; OPENRAYMAN_LAKE=0 off, =2 also in the Learn_10 well.
+		m_lake = m_well && (hall || (lake && std::strcmp(lake, "2") == 0)) && !(lake && std::strcmp(lake, "0") == 0);
 		if(const char* depth = std::getenv("OPENRAYMAN_WELL_DEPTH"))
 		{
 			char* end = nullptr;
@@ -1244,6 +1370,7 @@ namespace openrayman
 		glDisable(GL_CULL_FACE); // which faces are double sided isn't decoded yet
 		glUseProgram(m_program);
 		glUniform4f(m_u_well, 0, 0, 0, 0);
+		glUniform4f(m_u_falls, 0, 0, 0, 0);
 		glUniform2f(m_u_swirl, 0, 0);
 		glm::mat4 view_projection = projection * view;
 		const glm::mat4 fog_identity(1.0f);
@@ -1501,13 +1628,27 @@ namespace openrayman
 				}
 				// 0x424C00 wraps the current offset at a whole texture width, including mirrored textures.
 				const double scroll_time = m_time * (sky_pass ? m_sky_drift : 1.0f);
+				// Ours: the Hall of Doors' river spreads out from the waterfall's foot (u_falls).
+				const bool falls = m_falls_reversed && b.well == 3 && m_fall_foot;
+				glUniform4f(m_u_falls, falls ? 1.0f : 0.0f, falls ? m_fall_foot->x : 0.0f, falls ? m_fall_foot->y : 0.0f, float(std::fmod(m_time, 3600.0)));
 				glm::vec2 offset(std::fmod(b.scroll_offset.x + double(b.scroll.x) * scroll_time, 1.0), std::fmod(b.scroll_offset.y + double(b.scroll.y) * scroll_time, 1.0));
 				glUniform2f(m_u_uv_offset, offset.x, offset.y);
 				glUniform2f(m_u_swirl, m_swirl_centre && m_world_hidden && b.pause_swirl ? 1.0f : 0.0f, float(m_time));
-				if(m_well && b.well)
+				if(m_lake && b.well == 2)
+				{
+					// The Hall of Doors' star overlay: it ripples in place and twinkles (no depth, no flow).
+					glUniform4f(m_u_well, 2.0f, 0.0f, 0.0f, 0.0f);
+					glUniform2f(m_u_lake, 1.0f, float(std::fmod(m_time, 6283.1853)));
+				}
+				else if(m_well && b.well == 1)
 				{
 					// Star layers below the surface; the deeper ones also drift slowly on their own.
-					glUniform4f(m_u_well, 1.0f, m_well_depth, float(std::fmod(m_time * -0.02, 1.0)), float(std::fmod(m_time * -0.05, 1.0)));
+					// The lake's deep layers drift at a quarter of the well's pace: a lake, not a river.
+					const double drift = m_lake ? 0.25 : 1.0;
+					glUniform4f(m_u_well, 1.0f, m_well_depth, float(std::fmod(m_time * -0.02 * drift, 1.0)), float(std::fmod(m_time * -0.05 * drift, 1.0)));
+					glUniform2f(m_u_lake, m_lake ? 1.0f : 0.0f, float(std::fmod(m_time, 6283.1853)));
+					const bool flat = m_star_flat && m_star_texels > 0 && m_star_floor < 1e29f;
+					glUniform2f(m_u_star_floor, flat ? m_star_floor : 0.0f, flat ? m_star_texels : 0.0f);
 				}
 				glUniform4fv(m_u_material_ambient, 1, glm::value_ptr(b.ambient));
 				glUniform4fv(m_u_material_diffuse, 1, glm::value_ptr(b.diffuse));
@@ -1515,6 +1656,7 @@ namespace openrayman
 				glUniform2f(m_u_swirl, 0, 0);
 				glDepthMask(mode == blend::none || cores ? GL_TRUE : GL_FALSE);
 				glUniform4f(m_u_well, 0, 0, 0, 0);
+				glUniform4f(m_u_falls, 0, 0, 0, 0);
 				if(flash_near)
 				{
 					const glm::mat4 sky_fog_now = glm::inverse(sky_model_now);

@@ -167,6 +167,7 @@ namespace
 
 		// --screenshot <file>: render one frame, save it as BMP and quit. Used for smoke tests.
 		std::optional<fs::path> screenshot;
+		std::optional<fs::path> snapshot; // P: the next drawn frame goes here (screenshots/ beside the program)
 
 		// Level view, the default once a game folder is open.
 		enum class view { level, textures };
@@ -2286,6 +2287,11 @@ namespace
 		}
 
 		auto screenshot = a.screenshot;
+		if(!screenshot && a.snapshot)
+		{
+			screenshot = a.snapshot;
+			a.snapshot.reset();
+		}
 		// Optional sequence alongside a real interactive replay, once per simulation tick.
 		if(const char* directory = std::getenv("OPENRAYMAN_DRAW_CAPTURES"))
 			if(const char* range = std::getenv("OPENRAYMAN_CAPTURE_TICKS"))
@@ -2796,12 +2802,25 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 						return SDL_APP_CONTINUE;
 					case SDLK_P:
 					{
-						// Copy where we are, as --camera arguments, for bug reports and screenshots.
+						// Copy where we are, as --camera arguments, for bug reports and screenshots, and
+						// save the next drawn frame as a picture in screenshots/ beside the program; the
+						// clipboard gets both lines (the place, then the picture's path).
 						const fly_camera& c = a.camera;
 						std::string where = std::format("--level {} --camera {:.1f},{:.1f},{:.1f},{:.1f},{:.1f}", a.game->game_dsb().levels[a.level_index],
 							c.position.x, c.position.y, c.position.z, glm::degrees(c.yaw), glm::degrees(c.pitch));
-						SDL_SetClipboardText(where.c_str());
-						SDL_Log("Camera: %s (copied to the clipboard)", where.c_str());
+						const char* program = SDL_GetBasePath();
+						const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
+						const fs::path folder = fs::path(program ? program : ".") / "screenshots";
+						std::error_code error;
+						fs::create_directories(folder, error);
+						std::string text = where;
+						if(!error)
+						{
+							a.snapshot = folder / std::format("{}_{:%Y%m%d_%H%M%S}.bmp", a.game->game_dsb().levels[a.level_index], now);
+							text += "\n" + a.snapshot->string();
+						}
+						SDL_SetClipboardText(text.c_str());
+						SDL_Log("Camera: %s (copied to the clipboard)", text.c_str());
 						return SDL_APP_CONTINUE;
 					}
 				}
