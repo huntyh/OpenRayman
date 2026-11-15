@@ -17,6 +17,11 @@ namespace openrayman::game
 {
 	// The level's collision triangles, bucketed by where they lie on the ground plane so an actor
 	// only tests the few under it.
+	// Where the floor diagnostic goes (an F10 recording's floor.txt), or nothing. One line per tick
+	// in which Rayman was on the ground and the floor search let him go. OPENRAYMAN_FLOOR_LOG=<file>
+	// does the same without a recording.
+	void set_floor_log(std::ostream* out);
+
 	class world_collision
 	{
 	public:

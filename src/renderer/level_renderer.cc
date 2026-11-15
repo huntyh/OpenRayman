@@ -806,6 +806,40 @@ namespace openrayman
 					// their sky grey; the forest's leaf textures their background green).
 					apply_color_key(info, gf.rgba);
 					bleed_edges(gf.width, gf.height, gf.rgba);
+					// A texture not set to repeat that is one picture fading out towards its border
+					// (the Lums' wing frames: lum_aile01_aaa's top row has alpha 45 of 255, the Fix
+					// lum_aile01_ad's top row brightness 47) is drawn on a card larger than the
+					// picture, and that faint border row showed as a thin line across the card's whole
+					// width (Learn_30, user 2026-11-15). Its one-pixel border is cleared: alpha for
+					// blended textures, colour for additive ones. Textures meant to tile or scroll are
+					// solid at their edges and are left alone.
+					if(info.tiling == 0 && gf.width > 2 && gf.height > 2)
+					{
+						const bool additive = info.flags & texture_flag::additive;
+						auto weight = [&](int x, int y) {
+							const std::uint8_t* p = &gf.rgba[(std::size_t(y) * gf.width + std::size_t(x)) * 4];
+							return additive ? int(std::max({ p[0], p[1], p[2] })) : int(p[3]);
+						};
+						int border = 0, inside = 0;
+						for(int y = 0; y < int(gf.height); y++)
+							for(int x = 0; x < int(gf.width); x++)
+							{
+								const bool edge = x == 0 || y == 0 || x == int(gf.width) - 1 || y == int(gf.height) - 1;
+								int& most = edge ? border : inside;
+								most = std::max(most, weight(x, y));
+							}
+						if(border > 0 && border < 64 && inside >= 128)
+							for(int y = 0; y < int(gf.height); y++)
+								for(int x = 0; x < int(gf.width); x++)
+									if(x == 0 || y == 0 || x == int(gf.width) - 1 || y == int(gf.height) - 1)
+									{
+										std::uint8_t* p = &gf.rgba[(std::size_t(y) * gf.width + std::size_t(x)) * 4];
+										if(additive)
+											p[0] = p[1] = p[2] = 0;
+										else
+											p[3] = 0;
+									}
+					}
 					texture.id = upload_texture(gf.width, gf.height, gf.rgba.data());
 					texture.mirror_u = info.tiling & texture_tiling::mirror_u;
 					texture.mirror_v = info.tiling & texture_tiling::mirror_v;

@@ -4,6 +4,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <format>
+#include <fstream>
 #include <vector>
 
 namespace openrayman::game
@@ -872,6 +875,27 @@ namespace openrayman::game
 		if(b && mech && m.contains(b, base::size) && m.contains(mech, 0x3C)) install_mechanics(m, b, mech);
 	}
 
+	namespace
+	{
+		std::ostream* g_floor_log = nullptr;
+		// The F10 recording's floor.txt when one runs, else OPENRAYMAN_FLOOR_LOG's file, else nothing.
+		std::ostream* floor_log_stream()
+		{
+			if(g_floor_log)
+				return g_floor_log;
+			static std::ofstream from_environment = [] {
+				const char* path = std::getenv("OPENRAYMAN_FLOOR_LOG");
+				return path ? std::ofstream(path) : std::ofstream();
+			}();
+			return from_environment.is_open() ? &from_environment : nullptr;
+		}
+	}
+
+	void set_floor_log(std::ostream* out)
+	{
+		g_floor_log = out;
+	}
+
 	void move_actor(live_memory& m, std::uint32_t super_object, std::uint32_t actor, double ms, const world_collision& all_sectors, interpreter* vm)
 	{
 		const auto world = vm ? all_sectors.in_sectors(vm->collision_sectors(super_object)) : all_sectors;
@@ -893,6 +917,13 @@ namespace openrayman::game
 		// contacts (end flag 0x4000: report word = (word & 0x80) << 9). An actor that stands still
 		// is no longer "on the ground" because it once was: Jail_20's falling Globox (node 13,
 		// state +0x6C30) lands on condition 27 and turned invisible in mid-air after his chute slide.
+		// Whether the actor stood on the ground last tick, read before that clear: following the floor
+		// down a step (follow_down) needs it. Read after the clear it was always false (since
+		// c24796a), so a 0.2-unit step down a stone's edge left the ground, fell and played the
+		// landing roll (Learn_10, user 2026-11-15).
+		bool stood_last_tick = false;
+		if(std::uint32_t report = m.u32(b + base::contacts); report && m.contains(report + 4, 4))
+			stood_last_tick = (m.u32(report + 4) & on_ground) != 0;
 		if(m.u32(b + base::end_flags) & 0x4000)
 			if(std::uint32_t report = m.u32(b + base::contacts); report && m.contains(report + 4, 4))
 				m.write<std::uint32_t>(report + 4, (m.u32(report + 4) & 0x80) << 9);
@@ -1281,7 +1312,7 @@ namespace openrayman::game
 		world_collision::surface_hit ground{};
 		if((flags & collides) && has_collision && !climbing)
 		{
-			bool was_grounded = has_block && (m.u32(block + 4) & on_ground);
+			bool was_grounded = has_block && stood_last_tick;
 			float top = std::max(current[2] + carried[2], target[2]) + climb_up;
 			// Following the floor down is for walking; a move up (a jump) leaves it (the exe only
 			// refuses moves into a surface).
@@ -1349,6 +1380,20 @@ namespace openrayman::game
 				ground = *floor;
 				landed = true;
 			}
+			// Diagnostic (OPENRAYMAN_FLOOR_LOG=<file>): every tick Rayman was on the ground and the
+			// floor search let him go, with what it searched (card 120 / the Learn_10 crest roll).
+			if(was_grounded && !landed && vm && super_object == vm->main_actor())
+				if(std::ostream* out = floor_log_stream())
+				{
+					std::ostream& log = *out;
+					auto sectors = vm->collision_sectors(super_object);
+					auto all = all_sectors.floor_at(target[0], target[1], top, target[2] - follow_down);
+					log << std::format("clock {} current {:.3f} {:.3f} {:.3f} target {:.3f} {:.3f} {:.3f} top {:.3f} bottom {:.3f} taking_off {} sectors",
+						vm->clock(), current[0], current[1], current[2], target[0], target[1], target[2], top, bottom, taking_off);
+					for(auto s : sectors) log << std::format(" {:#x}", s);
+					log << std::format(" | without the sector filter: {}\n", all ? std::format("{:.3f}", all->height) : std::string("nothing"));
+					log.flush();
+				}
 		}
 		// The contact coefficient enables the second inertia pass next tick (0x432828..0x432896).
 		if((flags & 0x20) && gravity && has_block)
@@ -1467,6 +1512,17 @@ namespace openrayman::game
 			// Slot 2 is a wall (bit 0x4): the way it pushed the actor out, and where. Rayman's macro 40
 			// bounces his push (var87) off it, which ends the portal hop against the tablet's wall.
 			std::uint32_t word = (landed || probe ? on_ground : 0) | (water ? in_water : 0) | (on_wall ? against_wall : 0);
+			// The same diagnostic at the point the contact is written, for every way of losing it:
+			// whether the floor search ran at all (collides flag, collision present, not climbing).
+			if(stood_last_tick && !(word & on_ground) && vm && super_object == vm->main_actor())
+				if(std::ostream* out = floor_log_stream())
+				{
+					auto unfiltered = all_sectors.floor_at(target[0], target[1], std::max(current[2], target[2]) + climb_up, target[2] - follow_down);
+					*out << std::format("contact lost: so {:#x} main {:#x} clock {} current {:.3f} {:.3f} {:.3f} target {:.3f} {:.3f} {:.3f} collides {} has_collision {} climbing {} flags {:#x} end {:#x} | unfiltered floor: {}\n",
+						super_object, vm->main_actor(), vm->clock(), current[0], current[1], current[2], target[0], target[1], target[2], (flags & collides) != 0, has_collision, climbing,
+						flags, m.u32(b + base::end_flags), unfiltered ? std::format("{:.3f}", unfiltered->height) : std::string("nothing"));
+					out->flush();
+				}
 			m.write<std::uint32_t>(block, word);
 			m.write<std::uint32_t>(block + 4, word);
 			std::uint32_t wall = block + slots_at + wall_slot * slot_size;

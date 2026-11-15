@@ -704,6 +704,44 @@ static int cmd_input(const fs::path& folder, const std::string& name)
 }
 
 // Survey of collision data: which collide set slots are used, element types, surface flags.
+// floor <level> <x> <y>: every collision triangle over or under that point, with its height there,
+// its normal, surface flags and owning sector, to see which surface the floor search can meet.
+static int cmd_floor(const fs::path& folder, const std::string& name, float x, float y)
+{
+	game_data game = require_game(folder);
+	level_files files = load_level_files(game, name);
+	level_header header = read_level_header(files);
+	scene tree(files.memory, header);
+	auto triangles = static_collision(files.memory, tree);
+	{
+		// What the mechanics' floor search answers there, from 0.5 above to 0.6 below each
+		// surface found, as Rayman following the floor would ask it.
+		game::world_collision world(triangles);
+		for(float top : { 10.0f, 0.0f, -0.2f, -0.3f })
+			if(auto f = world.floor_at(x, y, top, top - 0.6f))
+				std::cout << std::format("floor_at [{:.2f} .. {:.2f}]: z {:.3f}\n", top - 0.6f, top, f->height);
+			else
+				std::cout << std::format("floor_at [{:.2f} .. {:.2f}]: nothing\n", top - 0.6f, top);
+	}
+	for(const collision_triangle& t : triangles)
+	{
+		const auto& a = t.corners[0];
+		const auto& b = t.corners[1];
+		const auto& c = t.corners[2];
+		// Barycentric test in the XY plane.
+		const float d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]);
+		if(std::abs(d) < 1e-9f) continue;
+		const float l1 = ((b[1] - c[1]) * (x - c[0]) + (c[0] - b[0]) * (y - c[1])) / d;
+		const float l2 = ((c[1] - a[1]) * (x - c[0]) + (a[0] - c[0]) * (y - c[1])) / d;
+		const float l3 = 1 - l1 - l2;
+		if(l1 < -1e-4f || l2 < -1e-4f || l3 < -1e-4f) continue;
+		const float z = l1 * a[2] + l2 * b[2] + l3 * c[2];
+		std::cout << std::format("z {:9.3f}  normal {:6.3f} {:6.3f} {:6.3f}  flags {:#06x}  node {:4}  sector {:#010x}  material {:#010x}\n",
+			z, t.normal[0], t.normal[1], t.normal[2], unsigned(t.flags), t.node, t.sector, t.material);
+	}
+	return 0;
+}
+
 static int cmd_collide(const fs::path& folder, const std::string& name)
 {
 	game_data game = require_game(folder);
@@ -2602,6 +2640,8 @@ int main(int argc, char** argv)
 			return cmd_run(args[1], args[2], std::stoi(args[3]), std::nullopt, args[4], true);
 		if(cmd == "collide" && args.size() == 3)
 			return cmd_collide(args[1], args[2]);
+		if(cmd == "floor" && args.size() == 5)
+			return cmd_floor(args[1], args[2], std::stof(args[3]), std::stof(args[4]));
 		if(cmd == "input" && args.size() == 3)
 			return cmd_input(args[1], args[2]);
 		if(cmd == "mesh" && args.size() == 5)

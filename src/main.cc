@@ -277,7 +277,7 @@ namespace
 		struct debug_recording
 		{
 			fs::path folder;
-			std::ofstream frames, sounds;
+			std::ofstream frames, sounds, floor;
 			std::unique_ptr<openrayman::game_trace> rayman;
 			bool pictures = false;
 			long last_picture = -1;
@@ -2430,6 +2430,8 @@ namespace
 		{
 			r.frames.close();
 			r.sounds.close();
+			openrayman::game::set_floor_log(nullptr);
+			r.floor.close();
 			r.rayman.reset();
 			SDL_Log("Recording saved to %s", r.folder.string().c_str());
 			update_title(a);
@@ -2447,6 +2449,8 @@ namespace
 			return;
 		}
 		r.sounds.open(r.folder / "sounds.txt");
+		r.floor.open(r.folder / "floor.txt");
+		openrayman::game::set_floor_log(r.floor.is_open() ? &r.floor : nullptr);
 		const std::string level = a.game ? a.game->game_dsb().levels[a.level_index] : "";
 		r.rayman = std::make_unique<openrayman::game_trace>(false);
 		r.rayman->open((r.folder / "rayman.txt").string(), a.trace_vars);
@@ -2456,7 +2460,8 @@ namespace
 		std::ofstream(r.folder / "info.txt") << std::format(
 			"OpenRayman {}\nlevel {}\nstarted at tick {}\nplaying {}\nscripts {}\npictures {}\ncamera {:.3f},{:.3f},{:.3f}\n"
 			"frames.txt: every drawn frame (DRAW line: tick, camera; then every actor)\n"
-			"rayman.txt: Rayman and the held keys every tick (r2live format)\nsounds.txt: actor sounds as they start\n",
+			"rayman.txt: Rayman and the held keys every tick (r2live format)\nsounds.txt: actor sounds as they start\n"
+			"floor.txt: every tick Rayman was on the ground and the floor search let him go\n",
 			version, level, a.tick, a.playing, a.scripts, pictures, a.camera.position.x, a.camera.position.y, a.camera.position.z);
 		SDL_Log("Recording to %s (F10 to stop)", r.folder.string().c_str());
 		update_title(a);
