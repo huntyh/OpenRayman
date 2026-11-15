@@ -832,12 +832,38 @@ namespace openrayman
 				try
 				{
 					gf_texture gf = decode_gf(archive->read(*entry));
+					// Diagnostic (card 124): OPENRAYMAN_HIDE_TEXTURES=a,b draws textures whose name contains
+					// any of those parts fully transparent, to find which one shows something.
+					if(const char* hide = std::getenv("OPENRAYMAN_HIDE_TEXTURES"); hide && *hide)
+					{
+						std::string lower = info.name;
+						std::ranges::transform(lower, lower.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+						std::string list = hide;
+						for(std::size_t start = 0; start <= list.size();)
+						{
+							std::size_t end = list.find(',', start);
+							if(end == std::string::npos) end = list.size();
+							if(end > start && lower.find(list.substr(start, end - start)) != std::string::npos)
+								std::ranges::fill(gf.rgba, std::uint8_t(0));
+							start = end + 1;
+						}
+					}
 					// How it blends goes by the texture's own alpha, before keying: keying a leaf
 					// texture's soft fringe away must not turn it into a solid one.
 					const gf_texture own = gf;
 					// The texture's key colour is transparent (mostly black; Jail_10's mountains key out
 					// their sky grey; the forest's leaf textures their background green).
 					apply_color_key(info, gf.rgba);
+					// The game converts textures to 16-bit colour (5 bits a channel), which turns anything
+					// darker than 8 of 255 to black. Additive textures rely on that: the Lums' halo frames
+					// (gra01..03_lum_my_ad) each carry one stray row of values 1..9 below the gradient, which
+					// at full 8 bits showed as a faint line under every Lum, moving as the frames change
+					// (card 124). Values below 8 go to black, as in the game; the rest stay exact.
+					if(info.flags & texture_flag::additive)
+						for(std::size_t i = 0; i < gf.rgba.size(); i += 4)
+							for(std::size_t c = 0; c < 3; c++)
+								if(gf.rgba[i + c] < 8)
+									gf.rgba[i + c] = 0;
 					bleed_edges(gf.width, gf.height, gf.rgba);
 					// A texture not set to repeat that is one picture fading out towards its border
 					// (the Lums' wing frames: lum_aile01_aaa's top row has alpha 45 of 255, the Fix

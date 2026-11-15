@@ -85,6 +85,13 @@ namespace openrayman
 				{
 					auto image = decode_gf(archive->read(*entry));
 					apply_color_key(info, image.rgba);
+					// As in the level renderer: 16-bit colour turns values below 8 to black, and the HUD
+					// Lum's halo (gra02j_my_ad) has a stray row of 1..9 that otherwise shows as a line (card 124).
+					if(info.flags & texture_flag::additive)
+						for(std::size_t i = 0; i < image.rgba.size(); i += 4)
+							for(std::size_t c = 0; c < 3; c++)
+								if(image.rgba[i + c] < 8)
+									image.rgba[i + c] = 0;
 					return image;
 				}
 				catch(const std::exception& e) { SDL_Log("Dialog texture %s: %s", path.c_str(), e.what()); }
