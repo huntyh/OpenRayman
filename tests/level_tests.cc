@@ -1596,6 +1596,12 @@ TEST_CASE("handler census: projection and ballistic calculations have exact simp
 	f.m.write<float>(f.base + 0x10, 8);
 	CHECK(f.function(238, { v(0,0,0), v(8,4,0), game::value::real(4) }).words == v(4,2,8).words);
 	CHECK(f.function(238, { v(0,0,0), v(8,4,0), game::value::real(-1) }).words == v(0,0,0).words);
+	// A lower destination uses destination + height if it is above the start.
+	auto downhill = f.function(238, { v(0,0,30), v(20,0,0), game::value::real(34) });
+	CHECK(downhill.component(2) == doctest::Approx(8));
+	// Otherwise the apex is start + height.
+	auto low = f.function(238, { v(0,0,30), v(20,0,0), game::value::real(4) });
+	CHECK(low.component(2) == doctest::Approx(8));
 	f.m.write<float>(f.base + 0x10, 0);
 	CHECK(f.function(238, { v(0,0,0), v(8,4,0), game::value::real(4) }).words == v(0,0,0).words);
 }
@@ -2841,6 +2847,9 @@ TEST_CASE("real data: Bast_20 director cuts back to Rayman at the scene handoff"
 	// The fight-region controller raises the aim by 2.5 units and uses a
 	// 12-unit boom. Its ordinary floor fitting must also run: without it
 	// this view settles about 1.7 units too high (rec_bast20cam2 endpoint).
+	// Isolate the camera fit from later pirate attacks on the teleported Rayman.
+	vm.remove(tree.node(40).at.address());
+	vm.remove(tree.node(46).at.address());
 	for(int tick = 610; tick < 1000; ++tick)
 	{
 		if(tick == 700)
@@ -4012,4 +4021,29 @@ TEST_CASE("real data: Learn_10 exit scene hands its completed story and entry pa
 	for(const auto& p : header.placements) fix.push_back(p.super_object.address());
 	CHECK(game::story_has(vm.story_words(fix), 1133));
 	CHECK(vm.missing.empty());
+}
+
+TEST_CASE("fast mechanics applies an imposed world speed once and retains it")
+{
+	game::live_memory m(three_super_objects());
+	auto so = m.allocate(0x48), actor = m.allocate(0x38), transform = m.allocate(0x58);
+	auto dynamics = m.allocate(4), base = m.allocate(0x1DC);
+	m.write<std::uint32_t>(so, 2); m.write(so + 4, actor); m.write(so + 0x24, transform);
+	m.write(actor + 8, dynamics); m.write(dynamics, base);
+	affine turned;
+	turned.m[0][0] = 0; turned.m[0][1] = -1; turned.m[1][0] = 1; turned.m[1][1] = 0;
+	game::set_global_placement(m, so, turned);
+	m.write<std::uint32_t>(base + 8, 0xE4000);
+	m.write<std::uint32_t>(base + 0xC, 0x200);
+	m.write(base + 0x24, vec3{ 12, 0, -9 });
+	m.write<float>(base + 0x10, 30);
+	game::world_collision world;
+	game::move_actor(m, so, actor, 1000, world);
+	CHECK(m.f32(transform + 4) == doctest::Approx(12));
+	CHECK(m.f32(transform + 8) == doctest::Approx(0));
+	CHECK(m.f32(transform + 12) == doctest::Approx(-9));
+	CHECK((m.u32(base + 8) & 0xE0000) == 0);
+	game::move_actor(m, so, actor, 1000, world);
+	CHECK(m.f32(transform + 4) == doctest::Approx(24));
+	CHECK(m.f32(transform + 12) == doctest::Approx(-18));
 }

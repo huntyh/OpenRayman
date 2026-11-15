@@ -197,3 +197,15 @@ At 0x464B33 one flash and trunc((number + 1) * 4) sparks start at the point, all
 Mapmonde door scripts call procedure 503 with kind 163, two door positions, and the faisceaumm game material. Executable 0x4648B0 case 0xA3 creates a persistent particle with flags 0x60000000 and rejects duplicate endpoint pairs in either order (exact comparisons at 0x4632F0). The 0.1 argument is its life field, not its ribbon width. Drawing at 0x460A10 flattens the endpoint difference vertically and calls 0x429CF0 with half-width 0.4. The pool's pause transition behavior is at 0x4607E0. Findings come from the Mapmonde door scripts and executable decompilation.
 
 The selection actor's kind 9 uses the Fix texture lums_corps_ad_mxy.tga, whose tiling mirrors both axes. Its UV extent spans two copies per axis; clamping particle UVs to one copy produces a square edge. This comes from the Mapmonde selection script and its material and texture records.
+
+
+## Bast_20 barrel trail (2026-11-15)
+
+Node 40 behaviour 11 sets generated template `04/01+0x1F04` variable 1. Its
+behaviour 1 calls procedure 503 kind 15 every four frames with material
+`05/02+0x7A494`, direction function 163 and number 4. Executable dispatch
+0x463390 calls 0x462860: eight type-9 sprites, random offset -0.5..0.8 along
+the direction, speed 0.5..2.2 times number, and size 0.8..1.5; flags 0x3009
+fade them. At 0x461120 type 9 adds -1.6 per second to each velocity component
+and moves. Constants were read from the installed Rayman2.exe; script data was
+read with ortool. Visual appearance still requires a real-game comparison.

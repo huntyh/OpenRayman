@@ -269,7 +269,7 @@ original procedure 159 behavior, and provenance.
 
 **Where this came from (2026-11-08):** read-only Ghidra analysis of Rayman2.exe function
 238 at 0x47A660 confirms that its vector result uses the current actor's dynamics gravity,
-the supplied endpoints, and an apex above the higher endpoint. Negative height or absent/zero
+the supplied endpoints, and an apex at destination height plus the requested height; if that is below the start, it uses start height plus the requested height. Negative height or absent/zero
 gravity returns zero. Learn_10's node 40 uses it for the opening jump, but the jump's live
 inputs and the mechanics after procedure 182 were then investigated as described below.
 
@@ -278,3 +278,22 @@ inputs and the mechanics after procedure 182 were then investigated as described
 **Where this came from (intro 23c review):** read-only Ghidra inspection of 0x472290, 0x435DF0, 0x435B80 and 0x412150 shows the pointer comparison is by mechanics address, not kind. A kind-1 install copies the specified flags and parameters; it does not directly overwrite speed, second-inertia factors at +0x168 or the contact coefficient at +0x174. Reproducing Jail_20 with immediate installs reveals a regression whose first divergence is earlier than the slide: after a state transition at 86000 ms, a subsequent script sets gravity to 40; the deferred implementation instead installs the playing state later and leaves gravity 25. This changes the approach trajectory. The subsequent intro 23d investigation found that the altered trajectory exposed the rim-probe floor-selection problem described below; the full executable resolver is still not implemented.
 
 **Where this came from (intro 23d):** the Jail_20 headless reproduction with immediate state mechanics and the recorded gravity 40 reached a side of the chute where a rim probe selected a steep surface while the actor's origin was still over the floor. Its extrapolated plane gave an upward velocity and led to loss of contact. Preferring the origin's support, with rim probes as fallback, keeps the sampled slide grounded through ticks 5300–6099 and reaches the end sequence. This is a correction to our disc approximation, not a claim that the executable uses point probes; its swept sphere resolver remains to be implemented. The headless path and the real live recording were compared, but the chute still needs a visual check.
+
+
+## Bast_20 thrown barrels (2026-11-15)
+
+Node 40 behaviour 11 creates template `04/01+0x1F04` (model `0d/01+0x5144`),
+not the different projectile from behaviour 9. Its state `04/01+0x228C` selects
+mechanics `05/02+0x77440`, flags `0x1A06`: gravity and collision, without fast
+mechanics. The script sets gravity to 30 and calls function 238 with height equal
+to the positive launch-to-target drop plus 4. At 0x47A731 the executable first
+sets apex = target.z + height; only if that is below start.z does it replace the
+apex with start.z + height. Adding height to the higher endpoint unconditionally
+double-counts a downward drop. This was verified against the installed executable
+and the actor scripts with ortool. Collision still uses our unswept disc/cylinder
+approximation; a fast barrel can tunnel through thin level geometry.
+
+The other projectile, template `04/01+0x8B0`, uses state `04/00+0x1551C` and
+mechanics `05/01+0x62A454`, flags `0x300`, gravity zero, with fast mechanics and
+no scenery collision bit. Procedure 182 sets world-axis components once;
+0x43E350 replaces those components and 0x431AD0 carries the resulting speed.

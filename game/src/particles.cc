@@ -200,6 +200,20 @@ namespace openrayman::game
 			}
 			return;
 		}
+		if(kind == 15)
+		{
+			// 0x462860: eight fiery sprites, offset and launched along the supplied direction.
+			for(int i = 0; i < 8; ++i)
+			{
+				random(0.2f, 3.0f); // the executable also writes this random value to a global
+				float offset = random(-0.5f, 0.8f), speed = random(0.5f, 2.2f) * number;
+				float size = random(0.8f, 1.5f);
+				vec3 at{}, motion{};
+				for(int k = 0; k < 3; ++k) { at[k] = point[k] + offset * vector[k]; motion[k] = speed * vector[k]; }
+				add(0x3009, at, motion, speed, size, material, now);
+			}
+			return;
+		}
 		if(kind == 9)
 		{
 			// 0x463569: a burst at the point: a flash that shrinks (0x500) and fades fast (0x4000),
@@ -444,7 +458,9 @@ namespace openrayman::game
 		// Moving (0x461120 and 0x4610F0): type 1 falls at 7 units/s², types 1 and 3 move.
 		if(p.type == 1)
 			p.motion[2] -= 7.0f * dt;
-		if(p.type == 1 || p.type == 3 || p.type == 7 || p.type == 0xB)
+		if(p.type == 9)
+			for(float& component : p.motion) component -= 1.6f * dt;
+		if(p.type == 9 || p.type == 1 || p.type == 3 || p.type == 7 || p.type == 0xB)
 			for(int i = 0; i < 3; i++)
 				p.position[i] += p.motion[i] * dt;
 		// Type 0x12 moves its step every frame and is gone after eight (counted in `life`); frames

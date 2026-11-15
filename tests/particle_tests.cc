@@ -170,3 +170,20 @@ TEST_CASE("particles: a twinkle glides into its point and vanishes")
 		p.update(now += 1.0 / 60, 1.0 / 60);
 	CHECK(p.all().empty());
 }
+
+TEST_CASE("barrel trail emits and moves eight fading sprites")
+{
+	particles p;
+	p.start(15, { 1, 2, 3 }, { 0, 1, 0 }, 123, 4, 0);
+	REQUIRE(p.all().size() == 8);
+	const auto first = p.all()[0];
+	CHECK(first.type == 9);
+	CHECK(first.material == 123);
+	CHECK(first.motion[1] >= 2);
+	CHECK(first.motion[1] <= 8.8f);
+	p.update(0.1, 0.1);
+	REQUIRE(p.all().size() == 8);
+	CHECK(p.all()[0].motion[0] == doctest::Approx(-0.16));
+	CHECK(p.all()[0].position[1] > first.position[1]);
+	CHECK(p.all()[0].alpha < first.alpha);
+}

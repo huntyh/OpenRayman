@@ -538,7 +538,7 @@ namespace openrayman::game
 
 		// 176, 182, 188, 194, 201, 207, 280 (0x46CBD0): set a vector of the actor's dynamics (the
 		// physics, milestone 3c) and mark it as set in the dynamics flags (+8). Pairs differ in one
-		// flag bit, meaning not known yet.
+		// flag bit: set uses world axes; clear uses the actor's axes (0x43E350).
 		std::uint32_t set_dynamics_vector(call& c)
 		{
 			std::uint32_t self = c.vm.target(c.self, true);
@@ -3754,7 +3754,7 @@ namespace openrayman::game
 			out = value_of(result); return c.args;
 		}
 
-		// 238 (0x47A660): velocity to reach a point with an apex above both endpoints.
+		// 238 (0x47A660): destination plus height, or start plus height when that is below start.
 		std::uint32_t ballistic_velocity(call& c, value& out)
 		{
 			std::uint32_t self = c.vm.target(c.self, true);
@@ -3765,7 +3765,8 @@ namespace openrayman::game
 			float gravity = c.vm.memory().f32(base + 0x10);
 			if(gravity == 0) return c.args;
 			vec3 from = vec_of(start), to = vec_of(end);
-			float apex = std::max(from[2], to[2]) + height.as_float();
+			float apex = to[2] + height.as_float();
+			if(apex < from[2]) apex = from[2] + height.as_float();
 			float vertical = std::sqrt(2 * (apex - from[2]) * gravity);
 			float discriminant = vertical * vertical + 2 * gravity * (from[2] - to[2]);
 			if(discriminant < 0) return c.args;
