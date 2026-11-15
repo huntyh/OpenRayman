@@ -1258,6 +1258,12 @@ namespace
 			return true;
 		if(a.live->contains(super_object + 0x30, 4) && (a.live->u32(super_object + 0x30) & 0x2))
 			return true;
+		// Screen objects a menu put aside (procedure 413, 0x45BA60) leave the screen pass until it
+		// closes: the HUD's Rayman head and counters behind the pause menu.
+		if(!a.vm->screen_objects().contains(super_object))
+			for(const auto& level : a.vm->screen_object_stack)
+				if(level.contains(super_object))
+					return true;
 		// The pause menu (procedure 504): the actor draw 0x44B1B0 shows only actors whose custom
 		// bits carry 0x100000, the menu's own (its swirling background among them).
 		if(a.vm->effects_paused)

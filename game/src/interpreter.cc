@@ -634,6 +634,22 @@ namespace openrayman::game
 				out = value::vector(m_memory.f32(t + 4), m_memory.f32(t + 8), m_memory.f32(t + 12));
 				break;
 			}
+			case 1:
+			{
+				// 0x48CF30: where the actor's -Y points (its global transform applied to (0, -1, 0),
+				// less its position), as a unit vector. The pause menu turns its swirl with it.
+				std::uint32_t t = m_memory.u32(self + super_object_field::global_transform);
+				float v[3] = { 0, -1, 0 };
+				if(t && m_memory.contains(t, 0x58) && m_memory.u32(t) >= 3)
+					for(int i = 0; i < 3; i++)
+						v[i] = -m_memory.f32(t + 0x40 + std::uint32_t(i) * 4);
+				float l = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+				if(l > 1e-9f)
+					for(float& f : v)
+						f /= l;
+				out = value::vector(v[0], v[1], v[2]);
+				break;
+			}
 			case 7: case 8:
 			{
 				std::uint32_t mind = m_memory.u32(m_memory.u32(actor + actor_field::brain));

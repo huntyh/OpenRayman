@@ -301,8 +301,9 @@ namespace openrayman
 		bool m_world_hidden = false;
 		bool drawn(std::size_t sector) const
 		{
+			// Actors' meshes have no sector and stay; the pause hides the level's sectors only.
 			if(m_world_hidden)
-				return false;
+				return sector == no_sector;
 			return sector == no_sector || sector >= m_drawn_sectors.size() || m_drawn_sectors[sector];
 		}
 		void follow_camera(const glm::vec3& eye) const;
