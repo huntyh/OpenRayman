@@ -1794,6 +1794,31 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	// cage: ORTOOL_PLACE=-27,291.5,-7.3,0@240.
 	// Several placements separate with ';' (walk away and come back: ...@260;30,295,-7,0@500).
 	std::map<int, std::array<float, 4>> places;
+	// Camera-only target replay. Rows: tick position[3] axes[9] contact_word
+	// ground_normal[3] speed[3]. Camera scripts, history and mechanics still run.
+	struct camera_target_sample {
+		float position[3]{}, axes[9]{};
+		vec3 normal{}, speed{};
+		std::uint32_t contact = 0;
+	};
+	std::map<int, camera_target_sample> camera_target_samples;
+	if(const char* path = std::getenv("ORTOOL_CAMERA_TARGET_TRACE"))
+	{
+		std::ifstream source(path);
+		if(!source) throw std::runtime_error("cannot open ORTOOL_CAMERA_TARGET_TRACE");
+		int tick;
+		while(source >> tick)
+		{
+			camera_target_sample sample;
+			for(float& x : sample.position) source >> x;
+			for(float& x : sample.axes) source >> x;
+			source >> sample.contact;
+			for(float& x : sample.normal) source >> x;
+			for(float& x : sample.speed) source >> x;
+			if(!source) throw std::runtime_error("invalid ORTOOL_CAMERA_TARGET_TRACE row");
+			camera_target_samples[tick] = sample;
+		}
+	}
 	// Reproduce an external script signal without replacing an actor's behaviour.
 	// ORTOOL_CUSTOM_BITS=node:bit:value@tick;node/variable:bit:value@tick
 	// Bits are numbered 1..32; /variable follows an actor reference held by that node.
@@ -1943,9 +1968,26 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 		for(const held& h : holds)
 			keys.set_key(h.key, down[h.key]);
 		keys.step();
+		std::vector<std::uint32_t> replay_actors;
+		if(auto sample = camera_target_samples.find(f); sample != camera_target_samples.end())
+		{
+			const auto& s = sample->second;
+			game::write_transform(memory, main_actor, s.position, s.axes);
+			auto actor = vm.actor_of(main_actor);
+			auto base = memory.u32(memory.u32(actor + 8));
+			auto report = memory.u32(base + 0x150);
+			memory.write(report + 4, s.contact);
+			for(unsigned k = 0; k < 3; ++k)
+			{
+				memory.write<float>(report + 0x34 + 4*k, s.normal[k]);
+				memory.write<float>(report + 0x114 + 4*k, s.speed[k]);
+				memory.write<float>(report + 0x14C + 4*k, s.position[k]);
+			}
+			for(auto so : actors) if(so != main_actor) replay_actors.push_back(so);
+		}
 		try
 		{
-			game::step(vm, actors, [&](std::uint32_t self, const std::exception& e) {
+			game::step(vm, replay_actors.empty() ? actors : replay_actors, [&](std::uint32_t self, const std::exception& e) {
 				errors.try_emplace(node_of[self], std::format("frame {}, node 0x{:08X}: {}", f, vm.last_node(), e.what()));
 			});
 		}
@@ -2244,6 +2286,10 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 			}
 			const game::camera_state& state = vm.camera_motion();
 			const auto& t = state.trace;
+			auto precise = [](const auto& v) { return std::format("{:.6f} {:.6f} {:.6f}", v[0], v[1], v[2]); };
+			std::cout << std::format("mechanics tick {}: flags {} eye {} actual_move {} wanted_move {} look {} speed {:.6f} ramp {:.6f} arrive {:.6f} turn {:.6f} turn_ramp {:.6f} turn_arrive {:.6f} carry {:.6f}\n",
+				f, state.flags, precise(eye), precise(state.previous_move), precise(state.move), precise(state.look_at),
+				state.speed, state.speed_ramp, state.arrive, state.turn_speed, state.turn_ramp, state.turn_arrive, state.carry_angle);
 			std::cout << std::format("solve tick {}: block18..34 {:.3f} {:.3f} {:.3f} {:.3f} {:.3f} {:.3f} {:.3f} {:.3f} f70 {:X} f72 {:X} mode {} swing {:02X} savedgap {:.4f} yaw {:.4f} gap {:.4f} report {:02X} globals {:X} waypoint {} focus {} view_blocked {} wanted_blocked {} wanted {}",
 				f, t.block[0], t.block[1], t.block[2], t.block[3], t.block[4], t.block[5], t.block[6], t.block[7],
 				unsigned(t.flags70), unsigned(t.flags72), t.mode, unsigned(t.swing & 255), t.swing_gap, t.yaw, t.gap, t.report, t.global_flags, t.waypoint, t.focus, t.view_blocked, t.wanted_blocked, vec(t.wanted));

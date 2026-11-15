@@ -193,6 +193,45 @@ the checked Jail_20 trace is unchanged. It is not a Bast_20-specific offset.
 Where this came from: own analysis of 0x4845E0, its callers 0x485810 and
 0x484B00, the node-39 scripts and designer values, and the user's fight recording.
 
+### Floor contact loss over a crest (card 120)
+
+The normal lookup at **0x473660** follows the target's dynamics report, requires
+report `+4` bit 0, and reads `+0x34..+0x3C`: **ground slot 1**, not the first
+contact in slot 0. It does not remember or average a normal. With that bit clear,
+0x4845E0 returns without changing pitch. This also skips fitting during a jump
+without testing Rayman's jump behaviour; a valid contact enables it again.
+
+The fitted pitch changes immediately in the per-frame parameter block.
+0x485810 rebuilds the wanted eye with 0x4847D0, then 0x484B50 supplies the usual
+speeds. 0x474420 passes these to mechanics; 0x4359D0 calls 0x433D70 (step/orbit),
+0x434660 (collision) and 0x435930 (publish). There is no separate floor-pitch
+interpolator or angular-rate state. The ordinary position and orbit limits apply,
+along with the existing configurable direction smoothing at 0x433930.
+
+Our 0x433B00 approximation incorrectly bypassed arrival and acceleration whenever
+a displacement fitted inside the speed cap. Both limits still apply in the exe;
+only a snap or a displacement at most 0.001 bypasses them. Option bits 1 and 3
+bypass the position/orbit eases respectively; bit 5 does so for aim movement.
+A zero permitted orbit keeps the old direction and the post-position-step radius.
+These mechanics discrepancies are corrected and covered by a synthetic regression.
+
+The user's `rec_20261115_132731` target/contact replay still rises **1.18 units
+over ticks 2806..2810**, before and after these corrections: largest height step
+0.26 units and pitch step 1.2 degrees. Independently evaluating the decoded
+position/orbit laws for ticks 2806..2818 agrees with the corrected mechanics
+within 0.00006 units. Thus this crest is not evidence for a missing camera pitch
+filter: intermittent ground validity produces a wanted-eye change and the ordinary
+mechanics follows it. This comparison uses recorded OpenRayman target states,
+not a matched recording from the original game. Whether the original target
+mechanics would also lose ground contact here remains unverified.
+
+Where this came from: own reading of Rayman2.exe at 0x473660, 0x4845E0,
+0x485810, 0x484B50, 0x474420, 0x433B00, 0x433CD0 and 0x433D70;
+Capstone inspection of 0x4359D0 and the 0.001 tolerance at 0x49C6F8;
+the user's engine recording and independently written replay/reference helpers.
+No executable or decompiler code is reproduced. Commands, all four crest
+measurements, test results and limits are in `build/helpers/bob120_report.md`.
+
 The recorded hallway route (`rec_bast20cam3`) travels south with its camera to
 the north. The replay in `build/helpers/cam20_replay_recordings.py` preserves that
 direction for all 591 checked frames: eye Y minus Rayman Y is 10.64..12.91. The

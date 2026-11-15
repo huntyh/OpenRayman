@@ -1,11 +1,52 @@
 #include <openrayman/game/mechanics.h>
 #include <openrayman/game/camera.h>
+#include <openrayman/game/animation_player.h>
 
 #include <doctest/doctest.h>
 
 #include <cmath>
 
 using namespace openrayman;
+
+TEST_CASE("camera mechanics eases short slope corrections inside the speed cap")
+{
+	game::live_memory memory(memory_image{});
+	memory.allocate(16); // reserve the null address in this otherwise empty image
+	auto so = memory.allocate(0x80), transform = memory.allocate(0x58);
+	memory.write(so + 0x20, transform);
+	memory.write(so + 0x24, transform);
+	affine pose;
+	pose.m[1][3] = 10;
+	game::set_global_placement(memory, so, pose);
+	game::camera_state state;
+	state.valid = true;
+	state.flags = 4 | 0x40;
+	state.aim = state.off = {0, 0, 0};
+	state.move = {0, 0, 0.1f};
+	state.speed = 12; // 0.2/tick: the entire correction fits under the speed cap
+	state.speed_ramp = 5;
+	state.arrive = 2;
+	game::move_camera(memory, so, state, 1000.0/60, {});
+	CHECK(game::global_placement(memory, so)->m[2][3] == doctest::Approx(0.04));
+	// With carried speed, arrival rather than acceleration limits the next step.
+	game::set_global_placement(memory, so, pose);
+	state.previous_move = {0, 0, 0.1f};
+	game::move_camera(memory, so, state, 1000.0/60, {});
+	CHECK(game::global_placement(memory, so)->m[2][3] == doctest::Approx(0.05));
+	// +0x70 bit 1 bypasses both eases, independently of the snap bit.
+	game::set_global_placement(memory, so, pose);
+	state.flags |= 2;
+	game::move_camera(memory, so, state, 1000.0/60, {});
+	CHECK(game::global_placement(memory, so)->m[2][3] == doctest::Approx(0.1));
+	// A zero allowed orbit keeps the old direction, while retaining the new radius.
+	game::set_global_placement(memory, so, pose);
+	state.flags = 0x40;
+	state.arrive = state.speed_ramp = 0;
+	state.look_at = {0, 0, 0};
+	state.turn_speed = 0;
+	game::move_camera(memory, so, state, 1000.0/60, {});
+	CHECK(game::global_placement(memory, so)->m[2][3] == doctest::Approx(0));
+}
 
 TEST_CASE("collision query views exclude scenery outside the collision sector list")
 {

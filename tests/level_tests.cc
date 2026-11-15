@@ -2839,6 +2839,29 @@ TEST_CASE("real data: Bast_20 director cuts back to Rayman at the scene handoff"
 	auto settled = *game::global_placement(m, camera_so);
 	vec3 eye{settled.m[0][3], settled.m[1][3], settled.m[2][3]};
 	CHECK(distance(eye, {23.157f,76.820f,-59.707f}) < 0.2f);
+
+	// 0x473660 uses the valid ground slot (1), without remembering a floor
+	// normal for airborne frames. Slot 0 can describe a different first contact.
+	auto block = m.u32(cam + 4);
+	auto report = m.u32(m.u32(m.u32(vm.actor_of(rayman) + 8)) + 0x150);
+	REQUIRE((m.u32(report + 4) & 1) != 0);
+	vm.set_world(game::world_collision{});
+	m.write<std::uint8_t>(cam + 0x74, 0);
+	m.write<std::uint8_t>(cam + 0x75, 0);
+	m.write<std::uint16_t>(block + 0x72, 0x4002 | 4 | 0x40);
+	game::solve_camera(vm, camera_so);
+	auto grounded_wanted = vm.camera_motion().trace.wanted;
+	for(unsigned k = 0; k < 3; ++k) m.write<float>(report + 0x0C + 4*k, k == 2 ? 1.0f : 0.0f);
+	game::solve_camera(vm, camera_so);
+	CHECK(distance(grounded_wanted, vm.camera_motion().trace.wanted) < 0.001f);
+	m.write<std::uint32_t>(report + 4, 0);
+	game::solve_camera(vm, camera_so);
+	auto airborne_wanted = vm.camera_motion().trace.wanted;
+	CHECK(distance(grounded_wanted, airborne_wanted) > 1);
+	m.write<std::uint32_t>(report + 4, 1);
+	m.write<std::uint16_t>(block + 0x72, 0x4002 | 4 | 0x40 | 0x20);
+	game::solve_camera(vm, camera_so);
+	CHECK(distance(airborne_wanted, vm.camera_motion().trace.wanted) < 0.001f);
 }
 
 TEST_CASE("real data: camera fallback relocates across an unreachable wall and restores follow")

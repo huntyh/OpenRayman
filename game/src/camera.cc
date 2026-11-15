@@ -295,6 +295,8 @@ namespace openrayman::game
 			if((m.read<std::uint16_t>(block + 0x72) & 0x20) || (m.u8(cam + 0x74) & 2)) return pitch;
 			auto word = [&](std::uint32_t at) { return at && m.contains(at, 4) ? m.u32(at) : 0u; };
 			auto actor = vm.actor_of(target_super_object(vm, block));
+			// 0x473660: the valid ground contact (slot 1), not slot 0 or a
+			// remembered/smoothed normal. Losing contact also skips fitting on a jump.
 			auto base = word(word(actor + 8)), report = word(base + 0x150);
 			if(!report || !(word(report + 4) & 1)) return pitch;
 			vec3 normal = read3(m, report + 0x34);
@@ -1135,23 +1137,23 @@ namespace openrayman::game
 		const vec3 position = read3(m, transform + 4);
 		vec3 pos = position;
 
-		// 1. The position: the exe's "step towards" (0x433B00, called at 0x433E46). A snap flag or a
-		//    step that fits takes the whole movement; otherwise a maximum step, an arrival ease and a
-		//    rate that builds on the last movement's length ([base+0x150]+0xF8) bound it.
+		// 1. The position: the exe's "step towards" (0x433B00, called at 0x433E46). Only a snap or a
+		//    sub-tolerance move bypasses the limits. Even inside the speed cap, arrival and growth
+		//    from last movement's length ([base+0x150]+0xF8) can shorten the step; bit 1 bypasses them.
 		float maxstep = float(state.speed * dt);
 		float len = length(state.move);
-		if((state.flags & snap_position) || len <= 0.001f || len <= maxstep)
+		if((state.flags & snap_position) || len <= 0.001f)
 			pos = add(position, state.move);
 		else
 		{
-			float step = maxstep;
-			if(state.arrive != 0)
+			float step = std::min(len, maxstep);
+			if(!(state.flags & 2) && state.arrive != 0)
 			{
 				float ease = len / state.arrive;
 				if(ease < step && ease > 0.001f)
 					step = ease;
 			}
-			if(state.speed_ramp != 0)
+			if(!(state.flags & 2) && state.speed_ramp != 0)
 			{
 				float grows = maxstep / state.speed_ramp + length(state.previous_move);
 				if(grows < step)
@@ -1180,12 +1182,15 @@ namespace openrayman::game
 					// 0x433CD0: the turn a tick, bounded by a rate that builds on `carry_angle`.
 					float most = float(state.turn_speed * dt);
 					float step = std::min(angle, most);
-					if(state.turn_arrive != 0 && angle < state.turn_arrive * most)
+					if(!(state.flags & 8) && state.turn_arrive != 0 && angle < state.turn_arrive * most)
 						step = std::min(step, angle / state.turn_arrive);
-					if(state.turn_ramp != 0)
+					if(!(state.flags & 8) && state.turn_ramp != 0)
 						step = std::min(step, most / state.turn_ramp + state.carry_angle);
+					if(angle < 0.001f) step = angle;
 					state.carry_angle = step;
-					if(step > 0)
+					// 0x433CD0 accepts sub-tolerance angles outright, but a zero
+					// allowed turn must retain the old direction (0x43405C).
+					if(angle >= 0.001f)
 						v2 = rotate_about(from, axis, step);
 				}
 				else
@@ -1264,9 +1269,9 @@ namespace openrayman::game
 			else
 			{
 				float reach = float(state.aim_speed * dt);
-				if(state.aim_arrive != 0)
+				if(!(state.flags & 0x20) && state.aim_arrive != 0 && want / state.aim_arrive > 0.001f)
 					reach = std::min(reach, want / state.aim_arrive);
-				if(state.aim_ramp != 0)
+				if(!(state.flags & 0x20) && state.aim_ramp != 0)
 					reach = std::min(reach, float(state.aim_speed * dt) / state.aim_ramp + length(state.previous_aim));
 				reach = std::min(reach, want);
 				step = mul(need, reach / want);
