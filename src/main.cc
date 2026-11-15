@@ -781,6 +781,15 @@ namespace
 		a.carried_entry = a.vm->menu_request;
 		a.carried_general = openrayman::game::capture_save_entries(*a.live, a.registry.general, a.registry.general_size);
 		a.level_progress[a.level_index] = openrayman::game::capture_save_entries(*a.live, a.registry.level, a.registry.level_size);
+		if(a.saves->loaded)
+		{
+			// The menu loaded a slot (function 91): its levels replace this run's progress.
+			a.saves->loaded = false;
+			a.level_progress.clear();
+			for(const auto& [level, bytes] : a.saves->levels)
+				if(auto at = std::ranges::find_if(levels, [&](const std::string& l) { return std::ranges::equal(l, level, [](unsigned char x, unsigned char y) { return std::tolower(x) == std::tolower(y); }); }); at != levels.end())
+					a.level_progress[std::size_t(at - levels.begin())] = bytes;
+		}
 		// A loaded slot seeds this session once. Subsequent loads keep the progress just made.
 		a.save_slot = 0;
 		a.new_game = true;

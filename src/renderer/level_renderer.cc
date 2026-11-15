@@ -579,6 +579,39 @@ namespace openrayman
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 			return texture;
 		}
+
+		// Replaces the bound texture's mipmaps with our own box-filtered ones whose one-texel border
+		// is cleared at every size. The driver's mipmaps average the cleared border with the picture
+		// inside, and a distant Lum's wings then showed that faint edge again (card 124).
+		void upload_faded_mipmaps(std::uint32_t width, std::uint32_t height, std::vector<std::uint8_t> rgba, bool additive)
+		{
+			for(GLint level = 1; width > 1 || height > 1; ++level)
+			{
+				const std::uint32_t w = std::max(1u, width / 2), h = std::max(1u, height / 2);
+				std::vector<std::uint8_t> next(std::size_t(w) * h * 4);
+				for(std::uint32_t y = 0; y < h; ++y)
+					for(std::uint32_t x = 0; x < w; ++x)
+						for(int c = 0; c < 4; ++c)
+						{
+							unsigned sum = 0;
+							for(std::uint32_t dy = 0; dy < 2; ++dy)
+								for(std::uint32_t dx = 0; dx < 2; ++dx)
+									sum += rgba[(std::size_t(std::min(height - 1, y * 2 + dy)) * width + std::min(width - 1, x * 2 + dx)) * 4 + c];
+							next[(std::size_t(y) * w + x) * 4 + c] = std::uint8_t((sum + 2) / 4);
+						}
+				if(w > 2 && h > 2)
+					for(std::uint32_t y = 0; y < h; ++y)
+						for(std::uint32_t x = 0; x < w; ++x)
+							if(x == 0 || y == 0 || x == w - 1 || y == h - 1)
+							{
+								std::uint8_t* p = &next[(std::size_t(y) * w + x) * 4];
+								if(additive) p[0] = p[1] = p[2] = 0;
+								else p[3] = 0;
+							}
+				glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA8, GLsizei(w), GLsizei(h), 0, GL_RGBA, GL_UNSIGNED_BYTE, next.data());
+				rgba = std::move(next); width = w; height = h;
+			}
+		}
 	}
 
 	level_renderer::level_renderer(gl::api api)
@@ -813,6 +846,7 @@ namespace openrayman
 					// width (Learn_30, user 2026-11-15). Its one-pixel border is cleared: alpha for
 					// blended textures, colour for additive ones. Textures meant to tile or scroll are
 					// solid at their edges and are left alone.
+					bool faded_border = false;
 					if(info.tiling == 0 && gf.width > 2 && gf.height > 2)
 					{
 						const bool additive = info.flags & texture_flag::additive;
@@ -828,7 +862,8 @@ namespace openrayman
 								int& most = edge ? border : inside;
 								most = std::max(most, weight(x, y));
 							}
-						if(border > 0 && border < 64 && inside >= 128)
+						faded_border = border > 0 && border < 64 && inside >= 128;
+						if(faded_border)
 							for(int y = 0; y < int(gf.height); y++)
 								for(int x = 0; x < int(gf.width); x++)
 									if(x == 0 || y == 0 || x == int(gf.width) - 1 || y == int(gf.height) - 1)
@@ -841,6 +876,8 @@ namespace openrayman
 									}
 					}
 					texture.id = upload_texture(gf.width, gf.height, gf.rgba.data());
+					if(faded_border)
+						upload_faded_mipmaps(gf.width, gf.height, gf.rgba, info.flags & texture_flag::additive);
 					texture.mirror_u = info.tiling & texture_tiling::mirror_u;
 					texture.mirror_v = info.tiling & texture_tiling::mirror_v;
 					// Cut-outs that aren't set to repeat at all (tiling 0, like the cliff-edge foliage
@@ -851,7 +888,7 @@ namespace openrayman
 					for(std::size_t i = 3; i < gf.rgba.size() && !cut_out; i += 4)
 						cut_out = gf.rgba[i] < 128;
 					GLint wrap_u = texture.mirror_u ? GL_MIRRORED_REPEAT : GL_REPEAT, wrap_v = texture.mirror_v ? GL_MIRRORED_REPEAT : GL_REPEAT;
-					if(info.tiling == 0 && cut_out)
+					if(info.tiling == 0 && (cut_out || faded_border))
 						wrap_u = wrap_v = GL_CLAMP_TO_EDGE;
 					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap_u);
 					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap_v);

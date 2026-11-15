@@ -111,6 +111,9 @@ namespace openrayman::game
 			std::array<float, 256> widths;
 			std::vector<float> scales;
 			float line_height = 2, default_scale = 0;
+			// The string each screen text slot shows (procedure 505): the exe's slot keeps a pointer to
+			// it, so procedure 507's letters land in the string itself (0x465BE0).
+			std::map<std::size_t, value> slot_sources;
 		};
 		std::map<interpreter*, std::weak_ptr<dialog_state>> systems;
 
@@ -302,6 +305,45 @@ namespace openrayman::game
 		});
 		vm.on_procedure(430, [state](call& c) { return concatenate(c, *state); });
 		vm.on_procedure(243, [state](call& c) { return format_integer(c, *state); });
+		// 218 (0x478E10 case 0xDA): the character at an index of a text, counted after its leading
+		// /x: codes; 0 outside it. The menu's name entry reads the letter it is changing with it.
+		vm.on_function(218, [state](call& c, value& out) {
+			value text, index;
+			argument(c, text); argument(c, index);
+			out = value::integer(0);
+			auto s = resolve(c.vm, *state, text);
+			if(!s) return c.args;
+			std::size_t prefix = 0;
+			while(prefix < s->size() && (*s)[prefix] == '/')
+			{
+				auto end = s->find(':', prefix + 1);
+				if(end == std::string::npos) return c.args;
+				prefix = end + 1;
+			}
+			auto at = std::int64_t(prefix) + std::int16_t(index.as_int());
+			if(at >= 0 && at < std::int64_t(s->size())) out = value::integer(static_cast<signed char>((*s)[std::size_t(at)]));
+			return c.args;
+		});
+	}
+
+	void remember_text_slot_source(interpreter& vm, std::size_t slot, const value& text)
+	{
+		auto it = systems.find(&vm);
+		if(it != systems.end()) if(auto state = it->second.lock()) state->slot_sources[slot] = text;
+	}
+
+	void put_text_slot_source_char(interpreter& vm, std::size_t slot, std::size_t at, char c)
+	{
+		auto it = systems.find(&vm);
+		if(it == systems.end()) return;
+		auto state = it->second.lock();
+		if(!state) return;
+		auto source = state->slot_sources.find(slot);
+		if(source == state->slot_sources.end()) return;
+		auto text = resolve(vm, *state, source->second);
+		if(!text || at >= text->size()) return;
+		(*text)[at] = c;
+		store(vm, *state, source->second, *text);
 	}
 
 	void set_dialog_resolver(interpreter& vm, dialog_resolver resolver)

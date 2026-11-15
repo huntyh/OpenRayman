@@ -402,6 +402,43 @@ namespace openrayman::game
 				catch(const std::exception& e) { session->error = e.what(); session->automatic_actor = 0; }
 				return c.args;
 			});
+		// 91: 0x47D830 case 0x5B. Load a slot: 0x410F20 copies it to the working slot, 0x410410
+		// reads its General.sav into memory, and the level files apply at the next level change.
+		// A slot of 0 does nothing and fails.
+		vm.on_function(91, [=, tree = std::make_shared<scene>(tree)](call& c, value& out) {
+			value arg;
+			c.args = c.vm.eval(c.self, c.args, arg);
+			unsigned slot = unsigned(arg.as_int());
+			out = value::integer(0);
+			if(slot < 1 || slot > 3) return c.args;
+			try
+			{
+				auto folder = save_slot_folder(root, slot);
+				auto general_path = find_case_insensitive(folder, "General.sav");
+				if(!general_path) return c.args;
+				save_file general(*general_path);
+				if(general.bytes.size() != registry.general_size) return c.args;
+				std::map<std::string, std::vector<std::byte>> levels;
+				for(const auto& file : std::filesystem::directory_iterator(folder))
+				{
+					auto name = file.path().filename().string();
+					if(name.size() <= 6 || !name.ends_with("_0.sav")) continue;
+					save_file level_save(file.path());
+					levels[name.substr(0, name.size() - 6)] = level_save.bytes; // each level checks its own size
+				}
+				apply_save_entries(c.vm, *tree, registry.general, general.bytes, registry.general_size);
+				session->slot = slot;
+				settings();
+				session->levels = std::move(levels);
+				session->loaded = true;
+				session->new_game = false;
+				session->name = slot_info(root, slot).first;
+				session->error.clear();
+				out = value::integer(1);
+			}
+			catch(const std::exception& e) { session->error = e.what(); }
+			return c.args;
+		});
 		vm.on_function(94, [=](call& c, value& out) { out = value::integer(session->slot); return c.args; });
 		// 95: 0x47D730 skips leading formatting, retains three bytes and returns a
 		// colliding slot (excluding the third argument), or zero. Argument two is evaluated.

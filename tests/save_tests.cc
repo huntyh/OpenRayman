@@ -237,6 +237,21 @@ TEST_CASE("real data: scripted new game saves successfully and registered fields
 	REQUIRE(result.as_int() == 1);
 	CHECK(save_file(root / "Slot1/General.sav").bytes == game::capture_save_entries(restored_memory, learn_registry.general, learn_registry.general_size));
 	CHECK(save_file(root / "Slot1/Learn_10_0.sav").bytes == game::capture_save_entries(restored_memory, learn_registry.level, learn_registry.level_size));
+	// 91 loads the slot: General.sav back into memory now, the level files for the next level change.
+	auto saved_general = game::capture_save_entries(restored_memory, learn_registry.general, learn_registry.general_size);
+	for(const auto& e : learn_registry.general)
+		if(!e.standard_offset) restored_memory.write<std::uint8_t>(e.address, 33);
+	session->levels.clear();
+	restored_memory.write<std::uint32_t>(script, 91);
+	CHECK(restored.eval(learn_header.main_actor->address(), script, result) == script + 16);
+	CHECK(result.as_int() == 1);
+	CHECK(game::capture_save_entries(restored_memory, learn_registry.general, learn_registry.general_size) == saved_general);
+	CHECK(session->loaded);
+	CHECK(session->levels.contains("Learn_10"));
+	restored_memory.write<std::uint32_t>(script + 8, 3);
+	CHECK(restored.eval(learn_header.main_actor->address(), script, result) == script + 16);
+	CHECK(result.as_int() == 0); // an empty slot can't be loaded
+	restored_memory.write<std::uint32_t>(script, 90);
 	// An invalid slot consumes the argument and reports failure without publishing files.
 	restored_memory.write<std::uint32_t>(script + 8, 4);
 	CHECK(restored.eval(learn_header.main_actor->address(), script, result) == script + 16);

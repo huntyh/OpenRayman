@@ -16,6 +16,9 @@ namespace openrayman::game
 	class interpreter;
 	struct value;
 	std::optional<std::string> resolve_dialog_value(interpreter& vm, const value& v);
+	// Procedures 505/507: the string a screen text slot shows, and one letter written into it.
+	void remember_text_slot_source(interpreter& vm, std::size_t slot, const value& text);
+	void put_text_slot_source_char(interpreter& vm, std::size_t slot, std::size_t at, char c);
 
 	// Object-list index selected by the dialog renderer (0x409720), before bounds checking.
 	std::optional<int> dialog_glyph_index(std::uint8_t byte, int offset = 0);

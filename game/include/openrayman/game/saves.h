@@ -24,6 +24,8 @@ namespace openrayman::game
 		bool automatic_saved = false;
 		unsigned saving_ticks = 0;
 		std::map<std::string, std::vector<std::byte>> levels;
+		// Function 91 loaded a slot: its level files replace this run's progress at the next level change.
+		bool loaded = false;
 	};
 	// Autosave is chosen per save slot: autosave_SlotN.txt beside the slot folders (a save replaces
 	// the slot folder itself, so the choice lives next to it).

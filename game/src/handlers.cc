@@ -4842,6 +4842,7 @@ namespace openrayman::game
 				return c.args;
 			vec3 p = vec_of(position);
 			// Replaced: an empty text, since the script may raise the slot's alpha again on its own.
+			remember_text_slot_source(c.vm, index, replaced ? value{} : text);
 			c.vm.screen_text().set(index, p[0], p[1], replaced ? std::string() : text_of(c.vm, text), replaced ? std::uint8_t(0) : std::uint8_t(alpha.as_int()), p[2], c.self);
 			return c.args;
 		}
@@ -4868,6 +4869,7 @@ namespace openrayman::game
 			next_arg(c, character);
 			std::int32_t index = at.as_int();
 			c.vm.screen_text().put_char(text_slot(slot), index < 0 ? 0 : std::size_t(index), char(character.as_int()));
+			put_text_slot_source_char(c.vm, text_slot(slot), index < 0 ? 0 : std::size_t(index), char(character.as_int()));
 			return c.args;
 		}
 
