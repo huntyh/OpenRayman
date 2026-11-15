@@ -562,8 +562,12 @@ unlimited value; it uses eight times the first as the zero point. In the install
 `_SND_fn_rPseudoNormeVectorSnd` at 0x45B2F0, and passes the result with the optional pair to the
 extended curve. 0x45B2C0 implements the approximate norm by combining two components as the
 larger absolute value plus half the smaller, applied twice. Thus the distance is not squared.
-OpenRayman currently uses Euclidean distance instead of that approximation; either is far below
-1000 for the reported 89.2-unit placement, so this difference does not explain the loud sound.
+OpenRayman now uses the same approximation (it used the straight-line distance before). It runs
+up to about 1.2 times longer, and that matters at the edge of a curve: from the Jail_20 corridor
+(camera 714.0,133.5,459.6) the chute fan (660.5,152.1,450.8; its own pair 8 / 80, silent past 64)
+is 57.3 units in a straight line but 67.2 by the approximation, so the exe keeps it silent there
+(card 114; found by a DeepSeek helper, checked against the decompilation of 0x45B2F0/0x45B2C0).
+For the earlier 89.2-unit placement either distance stays far below 1000.
 The separate callback at 0x415930 is an unnamed code label absent as a separate file from the
 provided decompile; its precise input and copies have not been independently rechecked here.
 

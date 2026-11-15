@@ -15,15 +15,19 @@ namespace openrayman::game
 		unsigned completion = 0;
 		bool new_game = false;
 		std::optional<bool> autosave;
-		bool settings_loaded = false, first_save = false, question = false, choice = false;
+		unsigned settings_slot = 0; // the slot whose autosave choice `autosave` holds
+		bool first_save = false, question = false, choice = false;
 		bool left_down = false, right_down = false, enter_down = false;
 		std::uint32_t automatic_actor = 0, question_actor = 0;
 		bool automatic_saved = false;
 		unsigned saving_ticks = 0;
 		std::map<std::string, std::vector<std::byte>> levels;
 	};
-	std::optional<bool> read_autosave(const std::filesystem::path& folder);
-	bool write_autosave(const std::filesystem::path& folder, bool enabled);
+	// Autosave is chosen per save slot: autosave_SlotN.txt beside the slot folders (a save replaces
+	// the slot folder itself, so the choice lives next to it).
+	std::optional<bool> read_autosave(const std::filesystem::path& folder, unsigned slot);
+	bool write_autosave(const std::filesystem::path& folder, unsigned slot, bool enabled);
+	void forget_autosave(const std::filesystem::path& folder, unsigned slot);
 	void update_save_ui(save_session& session, const std::filesystem::path& folder, bool left, bool right, bool enter);
 	float saving_alpha(const save_session& session);
 	void install_save_handlers(interpreter& vm, const level_files& files, const level_header& header,

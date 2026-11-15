@@ -212,9 +212,17 @@ namespace openrayman::game
 		if(moved) fs::remove_all(backup, ignored);
 	}
 
-	std::optional<bool> read_autosave(const std::filesystem::path& folder)
+	namespace
 	{
-		std::ifstream in(folder / "autosave.txt");
+		std::filesystem::path autosave_file(const std::filesystem::path& folder, unsigned slot)
+		{
+			return folder / ("autosave_Slot" + std::to_string(slot) + ".txt");
+		}
+	}
+
+	std::optional<bool> read_autosave(const std::filesystem::path& folder, unsigned slot)
+	{
+		std::ifstream in(autosave_file(folder, slot));
 		unsigned choice;
 		if(!(in >> choice) || choice > 1) return std::nullopt;
 		in >> std::ws;
@@ -222,15 +230,21 @@ namespace openrayman::game
 		return choice != 0;
 	}
 
-	bool write_autosave(const std::filesystem::path& folder, bool enabled)
+	bool write_autosave(const std::filesystem::path& folder, unsigned slot, bool enabled)
 	{
 		std::error_code error;
 		std::filesystem::create_directories(folder, error);
 		if(error) return false;
-		std::ofstream out(folder / "autosave.txt", std::ios::trunc);
+		std::ofstream out(autosave_file(folder, slot), std::ios::trunc);
 		out << (enabled ? 1 : 0) << '\n';
 		out.close();
 		return bool(out);
+	}
+
+	void forget_autosave(const std::filesystem::path& folder, unsigned slot)
+	{
+		std::error_code ignored;
+		std::filesystem::remove(autosave_file(folder, slot), ignored);
 	}
 
 	void update_save_ui(save_session& session, const std::filesystem::path& folder, bool left, bool right, bool enter)
@@ -241,7 +255,7 @@ namespace openrayman::game
 			if((left && !session.left_down) || (right && !session.right_down)) session.choice = !session.choice;
 			if(enter && !session.enter_down)
 			{
-				if(write_autosave(folder, session.choice))
+				if(write_autosave(folder, session.slot, session.choice))
 				{
 					session.autosave = session.choice;
 					session.question = false;
@@ -263,13 +277,22 @@ namespace openrayman::game
 		auto registry = read_save_registry(files.memory, header, tree);
 		auto level = files.name;
 		auto root = std::filesystem::path(vm.save_folder);
-		if(!session->settings_loaded) { session->autosave = read_autosave(root); session->settings_loaded = true; }
+		// The autosave choice of the slot being played (reloaded when the slot changes).
+		auto settings = [=] {
+			if(session->slot && session->settings_slot != session->slot)
+			{
+				session->autosave = read_autosave(root, session->slot);
+				session->settings_slot = session->slot;
+			}
+		};
+		settings();
 		session->automatic_actor = 0;
 		auto confirm_action = read_input_actions(files).first.address() + 9 * input_action_size;
 		// The Hall actor's original Yes -> write -> success -> resume path still runs.
 		// Only its confirmation conditions and text are replaced while autosave is enabled.
 		vm.on_screen_text = [=, &vm](std::uint32_t actor, const value& text) {
 			if(text.type != value_type::id) return false;
+			settings();
 			auto id = text.word();
 			bool hall_question = id == 0x18F || id == 0x190;
 			bool exit_question = id == 0x5043 && (level == "Menu" || level == "menu") && vm.get_variable(actor, 55).as_int() == 6 && vm.get_variable(actor, 40).as_int() != 0;
@@ -339,6 +362,14 @@ namespace openrayman::game
 					levels[level] = capture_save_entries(c.vm.memory(), registry.level, registry.level_size);
 					write_save_slot(root, game_folder, slot, general, levels, session->name, session->completion, index == 93);
 					session->slot = slot;
+					if(index == 93)
+					{
+						// A new game in this slot asks again on its first success screen.
+						forget_autosave(root, slot);
+						session->autosave = std::nullopt;
+						session->settings_slot = slot;
+					}
+					else settings();
 					session->levels = std::move(levels);
 					session->new_game = index == 93;
 					session->first_save = index == 93;

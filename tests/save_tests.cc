@@ -263,7 +263,7 @@ TEST_CASE("real data: Hall of Doors prompt writes the active slot and reports su
 	bool automatic = false;
 	SUBCASE("original prompts") {}
 	SUBCASE("autosave") { automatic = true; }
-	REQUIRE(game::write_autosave(root, automatic));
+	REQUIRE(game::write_autosave(root, 2, automatic));
 	auto session = std::make_shared<game::save_session>(); session->slot = 2;
 	game::install_save_handlers(vm, files, header, tree, *dir, session);
 	game::input keys(memory, read_input_actions(files));
@@ -301,19 +301,26 @@ TEST_CASE("real data: Hall of Doors prompt writes the active slot and reports su
 TEST_CASE("autosave preference is asked once, persists both choices and fades the indicator")
 {
 	auto root = game::save_root() / ("autosave-test-" + std::to_string(std::random_device{}()));
-	CHECK_FALSE(game::read_autosave(root));
+	CHECK_FALSE(game::read_autosave(root, 1));
 	game::save_session session;
+	session.slot = 1;
 	session.question = true;
 	game::update_save_ui(session, root, false, true, false);
 	CHECK(session.choice);
 	game::update_save_ui(session, root, false, false, true);
 	CHECK_FALSE(session.question);
 	CHECK(session.autosave == true);
-	CHECK(game::read_autosave(root) == true);
-	REQUIRE(game::write_autosave(root, false));
-	CHECK(game::read_autosave(root) == false);
-	{ std::ofstream out(root / "autosave.txt"); out << "1 garbage"; }
-	CHECK_FALSE(game::read_autosave(root));
+	CHECK(game::read_autosave(root, 1) == true);
+	// Per save: another slot keeps its own choice (none yet), and forgetting one leaves the other.
+	CHECK_FALSE(game::read_autosave(root, 2));
+	REQUIRE(game::write_autosave(root, 2, false));
+	CHECK(game::read_autosave(root, 1) == true);
+	CHECK(game::read_autosave(root, 2) == false);
+	game::forget_autosave(root, 1);
+	CHECK_FALSE(game::read_autosave(root, 1));
+	CHECK(game::read_autosave(root, 2) == false);
+	{ std::ofstream out(root / "autosave_Slot2.txt"); out << "1 garbage"; }
+	CHECK_FALSE(game::read_autosave(root, 2));
 	session.saving_ticks = 150;
 	CHECK(game::saving_alpha(session) == 1);
 	for(unsigned tick = 0; tick < 120; ++tick) game::update_save_ui(session, root, false, false, false);

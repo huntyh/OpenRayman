@@ -167,7 +167,8 @@ namespace
 
 		// --screenshot <file>: render one frame, save it as BMP and quit. Used for smoke tests.
 		std::optional<fs::path> screenshot;
-		std::optional<fs::path> snapshot; // P: the next drawn frame goes here (screenshots/ beside the program)
+		std::optional<fs::path> snapshot;
+		std::optional<bool> autosave_option; // --autosave on|off // P: the next drawn frame goes here (screenshots/ beside the program)
 
 		// Level view, the default once a game folder is open.
 		enum class view { level, textures };
@@ -844,7 +845,14 @@ namespace
 		if(!camera_hears(a, source))
 			return { 0.0f, 0.0f };
 		glm::vec3 to = glm::vec3(placed->m[0][3], placed->m[1][3], placed->m[2][3]) - a.camera.position;
-		float distance = glm::length(to);
+		// The sound's distance is the exe's quick estimate, not the straight line (0x45B2F0,
+		// _SND_fn_rPseudoNormeVectorSnd: |x| and |y| combine as the larger plus half the smaller
+		// (0x45B2C0), and that result with |z| the same way). It runs up to ~1.2x longer, so the
+		// Jail_20 chute fan (64 units silent) is 67 away from the corridor, not 57 (card 114,
+		// found by DeepSeek, confirmed in the decompilation).
+		auto combine = [](float p, float q) { p = std::abs(p), q = std::abs(q); return p < q ? q + p / 2 : p + q / 2; };
+		float distance = combine(combine(to.x, to.y), to.z);
+		float straight = glm::length(to);
 		float saturation = 8, fade = 30;
 		if(std::uint32_t actor = a.vm ? a.vm->actor_of(source) : 0; actor && a.live->contains(actor + 0x2C, 4))
 			if(std::uint32_t own = a.live->u32(actor + 0x2C); own && a.live->contains(own, 8))
@@ -854,7 +862,7 @@ namespace
 			}
 		float gain = game::sound_distance_volume(distance, saturation, fade) / 127.0f;
 		glm::vec3 right = glm::cross(a.camera.forward(), glm::vec3(0, 0, 1));
-		float pan = distance > 1e-3f && glm::length(right) > 1e-4f ? 0.8f * glm::dot(to / distance, glm::normalize(right)) : 0.0f;
+		float pan = straight > 1e-3f && glm::length(right) > 1e-4f ? 0.8f * glm::dot(to / straight, glm::normalize(right)) : 0.0f;
 		return { gain, pan };
 	}
 
@@ -1833,6 +1841,15 @@ namespace
 			a.vm->set_actors(a.thinkers);
 			a.registry = read_save_registry(files.memory, header, tree);
 			if(a.save_slot) a.saves->slot = a.save_slot;
+			if(a.autosave_option)
+			{
+				// --autosave on|off: that slot's choice (the --save slot, or slot 1).
+				const unsigned slot = a.save_slot ? a.save_slot : 1;
+				if(!openrayman::game::write_autosave(openrayman::game::save_root(), slot, *a.autosave_option))
+					SDL_Log("cannot store autosave preference");
+				a.saves->settings_slot = 0;
+				a.autosave_option.reset();
+			}
 			openrayman::game::install_save_handlers(*a.vm, files, header, tree, a.game->data_dir().parent_path(), a.saves);
 			if(a.carried_general)
 			{
@@ -2637,7 +2654,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 		{
 			std::string option = argv[n + 1];
 			if(option != "on" && option != "off") { SDL_Log("--autosave expects on or off"); return SDL_APP_FAILURE; }
-			if(!openrayman::game::write_autosave(openrayman::game::save_root(), option == "on")) { SDL_Log("cannot store autosave preference"); return SDL_APP_FAILURE; }
+			a->autosave_option = option == "on"; // for the --save slot (default 1), stored once it's known
 		}
 		else if(arg == "--lighting") // on (default) or off: the game's lights and fog, or a plain light; L in the viewer
 			a->level->set_lighting(std::string(argv[n + 1]) != "off");

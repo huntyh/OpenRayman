@@ -208,9 +208,12 @@ the same success text after name confirmation. These original branches now run.
 ## Optional autosave (card 40, ours)
 
 The first new-game success screen asks **Enable autosave?** Left/right selects Yes/No
-(default No); Enter stores the answer and continues. `autosave.txt` in our save root contains
-`1` for on or `0` for off. A missing/invalid file asks again on a new game's first success
-screen. Change it later with `--autosave on` or `--autosave off`, or edit the file while closed.
+(default No); Enter stores the answer and continues. The choice belongs to that save:
+`autosave_SlotN.txt` in our save root (beside the slot folders, since a save replaces the slot
+folder itself) contains `1` for on or `0` for off. A new game in a slot forgets that slot's choice
+and asks again; a missing/invalid file means the original prompts. Change it later with
+`--autosave on` or `--autosave off` (for the `--save` slot, or slot 1), or edit the file while
+closed. Later an entry in our own Options (card 61) can change the loaded save's choice.
 
 With autosave on, the Hall question (0x18F/0x190) and Menu save-before-exit question
 (node 6 var55 = 6, composed text 0x5043) use the scripts' original Yes/write/success/cleanup
