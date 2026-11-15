@@ -139,6 +139,70 @@ yet — takes the "mode 4" path of the solve (0x4858F6): its block is reset to +
 
 ## The mechanics (0x4359D0)
 
+### Returning from Bast_20's opening scene
+
+Camera initialization (0x413DB0) sets the pending cut byte at `cam+0x17C` to 1;
+the serialized camera has zero there. This request survives the initial fixed shot.
+Bast_20's director (scene node 89, model `0d/01 +0x30764`) clears the camera's custom
+bit 30 when behaviour 3 ends. Its behaviour 1 rule at `0d/01 +0x336E0` applies
+489/486/475/482/484 and calls 499 on the camera (scene node 3).
+
+With the request set, 499 (0x47EDD0) computes the active block's target/offset/view
+and fitted follow position, searches for a visible candidate (0x486EA0), then places
+the eye immediately (0x486F40). Placement resets the mechanics aim (0x473480) and
+fits a mode-1 follow transition (0x487520). It sets active-block position-snap and
+orientation flags and consumes the request. It does not run ordinary movement timers
+or append another target-history sample. Without the request, 499 fixes the wanted
+position at the camera's current position for that frame instead.
+
+OpenRayman now initializes the request and executes that immediate search/placement.
+The real-data regression verifies a one-frame jump at the director handoff and one
+frame in mode 1, followed by mode 0. The recording lands at (14.412,61.645,-58.309);
+our replay lands at (8.00,71.84,-58.52). The jump and nearby framing are reproduced,
+but the existing candidate/collision approximation does not select the recorded
+azimuth. Measurements and replay commands are in `build/helpers/cam20_report.md`.
+
+Where this came from: own reading of Rayman2.exe at 0x413DB0, 0x47EDD0,
+0x486EA0, 0x486F40, 0x473480 and 0x487520; Bast_20's director scripts; and the
+user's `rec_bast20cam1` camera/actor logs. No executable code is reproduced.
+
+### Bast_20's fight framing and floor slope
+
+The fight-region controller is scene node 39, model `0d/01 +0x15890`. It keeps
+Rayman as the target and supplies fixed reference axes (497), pitch 0.22 (453),
+distance 12 (447/448), and local offset A (0,0,2.5) (445). With B's usual 1.4,
+the view aims 3.9 units above Rayman, framing the elevated pirate. This is distinct
+from the camera model's selected-enemy rule at `0d/00 +0x181F0`, which uses
+Rayman variables 9 and 41 and procedures 495/497.
+
+After constructing the normal wanted eye, 0x485810 calls 0x4845E0 unless the
+startup flag, fixed-position flag, slope-disable flag or obstruction-waypoint
+flag suppresses it. This projects the reference direction onto the target's floor,
+weights the resulting tilt by the eye-to-target direction, and adjusts pitch.
+0x484B00 also applies it when calculating ideal points and search candidates.
+OpenRayman formerly used this only for candidates; ordinary following now uses
+the same correction. The pitch is kept local in our direction calculation rather
+than mutating executable-style scratch blocks.
+
+At the recorded fight endpoint, our settled eye is (23.14,76.84,-59.72), versus
+(23.157,76.820,-59.707) in `rec_bast20cam2`; yaw -35.0 and pitch +21.5 degrees
+also agree. A real-data regression checks this framing within 0.2 units. This
+general correction changes the checked Learn_10 route by at most 0.332 units;
+the checked Jail_20 trace is unchanged. It is not a Bast_20-specific offset.
+
+Where this came from: own analysis of 0x4845E0, its callers 0x485810 and
+0x484B00, the node-39 scripts and designer values, and the user's fight recording.
+
+The recorded hallway route (`rec_bast20cam3`) travels south with its camera to
+the north. The replay in `build/helpers/cam20_replay_recordings.py` preserves that
+direction for all 591 checked frames: eye Y minus Rayman Y is 10.64..12.91. The
+hallway's node-64 controller supplies a reference pointing north, an 11-unit boom
+and pitch 0.22. This replay injects recorded player positions and seeds the first
+recorded eye; it does not establish that every freely played approach avoids the
+reported frontal view. No separate hallway-specific fix has been established.
+
+### Movement steps
+
 Per frame, with dt in seconds (0x50043C):
 
 1. **Position.** `maxstep = speed·dt`. A snap flag (+0x70 bit 0), a move shorter than 0.001 or one

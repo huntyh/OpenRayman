@@ -94,6 +94,8 @@ namespace openrayman::game
 	// block that is in force, so work out the look-at point, the offset point and the wanted position,
 	// and hand the numbers and the block's speeds to the mechanics through `vm.camera_motion()`.
 	void solve_camera(interpreter& vm, std::uint32_t super_object, bool offset_only = false);
+	// Procedure 499's immediate candidate search and placement (0x47EDD0).
+	void cut_camera(interpreter& vm, std::uint32_t super_object);
 
 	// One tick of the camera's mechanics (0x4359D0, its steps 1, 2, 4 and 6): step the camera's
 	// position towards the wanted one, orbit it about the look-at point, keep it out of the level's

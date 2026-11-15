@@ -2759,6 +2759,88 @@ TEST_CASE("real data: Learn_10 portal camera lands with a clear view")
 	CHECK(straight->m[2][3] == doctest::Approx(0.0f));
 }
 
+TEST_CASE("real data: Bast_20 director cuts back to Rayman at the scene handoff")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Bast_20");
+	auto header = read_level_header(files);
+	scene tree(files.memory, header);
+	auto bank = read_animation_bank(files);
+	game::live_memory m(files.memory);
+	auto rayman = header.placements.at(0).super_object.address();
+	game::interpreter vm(m, rayman);
+	game::register_handlers(vm);
+	game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
+	vm.set_animations(&bank);
+	game::install_level_events(m, bank);
+	std::vector<std::uint32_t> actors;
+	for(const auto& n : tree.nodes())
+		if(n.type == super_object_type::actor) actors.push_back(n.at.address());
+	vm.set_actors(actors);
+	for(const auto& e : read_actors(files.memory, tree, bank).actors)
+		game::set_global_placement(m, tree.node(e.node).at.address(), e.world);
+	for(auto bit : game::first_visit_story_bits) REQUIRE(vm.set_story_bit(actors, bit));
+	game::input keys(m, read_input_actions(files));
+	auto camera_so = tree.node(3).at.address();
+	auto cam = m.u32(vm.actor_of(camera_so) + 0x10);
+	int handoff = -1, jump = -1, transition_frames = 0;
+	vec3 previous{};
+	auto distance = [](const vec3& a, const vec3& b) {
+		return std::sqrt((a[0]-b[0])*(a[0]-b[0]) + (a[1]-b[1])*(a[1]-b[1]) + (a[2]-b[2])*(a[2]-b[2]));
+	};
+	for(int tick = 0; tick < 610; ++tick)
+	{
+		keys.step();
+		game::step(vm, actors);
+		auto pose = *game::global_placement(m, camera_so);
+		vec3 eye{pose.m[0][3], pose.m[1][3], pose.m[2][3]};
+		// The director clears custom bit 30 as it releases the fixed shot.
+		auto standard = m.u32(vm.actor_of(camera_so) + 4);
+		if(tick > 500 && handoff < 0 && !(m.u32(standard + 0x24) & 0x20000000)) handoff = tick;
+		if(handoff >= 0 && distance(eye, previous) > 35)
+		{
+			jump = tick;
+			auto hero = *game::global_placement(m, rayman);
+			vec3 at{hero.m[0][3], hero.m[1][3], hero.m[2][3]};
+			CHECK(distance(eye, at) < 10);
+			CHECK(distance(vm.camera_motion().aim, at) < 2);
+			CHECK(m.u32(cam + 0x60) == 1);
+			CHECK(m.u8(cam + 0x17C) == 0);
+		}
+		if(handoff >= 0 && m.u32(cam + 0x60) == 1) ++transition_frames;
+		previous = eye;
+	}
+	REQUIRE(handoff >= 0);
+	REQUIRE(jump >= 0);
+	CHECK(jump - handoff <= 2);
+	CHECK(transition_frames == 1);
+	CHECK(m.u32(cam + 0x60) == 0);
+	// rec_bast20cam1 has a 40-unit jump, 8.4 units from Rayman, and
+	// exactly one sampled mode-1 frame. Candidate azimuth remains approximate.
+
+	// The fight-region controller raises the aim by 2.5 units and uses a
+	// 12-unit boom. Its ordinary floor fitting must also run: without it
+	// this view settles about 1.7 units too high (rec_bast20cam2 endpoint).
+	for(int tick = 610; tick < 1000; ++tick)
+	{
+		if(tick == 700)
+		{
+			game::write_transform(m, rayman, {32.824f,70.048f,-58.963f},
+				{0.5f,0.8660254f,0,-0.8660254f,0.5f,0,0,0,1});
+			vm.camera_motion().tracked_target = 0;
+		}
+		keys.step();
+		game::step(vm, actors);
+	}
+	auto settled = *game::global_placement(m, camera_so);
+	vec3 eye{settled.m[0][3], settled.m[1][3], settled.m[2][3]};
+	CHECK(distance(eye, {23.157f,76.820f,-59.707f}) < 0.2f);
+}
+
 TEST_CASE("real data: camera fallback relocates across an unreachable wall and restores follow")
 {
 	auto dir = real_game_dir();

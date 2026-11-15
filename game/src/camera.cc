@@ -231,7 +231,7 @@ namespace openrayman::game
 			float gap = 0; // from the measured yaw to the one the window asks for, -pi..pi (+0x7C)
 		};
 		direction camera_direction(const live_memory& m, std::uint32_t cam, std::uint32_t block, std::uint32_t target_transform, vec3 d,
-			std::uint16_t flags_72, std::optional<float> yaw_centre = {})
+			std::uint16_t flags_72, std::optional<float> yaw_centre = {}, std::optional<float> pitch_centre = {})
 		{
 			vec3 up{ 0, 0, 1 }, ref{};
 			if(flags_72 & 0x4000)
@@ -276,12 +276,53 @@ namespace openrayman::game
 			out.yaw = yaw;
 			yaw = window_angle(yaw, yaw_centre ? *yaw_centre : m.f32(block + 0x28), hold ? 0 : m.f32(block + 0x2C));
 			out.gap = wrap_pi(yaw - out.yaw);
-			pitch = window_angle(pitch, m.f32(block + 0x30), hold ? 0 : m.f32(block + 0x34));
+			pitch = window_angle(pitch, pitch_centre.value_or(m.f32(block + 0x30)), hold ? 0 : m.f32(block + 0x34));
 			// 0x484470: turn ref about up, then raise it about the axis across.
 			vec3 v1 = rotate_about(ref, up, yaw);
 			vec3 across = normalised(cross(v1, up));
 			out.back = length(across) > 0.5f ? normalised(rotate_about(v1, across, pitch)) : normalised(v1);
 			return out;
+		}
+
+		// 0x4845E0: project the reference direction onto the target's floor,
+		// then weight its tilt by the direction from the wanted eye to the aim.
+		// Keep this pitch local: the exe changes a scratch block when finding
+		// the ideal point/candidates, so each candidate starts with the same pitch.
+		float floor_pitch(interpreter& vm, std::uint32_t cam, std::uint32_t block,
+			const vec3& ref, const vec3& back, float pitch)
+		{
+			auto& m = vm.memory();
+			if((m.read<std::uint16_t>(block + 0x72) & 0x20) || (m.u8(cam + 0x74) & 2)) return pitch;
+			auto word = [&](std::uint32_t at) { return at && m.contains(at, 4) ? m.u32(at) : 0u; };
+			auto actor = vm.actor_of(target_super_object(vm, block));
+			auto base = word(word(actor + 8)), report = word(base + 0x150);
+			if(!report || !(word(report + 4) & 1)) return pitch;
+			vec3 normal = read3(m, report + 0x34);
+			vec3 flat = normalised(sub(ref, mul(normal, dot(ref, normal))));
+			if(length(flat) < 0.5f) return pitch;
+			float tilt = (std::acos(std::clamp(flat[2], -1.0f, 1.0f)) - pi / 2) * dot(mul(back, -1), flat);
+			float centre = m.u8(cam + 0x75) & 2 ? m.f32(m.u32(cam + 8) + 0x30) : pitch;
+			if(centre * tilt >= 0) {
+				if(std::fabs(tilt) < std::fabs(centre)) return pitch;
+				tilt -= centre;
+			}
+			return centre + tilt;
+		}
+
+		direction fitted_direction(interpreter& vm, std::uint32_t cam, std::uint32_t block,
+			std::uint32_t target_transform, const vec3& delta, std::uint16_t flags,
+			std::optional<float> yaw = {}, bool slope = true)
+		{
+			auto& m = vm.memory();
+			auto dir = camera_direction(m, cam, block, target_transform, delta, flags, yaw);
+			if(slope)
+			{
+				vec3 ref = normalised(read3(m, flags & 0x4000 ? cam + 0x40 : target_transform + 0x1C));
+				float pitch = floor_pitch(vm, cam, block, ref, dir.back, m.f32(block + 0x30));
+				if(pitch != m.f32(block + 0x30))
+					dir = camera_direction(m, cam, block, target_transform, delta, flags, yaw, pitch);
+			}
+			return dir;
 		}
 	}
 
@@ -404,27 +445,13 @@ namespace openrayman::game
 			}
 			float slope_pitch(float yaw, float pitch) const {
 				// 0x484B00 -> 0x4845E0 adjusts candidates for the target's floor.
-				if(flags & 0x20) return pitch;
-				auto word = [&](std::uint32_t at) { return at && m.contains(at, 4) ? m.u32(at) : 0u; };
-				auto actor = word(m.u32(block + 0x68) + 4);
-				auto base = word(word(actor + 8)), report = word(base + 0x150);
-				if(!report || !(word(report + 4) & 1)) return pitch;
-				vec3 normal = read3(m, report + 0x34);
-				vec3 flat = normalised(sub(ref, mul(normal, dot(ref, normal))));
-				if(length(flat) < 0.5f) return pitch;
-				float tilt = (std::acos(std::clamp(flat[2], -1.0f, 1.0f)) - pi / 2) * dot(mul(direction_at(yaw, pitch), -1), flat);
-				float centre = m.u8(cam + 0x75) & 2 ? m.f32(m.u32(cam + 8) + 0x30) : pitch;
-				if(centre * tilt >= 0) {
-					if(std::fabs(tilt) < std::fabs(centre)) return pitch;
-					tilt -= centre;
-				}
-				return centre + tilt;
+				return floor_pitch(vm, cam, block, ref, direction_at(yaw, pitch), pitch);
 			}
 			std::uint32_t original_block() const { return m.u8(cam + 0x75) & 2 ? m.u32(cam + 8) : block; }
 			vec3 follow_point(std::uint32_t b, bool hold_centres) const {
 				auto options = m.read<std::uint16_t>(b + 0x72);
 				if(hold_centres) options |= 0x40;
-				auto d = camera_direction(m, cam, b, target_transform, sub(position, aim), options);
+				auto d = fitted_direction(vm, cam, b, target_transform, sub(position, aim), options, {}, hold_centres || !(m.u8(cam + 0x75) & 8));
 				float r = std::clamp(length(sub(position, aim)), m.f32(block + 0x18), std::max(m.f32(block + 0x18), m.f32(block + 0x1C)));
 				vec3 p = add(aim, mul(d.back, std::max(r, 0.01f)));
 				p[2] = std::clamp(p[2], m.f32(block + 0x60), std::max(m.f32(block + 0x60), m.f32(block + 0x64)));
@@ -620,7 +647,7 @@ namespace openrayman::game
 		};
 	}
 
-	void solve_camera(interpreter& vm, std::uint32_t super_object, bool offset_only)
+	static void solve_camera_impl(interpreter& vm, std::uint32_t super_object, bool offset_only, bool immediate_cut)
 	{
 		live_memory& m = vm.memory();
 		std::uint32_t actor = vm.actor_of(super_object);
@@ -693,7 +720,7 @@ namespace openrayman::game
 			std::uint32_t dyn = target_actor && m.contains(target_actor + 8, 4) ? m.u32(target_actor + 8) : 0;
 			std::uint32_t base = dyn && m.contains(dyn, 4) ? m.u32(dyn) : 0;
 			std::uint32_t report = base && m.contains(base + 0x150, 4) ? m.u32(base + 0x150) : 0;
-			if(report && m.contains(report, 0x158) && length(read3(m, report + 0x14C)) > 0)
+			if(!immediate_cut && report && m.contains(report, 0x158) && length(read3(m, report + 0x14C)) > 0)
 			{
 				for(std::uint32_t i = 0; i < 7; i++)
 				{
@@ -764,7 +791,7 @@ namespace openrayman::game
 		if(offset_only) { state.off = off; return; }
 
 		// 0x485810 maintains this timer even while a script fixes the eye.
-		if(state.valid)
+		if(state.valid && !immediate_cut)
 		{
 			float still = m.f32(cam + 0x70);
 			if(length(state.previous_move) >= setting(0x54)) still = 0;
@@ -812,7 +839,7 @@ namespace openrayman::game
 				w[2] = std::clamp(w[2], low, std::max(low, high));
 				return w;
 			};
-			direction dir = camera_direction(m, cam, block, target_transform, d, flags_72);
+			direction dir = fitted_direction(vm, cam, block, target_transform, d, flags_72, {}, immediate_cut || !(m.u8(cam + 0x75) & 8));
 			state.trace.yaw = dir.yaw;
 			state.trace.gap = dir.gap;
 			back = dir.back;
@@ -833,7 +860,7 @@ namespace openrayman::game
 		constexpr float teleported = 10;
 		// Only for Rayman: the menu's camera follows a marker (node 7) that jumps from waypoint to
 		// waypoint, and the real game pans there (user 2026-11-04), so other targets travel.
-		bool cut = state.valid && target_transform && target == vm.main_actor() &&
+		bool cut = !immediate_cut && state.valid && target_transform && target == vm.main_actor() &&
 			length(sub(aim, state.look_at)) > teleported &&
 			length(sub(position, read3(m, target_transform + 4))) > teleported;
 		// A cut need not travel from the old position. If its destination is hidden from the
@@ -876,6 +903,24 @@ namespace openrayman::game
 		}
 		state.super_object = super_object;
 		state.trace.collision_radius = camera_radius(m, super_object);
+		if(immediate_cut)
+		{
+			// 0x47EDD0 calls 0x486EA0 / 0x486F40 directly, without the
+			// ordinary solve's timers, swing or mechanics handoff.
+			if(target_transform)
+			{
+				vec3 up = flags_72 & 0x4000 ? normalised(read3(m, cam + 0x4C)) : vec3{ 0, 0, 1 };
+				vec3 ref = flags_72 & 0x4000 ? normalised(read3(m, cam + 0x40)) : normalised(read3(m, target_transform + 0x1C));
+				if(length(up) < 0.5f) up = { 0, 0, 1 };
+				if(length(ref) < 0.5f) ref = { 0, -1, 0 };
+				vec3 anchor = add(read3(m, target_transform + 4), rotate(m, target_transform, read3(m, block + camera_field::vector_b)));
+				obstacle_search search{ vm, m, state, cam, block, target_transform, anchor, aim, position, want, off, ref, up, flags_72, state.trace.global_flags };
+				search.fallback(float(vm.frame_ms()) * 0.001f);
+				m.write<std::uint16_t>(block + 0x70, m.read<std::uint16_t>(block + 0x70) | 5);
+				m.write<std::uint8_t>(cam + 0x17C, 0);
+			}
+			return;
+		}
 		if(target_transform && state.valid && !cut && !(flags_72 & 0x2000) && !(m.u8(cam + 0x74) & 2))
 		{
 			vec3 up = flags_72 & 0x4000 ? normalised(read3(m, cam + 0x4C)) : vec3{ 0, 0, 1 };
@@ -932,7 +977,7 @@ namespace openrayman::game
 					vec3 anchor = add(read3(m, target_transform + 4), rotate(m, target_transform, read3(m, block + camera_field::vector_b)));
 					auto try_step = [&](int sign) {
 						float angle = wrap_two_pi(dir.yaw + sign * eighth);
-						vec3 candidate_back = camera_direction(m, cam, block, target_transform, d, flags_72, angle).back;
+						vec3 candidate_back = fitted_direction(vm, cam, block, target_transform, d, flags_72, angle).back;
 						vec3 candidate = wanted_along(candidate_back);
 						bool rejected = length(sub(candidate, anchor)) < m.f32(block + 0x20) + setting(0x6C);
 						// 0x4853C0 requests these casts only in mode 1 with cam+0x75 bit 2.
@@ -1068,6 +1113,16 @@ namespace openrayman::game
 			state.carry_angle = 0;
 			state.valid = true;
 		}
+	}
+
+	void solve_camera(interpreter& vm, std::uint32_t super_object, bool offset_only)
+	{
+		solve_camera_impl(vm, super_object, offset_only, false);
+	}
+
+	void cut_camera(interpreter& vm, std::uint32_t super_object)
+	{
+		solve_camera_impl(vm, super_object, false, true);
 	}
 
 	void move_camera(live_memory& m, std::uint32_t super_object, camera_state& state, double ms, const world_collision& world,

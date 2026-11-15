@@ -2032,6 +2032,10 @@ namespace openrayman::game
 				back_up_camera_block(c.vm, cam);
 				if(!c.vm.camera_motion().valid)
 				{
+					// 0x413DB0 initializes this request independently of the
+					// one-frame startup snap; 499 consumes it at a scene handoff.
+					if(!c.vm.camera_motion().super_object)
+						m.write<std::uint8_t>(cam + camera_field::snap, 1);
 					// 0x4858F6: a camera that has not been placed yet starts over and snaps (+0x70 =
 					// 0x55, mode 4 in cam+0x60). Our mechanics takes bit 0 as the snap.
 					if(std::uint32_t block = camera_block(c.vm, cam, camera_field::block_override))
@@ -2046,7 +2050,7 @@ namespace openrayman::game
 		// 499 (0x47EDD0): aim the camera at the target: cam+0x34 takes its position and bit 0x2000 of
 		// the +0x72 word is set (in the override block only). With the snap flag (cam+0x17C) set it
 		// is an instant cut instead: the exe backs the block up and runs the camera pipeline right
-		// here (the engine's camera code does that), sets bits 0 and 2 of the current block's +0x70
+		// here (the engine's camera code does that), sets bits 0 and 2 of the active block's +0x70
 		// and clears the flag.
 		std::uint32_t camera_focus(call& c)
 		{
@@ -2063,13 +2067,7 @@ namespace openrayman::game
 				return c.args;
 			}
 			back_up_camera_block(c.vm, cam);
-			std::uint32_t at_default = camera_block(c.vm, cam, camera_field::block_default);
-			if(at_default && m.u32(at_default + 0x68))
-			{
-				if(std::uint32_t current = camera_block(c.vm, cam, camera_field::block_current))
-					m.write<std::uint16_t>(current + 0x70, std::uint16_t(m.read<std::uint16_t>(current + 0x70) | 5));
-				m.write<std::uint8_t>(cam + camera_field::snap, 0);
-			}
+			cut_camera(c.vm, self);
 			return c.args;
 		}
 
