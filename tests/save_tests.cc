@@ -311,6 +311,14 @@ TEST_CASE("autosave preference is asked once, persists both choices and fades th
 	CHECK_FALSE(session.question);
 	CHECK(session.autosave == true);
 	CHECK(game::read_autosave(root, 1) == true);
+	// Yes shows the saving Lum with its explanation until Enter is pressed again.
+	CHECK(session.explaining);
+	for(unsigned tick = 0; tick < 300; ++tick) game::update_save_ui(session, root, false, false, false);
+	CHECK(game::saving_alpha(session) == 1);
+	game::update_save_ui(session, root, false, false, true);
+	CHECK_FALSE(session.explaining);
+	game::update_save_ui(session, root, false, false, false);
+	CHECK(game::saving_alpha(session) < 1);
 	// Per save: another slot keeps its own choice (none yet), and forgetting one leaves the other.
 	CHECK_FALSE(game::read_autosave(root, 2));
 	REQUIRE(game::write_autosave(root, 2, false));

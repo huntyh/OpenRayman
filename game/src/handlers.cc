@@ -4834,9 +4834,15 @@ namespace openrayman::game
 			next_arg(c, position);
 			next_arg(c, text);
 			next_arg(c, alpha);
-			if(c.vm.on_screen_text && c.vm.on_screen_text(c.self, text)) return c.args;
+			// Ours (saves, card 40): a text our hook replaces still takes its slot, unseen, so
+			// the slot's earlier text doesn't stay behind on the screen.
+			const bool replaced = c.vm.on_screen_text && c.vm.on_screen_text(c.self, text);
+			const std::size_t index = text_slot(slot);
+			if(replaced && !(index < c.vm.screen_text().all().size() && c.vm.screen_text().at(index).used))
+				return c.args;
 			vec3 p = vec_of(position);
-			c.vm.screen_text().set(text_slot(slot), p[0], p[1], text_of(c.vm, text), std::uint8_t(alpha.as_int()), p[2], c.self);
+			// Replaced: an empty text, since the script may raise the slot's alpha again on its own.
+			c.vm.screen_text().set(index, p[0], p[1], replaced ? std::string() : text_of(c.vm, text), replaced ? std::uint8_t(0) : std::uint8_t(alpha.as_int()), p[2], c.self);
 			return c.args;
 		}
 

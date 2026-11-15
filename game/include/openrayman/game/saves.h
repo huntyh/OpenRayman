@@ -17,6 +17,8 @@ namespace openrayman::game
 		std::optional<bool> autosave;
 		unsigned settings_slot = 0; // the slot whose autosave choice `autosave` holds
 		bool first_save = false, question = false, choice = false;
+		// After Yes: the saving Lum with a short explanation, until Enter.
+		bool explaining = false;
 		bool left_down = false, right_down = false, enter_down = false;
 		std::uint32_t automatic_actor = 0, question_actor = 0;
 		bool automatic_saved = false;

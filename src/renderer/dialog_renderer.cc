@@ -469,10 +469,19 @@ namespace openrayman
 			body.flags = texture_flag::color_key;
 			if(auto texture = texture_for(body))
 			{
-				float x = to_edge(496, 496), y = 436, size = 12;
+				// It hovers gently and beats its wings, as a Lum does in the game.
+				const float seconds = float(SDL_GetTicks()) / 1000.0f;
+				float x = to_edge(496, 496), y = 436 + 1.5f * std::sin(seconds * 3.0f), size = 12;
 				texture_info wings; wings.name = "textures_personnages/divers/lums_aile_adnzw.gf";
 				if(auto wing_texture = texture_for(wings))
-					quad(wing_texture, true, x - 6 * area, y - 2, 36 * area, 22, {1, 1, 1, saving_alpha}, 0, 1);
+				{
+					// The texture is one wing: drawn twice, small, on the body's upper sides, the
+					// left one mirrored, beating by folding up and down.
+					const float beat = 0.3f + 0.7f * std::abs(std::sin(seconds * 14.0f));
+					const float w = 15 * area, h = 13 * beat, top = y + 1 + (13 - h) / 2;
+					quad(wing_texture, true, x + 14 * area, top, w, h, {1, 1, 1, saving_alpha}, 0, 1);
+					quad(wing_texture, true, x + 10 * area - w, top, w, h, {1, 1, 1, saving_alpha}, 1, 0);
+				}
 				SDL_FColor colour{1, 1, 1, saving_alpha};
 				for(int row = 0; row < 2; ++row)
 					for(int col = 0; col < 2; ++col)

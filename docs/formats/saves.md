@@ -207,7 +207,7 @@ the same success text after name confirmation. These original branches now run.
 
 ## Optional autosave (card 40, ours)
 
-The first new-game success screen asks **Enable autosave?** Left/right selects Yes/No
+Ours: the first new-game success text (0x183) is replaced by **Enable autosave?** (a replaced text takes its slot as an empty string, so the name screen's text doesn't stay behind). Yes then shows the saving Lum with a short explanation until Enter. Left/right selects Yes/No
 (default No); Enter stores the answer and continues. The choice belongs to that save:
 `autosave_SlotN.txt` in our save root (beside the slot folders, since a save replaces the slot
 folder itself) contains `1` for on or `0` for off. A new game in a slot forgets that slot's choice

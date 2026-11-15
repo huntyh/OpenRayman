@@ -250,7 +250,17 @@ namespace openrayman::game
 	void update_save_ui(save_session& session, const std::filesystem::path& folder, bool left, bool right, bool enter)
 	{
 		if(session.saving_ticks) --session.saving_ticks;
-		if(session.question)
+		if(session.explaining)
+		{
+			// After Yes: the Lum stays shown with its explanation; Enter lets it fade and go on.
+			session.saving_ticks = std::max(session.saving_ticks, 31u);
+			if(enter && !session.enter_down)
+			{
+				session.explaining = false;
+				session.saving_ticks = 30;
+			}
+		}
+		else if(session.question)
 		{
 			if((left && !session.left_down) || (right && !session.right_down)) session.choice = !session.choice;
 			if(enter && !session.enter_down)
@@ -259,6 +269,11 @@ namespace openrayman::game
 				{
 					session.autosave = session.choice;
 					session.question = false;
+					if(session.choice)
+					{
+						session.explaining = true;
+						session.saving_ticks = 31;
+					}
 				}
 				else session.error = "cannot store autosave preference";
 			}
@@ -307,16 +322,23 @@ namespace openrayman::game
 			if(id == 0x183)
 			{
 				if(session->automatic_actor == actor) { session->automatic_saved = true; return true; }
+				if((session->question || session->explaining) && session->question_actor == actor) return true; // still replaced by our screens
 				if(session->first_save)
 				{
 					session->first_save = false;
-					if(!session->autosave) { session->question = true; session->question_actor = actor; session->choice = false; }
+					if(!session->autosave)
+					{
+						// Ours: the autosave question takes the place of the original "saved
+						// successfully, press Enter" text; one Enter answers it and goes on.
+						session->question = true; session->question_actor = actor; session->choice = false;
+						return true;
+					}
 				}
 			}
 			return false;
 		};
 		vm.on_input_condition = [=](std::uint32_t actor, unsigned condition, std::uint32_t action) -> std::optional<bool> {
-			if(session->question && actor == session->question_actor) return false;
+			if((session->question || session->explaining) && actor == session->question_actor) return false;
 			if(session->automatic_actor == actor && condition == 45 && action == confirm_action)
 			{
 				if(session->automatic_saved) session->automatic_actor = 0;

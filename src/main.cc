@@ -2276,8 +2276,15 @@ namespace
 				};
 				if(a.saves->question)
 				{
-					add_save_text("/C:Enable autosave?", 500, 780, 12, 1, false);
-					add_save_text(a.saves->choice ? "/C:/O400:Yes  /O600:No" : "/C:/O600:Yes  /O400:No", 500, 870, 12, 1, false);
+					add_save_text("/C:Enable autosave?", 500, 450, 14, 1, false);
+					add_save_text(a.saves->choice ? "/C:/O400:Yes  /O600:No" : "/C:/O600:Yes  /O400:No", 500, 580, 14, 1, false);
+				}
+				else if(a.saves->explaining)
+				{
+					add_save_text("/C:When this Lum is shown,", 500, 400, 12, 1, false);
+					add_save_text("/C:the game is saving.", 500, 480, 12, 1, false);
+					add_save_text("/C:Please do not turn off your system.", 500, 560, 10, 1, false);
+					add_save_text("/C:Press Enter to continue.", 500, 660, 10, 1, false);
 				}
 				float saving = game::saving_alpha(*a.saves);
 				if(saving > 0) add_save_text("Saving...", 815, 920, 8, saving, true);
