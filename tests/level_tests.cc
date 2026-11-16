@@ -3843,6 +3843,57 @@ TEST_CASE("real data: Learn_30 swim ascent stays submerged and directional input
 	CHECK(vm.missing_by_actor[rayman].empty());
 }
 
+TEST_CASE("real data: Learn_30 deadly water returns Rayman to the entry")
+{
+	auto dir = real_game_dir(); if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Learn_30");
+	auto header = read_level_header(files);
+	scene tree(files.memory, header);
+	auto bank = read_animation_bank(files);
+	game::live_memory m(files.memory);
+	auto rayman = tree.node(90).at.address();
+	game::interpreter vm(m, rayman);
+	game::register_handlers(vm); game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
+	vm.set_animations(&bank); game::install_level_events(m, bank);
+	std::vector<std::uint32_t> actors;
+	for(const auto& node : tree.nodes()) if(node.type == super_object_type::actor) actors.push_back(node.at.address());
+	vm.set_actors(actors);
+	for(const auto& e : read_actors(files.memory, tree, bank).actors)
+		game::set_global_placement(m, tree.node(e.node).at.address(), e.world);
+	for(auto bit : game::revisit_story_bits) REQUIRE(vm.set_story_bit(actors, bit));
+	game::apply_revisit_state(vm, tree, "Learn_30");
+	game::input keys(m, read_input_actions(files));
+	auto standard = m.u32(vm.actor_of(rayman) + 4);
+	bool checkpoint = false;
+	SUBCASE("level entry") {}
+	SUBCASE("checkpoint marker") { checkpoint = true; }
+	auto marker = tree.node(35).at.address();
+	auto checkpoint_pose = game::global_placement(m, marker); REQUIRE(checkpoint_pose);
+	int health = 0; bool dying = false, returned = false;
+	for(int tick = 0; tick < 550; ++tick)
+	{
+		if(tick == 400)
+		{
+			health = m.u8(standard + 0x21);
+			if(checkpoint)
+				vm.set_variable(tree.node(6).at.address(), 29, game::value::of(game::value_type::actor, vm.actor_of(marker)));
+			game::write_transform(m, rayman, {-19.467f, 194.857f, -5}, {0, 1, 0, -1, 0, 0, 0, 0, 1});
+		}
+		keys.step(); game::step(vm, actors);
+		if(tick >= 400 && vm.get_variable(rayman, 68).as_int() == 52) dying = true;
+		if(tick >= 400 && vm.restart_requested) returned = true;
+	}
+	CHECK(dying); CHECK(returned);
+	CHECK(m.u8(standard + 0x21) == health - 2);
+	auto pose = game::global_placement(m, rayman); REQUIRE(pose);
+	CHECK(pose->m[0][3] == doctest::Approx(checkpoint ? checkpoint_pose->m[0][3] : -94.21f).epsilon(0.001));
+	CHECK(pose->m[1][3] == doctest::Approx(checkpoint ? checkpoint_pose->m[1][3] : 171.32f).epsilon(0.001));
+	CHECK(pose->m[2][3] == doctest::Approx(checkpoint ? checkpoint_pose->m[2][3] : -6.06f).epsilon(0.002));
+}
+
 TEST_CASE("real data: Bast_20 piranhas only catch Rayman in their wake region")
 {
 	auto dir = real_game_dir();
@@ -4036,6 +4087,26 @@ TEST_CASE("procedure 79 requests a deferred return and its 0x467770 siblings exi
 	f.vm.cast_ignore_mask = 0x40;
 	f.procedure(82, {});
 	CHECK(f.vm.cast_ignore_mask == 0);
+}
+
+TEST_CASE("procedure 92 snapshots a checkpoint for the next return")
+{
+	handler_fixture f;
+	auto transform = f.m.allocate(0x58);
+	f.m.write(f.so + 0x24, transform);
+	game::write_transform(f.m, f.so, { 12, 23, 34 }, { 1, 0, 0, 0, 1, 0, 0, 0, 1 });
+	f.procedure(92, { f.me(), f.object(0) });
+	REQUIRE(f.vm.return_player_placement);
+	CHECK(f.vm.return_player_placement->m[0][3] == 12);
+	CHECK(f.vm.return_player_placement->m[1][3] == 23);
+	CHECK(f.vm.return_player_placement->m[2][3] == 34);
+	CHECK_FALSE(f.vm.return_camera_placement);
+	CHECK(f.vm.restart_requested);
+	CHECK(f.vm.stop_sounds_requested);
+	game::write_transform(f.m, f.so, { 1, 2, 3 }, { 1, 0, 0, 0, 1, 0, 0, 0, 1 });
+	CHECK(f.vm.return_player_placement->m[0][3] == 12);
+	f.procedure(79, {});
+	CHECK_FALSE(f.vm.return_player_placement);
 }
 
 TEST_CASE("handler census: procedure 139 writes placed actor removal flags")

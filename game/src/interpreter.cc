@@ -1591,12 +1591,34 @@ namespace openrayman::game
 		}
 	}
 
+	void interpreter::request_checkpoint_return(std::uint32_t player_marker, std::uint32_t camera_marker)
+	{
+		// 0x4064D0 copies the markers now, before any further scripts can move them.
+		return_player_placement = player_marker ? global_placement(m_memory, player_marker) : std::nullopt;
+		return_camera_placement = camera_marker ? global_placement(m_memory, camera_marker) : std::nullopt;
+		restart_requested = true;
+		stop_sounds_requested = true;
+	}
+
 	void interpreter::restart_level()
 	{
 		// 0x403150 takes the mode-4 path (0x406600) while Rayman still has health;
 		// 0x406620 resets types 0/1/2, and types 3/5 only while they are present.
 		// Persistent designer variables and custom-bit-31 health survive reset_actor.
 		restart_requested = false;
+		// 0x4064D0 temporarily changes the reset transforms; 0x403150 restores the
+		// original saved transforms after resetting the world.
+		auto saved_placements = m_start_placements;
+		if(return_player_placement) m_start_placements[m_main_actor] = *return_player_placement;
+		if(return_camera_placement)
+			for(auto self : m_actors)
+				if(auto actor = actor_of(self); actor && m_memory.u32(actor + 0x10))
+				{
+					m_start_placements[self] = *return_camera_placement;
+					break;
+				}
+		return_player_placement.reset();
+		return_camera_placement.reset();
 		for(auto self : m_generated.alive())
 		{
 			remove(self);
@@ -1626,6 +1648,7 @@ namespace openrayman::game
 			auto collision = m_memory.u32(actor + 0x14);
 			if(collision && m_memory.contains(collision, 0x66)) m_memory.write<std::uint8_t>(collision + 0x65, 0);
 		}
+		m_start_placements = std::move(saved_placements);
 		m_wake_sectors.clear();
 		m_sector_members.clear();
 		m_actor_sectors.clear();

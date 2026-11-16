@@ -1081,3 +1081,13 @@ can reverse the speed as the camera turns.
 
 Where this came from: own reading of Rayman2.exe at `0x46E450`, compared with Rayman's
 behaviour 27 and the Bast_20 and Learn_31 recordings, 2026-11-16.
+
+## Checkpoint return procedure 92
+
+Procedure 92 (`0x467C60` -> `0x4064D0`) evaluates player and camera marker actors. Their current transforms temporarily replace the corresponding reset transforms; a null marker leaves that reset transform unchanged. It stops the sound group and requests mode 8. After the mode-4 world reset, `0x403150` restores the original saved reset transforms. OpenRayman snapshots the marker placements when called and applies them to the next reset; procedure 79 clears any pending markers. This implements the return operation, but does not establish that every deadly-water or pit route reaches it.
+
+### Where this came from
+
+Own reading of Rayman2.exe at `0x467C60`, `0x4064D0`, `0x406490` and `0x403150`, and Rayman's macro 7 in the installed level scripts. No executable code was copied. A synthetic test checks argument handling and snapshot values; a complete playing-state hazard reproduction remains open.
+
+Learn_30 nodes 35 and 36 set controller node 6's var29 to themselves when Rayman enters their zones. Rayman's macro 7 passes this marker to procedure 92 after the death animation. A real-level test sets node 35 as the marker, drops Rayman onto node 155's `0x4400` water at (-19.467, 194.857, -5), and verifies loss of two health and return to the marker; it also checks the no-marker return to the entry. The test assigns the marker directly and does not verify walking through its zone or the fade.

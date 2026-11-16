@@ -302,6 +302,9 @@ namespace openrayman::game
 		// after the tick; `level_request_flag` is true for 86 (what the exe does with it isn't read).
 		bool quit_requested = false; // procedure 101: host closes after the current tick
 		bool restart_requested = false; // procedure 79, 0x406490: game mode 8
+		// 0x4064D0: optional temporary player/camera placements for the next return.
+		std::optional<affine> return_player_placement, return_camera_placement;
+		void request_checkpoint_return(std::uint32_t player_marker, std::uint32_t camera_marker);
 		// Consume the return request between frames (0x403150 -> 0x406600, mode 4).
 		void restart_level();
 		std::string level_request;
