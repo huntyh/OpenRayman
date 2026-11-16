@@ -5388,7 +5388,8 @@ namespace openrayman::game
 					return d == 0 ? 0.0f : std::copysign(q, d);
 				};
 				vec3 a0 = axis(own, 0), a2 = axis(own, 2);
-				float q0 = lean(dot(axis(aim, 0), a0)), q1 = lean(dot(axis(aim, 1), a2));
+				// 0x46E450 mode 2 compares both actors' Z axes for vertical input.
+				float q0 = lean(dot(axis(aim, 0), a0)), q1 = lean(dot(axis(aim, 2), a2));
 				float x = q0 * dir[0], z = q1 * dir[2];
 				dir = { a0[0] * x + a2[0] * z, a0[1] * x + a2[1] * z, a0[2] * x + a2[2] * z };
 			}

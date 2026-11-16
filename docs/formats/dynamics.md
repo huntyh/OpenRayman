@@ -501,3 +501,13 @@ state is 0x1A5234. Its script calls 172 (tilt), 167 (yaw), then 188 (proposed
 local speed). Headless reproduction with a long dive followed by A+Up now
 leaves the bottom and settles below the water surface. These are engine tests,
 not live original-game visual verification. No decompiled code copied.
+
+Wall alignment scale: `0x4394A0` builds the new orientation, then `0x436E40` passes the
+separate dynamics scale at `+0x48` to `0x445F90` to rebuild the combined matrix. The
+orientation's cross-product axes can be shorter than one for a tilted wall; their length
+is not the stored scale. OpenRayman recovers scale from the ratio of combined-axis length
+to orientation-axis length before rebuilding, so repeated wall alignment does not multiply
+in the tilt repeatedly.
+
+Where this came from: independent reading of Rayman2.exe at `0x4394A0`, `0x436E40` and
+`0x445F90`, compared with the Learn_31 recording, 2026-11-16.
