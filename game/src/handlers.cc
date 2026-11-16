@@ -4959,6 +4959,19 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 0x4329B0: script transforms are visible immediately, but their pivot
+		// displacement goes through the next collision step (0x43E900).
+		void queue_pivot_shift(call& c, std::uint32_t self, const vec3& shift)
+		{
+			live_memory& m = c.vm.memory();
+			if(std::uint32_t base = dynamics_base(c, self, 0x88); base && !(m.u32(base + 0xC) & 0x80))
+			{
+				vec3 pending = m.u32(base + 8) & 0x20000000 ? read3(m, base + 0x6C) : vec3{};
+				write3(m, base + 0x6C, { pending[0] + shift[0], pending[1] + shift[1], pending[2] + shift[2] });
+				m.write<std::uint32_t>(base + 8, m.u32(base + 8) | 0x20000000);
+			}
+		}
+
 		// 171 (0x469CB0): turn so two given directions become two of the actor's axes. The mode
 		// picks them (tables 0x46A848, 0x46A860): A becomes -Y, -Y, Z, Z, X, X and B becomes Z, X,
 		// -Y, X, Z, -Y for modes 0..5. A zero vector keeps the current axis. A stays exact, the
@@ -5016,17 +5029,7 @@ namespace openrayman::game
 				vec3 after = pivot_offset(), at = read3(m, t + 4);
 				vec3 moved{ at[0] + before[0] - after[0], at[1] + before[1] - after[1], at[2] + before[2] - after[2] };
 				write3(m, t + 4, moved);
-				// The exe hands the turn to the dynamics (0x469C70 -> 0x4329B0, unless end flag 0x80):
-				// base flag 0x20000000, the new axes at +0x128 and the shift as a move at +0x6C, which
-				// the next mechanics step collides like any other and which keeps the speed. So it is
-				// no teleport: record it as where the mechanics left the actor (+0x7C), or walls would
-				// stop pushing for that tick. Rayman's slide turns this way every tick, and without
-				// walls he went through the overhanging lip at the top of the Jail_20 chute's sides.
-				if(std::uint32_t base = dynamics_base(c, self, 0x88); base && !(m.u32(base + 0xC) & 0x80))
-				{
-					vec3 left = read3(m, base + 0x7C);
-					write3(m, base + 0x7C, { left[0] + moved[0] - at[0], left[1] + moved[1] - at[1], left[2] + moved[2] - at[2] });
-				}
+				queue_pivot_shift(c, self, sub(moved, at));
 			}
 			return c.args;
 		}
@@ -5064,15 +5067,28 @@ namespace openrayman::game
 		std::uint32_t rotate_about_axis(call& c)
 		{
 			std::uint32_t self = c.vm.target(c.self, true);
-			value axis_value, degrees;
+			value axis_value, degrees, pivot;
 			next_arg(c, axis_value);
 			next_arg(c, degrees);
+			if(c.index == 167) next_arg(c, pivot);
 			std::uint32_t t = transform_of(c.vm, self);
 			vec3 local = vec_of(axis_value);
 			if(!t || length(local) < 1e-9f)
 				return c.args;
 			live_memory& m = c.vm.memory();
 			vec3 axes[3] = { read3(m, t + 0x10), read3(m, t + 0x1C), read3(m, t + 0x28) };
+			// 167 (0x46AB20 case 0xA7): the same rotation about a local pivot.
+			// Preserve the pivot's world position, as procedure 172 does.
+			auto pivot_offset = [&] {
+				vec3 offset{}, p = vec_of(pivot);
+				for(std::uint32_t i = 0; i < 3; ++i)
+				{
+					vec3 axis = read3(m, t + 0x34 + i * 12);
+					for(std::size_t j = 0; j < 3; ++j) offset[j] += p[i] * axis[j];
+				}
+				return offset;
+			};
+			vec3 before = c.index == 167 ? pivot_offset() : vec3{};
 			vec3 k{};
 			for(std::size_t i = 0; i < 3; i++)
 				for(std::size_t j = 0; j < 3; j++)
@@ -5089,6 +5105,13 @@ namespace openrayman::game
 					v[i] = v[i] * cs + kv[i] * sn + k[i] * along * (1 - cs);
 			}
 			set_axes(m, t, axes[0], axes[1], axes[2]);
+			if(c.index == 167)
+			{
+				vec3 shift = sub(before, pivot_offset());
+				vec3 at = read3(m, t + 4);
+				write3(m, t + 4, { at[0] + shift[0], at[1] + shift[1], at[2] + shift[2] });
+				queue_pivot_shift(c, self, shift);
+			}
 			return c.args;
 		}
 
@@ -6192,6 +6215,7 @@ namespace openrayman::game
 		for(std::uint32_t i : { 163, 164, 165 })
 			vm.on_procedure(i, rotate_local);
 		vm.on_procedure(166, rotate_about_axis);
+		vm.on_procedure(167, rotate_about_axis);
 		vm.on_procedure(173, set_scale);
 		vm.on_procedure(235, clear_contacts);
 		vm.on_procedure(236, clear_contacts);

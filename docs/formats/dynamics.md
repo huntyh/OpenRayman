@@ -379,3 +379,46 @@ rotation/scale changes between the two transforms, receiving spheres/boxes/capsu
 and the full/specialized resolvers are not implemented by this change. Water keeps
 its previous query path rather than gaining continuous sensor reporting. Visual
 verification of the bottom-right pirate throw remains outstanding.
+
+## Swimming ceiling and pivot motion (card 118b)
+
+Sources: own analysis of the installed PC Rayman2.exe, read-only decompiles
+`H:/r2export/re/decomp/00435b80.c`, `00437e60.c`, `0043eec0.c`,
+`004329b0.c`, `0043e900.c`, `0046ab20.c`; float constants checked with
+pefile against the original PE on 2026-11-16. No original code or assets included.
+Learn_30 node 90's behaviour 5 and swim states were inspected through `ortool brain`
+and live state/mechanics pointers. The user's OpenRayman recording
+`rec_20261116_001354/rayman.txt` supplied the failing trajectory, not original-game evidence.
+
+Mechanics bit `0x20000` installs dynamics end flag `0x100000` (0x435B80).
+The swim states use this bit. In 0x43EEC0 a water contact records the surface Z
+in global 0x4B72D4. At 0x438DB1 within 0x437E60, this flag rejects a candidate
+Z greater than water Z minus **1.2** (float at 0x49C78C): it restores the previous
+Z and removes the vertical response. This is a mechanics constraint; behaviour 5
+continues swimming at the surface. It does not require a behaviour exit when contact
+bit 0x40 disappears. Water remains a separate report category (0x43F510/0x43F940,
+slot 4, bit 0x40), not a solid floor for other mechanics. OpenRayman's query includes
+the swept body's vertical interval so an upward step cannot skip the water plane.
+
+Script pivot shifts must also pass through collision. 0x4329B0 stores the new
+rotation and a translation at dynamics +0x6C, setting base flag `0x20000000`;
+0x43E900 adds that translation after the script speeds, before speed limiting
+and collision. Applying the translation directly as the mechanics' starting
+position lets a swimmer tilt his body upward through the ceiling. OpenRayman
+keeps the script-visible transform, removes the pending pivot translation when
+starting mechanics, and includes it in the colliding move. Procedures 172 and
+167 use this path; it preserves the turn's pivot without treating it as a teleport.
+
+Learn_30's swim behaviour calls procedure 346 in **mode 1**, computes var48
+from movement fields 15/16, then explicitly turns with procedure **167**
+(0x46AB20 case 0xA7). Like 166, it rotates about a local axis; its third
+argument is a local pivot whose world position is preserved. The missing handler
+was why the swim script could not steer. Mode 2's disabled automatic turning
+in 0x46E450 is intentional and belongs to other movement, including behaviour 27.
+
+Regression: real Learn_30 data drops Rayman into the recorded river region,
+uses Z/Up then A to exercise submerged ascent, checks that he remains near
+z=-9.54 with surface z=-8.339, and that Right changes his heading. The drop
+also checks there is no water report or swim entry while his feet are above
+the water plane. Exact visible entry timing against original Rayman 2 remains
+unverified; physical/report zones and rendered body position need a real-game comparison.

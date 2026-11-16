@@ -3577,6 +3577,86 @@ TEST_CASE("real data: Learn_30 swimming surface cast sees the river")
 	CHECK(water->point[2] == doctest::Approx(-8.339).epsilon(0.001));
 }
 
+TEST_CASE("real data: Learn_30 swim ascent stays submerged and directional input steers")
+{
+	auto dir = real_game_dir();
+	if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Learn_30");
+	auto header = read_level_header(files);
+	scene tree(files.memory, header);
+	auto bank = read_animation_bank(files);
+	game::live_memory m(files.memory);
+	auto rayman = tree.node(90).at.address();
+	game::interpreter vm(m, rayman);
+	game::register_handlers(vm);
+	game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
+	vm.set_animations(&bank);
+	game::install_level_events(m, bank);
+	std::vector<std::uint32_t> actors;
+	for(const auto& node : tree.nodes())
+		if(node.type == super_object_type::actor) actors.push_back(node.at.address());
+	vm.set_actors(actors);
+	for(const auto& e : read_actors(files.memory, tree, bank).actors)
+		game::set_global_placement(m, tree.node(e.node).at.address(), e.world);
+	for(auto bit : game::revisit_story_bits) REQUIRE(vm.set_story_bit(actors, bit));
+	game::apply_revisit_state(vm, tree, "Learn_30");
+	game::input keys(m, read_input_actions(files));
+	auto base = m.u32(m.u32(vm.actor_of(rayman) + 8));
+	auto report = m.u32(base + 0x150);
+	auto swimming = [&] { return vm.get_variable(rayman, 9).as_int() == 25; };
+	float deepest = 0, before_turn = 0;
+	bool entered = false;
+	for(int tick = 0; tick < 1050; ++tick)
+	{
+		if(tick == 400)
+		{
+			// Falling into the recorded river, facing roughly the recording's heading.
+			const float cs = std::cos(70 * 0.0174532925f), sn = std::sin(70 * 0.0174532925f);
+			game::write_transform(m, rayman, {-85.3f, 201.1f, -6}, {-sn, cs, 0, -cs, -sn, 0, 0, 0, 1});
+			vm.camera_motion().tracked_target = 0;
+		}
+		keys.set_key(0x2C, tick >= 550 && tick < 620); // Z (dive)
+		keys.set_key(0xC8, tick >= 550 && tick < 620); // Up
+		keys.set_key(0x1E, tick >= 620); // A (ascend)
+		keys.set_key(0xCD, tick >= 900); // Right
+		keys.step();
+		game::step(vm, actors);
+		auto pose = game::global_placement(m, rayman); REQUIRE(pose);
+		float z = pose->m[2][3];
+		if(tick >= 400 && z > -8.339f)
+		{
+			CHECK_FALSE(swimming()); // no swim entry while the feet are above the plane
+			CHECK((m.u32(report + 4) & 0x40) == 0);
+		}
+		if(tick == 540)
+		{
+			REQUIRE(swimming());
+			CHECK((m.u32(base + 0xC) & 0x100000) != 0);
+			auto state = m.u32(m.u32(vm.actor_of(rayman)) + 4);
+			CHECK((m.u32(m.u32(state + 0x24) + 4) & 0x20000) != 0);
+			entered = true;
+		}
+		if(tick >= 620 && tick < 700) deepest = std::min(deepest, z);
+		if(tick >= 750)
+		{
+			CHECK(swimming());
+			CHECK(z <= -9.53f);
+			CHECK(z > -9.65f);
+			CHECK((m.u32(report + 4) & 0x40) != 0);
+			CHECK(vm.get_variable(rayman, 49).as_float() == doctest::Approx(-8.339f).epsilon(0.001));
+		}
+		float heading = std::atan2(-pose->m[1][1], -pose->m[0][1]);
+		if(tick == 899) before_turn = heading;
+		if(tick == 960) CHECK(std::abs(std::remainder(heading - before_turn, 6.2831853f)) > 0.5f);
+	}
+	CHECK(entered);
+	CHECK(deepest < -10.5f);
+	CHECK(vm.missing_by_actor[rayman].empty());
+}
+
 TEST_CASE("real data: Bast_20 piranhas only catch Rayman in their wake region")
 {
 	auto dir = real_game_dir();

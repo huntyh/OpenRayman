@@ -1162,6 +1162,15 @@ namespace openrayman::game
 			write_vec(m, b + base::speed, vec{});
 		}
 		std::uint32_t flags = m.u32(b + base::flags);
+		// 0x4329B0 / 0x43E900: undo the script-visible pivot displacement
+		// before constructing the move, then collide it alongside the speeds.
+		vec pivot_move{};
+		if(flags & 0x20000000)
+		{
+			pivot_move = read_vec(m, b + 0x6C);
+			write_vec(m, t + 4, vsub(read_vec(m, t + 4), pivot_move));
+			write_vec(m, b + 0x6C, {});
+		}
 		// The fast mechanics (end flag 0x200, from mechanics bit 0x100; 0x431AD0's first branch): the
 		// stored speed (+0x3C, world axes) carries the actor on, x dt, and an imposed speed replaces
 		// the axes it names. No gravity, inertia or floor: Rayman's shot flies this way and watches
@@ -1202,6 +1211,7 @@ namespace openrayman::game
 			const vec start = target;
 			for(std::size_t i = 0; i < 3; i++)
 				target[i] += speed[i] * dt;
+			target = vadd(target, pivot_move);
 			if(basic_sweep_enabled(m, b, flags))
 			{
 				const world_collision actors(vm ? actor_collision_triangles(*vm, super_object, &target) : std::vector<collision_triangle>{}, true);
@@ -1216,7 +1226,7 @@ namespace openrayman::game
 			return;
 		}
 		bool gravity =(flags & has_gravity) && !(m.u32(b + base::end_flags) & no_gravity);
-		if(!gravity && !(flags & (has_animation_motion | uses_imposed | uses_proposed | uses_third)) && !(vm && vm->supports().contains(super_object)))
+		if(!gravity && !(flags & (has_animation_motion | uses_imposed | uses_proposed | uses_third | 0x20000000)) && !(vm && vm->supports().contains(super_object)))
 			return;
 		auto actor_triangles = vm && (flags & collides) && !basic_sweep_enabled(m, b, flags) ? actor_collision_triangles(*vm, super_object) : std::vector<collision_triangle>{};
 		bool support_active = false;
@@ -1404,6 +1414,7 @@ namespace openrayman::game
 			add_speed(base::imposed, 0x20000, 0x4000);
 		if(flags & uses_third)
 			add_speed(base::third, 0x800000, 0x10000);
+		target = vadd(target, pivot_move);
 		// The per-axis speed limit (0x43EAC0), in the actor's own axes: the move is turned into them,
 		// each component clipped, and turned back.
 		if(flags & has_limit)
@@ -1651,6 +1662,18 @@ namespace openrayman::game
 		std::optional<world_collision::surface_hit> water;
 		if((flags & collides) && has_collision)
 			water = surface_at(&world_collision::water_at, target[0], target[1], target[2] + body_height, target[2]);
+		// 0x437E60 (0x438DB1): swim mechanics bit 0x20000 becomes end flag
+		// 0x100000. Reject a rise above the water height (0x43EEC0) minus 1.2
+		// (0x49C78C), keeping the previous Z and removing vertical response.
+		// Include the swept body interval so a large upward move cannot skip it.
+		if((m.u32(b + base::end_flags) & 0x100000) && (flags & collides) && has_collision)
+			if(auto ceiling = surface_at(&world_collision::water_at, target[0], target[1],
+				std::max(current[2], target[2]) + body_height, std::min(current[2], target[2]));
+				ceiling && target[2] > ceiling->height - 1.2f)
+			{
+				target[2] = current[2];
+				water = surface_at(&world_collision::water_at, target[0], target[1], target[2] + body_height, target[2]);
+			}
 
 		// The speed the scripts read back (0x436A30); landing drops the vertical part (0x43B337).
 		// The exe works it out before the collision step, so being pushed out of a wall isn't speed
