@@ -15,6 +15,8 @@
 #include <info.h>
 #include <renderer/gl.h>
 #include <renderer/dialog_renderer.h>
+#include <renderer/loading_screen.h>
+#include <openrayman/file.h>
 #include <renderer/level_renderer.h>
 #include <game_trace.h>
 
@@ -176,6 +178,15 @@ namespace
 		std::unique_ptr<level_renderer> level;
 		std::unique_ptr<memory_image> dialog_memory;
 		std::unique_ptr<dialog_renderer> dialog_overlay;
+		// Ours: the level's loading picture between two levels (renderer/loading_screen.h). It fades
+		// in over the old level (scripts paused), the new level loads and runs unseen under it, then
+		// it fades out: 3 s in all. --loading-screens off cuts straight across, as before.
+		std::unique_ptr<loading_screen> loading;
+		bool loading_screens = true;
+		enum class loading_phase { none, in, hold, out };
+		loading_phase loading_at = loading_phase::none;
+		float loading_time = 0; // seconds into the phase
+		std::string loading_picture;
 		std::uint32_t screen_font_actor = 0;
 		std::size_t level_index = 0;
 		std::string start_level = "Learn_10"; // --level <name>
@@ -752,6 +763,36 @@ namespace
 	// An error outside one actor's scripts (input, placing the actors) is logged and the scripts
 	// stop, rather than closing the viewer.
 	void load_level(app& a, std::size_t index);
+
+	// The loading screen's timing: fade in, the rest of the 3 s, fade out (user, 2026-11-16).
+	constexpr float loading_fade = 0.5f, loading_hold = 2.0f;
+
+	// The picture the level's own DSB names for its loading screen (its vignette section), one of
+	// them at random as the spec says ("Random<VigLoadLearn,1,1,VigLoadMisc,1,6>"); the Hall of
+	// Doors names the wide Rayman.gf. Empty when it names none or Vignette.cnt lacks it.
+	std::string loading_picture_for(const app& a, const std::string& level)
+	{
+		if(!a.game || !a.loading) return {};
+		try
+		{
+			auto folder = a.game->directory("levels");
+			if(!folder) return {};
+			const fs::path file = *folder / level / (level + ".dsb");
+			if(!fs::exists(file)) return {};
+			std::vector<std::string> candidates;
+			for(const auto& vignette : parse_dsb(read_file(file)).vignettes)
+				for(const auto& picture : vignette.pictures)
+					if(a.loading->has_picture(picture))
+						candidates.push_back(picture);
+			if(candidates.empty()) return {};
+			return candidates[std::size_t(SDL_rand(Sint32(candidates.size())))];
+		}
+		catch(const std::exception& e)
+		{
+			SDL_Log("Loading picture for %s: %s", level.c_str(), e.what());
+			return {};
+		}
+	}
 
 	// Procedures 86/87 asked for another level (the menu's New Game asks for Jail_10): load it as
 	// a new game would reach it, with the story words the scripts left in Fix.
@@ -2072,6 +2113,8 @@ namespace
 			a.game = std::move(game);
 			a.sounds = std::make_unique<sound_player>(*a.game);
 			a.archives = std::move(archives);
+			a.loading = std::make_unique<loading_screen>(a.archives, a.api);
+			a.loading_at = app::loading_phase::none;
 			a.textures = std::move(textures);
 			a.music_files = a.game->music_files();
 			a.music_index.reset();
@@ -2376,6 +2419,20 @@ namespace
 			glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		}
 
+		if(a.loading)
+		{
+			// OPENRAYMAN_LOADING_PREVIEW=<picture> shows a loading screen fully (screenshots).
+			static const char* preview = std::getenv("OPENRAYMAN_LOADING_PREVIEW");
+			if(preview)
+				a.loading->draw(preview, 1, float(SDL_GetTicks()) / 1000.0f, w, h);
+			else if(a.loading_at != app::loading_phase::none)
+			{
+				const float alpha = a.loading_at == app::loading_phase::in ? a.loading_time / loading_fade
+					: a.loading_at == app::loading_phase::out ? 1 - a.loading_time / loading_fade : 1;
+				a.loading->draw(a.loading_picture, alpha, float(SDL_GetTicks()) / 1000.0f, w, h);
+			}
+		}
+
 		auto screenshot = a.screenshot;
 		if(!screenshot && a.snapshot)
 		{
@@ -2646,6 +2703,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 				at = end + 1;
 			}
 		}
+		else if(arg == "--loading-screens") // on (default) or off: the picture between two levels
+			a->loading_screens = std::string_view(argv[n + 1]) != "off";
 		else if(arg == "--collision") // on or off (default): what the level collides with; C in the viewer
 			a->show_collision = std::string_view(argv[n + 1]) == "on";
 		else if(arg == "--save")
@@ -3026,14 +3085,37 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 		float step = a.speed * dt * (keys[SDL_SCANCODE_LSHIFT] ? 4.0f : 1.0f);
 		a.camera.move(forward * step, right * step, up * step);
 
-		if(a.animating && !a.screenshot)
+		// A level change first fades its loading picture in over this level, which stands still.
+		if(a.loading_at == app::loading_phase::none && a.vm && !a.vm->level_request.empty() && a.loading_screens && !a.screenshot)
+		{
+			a.loading_picture = loading_picture_for(a, a.vm->level_request);
+			if(!a.loading_picture.empty())
+			{
+				a.loading_at = app::loading_phase::in;
+				a.loading_time = 0;
+			}
+		}
+		else if(a.loading_at != app::loading_phase::none)
+		{
+			a.loading_time += dt;
+			const float length = a.loading_at == app::loading_phase::hold ? loading_hold : loading_fade;
+			if(a.loading_time >= length)
+			{
+				a.loading_time = 0;
+				a.loading_at = a.loading_at == app::loading_phase::in ? app::loading_phase::hold
+					: a.loading_at == app::loading_phase::hold ? app::loading_phase::out : app::loading_phase::none;
+			}
+		}
+		const bool loading_in = a.loading_at == app::loading_phase::in;
+		if(a.animating && !a.screenshot && !loading_in)
 		{
 			a.animation_time += dt;
 			game::profiler::scope timed(game::profiler::zone::scripts);
 			run_scripts(a, dt);
 		}
 		if(a.vm && a.vm->quit_requested) return SDL_APP_SUCCESS;
-		change_requested_level(a);
+		if(!loading_in)
+			change_requested_level(a);
 		game::profiler::scope timed(game::profiler::zone::posing);
 		update_actors(a);
 	}

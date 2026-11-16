@@ -22,6 +22,10 @@ namespace openrayman
 	{
 		// Picture candidates. "Random<A,1,1,B,1,6>" style specs are expanded to their names.
 		std::vector<std::string> images;
+		// Every picture the spec can show, as named in Vignette.cnt without the extension:
+		// "Random<VigLoadLearn,1,1,VigLoadMisc,1,6>" gives VigLoadLearn01 and VigLoadMisc01..06,
+		// "Rayman.bmp" gives Rayman.
+		std::vector<std::string> pictures;
 		std::array<float, 4> bar_outside_color{};
 		std::array<float, 4> bar_inside_color{};
 		std::array<std::array<float, 4>, 4> bar_corner_colors{};

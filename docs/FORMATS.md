@@ -112,9 +112,14 @@ Known sections: memory pools (`0x00`), level list (`0x1E`), data directories (`0
 (`0x40`), loading screens (`0x46`), options (`0x64`), sound banks (`0x5C`), and `0x20`, `0x5A`, `0x6E`
 whose meaning is unknown.
 
+The loading screen's picture entry (`0x47`/`0x48`) is either a plain name (the Hall of Doors:
+`Rayman.bmp`) or `Random<name,first,last,...>` triplets: `Random<VigLoadLearn,1,1,VigLoadMisc,1,6>`
+names `VigLoadLearn01` and `VigLoadMisc01`..`06`, two-digit numbers, exactly the names in
+`Vignette.cnt` (`dsb_vignette::pictures`).
+
 - Sources: old OpenRayman (mask algorithm, section structure, several sections); own analysis
   (loading screen colours are floats, the option entry has three strings, sections `0x5A`/`0x5C` in
-  level DSBs).
+  level DSBs; the picture numbering, matched against the `Vignette.cnt` listing, 2026-11-16).
 
 ## SNA memory blocks, relocation tables
 

@@ -6,6 +6,7 @@
 #include <openrayman/error.h>
 #include <openrayman/mask.h>
 
+#include <algorithm>
 #include <format>
 
 // A decoded DSB is a list of sections: a u32 section id, entries of the form
@@ -65,6 +66,32 @@ namespace openrayman
 		for(std::size_t n = 0; n < parts.size(); n += 3)
 			images.push_back(parts[n]);
 		return images;
+	}
+
+	// "Random<VigLoadLearn,1,1,VigLoadMisc,1,6>" -> VigLoadLearn01, VigLoadMisc01..06 (the Vignette.cnt
+	// names); a plain "Rayman.bmp" -> Rayman.
+	static std::vector<std::string> expand_pictures(const std::string& spec)
+	{
+		const std::string prefix = "Random<";
+		if(!spec.starts_with(prefix))
+			return { spec.substr(0, spec.rfind('.')) };
+		std::vector<std::string> parts;
+		std::string inner = spec.substr(prefix.size(), spec.find('>') - prefix.size());
+		for(std::size_t start = 0; start <= inner.size();)
+		{
+			std::size_t comma = std::min(inner.find(',', start), inner.size());
+			parts.push_back(inner.substr(start, comma - start));
+			start = comma + 1;
+		}
+		std::vector<std::string> pictures;
+		for(std::size_t n = 0; n + 2 < parts.size(); n += 3)
+		{
+			int from = 0, to = 0;
+			try { from = std::stoi(parts[n + 1]); to = std::stoi(parts[n + 2]); } catch(const std::exception&) { continue; }
+			for(int i = from; i <= to && i - from < 100; i++)
+				pictures.push_back(std::format("{}{:02}", parts[n], i));
+		}
+		return pictures;
 	}
 
 	static void parse_memory(binary_reader& r, dsb_script& script)
@@ -128,8 +155,12 @@ namespace openrayman
 			{
 				case 0x47:
 				case 0x48:
-					v.images = expand_images(read_string(r));
+				{
+					std::string spec = read_string(r);
+					v.images = expand_images(spec);
+					v.pictures = expand_pictures(spec);
 					break;
+				}
 				case 0x4B: // display now
 				case 0x50: // add the loading bar
 					break;

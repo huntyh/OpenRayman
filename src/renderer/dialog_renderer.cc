@@ -494,18 +494,21 @@ namespace openrayman
 				const float seconds = float(SDL_GetTicks()) / 1000.0f;
 				float x = to_edge(496, 496), y = 436 + 1.5f * std::sin(seconds * 3.0f), size = 12;
 				// The Lums' own wing animation (Fix, visual material frames at 05/01 +0x65D354 in
-				// Learn_10): lum_aile01, 02, 03, 02, 0.035 s each, additive.
+				// Learn_10): lum_aile01, 02, 03, 02, additive. The game flips them every 0.035 s;
+				// the save icon beats at 0.07 s, calmer (user, 2026-11-16).
 				static const char* const wing_frames[] = { "01", "02", "03", "02" };
 				texture_info frame;
-				frame.name = std::string("textures_personnages/divers/lum_aile") + wing_frames[int(seconds / 0.035f) % 4] + "_ad.gf";
+				frame.name = std::string("textures_personnages/divers/lum_aile") + wing_frames[int(seconds / 0.07f) % 4] + "_ad.gf";
 				frame.flags = texture_flag::additive;
 				if(auto wing_frame = texture_for(frame))
 				{
 					// Each frame is one wing across its card, its root at the card's bottom-left corner:
-					// the right wing as drawn with that corner on the body, the left one mirrored.
-					const float side = 22, cx = x + 12 * area, cy = y + 12, overlap = 3;
-					quad(wing_frame, true, cx - overlap * area, cy - side + overlap, side * area, side, {1, 1, 1, saving_alpha}, 0, 1);
-					quad(wing_frame, true, cx - (side - overlap) * area, cy - side + overlap, side * area, side, {1, 1, 1, saving_alpha}, 1, 0);
+					// the right wing with that corner at the edge of the glow's core, the left one
+					// mirrored. Shorter than the body's scale and apart, so the tips never meet over
+					// the body; the body is drawn after them, in front (user, 2026-11-16).
+					const float side = 18, cx = x + 12 * area, cy = y + 12, overlap = 3, gap = 4;
+					quad(wing_frame, true, cx + (gap - overlap) * area, cy - side + overlap, side * area, side, {1, 1, 1, saving_alpha}, 0, 1);
+					quad(wing_frame, true, cx - (side - overlap + gap) * area, cy - side + overlap, side * area, side, {1, 1, 1, saving_alpha}, 1, 0);
 				}
 				SDL_FColor colour{1, 1, 1, saving_alpha};
 				for(int row = 0; row < 2; ++row)

@@ -137,6 +137,7 @@ TEST_CASE("DSB: decode round trip and section parsing")
 	CHECK(dsb.levels == std::vector<std::string>{ "Menu", "Jail_10" });
 	REQUIRE(dsb.vignettes.size() == 1);
 	CHECK(dsb.vignettes[0].images == std::vector<std::string>{ "VigA", "VigB" });
+	CHECK(dsb.vignettes[0].pictures == std::vector<std::string>{ "VigA01", "VigB01", "VigB02", "VigB03", "VigB04", "VigB05", "VigB06" });
 	CHECK(dsb.vignettes[0].bar_outside_color[1] == 0.5f);
 	CHECK(dsb.vignettes[0].bar_max == 80);
 	CHECK(dsb.sound_banks == std::vector<std::uint32_t>{ 3, 9 });

@@ -251,6 +251,11 @@ keys go to the game, and compare with the GOG game side by side:
 - [ ] Enter on the name: Jail_10 loads and the intro starts ("A planet of anguish and pain…").
       The save it writes goes to OpenRayman's own folder, so the GOG save folder stays untouched.
 - [ ] Esc / Backspace go back a screen as in the game.
+- [ ] Loading screens (ours, docs/IMPROVEMENTS.md): every level change fades the level's picture
+      in over half a second, holds it two seconds with three yellow Lums hopping in the bottom
+      right, then fades into the new level. Entering the Hall of Doors shows the wide picture
+      with Rayman, Ly and Clark; the pictures keep their shape, wide ones fill the width without black bands above and below.
+      Rayman is already in place when the picture fades out (no new-game spot first).
 
 ## Known limitations
 
