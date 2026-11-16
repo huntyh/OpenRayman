@@ -219,6 +219,7 @@ namespace
 		std::shared_ptr<openrayman::game::save_session> saves = std::make_shared<openrayman::game::save_session>();
 		unsigned save_slot = 0; // --save 1..3: restore the installed slot at level load
 		bool new_game = false; // --start new: levels start as on a new game, not as reached from the hub
+		bool from_hub = false; // this level was asked for from the Hall of Doors: its portal takes Rayman before the first frame
 		bool intro_start = false; // run the level's opening scene
 		int bars_in_place = 0; // ticks left in which a new game's first cutscene bars start fully in (our choice)
 		std::vector<std::int32_t> story_bits; // --story-bits 1095,1143: more of a save's story, set at load
@@ -793,6 +794,7 @@ namespace
 		// A loaded slot seeds this session once. Subsequent loads keep the progress just made.
 		a.save_slot = 0;
 		a.new_game = true;
+		a.from_hub = std::ranges::equal(levels[a.level_index], std::string_view("Mapmonde"), [](unsigned char x, unsigned char y) { return std::tolower(x) == std::tolower(y); });
 		load_level(a, std::size_t(found - levels.begin()));
 	}
 
@@ -2009,7 +2011,9 @@ namespace
 					if(a.tick >= settle_ticks)
 					{
 						auto p = openrayman::game::global_placement(*a.live, a.vm->main_actor());
-						if(a.new_game || !p || p->uniform_scale() < 0.5f)
+						// A new game has no portal, but a level asked for from the Hall arrives through one
+						// (also loaded as a new game reaches it, change_requested_level).
+						if((a.new_game && !a.from_hub) || !p || p->uniform_scale() < 0.5f)
 							break;
 					}
 					update_game_camera_visibility(a);
