@@ -1180,6 +1180,27 @@ struct handler_fixture
 	bool condition(unsigned n, std::initializer_list<game::value> args = {}) { return invoke(node_type::condition, n, args).word() != 0; }
 };
 
+TEST_CASE("climbing input uses the camera up axis (0x46E450)")
+{
+	handler_fixture f;
+	auto own = f.m.allocate(0x58), camera = f.m.allocate(0x48), camera_actor = f.m.allocate(0x38);
+	auto standard = f.m.allocate(0x34), camera_transform = f.m.allocate(0x58), up = f.m.allocate(0x20);
+	f.m.write(f.so + 0x24, own);
+	f.m.write<std::uint32_t>(camera, 2); f.m.write(camera + 4, camera_actor);
+	f.m.write(camera + 0x24, camera_transform); f.m.write(camera_actor + 4, standard);
+	f.m.write(standard + 0xC, camera);
+	for(auto t : {own, camera_transform})
+	{
+		f.m.write<float>(t + 0x10, 1); f.m.write<float>(t + 0x20, 1); f.m.write<float>(t + 0x30, 1);
+	}
+	f.m.write<std::int32_t>(up + 0xC, 1);
+	f.vm.movement.actions[0] = up; f.vm.movement.snap = true;
+	f.invoke(node_type::procedure, 346, {f.integer(0), f.integer(0), f.integer(0), f.integer(0), f.integer(2), f.integer(0), f.integer(0)}, camera_actor);
+	CHECK(f.vm.movement.vector[0] == doctest::Approx(0));
+	CHECK(f.vm.movement.vector[1] == doctest::Approx(0));
+	CHECK(f.vm.movement.vector[2] == doctest::Approx(100));
+}
+
 TEST_CASE("procedure 200 preserves a turned scaled actor when dynamics caches are stale")
 {
 	handler_fixture f;
@@ -4554,6 +4575,20 @@ TEST_CASE("real data: Learn_31 climbable tree reports its wall material and hold
 		if(vm.get_variable(rayman, 9).as_int() == 22)
 		{
 			auto pose = game::global_placement(m, rayman); REQUIRE(pose);
+			// 0x4394A0/0x436E40: the wall rotation must not compound scale.
+			auto transform = m.u32(rayman + 0x24);
+			for(std::uint32_t axis = 0; axis < 3; ++axis)
+			{
+				float rotation2 = 0, scaled2 = 0;
+				for(std::uint32_t component = 0; component < 3; ++component)
+				{
+					float rotation = m.f32(transform + 0x10 + axis * 12 + component * 4);
+					float scaled = m.f32(transform + 0x34 + axis * 12 + component * 4);
+					rotation2 += rotation * rotation;
+					scaled2 += scaled * scaled;
+				}
+				CHECK(scaled2 == doctest::Approx(rotation2).epsilon(0.001));
+			}
 			if(!entered) { entered = true; entry_height = pose->m[2][3]; }
 			high = std::max(high, pose->m[2][3]);
 		}

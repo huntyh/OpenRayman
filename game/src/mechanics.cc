@@ -1519,7 +1519,12 @@ namespace openrayman::game
 					const vec turned[3] = { x, w, z };
 					for(std::uint32_t k = 0; k < 3; k++)
 					{
+						// 0x4394A0 -> 0x436E40 rebuilds the scaled matrix from the
+						// separate scale, not from the length of a tilted rotation axis.
+						float rotation_length = vlen(read_vec(m, t + 0x10 + k * 12));
 						float scale = vlen(read_vec(m, t + 0x34 + k * 12));
+						if(rotation_length > 1e-6f)
+							scale /= rotation_length;
 						if(scale < 1e-6f)
 							scale = 1;
 						write_vec(m, t + 0x10 + k * 12, turned[k]);

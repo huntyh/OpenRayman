@@ -455,3 +455,13 @@ real-data replay; several floor-level approaches still stop at an unflagged
 surface and need investigation. Sources: the Learn_31 scene, collision and
 Rayman scripts via `ortool`, contact replay and own analysis of the executable
 at 0x48B000, 0x479910 and 0x4394A0. This is not a live-game verification.
+
+Wall alignment scale: `0x4394A0` builds the new orientation, then `0x436E40` passes the
+separate dynamics scale at `+0x48` to `0x445F90` to rebuild the combined matrix. The
+orientation's cross-product axes can be shorter than one for a tilted wall; their length
+is not the stored scale. OpenRayman recovers scale from the ratio of combined-axis length
+to orientation-axis length before rebuilding, so repeated wall alignment does not multiply
+in the tilt repeatedly.
+
+Where this came from: independent reading of Rayman2.exe at `0x4394A0`, `0x436E40` and
+`0x445F90`, compared with the Learn_31 recording, 2026-11-16.

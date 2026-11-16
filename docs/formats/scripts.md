@@ -1072,3 +1072,12 @@ the tutorial finishes at 13796. run3 stops in the Hall: it does **not** record a
 exit. That exit is verified independently by the installed scripts, a headless integration
 test, and an engine screenshot after loading Learn_30. Exact visual timing and audio parity
 still require comparison in interactive play.
+
+Procedure 346 (`0x46E450`) mode 2 maps movement onto the controlled actor's X and Z
+axes. Its vertical sign and weighting come from the dot product of the camera's Z axis
+and the actor's Z axis; the horizontal weighting uses their X axes. The climb script
+uses the result as its proposed speed. Using the camera's Y axis for the vertical dot
+can reverse the speed as the camera turns.
+
+Where this came from: own reading of Rayman2.exe at `0x46E450`, compared with Rayman's
+behaviour 27 and the Bast_20 and Learn_31 recordings, 2026-11-16.
