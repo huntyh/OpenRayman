@@ -4936,8 +4936,8 @@ namespace openrayman::game
 			return c.args;
 		}
 
-		// 161 (0x46AB20): look along a direction (forward, -Y, along it), keeping up as close as
-		// possible to the old Z axis.
+		// 161 (0x46AB20, 0x46B3D9..0x46B7C0): -Y follows the direction. Rebuild a
+		// level right axis, keeping only the old up hemisphere, not the old roll.
 		std::uint32_t face_direction(call& c)
 		{
 			std::uint32_t self = c.vm.target(c.self, true);
@@ -4945,16 +4945,25 @@ namespace openrayman::game
 			next_arg(c, v);
 			std::uint32_t t = transform_of(c.vm, self);
 			vec3 d = vec_of(v);
-			if(!t || length(d) < 1e-9f)
+			if(!t)
 				return c.args;
 			live_memory& m = c.vm.memory();
-			vec3 y = normalised({ -d[0], -d[1], -d[2] });
-			vec3 z = read3(m, t + 0x28);
-			vec3 x = cross(y, z);
-			if(length(x) < 1e-6f)
-				x = read3(m, t + 0x10);
-			x = normalised(x);
-			z = normalised(cross(x, y));
+			vec3 old_y = read3(m, t + 0x1C), old_z = read3(m, t + 0x28);
+			vec3 y = length(d) > 0 ? normalised({ -d[0], -d[1], -d[2] }) : old_y;
+			// Near a vertical direction the exe uses the old Y (or Z if Y is also vertical)
+			// to choose a heading. Otherwise this helper makes X horizontal.
+			vec3 reference = old_y;
+			if(std::abs(y[0]) >= 0.001f || std::abs(y[1]) >= 0.001f)
+				reference = { -y[0], -y[1], y[2] + 2 };
+			else if(std::abs(old_y[0]) < 0.001f && std::abs(old_y[1]) < 0.001f)
+				reference = old_z;
+			vec3 right = cross(reference, y);
+			right[2] = 0;
+			vec3 z = cross(right, y);
+			if((z[2] > 0) != (old_z[2] > 0))
+				for(float& component : z) component = -component;
+			vec3 x = normalised(cross(y, z));
+			z = normalised(z);
 			set_axes(m, t, x, y, z);
 			return c.args;
 		}

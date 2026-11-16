@@ -1308,6 +1308,9 @@ TEST_CASE("conditions 19 and 20 test kind-2 zones, material masks and the target
 
 TEST_CASE("real data: Learn_31 dust creature places six distinct trailing channels")
 {
+	float distance = 5;
+	SUBCASE("close attack uses the horizontal turn") { distance = 5; }
+	SUBCASE("patrol must remove the saved roll through procedure 161") { distance = -12; }
 	auto dir = real_game_dir(); if(!dir) return;
 	auto data = game_data::locate(*dir); REQUIRE(data);
 	auto files = load_level_files(*data, "Learn_31");
@@ -1326,14 +1329,23 @@ TEST_CASE("real data: Learn_31 dust creature places six distinct trailing channe
 	auto creature = tree.node(8).at.address();
 	game::input keys(m, read_input_actions(files));
 	bool placed = false, distinct = false;
+	std::vector<vec3> history;
 	for(int tick = 0; tick < 600; ++tick)
 	{
 		auto head = game::global_placement(m, creature); REQUIRE(head);
-		game::write_transform(m, rayman, {head->m[0][3] + 5, head->m[1][3], head->m[2][3]}, {1,0,0,0,1,0,0,0,1});
+		history.push_back({head->m[0][3], head->m[1][3], head->m[2][3] + 1});
+		game::write_transform(m, rayman, {head->m[0][3] + distance, head->m[1][3] + (distance < 0 ? 7 : 0), head->m[2][3]}, {1,0,0,0,1,0,0,0,1});
 		keys.step(); game::step(vm, actors);
 		auto standard = m.u32(vm.actor_of(creature) + 4);
 		m.write<std::uint32_t>(standard + 0x24, m.u32(standard + 0x24) & ~0x800u); // in view
 		const auto& positions = vm.placed_channels(creature);
+		if(tick > 30)
+		{
+			auto upright = game::global_placement(m, creature); REQUIRE(upright);
+			INFO("tick ", tick, ", Rayman offset ", distance);
+			CHECK(upright->m[2][2] > 0.9f); // pitch towards elevated waypoints is legitimate
+			CHECK(std::abs(upright->m[2][0]) < 0.0001f); // level right axis, not retained roll
+		}
 		if(positions.size() != 6) continue;
 		placed = true;
 		std::set<vec3> unique;
@@ -1356,6 +1368,10 @@ TEST_CASE("real data: Learn_31 dust creature places six distinct trailing channe
 			auto channels = pose(bank, *actor.animation, 0);
 			for(const auto& [channel, position] : positions)
 			{
+				// The script's six delays must survive the actor's rotated frame as world points.
+				const auto& behind = history.at(std::size_t(tick - 3 * (channel - 2)));
+				for(int axis = 0; axis < 3; ++axis)
+					CHECK(position[axis] == doctest::Approx(behind[axis]).epsilon(0.00001));
 				auto found = std::ranges::find(channels, channel, &channel_pose::id);
 				REQUIRE(found != channels.end()); REQUIRE(found->object);
 				auto mesh = actor.meshes.at(*found->object); REQUIRE(mesh);
@@ -1364,7 +1380,7 @@ TEST_CASE("real data: Learn_31 dust creature places six distinct trailing channe
 						&& std::abs(part.world.m[1][3] - position[1]) < 0.0001f && std::abs(part.world.m[2][3] - position[2]) < 0.0001f;
 				}));
 			}
-			break;
+			if(tick >= 180) break;
 		}
 	}
 	CHECK(placed); CHECK(distinct);

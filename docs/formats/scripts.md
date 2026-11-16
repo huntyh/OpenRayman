@@ -539,6 +539,36 @@ one minus that weight multiplies the third argument.
 
 These waypoint and graph findings are own analysis of Rayman2.exe with GPT-6.1 Terra.
 
+**Direction turns and the dust creature (card 66).** Procedure 161 (`0x46AB20`,
+direction branch `0x46B3D9..0x46B785`) sets -Y along its argument, then removes roll.
+It does not project the actor's old up axis onto the new facing. It builds a horizontal
+right axis and an up axis perpendicular to the facing, keeping the sign of the old Z's
+world-Z component. A zero argument retains the old Y but still rebuilds the other axes.
+Near vertical (both horizontal components below 0.001), old Y supplies the reference;
+if that too is vertical, old Z does. The nonvertical reference is
+`(-Y.x, -Y.y, Y.z + 2)`; cross it with Y, explicitly zero the result's Z, cross that
+with Y to obtain up, choose its hemisphere, then normalize up and `Y cross up`.
+`0x445D00` installs these axes while retaining scale.
+
+Learn_31 node 8's patrol behaviour 4 calls 161 with a blend of its forward axis
+(function 163, `0x478A20`) and the direction to its waypoint. Preserving old up here
+kept its saved roll: with Rayman at (-170,390,22), our old tick-20 Z was approximately
+(-0.045,0.942,0.333). Rebuilding it as above gives (-0.011,0.003,1.000).
+Close approach instead calls 433 (`0x46A890`), which sets world +Z immediately and
+had concealed this patrol bug. Procedure 171's two-axis orientation is a separate path.
+The family's five states use animations 317/318, both single-frame, nine-channel poses;
+317 has identity part rotations. The six world-space placements from 218, rather than
+bank motion or mesh look-at, make the trail (see below). No level-specific rotation
+correction is needed.
+
+Where this came from: own study of the local GOG Rayman2.exe exports `0046ab20.c`,
+`0046a890.c`, `00469cb0.c`, and disassembly of `0x46B3D9..0x46B785` (including
+constants `0x49CBF4 = 0.001`, `0x49CC00 = -2`), plus `ortool brain`, `states`,
+`motion`, `pose`, `anim` and timed `run` on Learn_31, 2026-11-16. The real-data
+doctest exercises patrol and close attack, checks world up/right and all six delayed
+head positions through the renderer's pose path. Live comparison with Rayman2.exe
+has not been performed for this change.
+
 **Turning and moving.** Procedure 171 (0x469CB0) turns an actor so that two given directions A and
 B become two of its axes, picked by a mode (tables 0x46A848, 0x46A860; 0x445F20 splits a
 transform into its X, Y, Z rows): A becomes -Y, -Y, Z, Z, X, X and B becomes Z, X, -Y, X, Z, -Y for
