@@ -4444,8 +4444,20 @@ namespace openrayman::game
 		// transforms, by requesting game mode 8. The world reset runs between frames.
 		std::uint32_t restart_level(call& c)
 		{
+			c.vm.return_player_placement.reset();
+			c.vm.return_camera_placement.reset();
 			c.vm.restart_requested = true;
 			c.vm.stop_sounds_requested = true;
+			return c.args;
+		}
+
+		// 92 (0x467C60 -> 0x4064D0): use the two actors as temporary return placements.
+		std::uint32_t return_to_checkpoint(call& c)
+		{
+			value player, camera;
+			next_arg(c, player);
+			next_arg(c, camera);
+			c.vm.request_checkpoint_return(super_object_value(c.vm, player), super_object_value(c.vm, camera));
 			return c.args;
 		}
 
@@ -5983,6 +5995,7 @@ namespace openrayman::game
 		vm.on_procedure(136, turn_by);
 		vm.on_procedure(81, start_over);
 		vm.on_procedure(79, restart_level);
+		vm.on_procedure(92, return_to_checkpoint);
 		vm.on_procedure(82, clear_cast_ignore_mask);
 		vm.on_procedure(313, set_view_size_or_origin);
 		vm.on_procedure(315, set_view_size_or_origin);
