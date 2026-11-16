@@ -362,13 +362,23 @@ namespace openrayman
 									// Pieces of one gauge decide their edge together: the middle of every edge piece of
 									// the same owner on the same row. Decided per piece, a bar near the screen's middle (the
 									// oxygen bar) had its fill pulled to one edge and its rest to the other (card 130).
+									// Only pieces that touch, chained: the fill and the rest of one bar. An icon on the
+									// same row as other pictures (the Hall's level counts, the menu's cage) keeps its own
+									// middle, or the row's middle pulled it to the far edge, away from its counter.
 									float left = image.first[0], right = image.second[0];
-									for(const auto& other : images)
-										if(other.edge && other.owner == image.owner && other.first[1] < image.second[1] && image.first[1] < other.second[1])
-										{
-											left = std::min(left, other.first[0]);
-											right = std::max(right, other.second[0]);
-										}
+									for(bool grown = true; grown;)
+									{
+										grown = false;
+										for(const auto& other : images)
+											if(other.edge && other.owner == image.owner && other.second[2] > 0 && other.first[1] < image.second[1] && image.first[1] < other.second[1]
+												&& other.first[0] <= right + 0.5f && left <= other.second[0] + 0.5f
+												&& (other.first[0] < left || other.second[0] > right))
+											{
+												left = std::min(left, other.first[0]);
+												right = std::max(right, other.second[0]);
+												grown = true;
+											}
+									}
 									r.x = to_edge(r.x, (left + right) * 0.5f * 6.4f);
 									r.w *= area;
 								}
