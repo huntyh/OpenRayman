@@ -223,7 +223,7 @@ rather than at the last level's (user, 2026-11-15). Only that actor's Enter cond
 acknowledgement are hidden. Failed writes follow the original failure branch. With autosave
 off none of these substitutions run. Successful automatic writes show **Saving...** with the
 game's `lums_corpsvert_mxy.gf` and `lums_aile_adnzw.gf`, loaded from Textures.cnt at runtime.
-The bottom-right indicator holds for two seconds, then fades over half a second; its timer
+The bottom-right indicator holds for four seconds, then fades over half a second (4.5 s in all); its timer
 survives level changes. No game assets are included in sources.
 
 ### Where this came from
