@@ -4594,6 +4594,37 @@ TEST_CASE("real data: recorded Bast_20 gravity barrels land and explode using th
 	CHECK(game::global_placement(m,so)->m[2][3]>-60);
 }
 
+TEST_CASE("real data: Bast_20 barrel aimed toward cave meets a wall")
+{
+	auto dir = real_game_dir(); if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Bast_20");
+	auto header = read_level_header(files); scene tree(files.memory, header);
+	game::live_memory m(files.memory);
+	const auto rayman = header.placements.at(0).super_object.address();
+	game::interpreter vm(m, rayman); game::register_handlers(vm);
+	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
+	std::vector<std::uint32_t> actors;
+	for(const auto& n : tree.nodes()) if(n.type == super_object_type::actor) actors.push_back(n.at.address());
+	vm.set_actors(actors);
+	const auto* templates = files.memory.find({4, 1}); REQUIRE(templates);
+	// Recorded throwing position; cave target is a diagnostic input, not a recorded throw.
+	const auto so = vm.generated().create(m, templates->base + 0x1F04, rayman, {54.54f, 33.62f, -38.03f}, 0);
+	REQUIRE(so);
+	vm.set_variable(so, 0, game::value::vector(82.4f, 76.6f, -51.8f));
+	const auto actor = vm.actor_of(so), base = m.u32(m.u32(actor + 8));
+	for(int tick = 0; tick <= 60; ++tick)
+	{
+		vm.next_tick(); vm.think(so); REQUIRE_FALSE(vm.removed(so));
+		game::move_actor(m, so, actor, 1000.0 / 60, vm.world(), &vm);
+	}
+	const auto p = game::global_placement(m, so); REQUIRE(p);
+	CHECK(p->m[0][3] == doctest::Approx(70.7561f).epsilon(0.0001));
+	CHECK(p->m[1][3] == doctest::Approx(58.6365f).epsilon(0.0001));
+	CHECK(p->m[2][3] == doctest::Approx(-36.4175f).epsilon(0.0001));
+	CHECK((m.u32(m.u32(base + 0x150) + 4) & 4) != 0); // wall report, 0x43F940
+}
+
 TEST_CASE("script impact casts include water and pass-through materials with world displacement")
 {
 	handler_fixture f;
@@ -4802,4 +4833,31 @@ TEST_CASE("real data: Learn_31 climbable tree reports its wall material and hold
 	}
 	CHECK(entered);
 	CHECK(high > entry_height + 0.1f);
+}
+
+TEST_CASE("real data: Bast_20 recorded barrel approaches the cave from a different collision sector")
+{
+	auto dir = real_game_dir(); if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Bast_20");
+	auto header = read_level_header(files); scene tree(files.memory, header);
+	game::live_memory m(files.memory);
+	auto rayman = header.placements.at(0).super_object.address();
+	game::interpreter vm(m, rayman); game::register_handlers(vm);
+	std::vector<std::uint32_t> actors;
+	for(const auto& n : tree.nodes()) if(n.type == super_object_type::actor) actors.push_back(n.at.address());
+	vm.set_actors(actors); vm.update_activation(actors);
+	const auto* templates = files.memory.find({4, 1}); REQUIRE(templates);
+	// Recorded tick 1205, not the original launch position.
+	auto barrel = vm.generated().create(m, templates->base + 0x1F04, rayman, {80.56f, 71.22f, -42.13f}, 0);
+	REQUIRE(barrel); vm.update_activation(actors);
+	const auto sectors = vm.collision_sectors(barrel);
+	const auto triangles = static_collision(files.memory, tree);
+	const auto roof = std::ranges::find_if(triangles, [](const auto& t) {
+		return t.node == 205 && t.normal[2] < -0.9f && t.corners[0][2] > -46 && t.corners[0][2] < -40;
+	});
+	REQUIRE(roof != triangles.end());
+	CHECK(roof->flags == 0);
+	CHECK(roof->normal[2] == doctest::Approx(-0.984f).epsilon(0.01));
+	CHECK(std::ranges::find(sectors, roof->sector) == sectors.end()); // 0x494610 collision neighbours
 }

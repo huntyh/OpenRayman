@@ -387,3 +387,33 @@ examines 0x4000 and 0x8000 at 0x43EEC0 and 0x43F510. These are distinct
 paths; the overlap helper's filter is not a general actor eligibility rule.
 This is own read-only inspection of Rayman2.exe; zone inventory comes from
 the installed level data.
+
+## Bast_20 barrel entering the cave (card 127 follow-up)
+
+In the OpenRayman recording `rec_20261116_213014`, the generated gravity barrel
+(state `04/01+0x228C`, animation 297) reaches `(80.56,71.22,-42.13)` at tick
+1205 and `(81.58,72.97,-47.60)` at tick 1215, then hits Rayman near tick 1223.
+The first rendered barrel position is `(71.34,55.37,-30.73)` at tick 1114; it
+is already moving, so it is not established as its launch position. The path
+approaches the back of the inward-facing cave shell. Its triangles have material
+flags zero. The shell is node 205 under sector 204; a generated actor at the
+recorded tick-1205 position selects sector 215, whose collision list excludes
+sector 204. A radius-0.6 sweep of the recorded segment finds no front-facing
+scenery contact even without sector filtering; with reversed normals it meets
+an unfiltered surface near `(80.758,72.104,-43.641)`, but not through the
+actor's sector filter. Sector selection and triangle orientation both affect
+this example. This is the gravity barrel, not the collision-disabled fast shot.
+
+The executable's `0x494290 -> 0x494610` uses the actor's sector and its collision
+neighbours; `0x499A80 -> 0x499440 -> 0x4914D0/0x491380` performs its sphere and
+triangle contact tests. This evidence does not establish how the original game
+handles this specific throw, or justify broadening the sector search or treating
+all back faces as solid. In particular, an all-sector search would bring back the
+separate Bast_20 decorative pond collision described above. No engine fix for
+the cave crossing is claimed yet.
+
+**Where this came from:** own read-only analysis of the named OpenRayman
+recording, Bast_20 collision data and generated actor scripts, plus the
+Rayman2.exe decompilations at the addresses above. A real-data regression checks
+the recorded point's sector relationship and the unflagged inward-facing roof.
+No executable code or game geometry was copied.
