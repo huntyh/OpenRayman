@@ -618,7 +618,7 @@ namespace openrayman::game
 		return found == m_geometry->cells.end() ? none : found->second;
 	}
 
-	std::array<float, 2> world_collision::wall_push(float x, float y, float bottom, float top, float radius) const
+	std::array<float, 2> world_collision::wall_push(float x, float y, float bottom, float top, float radius, wall_hit* contact) const
 	{
 		if(radius <= 0 || top <= bottom)
 			return { 0.0f, 0.0f };
@@ -634,6 +634,7 @@ namespace openrayman::game
 		std::sort(walls.begin(), walls.end());
 		walls.erase(std::unique(walls.begin(), walls.end()), walls.end());
 		float start_x = x, start_y = y;
+		float deepest = 0;
 		// A few passes: pushed out of one wall, the cylinder may now be in the next.
 		for(int pass = 0; pass < 3; pass++)
 		{
@@ -654,6 +655,14 @@ namespace openrayman::game
 				if(d >= radius)
 					continue; // the axis is far enough from this wall
 				float amount = radius - d;
+				if(contact && amount > deepest)
+				{
+					deepest = amount;
+					contact->point = closest_on_triangle({x,y,(bottom+top)*0.5f}, t.corners[0], t.corners[1], t.corners[2]);
+					contact->normal = t.normal;
+					contact->material = t.material;
+					contact->actor = m_actor_geometry ? std::uint32_t(t.node) : 0;
+				}
 				if(d < 1e-6f)
 				{
 					// The axis is in the wall: leave the way the triangle faces.
@@ -1282,13 +1291,13 @@ namespace openrayman::game
 			if(other && (!a || (lowest ? other->height < a->height : other->height > a->height))) a = other;
 			return a;
 		};
-		auto wall_push = [&](float x, float y, float bottom, float top, float radius) {
-			if(actors.empty()) return world.wall_push(x, y, bottom, top, radius);
+		auto wall_push = [&](float x, float y, float bottom, float top, float radius, world_collision::wall_hit* contact = nullptr) {
+			if(actors.empty()) return world.wall_push(x, y, bottom, top, radius, contact);
 			vec start{ x, y, 0 };
 			for(int pass = 0; pass < 3; pass++)
 				for(const world_collision* geometry : { &world, &actors })
 				{
-					auto push = geometry->wall_push(x, y, bottom, top, radius);
+					auto push = geometry->wall_push(x, y, bottom, top, radius, contact);
 					x += push[0]; y += push[1];
 				}
 			return std::array<float, 2>{ x - start[0], y - start[1] };
@@ -1496,7 +1505,7 @@ namespace openrayman::game
 			auto holdable = [&](const world_collision::segment_hit& s) {
 				return std::abs(s.normal[2]) < steep && vdot(s.normal, y_axis) >= -0.707f;
 			};
-			const vec centre = { target[0], target[1], target[2] + 0.9f };
+			const vec centre = vadd(target, vmul(axes[2], 0.9f));
 			if(auto wall = world.sphere_touch(centre, body_radius(zone_spheres(m, actor)) + h, 0x40, holdable))
 			{
 				const vec& w = wall->normal;
@@ -1532,6 +1541,7 @@ namespace openrayman::game
 		// body_height (docs/formats/dynamics.md). Run before the floor search, so the floor under
 		// where the actor ends up is the one it lands on.
 		vec wall_normal{};
+		world_collision::wall_hit wall_contact{};
 		const vec asked = move();
 		vec swept_speed = vmul(asked, 1 / dt);
 		bool swept = false;
@@ -1559,7 +1569,7 @@ namespace openrayman::game
 			// to exactly its radius last tick) still reports it.
 			std::array<float, 2> touch{};
 			if(wall_bottom < target[2] + body_height)
-				touch = wall_push(target[0], target[1], wall_bottom, target[2] + body_height, radius + wall_touch);
+				touch = wall_push(target[0], target[1], wall_bottom, target[2] + body_height, radius + wall_touch, &wall_contact);
 			if(float l = std::sqrt(touch[0] * touch[0] + touch[1] * touch[1]); l > 1e-6f)
 				wall_normal = { touch[0] / l, touch[1] / l, 0.0f };
 		}
@@ -1829,8 +1839,11 @@ namespace openrayman::game
 			m.write<std::uint32_t>(block, word);
 			m.write<std::uint32_t>(block + 4, word);
 			std::uint32_t wall = block + slots_at + wall_slot * slot_size;
-			write_vec(m, wall + slot_normal, wall_normal);
-			write_vec(m, wall + slot_point, on_wall ? point : vec{});
+			write_vec(m, wall + slot_normal, on_wall ? wall_contact.normal : vec{});
+			write_vec(m, wall + slot_point, on_wall ? wall_contact.point : vec{});
+			m.write<std::uint32_t>(wall + slot_own, on_wall && !zones.empty() ? zones.front().material : 0);
+			m.write<std::uint32_t>(wall + slot_material, on_wall ? wall_contact.material : 0);
+			m.write<std::uint32_t>(wall + 0x24, on_wall ? wall_contact.actor : 0);
 			std::uint32_t entry = block + slots_at + water_slot * slot_size;
 			const vec water_point = { target[0], target[1], water ? water->height : 0.0f };
 			write_vec(m, entry + slot_normal, water ? water->normal : vec{});

@@ -58,7 +58,12 @@ namespace openrayman::game
 		// How far (x, y) must move to take a vertical cylinder of `radius` out of every wall (a
 		// triangle steeper than 60°, not water) it overlaps between `bottom` and `top`; 0 when it is
 		// free. Corners of two walls resolve over a few passes.
-		std::array<float, 2> wall_push(float x, float y, float bottom, float top, float radius) const;
+		struct wall_hit
+		{
+			std::array<float, 3> point{}, normal{};
+			std::uint32_t material = 0, actor = 0;
+		};
+		std::array<float, 2> wall_push(float x, float y, float bottom, float top, float radius, wall_hit* contact = nullptr) const;
 
 		// The first surface the segment from `start` to `end` meets (water and 0x8000 surfaces let
 		// it through), with the point it meets it at, or nothing (0x474780 over the level geometry).

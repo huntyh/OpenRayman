@@ -422,3 +422,36 @@ z=-9.54 with surface z=-8.339, and that Right changes his heading. The drop
 also checks there is no water report or swim entry while his feet are above
 the water plane. Exact visible entry timing against original Rayman 2 remains
 unverified; physical/report zones and rendered body position need a real-game comparison.
+
+## Learn_31 climbing script survey
+
+Rayman's Learn_31 node 75 has a separate macro 52 (0d/00 +0x16504) for a
+contact whose slot 5 material has collide flag 0x20: condition 64 (0x48B000)
+checks the contact, and function 201 (0x479910) probes for the same flag from
+1.85 units above Rayman along minus 0.95 times contact normal 5. The script
+then selects behaviour 30 or 31 and reflex 5; behaviour 31 calls procedure
+190 with a speed scaled by -2.4. This describes the script, but its relation
+to the tree ladder at camera (-210.7, 371.8, 30.9) is not yet verified: the
+level's eight static 0x20 triangles are far from that camera. Nearby scenery
+contains steep 0x40 triangles, which may use the separately documented behaviour
+27 instead. Sources: `ortool brain` for Learn_31 node 75, `ortool collide`
+and `ORTOOL_NEAR`, and handler addresses checked using the Rayman2.exe handler
+mapping.
+
+The camera at (-210.7, 371.8, 30.9), yaw 22.3 and pitch -7, first meets
+Learn_31 scenery node 84 at distance approximately 8.39. Its game material
+(0x07a81fc8 after relocation) points to a collide material with flag 0x40.
+Rayman's macro 29 (0d/00 +0x14470) and macro 45 (0d/00 +0x15E00) test that
+flag in wall contact slot 2 with condition 62 (0x48B000), then cast five units
+opposite contact normal 2 using function 201 (0x479910), mode 2 and mask 0x40.
+Macro 21 selects behaviour 27 and reflex 8. Our full-dynamics approximation had
+not copied the wall's game material into slot 2, so that test could not pass.
+The cylinder resolver now reports the selected triangle's material, point,
+normal and owning actor; its contact selection is still an approximation to the
+executable's zone sweeps. The hold probe uses the actor's tilted local Z for
+its centre, consistent with keeping the 0x4394A0 pivot in place. With a
+partway-up placement, Up enters behaviour 27 and increases height in our
+real-data replay; several floor-level approaches still stop at an unflagged
+surface and need investigation. Sources: the Learn_31 scene, collision and
+Rayman scripts via `ortool`, contact replay and own analysis of the executable
+at 0x48B000, 0x479910 and 0x4394A0. This is not a live-game verification.

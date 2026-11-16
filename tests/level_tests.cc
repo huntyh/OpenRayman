@@ -4511,3 +4511,53 @@ TEST_CASE("real data: bottom-right pirate shot casts through the back of the lau
 	}
 	CHECK(distance2 < 1);
 }
+
+
+TEST_CASE("real data: Learn_31 climbable tree reports its wall material and holds Rayman")
+{
+	auto dir = real_game_dir(); if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Learn_31");
+	auto header = read_level_header(files);
+	scene tree(files.memory, header);
+	auto bank = read_animation_bank(files);
+	game::live_memory m(files.memory);
+	auto rayman = tree.node(75).at.address();
+	game::interpreter vm(m, rayman);
+	game::register_handlers(vm);
+	game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
+	vm.set_animations(&bank);
+	game::install_level_events(m, bank);
+	std::vector<std::uint32_t> actors;
+	for(const auto& node : tree.nodes())
+		if(node.type == super_object_type::actor) actors.push_back(node.at.address());
+	vm.set_actors(actors);
+	for(const auto& e : read_actors(files.memory, tree, bank).actors)
+		game::set_global_placement(m, tree.node(e.node).at.address(), e.world);
+	for(auto bit : game::start_story_bits("Learn_31", false)) vm.set_story_bit(actors, bit);
+	game::apply_revisit_state(vm, tree, "Learn_31");
+	game::input keys(m, read_input_actions(files));
+	bool entered = false;
+	float entry_height = 0, high = -1e6f;
+	for(int tick = 0; tick < 300; ++tick)
+	{
+		if(tick == 150)
+		{
+			game::write_transform(m, rayman, {-205, 376, 35}, {0, 1, 0, -1, 0, 0, 0, 0, 1});
+			vm.camera_motion().tracked_target = 0;
+		}
+		keys.set_key(0xC8, tick >= 100 && tick < 290);
+		keys.step(); game::step(vm, actors);
+		if(tick < 150) continue;
+		if(vm.get_variable(rayman, 9).as_int() == 22)
+		{
+			auto pose = game::global_placement(m, rayman); REQUIRE(pose);
+			if(!entered) { entered = true; entry_height = pose->m[2][3]; }
+			high = std::max(high, pose->m[2][3]);
+		}
+	}
+	CHECK(entered);
+	CHECK(high > entry_height + 0.1f);
+}
