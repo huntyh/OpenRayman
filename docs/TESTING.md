@@ -249,7 +249,7 @@ keys go to the game, and compare with the GOG game side by side:
       Up/Down move the yellow entry; Load and Delete are not greyed (two save slots installed).
 - [ ] Enter on New Game: the name screen with `AAA` and the arrow hint; arrows change letters.
 - [ ] Enter on the name: Jail_10 loads and the intro starts ("A planet of anguish and pain…").
-      Our New Game doesn't write a save yet, so the GOG save folder stays untouched.
+      The save it writes goes to OpenRayman's own folder, so the GOG save folder stays untouched.
 - [ ] Esc / Backspace go back a screen as in the game.
 
 ## Known limitations
@@ -257,9 +257,8 @@ keys go to the game, and compare with the GOG game side by side:
 Don't report these as bugs, they're the next steps:
 
 - Some actors are invisible on purpose (triggers, waypoints)
-- The HUD is still rough: the counters sit a little too far left and up and
-  lack the menu font; the dialog text's colour, size and padding are a little off
-- The arrival start (without `--start new`) begins the camera behind a wall, out of bounds
+- The original's long text can still run off the screen (the "Yahoo!" for all Lums, the
+  overwrite-save message; board #6)
 
 Tip: compare with the real game at the same spot.
 

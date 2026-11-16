@@ -142,6 +142,10 @@ alongside it, the menu and the pirate ship's two intro levels first.
   starting to move mid-throw no longer replays the throw and its sounds (#87).
 - ✅ **Slopes and jumps** (#32, #89, #96): jumps on slopes and from the slide, a roof that slopes
   across the move stops the body, and the slide steers and throws its dust.
+- ✅ **Details of the week of 2026-11-15**: the Lums' halo line is gone (#124), immediate theme
+  switches fade over a second (#115), the Bast_20 pirate's barrels fly a flat arc with a fiery
+  trail (#121), the fight camera returns after the side tunnel (#125), and the oxygen bar's two
+  halves line up underwater (#130).
 
 Dated details of everything above, and the user's look-by-look feedback, are in
 [ROADMAP_LOG.md](ROADMAP_LOG.md).
@@ -149,25 +153,23 @@ Dated details of everything above, and the user's look-by-look feedback, are in
 **Open.** The open items are tracked on the maintainers' own task board (Vikunja), which is the
 source of truth and has the detail; in short:
 
-- 3c leftovers: the slope's acceleration (#1), the dialog text's exact size and left padding (#2),
-  the blue "next" arrow's spot (#62), the HUD counters (#3), the font running off the screen (#6)
-- The game's camera (#8, #9, #13, #14, #63): the "turning refused" icon, the exe's orbit search
-  around obstacles, snapping back to Rayman, the cutscene camera modes, Rodeo_10's narrow hole
+- 3c leftovers: the slope's acceleration (#1), the font running off the screen (#6)
+- The game's camera (#9, #13, #14): the exe's orbit search around obstacles, the cutscene camera
+  modes, Rodeo_10's camera stuck on the narrow hole
 - Sound (#7): music and effect levels (loudness by distance follows the exe already; immediate
   theme switches fade over a second, #115)
 - The cutscene black bars: an option to turn them off, with darker text behind (#5)
-- Unported exe pieces: particle kinds, their per-particle draw value and screen dimming (#17);
-  the end scene's pupils (#10, not reproduced in play, the user to check)
-- The pirate ship (Jail_20): the slide's steering and collision (#86), a frame of the wrong pose at
-  the slide's end (#97), the pirates' heads in front of their spines (#98), Rayman and Globox
-  snapping left in the cell (#100)
+- Unported exe pieces: particle kinds, their per-particle draw value and screen dimming (#17)
+- The pirate ship (Jail_20): Rayman and Globox snap left when Globox pokes him (#100), and the
+  grate camera cuts into the chute too early so pressing forward runs Rayman into the wall (#106)
 - Bast_20's pirate fight: the barrels' arc and trail are done (#121); fast objects can still pass
   through thin scenery (#127)
-- Learn_30: Rayman never leaves swimming in the river (#118)
-- The other levels' first issues: Learn_31's creature and its trailing segments (#66, #81),
-  Bast_20's pond and piranhas (#82), Bast_22's barrels and its silent shots and steps (#68),
-  Ski_10's swamp creatures and missing kill zone (#69), Chase_22's exit animation and camera
-  hunting (#70)
+- Learn_30: swimming stops at the surface and turns (#118, 0f552b5, huntyh to check), and the
+  bouncy mushroom doesn't bounce him (#128)
+- The other levels' first issues: Learn_31's dust creature drawn sideways (#66) and its trailing
+  segments to check by eye (#81), its ladder, which can't be climbed (#129), Bast_22's barrels
+  and its silent shots and steps (#68), Ski_10's swamp creatures and missing kill zone (#69),
+  Chase_22's exit animation and camera hunting (#70)
 - Performance measured with the profiler and tuned (#12)
 
 ## Phase 4: the whole game ⬅ in progress, alongside Phase 3
@@ -184,9 +186,13 @@ Everything the PC game has, working before we port it anywhere.
 - Reading the real saves (#19, #37)
 - Saves (#24, 2026-11-15): New Game writes the slot, the Hall and level exits save, Load from the
   menu and the name check work, and autosave is a per-slot choice asked on the first save, with
-  the green Lum while saving (#40). Quitting always asks.
-- The Hall of Doors (#39): the star well and lake, the beams between portals and the selection
-  sparkles (#117), red portals for completed levels (#119)
+  the green Lum while saving for 4.5 seconds (#40). Quitting always asks.
+- The Hall of Doors, first pass (#39, still open for #122, #123 and #131): the star well and lake,
+  the beams between portals and the selection sparkles (#117), red portals for completed levels
+  (#119)
+- The new-game intro cutscene in front of the first-visit start, Jail_10 and Jail_20 (#23): the
+  sea pan, the logos, the counters and the cell, then Learn_10's opening scene on a new game and
+  on the Jail_20 -> Learn_10 fall (user confirmed 2026-11-14)
 
 **Open**, in the order the user set (2026-11-02):
 
@@ -195,15 +201,15 @@ Everything the PC game has, working before we port it anywhere.
    already gets through the name screen into Jail_10, whose intro plays (the name screen highlights
    the whole name instead of the picked letter, #105). Left: the Delete / Options screens (#25), the menu's scenery, a per-character flash on
    the menu text (#26), and the music still missing in a few places (#31).
-2. The new-game intro cutscene in front of the first-visit start (Jail_10, Jail_20); the logos,
-   text boxes and bars are in (see 3c), and there is a diagnostic `--start intro` for Learn_10's
-   opening scene (#23).
-3. Save games: reading, writing, loading and autosave are done ([formats/saves.md](formats/saves.md));
+2. Save games: reading, writing, loading and autosave are done ([formats/saves.md](formats/saves.md));
    left: erasing a slot (function 92) and checking saves on the later levels as they become
-   playable.
-4. The pause menu and F1 Murfy's help (board #38).
-5. The Hall of Doors: the way from one level to the next (board #39).
-6. ✅ Optional autosave, chosen per slot (docs/IMPROVEMENTS.md; board #40).
+   playable (#126).
+3. The pause menu and F1 Murfy's help (board #38).
+4. The Hall of Doors: the way from one level to the next (board #39); left: checking the fix for the 2-3
+   black seconds after answering No to the Hall's save question (#123, a6b0ddf), Rayman showing at the new-game spot for a few
+   frames when arriving from the Hall (#131, fix in 15ebb05, huntyh to check), and a level started
+   with a plain `--level` (no `--start new`) recording 0 Lums and 0 cages when Rayman leaves (#122).
+5. ✅ Optional autosave, chosen per slot (docs/IMPROVEMENTS.md; board #40).
 
 Then: cutscenes (board #41), all the levels from start to end (#42), widescreen and high
 resolutions with quality-of-life options (#43, and ultrawide later #94), room for our own options
@@ -241,7 +247,6 @@ Vikunja is the source of truth for the open work; the card numbers point to the 
   bubbles; a few of those droplets and bubbles on each step would look livelier (user's idea)
 - Ultrawide (21:9 and beyond, #94), and mouse selection in the menu with a typed save name and a
   Continue entry (#64, #74)
-- Rumble, our own addition, with the moments the user picks (#102); the Lightning cards in
-  Jail_10 showing their edges, with optional soft edges (#103)
+- Rumble, our own addition, with the moments the user picks (#102)
 - The Globox kids' scene in Learn_10 replays when the level is revisited: the real game does that
   too (an original bug, kept on purpose); an optional fix may come later (#78)
