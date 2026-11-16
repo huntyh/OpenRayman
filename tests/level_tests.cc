@@ -1180,6 +1180,79 @@ struct handler_fixture
 	bool condition(unsigned n, std::initializer_list<game::value> args = {}) { return invoke(node_type::condition, n, args).word() != 0; }
 };
 
+TEST_CASE("pivot turns move once without becoming next tick's inertia")
+{
+	// 0x4329B0 / 0x437AF0 / 0x43DDA0: both turns contribute to the
+	// colliding move, and +0x1B4 removes that contribution from inertia.
+	handler_fixture f;
+	auto transform = f.m.allocate(0x58);
+	f.m.write(f.so + 0x24, transform);
+	game::set_global_placement(f.m, f.so, affine{});
+	f.m.write<std::uint32_t>(f.base + 8, 0x400);
+	f.m.write<std::uint32_t>(f.base + 0xC, 2);
+	f.m.write(f.base + 0x154, vec3{0.6f, 0.6f, 0.6f});
+	f.procedure(172, {game::value::vector(0, 0.6f, 0.8f), game::value::vector(1, 0, 0),
+		f.integer(3), game::value::vector(0, 0, 1)});
+	f.procedure(167, {f.function(52, {game::value::vector(0, 0, 1)}),
+		f.integer(90), game::value::vector(0, 0, 1)});
+	CHECK(f.m.f32(f.base + 0x6C) == doctest::Approx(0.6f));
+	CHECK(f.m.f32(f.base + 0x74) == doctest::Approx(0.2f));
+	for(int tick = 0; tick < 3; ++tick)
+	{
+		f.procedure(194, {game::value::vector(0, 0, 0)});
+		game::move_actor(f.m, f.so, f.actor, 1000.0 / 60, game::world_collision{});
+		CHECK(f.m.f32(transform + 4) == doctest::Approx(0.6f));
+		CHECK(f.m.f32(transform + 8) == doctest::Approx(0).epsilon(0.00001).scale(1));
+		CHECK(f.m.f32(transform + 12) == doctest::Approx(0.2f));
+		CHECK(f.m.f32(f.base + 0x3C) == doctest::Approx(tick == 0 ? 36 : 0).epsilon(0.0001).scale(1));
+		CHECK(f.m.f32(f.base + 0x44) == doctest::Approx(tick == 0 ? 12 : 0).epsilon(0.0001).scale(1));
+		CHECK(f.m.f32(f.base + 0x1B4) == doctest::Approx(tick == 0 ? 0.6f : 0));
+		CHECK(f.m.f32(f.base + 0x1BC) == doctest::Approx(tick == 0 ? 0.2f : 0));
+		CHECK((f.m.u32(f.base + 8) & 0x20000000) == 0);
+	}
+}
+
+TEST_CASE("swim ascent leaves the floor without a jump impulse")
+{
+	// 0x437E60 resolves movement into contacts; the walking follow-down
+	// approximation must not cancel a swimmer's gradual upward movement.
+	handler_fixture f;
+	auto transform = f.m.allocate(0x58), report = f.m.allocate(0x16C);
+	f.m.write(f.so + 0x24, transform);
+	game::set_global_placement(f.m, f.so, affine{});
+	f.m.write(f.base + 0x150, report);
+	f.m.write<std::uint32_t>(report + 4, 1);
+	f.m.write<std::uint32_t>(f.base + 8, 2 | 0x400);
+	f.m.write<std::uint32_t>(f.base + 0xC, 4 | 0x4000 | 0x100000);
+	f.m.write(f.base + 0x154, vec3{0.6f, 0.6f, 0.6f});
+	collision_triangle floor;
+	floor.corners = {vec3{-10,-10,0}, vec3{10,-10,0}, vec3{0,10,0}};
+	floor.normal = {0,0,1};
+	f.procedure(194, {game::value::vector(0, 0, 1)});
+	game::move_actor(f.m, f.so, f.actor, 1000.0 / 60, game::world_collision({floor}));
+	CHECK(f.m.f32(transform + 12) == doctest::Approx(0.0256f / 60).epsilon(0.0001));
+	CHECK(f.m.f32(f.base + 0x44) == doctest::Approx(0.0256f).epsilon(0.0001));
+	CHECK((f.m.u32(report + 4) & 1) == 0);
+}
+
+TEST_CASE("queued pivot rotation takes effect after this tick's local speed")
+{
+	// 0x431AD0: 0x43E680 precedes 0x43E870.
+	handler_fixture f;
+	auto transform = f.m.allocate(0x58);
+	f.m.write(f.so + 0x24, transform);
+	game::set_global_placement(f.m, f.so, affine{});
+	f.procedure(167, {game::value::vector(0, 0, 1), f.integer(90), game::value::vector(0, 0, 0)});
+	f.procedure(188, {game::value::vector(1, 0, 0)});
+	game::move_actor(f.m, f.so, f.actor, 1000, game::world_collision{});
+	CHECK(f.m.f32(transform + 4) == doctest::Approx(1));
+	CHECK(f.m.f32(transform + 8) == doctest::Approx(0).epsilon(0.00001).scale(1));
+	f.procedure(188, {game::value::vector(1, 0, 0)});
+	game::move_actor(f.m, f.so, f.actor, 1000, game::world_collision{});
+	CHECK(f.m.f32(transform + 4) == doctest::Approx(1));
+	CHECK(f.m.f32(transform + 8) == doctest::Approx(1));
+}
+
 TEST_CASE("procedure 200 preserves a turned scaled actor when dynamics caches are stale")
 {
 	handler_fixture f;
@@ -3702,7 +3775,7 @@ TEST_CASE("real data: Learn_30 swim ascent stays submerged and directional input
 			vm.camera_motion().tracked_target = 0;
 		}
 		keys.set_key(0x2C, tick >= 550 && tick < 620); // Z (dive)
-		keys.set_key(0xC8, tick >= 550 && tick < 620); // Up
+		keys.set_key(0xC8, tick >= 550 && tick < 850); // Up: propel during both dive and ascent
 		keys.set_key(0x1E, tick >= 620); // A (ascend)
 		keys.set_key(0xCD, tick >= 900); // Right
 		keys.step();
@@ -3737,6 +3810,15 @@ TEST_CASE("real data: Learn_30 swim ascent stays submerged and directional input
 	}
 	CHECK(entered);
 	CHECK(deepest < -10.5f);
+	// Behaviour 5's surface exit (0x46AB20/0x472290): rearm A after
+	// ascending, then press it at the surface to jump out of swim mechanics.
+	keys.set_key(0x1E, false);
+	keys.set_key(0xCD, false);
+	keys.step(); game::step(vm, actors);
+	keys.set_key(0x1E, true);
+	for(int tick = 0; tick < 12; ++tick) { keys.step(); game::step(vm, actors); }
+	CHECK((m.u32(base + 0xC) & 0x100000) == 0);
+	CHECK(game::global_placement(m, rayman)->m[2][3] > -8.339f);
 	CHECK(vm.missing_by_actor[rayman].empty());
 }
 

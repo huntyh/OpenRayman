@@ -455,3 +455,49 @@ real-data replay; several floor-level approaches still stop at an unflagged
 surface and need investigation. Sources: the Learn_31 scene, collision and
 Rayman scripts via `ortool`, contact replay and own analysis of the executable
 at 0x48B000, 0x479910 and 0x4394A0. This is not a live-game verification.
+
+## Swimming pivot inertia and leaving the river floor (card 118, follow-up)
+
+The queued translation must collide, but it must **not become lasting inertia**.
+In `0x431AD0`, end flag `2` calls `0x437AF0` after speed is computed and before
+collision. That helper records `+0x1B4..+0x1BC` as the contribution from
+`0x437A80` **plus the queued translation at +0x6C..+0x74**. The next tick's
+`0x43DDA0` subtracts this vector from `speed * dt` unless end flag `0x10` is
+set. OpenRayman already subtracted it, but recorded only platform carry. After
+0f552b5 made pivot shifts into colliding moves, leveling the body after a dive
+therefore repeatedly fed those shifts into swim velocity. Record the pivot
+contribution alongside carry; keep the reported speed and colliding move intact.
+
+The executable also snapshots the previous rotation (`+0x78` matrix) for local
+script speeds and inertia before `0x43E870` installs the queued rotation. Our
+script-visible transforms change immediately, so the first pivot call retains
+that prior rotation; subsequent pivot calls accumulate translation without
+replacing the snapshot. Mechanics uses it for movement calculations.
+
+A separate approximation prevented recovery after touching the river floor:
+walking floor-follow accepted a floor below a gradual upward target unless the
+speed increased by over 4 units/s (jump detection). Swim mechanics (end flag
+`0x100000`) now leaves support for any upward target. Solid floor collision and
+the existing water ceiling rejection remain active. This is a correction to our
+walking approximation, not a newly inferred native jump threshold.
+
+Regression coverage pins a two-turn pivot displacement `(0.6, 0, 0.2)`, its
+reported first-tick velocity `(36, 0, 12)` at 60 Hz, its exclusion from inertia
+on subsequent ticks, and a floor ascent of `0.0256 / 60` units from a proposed
+1 unit/s with inertia 0.6. The Learn_30 integration uses Up during ascent as
+well as A: A tilts the swimmer upward; forward input supplies propulsion. The
+previous test's A-only quick return benefited from the erroneous pivot momentum.
+
+### Where this came from
+
+Own read-only analysis of local GOG Rayman2.exe Ghidra exports `0x431AD0`,
+`0x4329B0`, `0x437AF0`, `0x437A80`, `0x43DDA0`, `0x43E870`, `0x43E900`,
+`0x436A30`, `0x437E60`, `0x43EEC0`, `0x469CB0`, and `0x46AB20`.
+The user's `rec_20261116_201824/rayman.txt` is OpenRayman evidence: it starts
+already swimming, first descends at clock 10783 (tick 647, speed Z=-0.015), peaks at
+speed Z=-14.219 at 11916 (tick 715), and contacts floor Z=-15.256 at
+11933 (tick 716); A first appears at 13383 (tick 803). Behaviour 5 persists and active movement
+state is 0x1A5234. Its script calls 172 (tilt), 167 (yaw), then 188 (proposed
+local speed). Headless reproduction with a long dive followed by A+Up now
+leaves the bottom and settles below the water surface. These are engine tests,
+not live original-game visual verification. No decompiled code copied.

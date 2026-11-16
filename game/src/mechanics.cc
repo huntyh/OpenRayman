@@ -1354,9 +1354,12 @@ namespace openrayman::game
 		// 0x46CCE1, 0x46CCB7, 0x46CD0B) (0x43E350, 0x43E42A..0x43E451, 0x43E680, 0x43E4E0).
 		// The actor's own axes (unit length), and moves turned into them and back.
 		std::array<vec, 3> axes{};
+		// 0x431AD0 snapshots the previous rotation before 0x43E870 installs
+		// the turn. Script speeds and inertia use that snapshot this tick.
+		const std::uint32_t movement_axes = (flags & 0x20000000) ? b + 0x88 : t + 0x10;
 		for(int k = 0; k < 3; k++)
 		{
-			axes[std::size_t(k)] = read_vec(m, t + 0x10 + std::uint32_t(k) * 12);
+			axes[std::size_t(k)] = read_vec(m, movement_axes + std::uint32_t(k) * 12);
 			vec& a = axes[std::size_t(k)];
 			float l = std::sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
 			if(l > 0)
@@ -1480,6 +1483,15 @@ namespace openrayman::game
 
 		// Carrying is external motion, applied after the actor's own speeds and limits.
 		target = vadd(target, carried);
+		// 0x43E870: collision sees the queued orientation even though this
+		// tick's speed calculations above used the previous orientation.
+		if(flags & 0x20000000)
+			for(std::uint32_t k = 0; k < 3; ++k)
+			{
+				vec a = read_vec(m, t + 0x10 + k * 12);
+				if(float length = vlen(a); length > 0) a = vmul(a, 1 / length);
+				axes[k] = a;
+			}
 
 		// Holding on to walls (flag 0x40 without 0x10: 0x431AD0 picks the resolver 0x43A260; Rayman
 		// spread between two pillars, behaviour 27). The move loses its part along the wall normal
@@ -1629,7 +1641,9 @@ namespace openrayman::game
 			// left it and played the landing roll (Learn_10's small rise by the start and Murfy's
 			// stones, user 2026-11-15; the Bast_20 camera bob of card 120). A jump still shows as
 			// the sudden gain in vertical speed below.
-			const bool taking_off = (!was_grounded && target[2] > current[2] + carried[2]) ||
+			// Swim resolver 0x437E60 accepts separation from a solid contact.
+			// Swimming has no walking floor-follow: even a gradual ascent leaves it.
+			const bool taking_off = ((!was_grounded || (m.u32(b + base::end_flags) & 0x100000)) && target[2] > current[2] + carried[2]) ||
 				(dt > 0 && (target[2] - current[2] - carried[2]) / dt > m.f32(b + base::speed + 8) + 4.0f);
 			float bottom = target[2] - ((was_grounded || external_placement) && !taking_off ? follow_down : 0.0f);
 			// Prefer the floor under the origin. Rim probes provide support at edges; a higher
@@ -1767,8 +1781,12 @@ namespace openrayman::game
 			else vm->supports().erase(super_object);
 			if(m.contains(b + 0x284, 4))
 				m.write<std::uint32_t>(b + 0x284, vm->supports().contains(super_object) ? vm->supports().at(super_object).actor : 0);
-			if(m.contains(b + 0x1B4, 12)) write_vec(m, b + 0x1B4, carried);
 		}
+		// 0x431AD0 -> 0x437AF0: end flag 2 records the pivot translation
+		// with external motion at +0x1B4. 0x43DDA0 removes it from the next
+		// inertia input; otherwise leveling a swimmer adds lasting velocity.
+		if(m.contains(b + 0x1B4, 12))
+			write_vec(m, b + 0x1B4, vadd(carried, (m.u32(b + base::end_flags) & 2) ? pivot_move : vec{}));
 		write_vec(m, b + base::speed, speed);
 		write_vec(m, t + 4, target);
 		write_vec(m, b + base::previous_position, target);

@@ -4970,11 +4970,15 @@ namespace openrayman::game
 
 		// 0x4329B0: script transforms are visible immediately, but their pivot
 		// displacement goes through the next collision step (0x43E900).
-		void queue_pivot_shift(call& c, std::uint32_t self, const vec3& shift)
+		void queue_pivot_shift(call& c, std::uint32_t self, const vec3& shift, const vec3 (&previous_axes)[3])
 		{
 			live_memory& m = c.vm.memory();
-			if(std::uint32_t base = dynamics_base(c, self, 0x88); base && !(m.u32(base + 0xC) & 0x80))
+			if(std::uint32_t base = dynamics_base(c, self, 0xAC); base && !(m.u32(base + 0xC) & 0x80))
 			{
+				// 0x431AD0 uses the previous frame (+0x78) for script speeds and
+				// inertia, installing the queued rotation only at 0x43E870.
+				if(!(m.u32(base + 8) & 0x20000000))
+					for(std::uint32_t i = 0; i < 3; ++i) write3(m, base + 0x88 + 12*i, previous_axes[i]);
 				vec3 pending = m.u32(base + 8) & 0x20000000 ? read3(m, base + 0x6C) : vec3{};
 				write3(m, base + 0x6C, { pending[0] + shift[0], pending[1] + shift[1], pending[2] + shift[2] });
 				m.write<std::uint32_t>(base + 8, m.u32(base + 8) | 0x20000000);
@@ -5002,6 +5006,7 @@ namespace openrayman::game
 			static const int axis_a[6] = { 1, 1, 2, 2, 0, 0 }, axis_b[6] = { 2, 0, 1, 0, 2, 1 };
 			int a = axis_a[mode], b = axis_b[mode], third = 3 - a - b;
 			vec3 axes[3] = { read3(m, t + 0x10), read3(m, t + 0x1C), read3(m, t + 0x28) };
+			const vec3 previous_axes[3] = { axes[0], axes[1], axes[2] };
 			auto take = [&](const value& v, int axis, bool flip) {
 				vec3 d = vec_of(v);
 				if(length(d) < 1e-9f)
@@ -5038,7 +5043,7 @@ namespace openrayman::game
 				vec3 after = pivot_offset(), at = read3(m, t + 4);
 				vec3 moved{ at[0] + before[0] - after[0], at[1] + before[1] - after[1], at[2] + before[2] - after[2] };
 				write3(m, t + 4, moved);
-				queue_pivot_shift(c, self, sub(moved, at));
+				queue_pivot_shift(c, self, sub(moved, at), previous_axes);
 			}
 			return c.args;
 		}
@@ -5098,6 +5103,7 @@ namespace openrayman::game
 				return offset;
 			};
 			vec3 before = c.index == 167 ? pivot_offset() : vec3{};
+			const vec3 previous_axes[3] = { axes[0], axes[1], axes[2] };
 			vec3 k{};
 			for(std::size_t i = 0; i < 3; i++)
 				for(std::size_t j = 0; j < 3; j++)
@@ -5119,7 +5125,7 @@ namespace openrayman::game
 				vec3 shift = sub(before, pivot_offset());
 				vec3 at = read3(m, t + 4);
 				write3(m, t + 4, { at[0] + shift[0], at[1] + shift[1], at[2] + shift[2] });
-				queue_pivot_shift(c, self, shift);
+				queue_pivot_shift(c, self, shift, previous_axes);
 			}
 			return c.args;
 		}
