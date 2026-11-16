@@ -785,6 +785,12 @@ namespace
 				for(const auto& picture : vignette.pictures)
 					if(a.loading->has_picture(picture))
 						candidates.push_back(picture);
+			// Ours: the level's own picture when it has one; the game also draws from the six
+			// general VigLoadMisc ones, so the Woods of Light could show a pirate ship (user,
+			// 2026-11-16). A level with two of its own (Water, Whale) still picks between them.
+			auto general = [](const std::string& picture) { return picture.starts_with("VigLoadMisc"); };
+			if(std::ranges::any_of(candidates, [&](const std::string& picture) { return !general(picture); }))
+				std::erase_if(candidates, general);
 			if(candidates.empty()) return {};
 			return candidates[std::size_t(SDL_rand(Sint32(candidates.size())))];
 		}
@@ -3099,8 +3105,11 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 					: a.loading_at == app::loading_phase::hold ? app::loading_phase::out : app::loading_phase::none;
 			}
 		}
-		// While the picture fades in, this level stands still.
-		if(a.animating && !a.screenshot && a.loading_at != app::loading_phase::in)
+		// While the picture fades in the old level stands still, and the new one waits under it
+		// until it fades out (the portal pull is settled before its first frame, load_level), so
+		// what starts on arrival, such as the save Lum's 4.5 s, starts when it can be seen
+		// (user, 2026-11-16).
+		if(a.animating && !a.screenshot && (a.loading_at == app::loading_phase::none || a.loading_at == app::loading_phase::out))
 		{
 			a.animation_time += dt;
 			game::profiler::scope timed(game::profiler::zone::scripts);
