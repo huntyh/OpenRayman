@@ -145,12 +145,13 @@ namespace openrayman
 		};
 		visit(visit, tree.father_sector(), affine{});
 		for(auto& triangle : result)
-			for(auto owner = tree.node(triangle.node).parent; owner; owner = tree.node(*owner).parent)
-				if(tree.node(*owner).type == super_object_type::sector)
-				{
-					triangle.sector = tree.node(*owner).at.address();
-					break;
-				}
+			for(auto owner = std::optional<std::size_t>(triangle.node); owner; owner = tree.node(*owner).parent)
+			{
+				const auto& node = tree.node(*owner);
+				triangle.object_flags |= node.draw_flags; // 0x45D390 rejects the whole ignored branch
+				if(!triangle.sector && node.type == super_object_type::sector)
+					triangle.sector = node.at.address();
+			}
 		return result;
 	}
 }

@@ -2293,8 +2293,8 @@ namespace openrayman::game
 		// 198, 199 (0x479720): cast the segment from a point along a vector (its length included);
 		// 198 gives the point it first meets, 199 that surface's normal, both zero when it meets
 		// nothing. The third argument picks what it is cast against (0x474780): 0 the level, 1 the
-		// actors, 2 both. Actors take part only with standard game +0x29 bit 4, which our engine
-		// never sets (see condition 10), so only the level is cast against. Rayman's water macro
+		// actors, 2 both. 0x48E820 tests all surface materials, unlike the camera's solid cast.
+		// Actors require custom bit 0x10 and standard game +0x29 bit 4. Rayman's water macro
 		// casts down through his body's height under the surface: ground there means shallow water,
 		// none means he swims.
 		std::uint32_t cast_segment(call& c, value& out)
@@ -2307,13 +2307,21 @@ namespace openrayman::game
 			if(c.index == 201)
 				next_arg(c, mask);
 			vec3 result{};
-			if(mode.as_int() != 1 && !c.vm.world().empty())
+			const vec3 start = { from.component(0), from.component(1), from.component(2) };
+			const vec3 end = { start[0] + along.component(0), start[1] + along.component(1), start[2] + along.component(2) };
+			const auto flags = c.index == 201 ? std::uint16_t(mask.as_int()) : std::uint16_t(0);
+			std::optional<world_collision::segment_hit> best;
+			if(mode.as_int() != 1)
 			{
-				const vec3 start = { from.component(0), from.component(1), from.component(2) };
-				const vec3 end = { start[0] + along.component(0), start[1] + along.component(1), start[2] + along.component(2) };
-				if(auto hit = c.vm.world().first_hit(start, end, c.index == 201 ? std::uint16_t(mask.as_int()) : 0))
-					result = c.index == 199 ? hit->normal : hit->point;
+				best = c.vm.world().first_hit(start, end, flags, true, c.vm.cast_ignore_mask | 1);
 			}
+			if(mode.as_int() != 0)
+			{
+				const auto self = c.vm.target(c.self, true);
+				world_collision actors(actor_collision_triangles(c.vm, self, &end, true, &start), true);
+				if(auto hit = actors.first_hit(start, end, flags, true); hit && (!best || length(sub(hit->point, start)) < length(sub(best->point, start)))) best = hit;
+			}
+			if(best) result = c.index == 199 ? best->normal : best->point;
 			out = value_of(result);
 			c.vm.cast_ignore_mask = 0x40;
 			return c.args;

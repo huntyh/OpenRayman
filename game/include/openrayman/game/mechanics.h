@@ -70,7 +70,10 @@ namespace openrayman::game
 		};
 		// With `any_of`, only surfaces carrying one of those collide flags count (function 201's mask,
 		// 0x4B9C44 tested at 0x48E820).
-		std::optional<segment_hit> first_hit(const std::array<float, 3>& start, const std::array<float, 3>& end, std::uint16_t any_of = 0) const;
+		// Script casts include water/0x8000 and approach front faces (0x479720/0x491250).
+		// Other callers keep the existing solid query. ignored_objects filters scenery branch flags.
+		std::optional<segment_hit> first_hit(const std::array<float, 3>& start, const std::array<float, 3>& end,
+			std::uint16_t any_of = 0, bool script = false, std::uint32_t ignored_objects = 0) const;
 
 		struct sweep_hit : segment_hit
 		{
@@ -146,7 +149,8 @@ namespace openrayman::game
 	// Live kind-3 zones and posed physical parts, excluding the mover itself (0x494420). Actors
 	// whose surfaces are further than `reach` from the mover are left out.
 	constexpr float actor_surface_reach = 10.0f;
-	std::vector<collision_triangle> actor_collision_triangles(interpreter& vm, std::uint32_t mover, const vec3* target = nullptr);
+	std::vector<collision_triangle> actor_collision_triangles(interpreter& vm, std::uint32_t mover, const vec3* target = nullptr,
+		bool script = false, const vec3* start = nullptr);
 	// One tick of an actor's mechanics (0x431AD0, docs/formats/dynamics.md): the speeds the scripts
 	// set and gravity give a target position, the floor stops it, and the result becomes the speed
 	// the scripts read back (dynamics base +0x3C) and the contact word they test (conditions 27..32).

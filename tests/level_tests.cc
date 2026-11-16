@@ -4166,3 +4166,185 @@ TEST_CASE("real data: Bast_20 gravity barrel sweeps its selected collision spher
 	CHECK((m.u32(report + 4) & 1) != 0);
 	CHECK(m.f32(base + 0x44) == doctest::Approx(0));
 }
+
+TEST_CASE("real data: recorded Bast_20 gravity barrels land and explode using their scripts")
+{
+	auto dir = real_game_dir(); if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data,"Bast_20");
+	auto header = read_level_header(files); scene tree(files.memory,header);
+	game::live_memory m(files.memory);
+	const auto rayman = header.placements.at(0).super_object.address();
+	game::interpreter vm(m,rayman); game::register_handlers(vm);
+	vm.set_world(game::world_collision(static_collision(files.memory,tree)));
+	std::vector<std::uint32_t> actors;
+	for(const auto& n : tree.nodes()) if(n.type==super_object_type::actor) actors.push_back(n.at.address());
+	vm.set_actors(actors);
+	const auto* templates=files.memory.find({4,1}); REQUIRE(templates);
+	// Numeric positions from rec_20261115_132731, node=0 anim=297 at ticks 2350/2896.
+	vec3 launch{68.67f,57.70f,-30.29f};
+	SUBCASE("first throwing spot") {}
+	SUBCASE("bottom-right throwing spot") {launch={54.54f,33.62f,-38.03f};}
+	const auto so=vm.generated().create(m,templates->base+0x1F04,rayman,launch,0); REQUIRE(so);
+	vm.set_variable(so,0,game::value::vector(40,62,-57));
+	const auto actor=vm.actor_of(so), base=m.u32(m.u32(actor+8));
+	bool grounded=false;
+	int ticks=0;
+	for(;ticks<230&&!vm.removed(so);++ticks)
+	{
+		vm.next_tick(); vm.think(so);
+		if(vm.removed(so)) break;
+		game::move_actor(m,so,actor,1000.0/60,vm.world(),&vm);
+		grounded |= (m.u32(m.u32(base+0x150)+4)&1)!=0;
+	}
+	CHECK(grounded);
+	CHECK(vm.removed(so)); // real behavior 1 consumed condition 27, before its 4 s expiry
+	CHECK(ticks<230);
+	CHECK(game::global_placement(m,so)->m[2][3]>-60);
+}
+
+TEST_CASE("script impact casts include water and pass-through materials with world displacement")
+{
+	handler_fixture f;
+	collision_triangle floor;
+	floor.corners = {vec3{-10,-10,1},vec3{10,-10,1},vec3{0,10,1}};
+	floor.normal={0,0,1};
+	SUBCASE("water") {floor.flags=surface::water;}
+	SUBCASE("0x8000") {floor.flags=surface::skip;}
+	SUBCASE("plain") {}
+	f.vm.set_world(game::world_collision({floor}));
+	const auto from=game::value::vector(0,0,5), down=game::value::vector(0,0,-100);
+	auto point=f.function(198,{from,down,f.integer(2)});
+	CHECK(point.words==game::value::vector(0,0,1).words);
+	CHECK(f.function(199,{from,down,f.integer(2)}).words==game::value::vector(0,0,1).words);
+	CHECK(f.function(198,{from,game::value::vector(0,0,-2),f.integer(2)}).words==game::value::vector(0,0,0).words);
+	CHECK(f.function(198,{game::value::vector(0,0,-5),game::value::vector(0,0,100),f.integer(2)}).words==game::value::vector(0,0,0).words);
+	CHECK(f.function(198,{from,down,f.integer(1)}).words==game::value::vector(0,0,0).words);
+}
+
+TEST_CASE("real data: Bast_20 fast projectile explodes at its scripted thin-surface impact")
+{
+	auto dir=real_game_dir(); if(!dir) return;
+	auto data=game_data::locate(*dir); REQUIRE(data);
+	auto files=load_level_files(*data,"Bast_20");
+	auto header=read_level_header(files);
+	game::live_memory m(files.memory);
+	const auto rayman=header.placements.at(0).super_object.address();
+	game::interpreter vm(m,rayman); game::register_handlers(vm);
+	game::write_transform(m,rayman,{100,100,100},{1,0,0,0,1,0,0,0,1});
+	collision_triangle floor;
+	floor.corners={vec3{-10,-10,1},vec3{10,-10,1},vec3{0,10,1}}; floor.normal={0,0,1};
+	SUBCASE("water") {floor.flags=surface::water;}
+	SUBCASE("pass-through floor") {floor.flags=surface::skip;}
+	SUBCASE("thin wall")
+	{
+		floor.corners={vec3{3,-10,-5},vec3{3,0,15},vec3{3,10,-5}};
+		floor.normal={-1,0,0}; floor.flags=surface::skip;
+	}
+	vm.set_world(game::world_collision({floor}));
+	const auto* templates=files.memory.find({4,1}); REQUIRE(templates);
+	const auto so=vm.generated().create(m,templates->base+0x8B0,rayman,{0,0,5},0); REQUIRE(so);
+	vm.set_variable(so,0,game::value::integer(3));
+	vm.set_variable(so,1,game::value::of(game::value_type::actor,vm.actor_of(rayman)));
+	const bool wall=floor.normal[0]!=0;
+	vm.set_variable(so,2,wall ? game::value::vector(15,0,0) : game::value::vector(0,0,-15));
+	vm.think(so);
+	const auto impact=vm.get_variable(so,3);
+	CHECK(impact.words==(wall ? game::value::vector(3,0,5) : game::value::vector(0,0,1)).words);
+	const auto actor=vm.actor_of(so), base=m.u32(m.u32(actor+8)), transform=m.u32(so+0x24);
+	CHECK((m.u32(base+8)&2)==0);
+	CHECK((m.u32(base+12)&0x200)!=0);
+	// Even a manually supplied gravity cannot curve the executable's fast-mechanics path.
+	m.write<float>(base+0x10,30);
+	for(int tick=0;tick<30&&!vm.removed(so);++tick){game::move_actor(m,so,actor,1000.0/60,vm.world(),&vm); vm.next_tick(); vm.think(so);}
+	CHECK(vm.removed(so));
+	if(wall) { CHECK(m.f32(transform+4)>2); CHECK(m.f32(transform+4)<=3); CHECK(m.f32(transform+12)==doctest::Approx(5)); }
+	else { CHECK(m.f32(transform+12)>=1); CHECK(m.f32(transform+12)<2); }
+}
+
+TEST_CASE("script casts honor receiver eligibility, actor mode and scenery object ignore bits")
+{
+	handler_fixture f;
+	auto& m=f.m;
+	auto so=m.allocate(0x48), actor=m.allocate(0x38), standard=m.allocate(0x34), transform=m.allocate(0x58);
+	m.write<std::uint32_t>(so,2); m.write(so+4,actor); m.write(so+0x24,transform);
+	m.write(actor+4,standard); m.write(standard+0xC,so);
+	game::set_global_placement(m,so,affine{});
+	m.write<std::uint32_t>(standard+0x24,0x10); m.write<std::uint8_t>(standard+0x29,4);
+	auto set=m.allocate(0x48), head=m.allocate(12), node=m.allocate(8), zone=m.allocate(0x30);
+	auto vertices=m.allocate(36), kinds=m.allocate(2), elements=m.allocate(4), element=m.allocate(0x14), indices=m.allocate(6);
+	m.write(actor+0x14,set); m.write(set+0xC,head); m.write(head,node); m.write(node+4,zone);
+	m.write<std::uint32_t>(set+0x3C,1);
+	m.write(zone,vertices); m.write(zone+0x10,kinds); m.write(zone+0x14,elements);
+	m.write<std::uint16_t>(zone+0x2C,3); m.write<std::uint16_t>(zone+0x2E,1);
+	m.write<std::uint16_t>(kinds,1); m.write(elements,element);
+	m.write<std::uint16_t>(element+4,1); m.write(element+8,indices);
+	const vec3 corners[]={ {-5,-5,2},{5,-5,2},{0,5,2} };
+	for(std::uint32_t i=0;i<3;i++){m.write(vertices+i*12,corners[i]);m.write<std::uint16_t>(indices+i*2,std::uint16_t(i));}
+	f.vm.set_actors({f.so,so});
+	collision_triangle floor; floor.corners={vec3{-5,-5,0},vec3{5,-5,0},vec3{0,5,0}}; floor.normal={0,0,1};
+	const auto owner=m.allocate(0x48); floor.node=owner;
+	f.vm.set_world(game::world_collision({floor}));
+	const auto start=game::value::vector(0,0,5), down=game::value::vector(0,0,-100);
+	auto cast=[&](int mode){return f.function(198,{start,down,f.integer(mode)});};
+	CHECK(cast(0).words==game::value::vector(0,0,0).words);
+	CHECK(cast(1).words==game::value::vector(0,0,2).words);
+	CHECK(cast(2).words==game::value::vector(0,0,2).words);
+	m.write<std::uint32_t>(standard+0x24,0);
+	CHECK(cast(1).words==game::value::vector(0,0,0).words);
+	m.write<std::uint32_t>(standard+0x24,0x10); m.write<std::uint8_t>(standard+0x29,0);
+	CHECK(cast(1).words==game::value::vector(0,0,0).words);
+	floor.object_flags = 0x40;
+	// Move the floor off zero so its hit point differs from the no-hit sentinel.
+	for(auto& v:floor.corners) v[2]=1;
+	f.vm.set_world(game::world_collision({floor}));
+	CHECK(cast(0).words==game::value::vector(0,0,0).words);
+	f.procedure(82,{});
+	CHECK(cast(0).words==game::value::vector(0,0,1).words);
+	CHECK(cast(0).words==game::value::vector(0,0,0).words); // restored default ignore mask
+}
+
+TEST_CASE("real data: bottom-right pirate shot casts through the back of the launch wall to the floor")
+{
+	auto dir = real_game_dir(); if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Bast_20");
+	auto header = read_level_header(files); scene tree(files.memory, header);
+	game::live_memory m(files.memory);
+	const auto rayman = header.placements.at(0).super_object.address();
+	game::interpreter vm(m, rayman); game::register_handlers(vm);
+	game::write_transform(m, rayman, {100,100,100}, {1,0,0,0,1,0,0,0,1});
+	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
+	const auto* templates = files.memory.find({4,1}); REQUIRE(templates);
+	// Launch sampled from tick 2895 of rec_20261115_132731; aim at the arena floor.
+	const vec3 launch{54.58f,33.50f,-38.57f}, goal{40,62,-57};
+	float length = 0;
+	for(int i = 0; i < 3; i++) length += (goal[i]-launch[i])*(goal[i]-launch[i]);
+	vec3 velocity;
+	for(int i = 0; i < 3; i++) velocity[i] = 15*(goal[i]-launch[i])/std::sqrt(length);
+	const auto so = vm.generated().create(m, templates->base+0x8B0, rayman, launch, 0); REQUIRE(so);
+	vm.set_variable(so,0,game::value::integer(3));
+	vm.set_variable(so,1,game::value::of(game::value_type::actor,vm.actor_of(rayman)));
+	vm.set_variable(so,2,game::value::vector(velocity[0],velocity[1],velocity[2]));
+	vm.think(so);
+	const auto impact = vm.get_variable(so,3);
+	CHECK(impact.component(0) == doctest::Approx(39.59478f).epsilon(0.0001));
+	CHECK(impact.component(1) == doctest::Approx(62.79209f).epsilon(0.0001));
+	CHECK(impact.component(2) == doctest::Approx(-57.51222f).epsilon(0.0001));
+	// The old two-sided query selected (52.762,37.053,-40.868), an outward-facing
+	// wall near the launch point, instead of the front-facing floor farther along.
+	const auto actor = vm.actor_of(so), transform = m.u32(so+0x24);
+	for(int tick = 0; tick < 220 && !vm.removed(so); tick++)
+	{
+		game::move_actor(m,so,actor,1000.0/60,vm.world(),&vm);
+		vm.next_tick(); vm.think(so);
+	}
+	CHECK(vm.removed(so));
+	float distance2 = 0;
+	for(std::uint32_t i = 0; i < 3; i++)
+	{
+		float d = m.f32(transform+4+i*4)-impact.component(i);
+		distance2 += d*d;
+	}
+	CHECK(distance2 < 1);
+}

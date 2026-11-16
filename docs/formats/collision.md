@@ -276,3 +276,77 @@ contacts, which meet a ceiling like any other face. `ORTOOL_NEAR=x,y,r ortool co
   super object +0x34 holds the box in place was wrong: it is a pointer to it.
 
 Rayman's swimming behaviour 5 also calls function 201 (0x479910) every eight frames with mask 0x4000, casting upward from his body to refresh his saved surface height. An ordinary segment cast ignores water, but this explicitly filtered query must include it. If it misses, the script substitutes 32767 and loses the surface. In installed Learn_30 data, node 119 supplies a paired water plane at z=-8.339 near (-110,200). Sources: the level's collision triangles and Rayman's scripts, inspected with ortool floor/brain/run; executable addresses from our prior reading of Rayman2.exe.
+
+## Scripted impact casts: Bast_20 follow-up (card 127)
+
+Provenance: own read-only inspection of the installed executable via
+`H:/r2export/re/handler.py function 198` and decompilations **0x479720**,
+**0x474780**, **0x45D740**, **0x45D350/0x45D390**, **0x497160**,
+**0x48E820**, **0x491250**; actor scripts read using `ortool brain`.
+Recording positions were read from
+`rec_20261115_132731/frames.txt` under the main worktree's Release recordings.
+No executable code or proprietary geometry was copied into the implementation.
+
+Function **198** takes a world point and a world **displacement**, not a second
+endpoint or a local direction. **0x497160** forms endpoint = start + displacement.
+Normalizing and multiplying by 100 belongs to the projectile's script, giving a
+100-unit segment; the handler neither normalizes nor scales it again. Argument 3
+selects scenery (0), eligible actors (1), or both (2), **0x474780**. The nearest
+intersection wins; no hit returns vector zero, including for the normal query
+(function 199). Function 201 adds a material flag mask, **0x48E820**.
+
+These queries differ from the camera casts: **0x48E820** does not remove water
+`0x4000` or `0x8000` materials for function 198. **0x491250** accepts only a
+front face approached from its positive side, with a hit strictly inside the
+segment. **0x45D390** skips disabled scenery branches and branches matching the
+object ignore mask (normally `0x40`, not a material flag); procedure 82 clears
+the mask for one call, after which **0x479720** restores it. Actor candidates
+must carry custom flag `0x10` and standard-game byte `+0x29` bit `0x4`, excluding
+the caster (**0x474780**). They use receiving kind-3 zones and physical geometry
+in **0x45D390**. Our triangle gathering reuses the existing posed surface cache,
+with script eligibility instead of mechanics collision priority/exclusion flags.
+
+Previously function 198 used the camera-style two-sided query and solid-material
+filter, omitted actors, and ignored the object ignore mask. This could return
+zero or the wrong side of a wall as the projectile's saved impact point. It now
+uses a separate script-query policy; camera queries and actor motion retain their
+existing policies. Scenery branch flags are stored alongside loaded triangles;
+`triangle.node` remains a scene index for scenery, not a live memory address.
+
+A concrete bottom-right check starts at recording tick 2895's position
+`(54.58, 33.50, -38.57)` and aims toward an arena floor point `(40, 62, -57)`
+(the aim point is a regression input, not recovered from that recording).
+The old two-sided query predicts `(52.76225, 37.05321, -40.86774)`: a launch-wall
+back face with normal `(-0.144, 0.988, 0.051)` pointing along the movement.
+The script policy instead predicts the front-facing floor at
+`(39.59478, 62.79209, -57.51222)`, normal `(-0.135, 0.076, 0.988)`.
+Both materials have flags zero, so this particular difference is front-face
+selection, independently of the water/0x8000 filtering bug. A regression runs
+the actual fast projectile's scripts and verifies the floor prediction and its
+explosion within one unit of that point. Other regressions cover thin 0x8000
+floors/walls and water, no hit, segment length, actor mode/eligibility, and the
+one-call object ignore-mask override.
+
+The recorded `node=0 anim=297` actors are **not** template `04/01+0x8B0`:
+all their states are `07E522AC`, mapping to `04/01+0x228C`, the gravity barrel
+`04/01+0x1F04` (model `0d/01+0x5144`). Its script uses function 238 and gravity
+30, and explodes on condition 27. Actual scripts initialized at sampled positions
+from both throwing spots land on Bast_20 geometry and consume the ground report
+with the previously merged sphere sweep. The script does not use a straight
+look-ahead point for that curved trajectory.
+
+The separate fast projectile `04/01+0x8B0`, model `0d/01+0xA90`, uses flags
+`0x300` (end flag `0x200`, collision off). **0x431AD0** omits gravity entirely
+in that path; it flies straight even if its gravity field contains 30. Behavior
+0 saves the function-198 hit; behaviors 1/2 do not re-cast. Function 10 at
+**0x47B480** measures bounding-sphere-centre distance to its target actor;
+it is a second near-Rayman explosion check, not scenery collision. No extra
+barrel-specific sweep or curved-flight proximity workaround was added.
+
+Limits: full visual replay of the pirate fight has not been verified. The
+recording alone does not identify which visually reported projectile crossed a
+surface; the geometry and script regressions establish the query differences
+and the tested explosion behavior. Receiving actor spheres/boxes/capsules and
+exact sector-activity traversal for script casts remain incomplete. Scenery
+ignore flags are captured when geometry is built, so later scripted changes to
+those branch flags are not yet reflected dynamically.
