@@ -2121,6 +2121,17 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 				std::uint32_t at = block->base + std::uint32_t(std::strtoul(action, nullptr, 16));
 				std::cout << std::format("tick {:>4}: input action +0x{} counter {}\n", f, action, memory.read<std::int32_t>(at + 0x0C));
 			}
+		// ORTOOL_COVERS=1: one-draw black rectangles, including their game-clock birth time.
+		if(std::getenv("ORTOOL_COVERS"))
+		{
+			float alpha = 0;
+			double born = 0;
+			for(const auto& rectangle : vm.particles().screen_rectangles())
+				if(rectangle.first[0] <= 0 && rectangle.first[1] <= 0 &&
+					rectangle.second[0] >= 100 && rectangle.second[1] >= 100 && rectangle.alpha > alpha)
+				{ alpha = rectangle.alpha; born = rectangle.born; }
+			std::cout << std::format("tick {}: cover alpha {} born {} clock {} paused {}\n", f, alpha, born, vm.clock(), vm.paused());
+		}
 		// ORTOOL_VARS=node:i,j,...: those designer variables of the node after the first tick.
 		// ORTOOL_VARS=node:a,b,... prints those variables at tick 1, and with ORTOOL_VARS_EVERY=n every n ticks.
 		static const int vars_every = std::getenv("ORTOOL_VARS_EVERY") ? std::max(1, std::atoi(std::getenv("ORTOOL_VARS_EVERY"))) : 0;
@@ -2258,10 +2269,19 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 				// Actors the scripts created (shots): where each is, and its behaviour.
 				for(std::uint32_t so : vm.generated().alive())
 				{
-					std::uint32_t mind = memory.u32(memory.u32(vm.actor_of(so) + 0x0C));
-					std::uint32_t behaviour = memory.u32(memory.u32(mind + 4) + 8);
+					std::uint32_t brain = memory.u32(vm.actor_of(so) + 0x0C);
+					std::uint32_t mind = brain ? memory.u32(brain) : 0;
+					std::uint32_t normal = mind ? memory.u32(mind + 4) : 0;
+					if(!normal) continue; // Screen-only generated actors have no behaviour/variables.
+					std::uint32_t behaviour = normal ? memory.u32(normal + 8) : 0;
+					std::string variables;
+					try
+					{
+						variables = std::format("var1 {} var3 {} var16 {}", vm.get_variable(so, 1).as_int(), vm.get_variable(so, 3).as_int(), vm.get_variable(so, 16).as_float());
+					}
+					catch(const std::exception&) { variables = "no script variables"; }
 					if(auto p = game::global_placement(memory, so))
-						std::cout << std::format("tick {:>4}: generated 0x{:X} at {:.2f} {:.2f} {:.2f}, behaviour 0x{:X}, state 0x{:X}, var1 {} var3 {} var16 {}\n", f, so, p->m[0][3], p->m[1][3], p->m[2][3], behaviour, memory.u32(memory.u32(vm.actor_of(so)) + 4), vm.get_variable(so, 1).as_int(), vm.get_variable(so, 3).as_int(), vm.get_variable(so, 16).as_float());
+						std::cout << std::format("tick {:>4}: generated 0x{:X} at {:.2f} {:.2f} {:.2f}, behaviour 0x{:X}, state 0x{:X}, {}\n", f, so, p->m[0][3], p->m[1][3], p->m[2][3], behaviour, memory.u32(memory.u32(vm.actor_of(so)) + 4), variables);
 					for(const auto& [k, n] : vm.missing_by_actor[so])
 						std::cout << std::format("   missing {} {} x{}\n", k.first, k.second, n);
 				}

@@ -87,6 +87,9 @@ namespace openrayman::game
 		static bool is_segment(const particle& p) { return (p.flags & 0x60000000) == 0x60000000; }
 		// One tick: moves and fades every particle, and drops those that are done.
 		void update(double now, double seconds);
+		// Kind 110 is consumed by a draw (0x460A10), independent of game time.
+		// Retire the previous tick's rectangles before scripts submit this tick's.
+		void begin_tick() { m_screen_rectangles.clear(); }
 
 		const std::vector<particle>& all() const { return m_particles; }
 		const std::vector<screen_rectangle>& screen_rectangles() const { return m_screen_rectangles; }

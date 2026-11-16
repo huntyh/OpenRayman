@@ -209,3 +209,48 @@ the direction, speed 0.5..2.2 times number, and size 0.8..1.5; flags 0x3009
 fade them. At 0x461120 type 9 adds -1.6 per second to each velocity component
 and moves. Constants were read from the installed Rayman2.exe; script data was
 read with ortool. Visual appearance still requires a real-game comparison.
+## Hall of Doors No cover (card 123, 2026-11-16)
+
+Mapmonde node 89's No branch submits kind 110 at alpha 254 **before**
+procedure 306(0); the successful-save branch resumes first. Procedure 306
+(0x467970, case 0x132) restores the pre-pause game clock through 0x409F00.
+Consequently the No rectangle can have a birth timestamp seconds ahead of
+that frame's resumed clock. Expiring it only when `born < now` incorrectly
+keeps this opaque rectangle until the clock catches up. The player's time
+spent answering the question determines the extra black pause.
+
+Kind 110 goes through 0x4648B0 into pool type 0x11. Draw 0x460A10 calls
+0x429820 (black viewport-percent rectangle) and sets flag 0x1000000 on the
+pool entry: it is consumed by one draw, independently of its birth clock.
+OpenRayman retires the previous tick's rectangles before scripts run, so
+this tick's submissions survive through rendering even when the clock
+rewinds. Headless ticks follow the same lifecycle.
+
+The script's intended hold remains: behaviour 3 computes integer
+function_62() * 20, or * 50 for selected doors 25/26; behaviour 5 waits
+with condition 48, then behaviour 4 subtracts function_62() from var10
+(initially 254) each tick. Function 62 (0x478580) returns the unsigned
+millisecond timestep at 0x500434 as a float. It is normalized by 0x409CD0;
+at our fixed 60 Hz its reference interval rounds to 16 ms. The game clock
+(0x5003EC) remains elapsed milliseconds (0x409DD0). Condition 48 (0x48A840)
+compares the unsigned absolute clock difference against its integer duration.
+The existing 16/17 ms fixed-step approximation does not explain a pause
+proportional to question time and is unchanged. A 20-frame hold plus the
+254-alpha fade is bounded by 40 ticks at 60 Hz in the regression fixture.
+
+**Where this came from:** own reading of the installed Rayman2.exe handler
+tables/disassembly using `H:\r2export\re\handler.py function 62` and
+`condition 48`, and exported decompilations 00409cd0.c, 00409dd0.c,
+00409f00.c, 00460a10.c, 00429820.c, 004648b0.c and 00467970.c. Script
+ordering is from `ortool brain "F:\Games\Rayman 2" Mapmonde 89`.
+No executable code or assets were incorporated. Live original-game visual
+and frame-timing comparison remains unverified.
+
+The draw consumes the rectangle specifically at 0x460B9E (OR 0x1000000,
+stored at 0x460BA3), after the draw call at 0x460B94. In the headless
+reproduction with No at tick 120, the old cover remained opaque until
+clock catch-up at tick 239. With tick-based expiry, the scripted fade
+reaches alpha 4 at tick 155 and no full-screen cover remains at tick 156
+(600 ms after No). Reproduction: a local Slot1 directory, ORTOOL_ENTRY=0,0,
+ORTOOL_COVERS=1, and `ortool run <game> Mapmonde 330 89
+Right:80-100,Enter:120-122`.

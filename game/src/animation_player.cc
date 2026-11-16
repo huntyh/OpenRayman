@@ -518,6 +518,7 @@ namespace openrayman::game
 		profiler::add(profiler::counter::ticks);
 		if(vm.restart_requested) vm.restart_level();
 		vm.next_tick();
+		vm.particles().begin_tick();
 		live_memory& m = vm.memory();
 		// Cameras (actors with a camera object, actor +0x10) think after everyone else, so what
 		// other actors ask of them this frame (the portal naming itself the target) is in place

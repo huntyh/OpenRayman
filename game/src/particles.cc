@@ -536,7 +536,6 @@ namespace openrayman::game
 
 	void particles::update(double now, double seconds)
 	{
-		std::erase_if(m_screen_rectangles, [now](const screen_rectangle& r) { return r.born < now; });
 		const float dt = float(seconds);
 		for(particle& p : m_particles)
 		{

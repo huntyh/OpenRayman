@@ -33,7 +33,25 @@ TEST_CASE("particles: screen rectangle lasts one tick and keeps its coordinates 
 	CHECK(p.screen_rectangles()[0].second[1] == doctest::Approx(92.4));
 	CHECK(p.screen_rectangles()[0].alpha == doctest::Approx(180));
 	CHECK(p.all().empty());
+	p.begin_tick();
 	p.update(1.016, 0.016);
+	CHECK(p.screen_rectangles().empty());
+}
+
+TEST_CASE("particles: one-draw rectangle expires across a paused clock rewind")
+{
+	particles p;
+	p.begin_tick();
+	p.start(110, {0, 0, 0}, {100, 100, 0}, 1, 254, 3);
+	p.update(0.05, 0.016); // No resumes the clock after submitting this cover.
+	REQUIRE(p.screen_rectangles().size() == 1);
+	p.begin_tick();
+	p.update(0.066, 0.016);
+	CHECK(p.screen_rectangles().empty());
+	// A paused clock need not advance for a one-draw rectangle to be retired.
+	p.start(110, {0, 0, 0}, {100, 100, 0}, 1, 254, 0.066);
+	p.begin_tick();
+	p.update(0.066, 0.016);
 	CHECK(p.screen_rectangles().empty());
 }
 

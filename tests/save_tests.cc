@@ -6,6 +6,7 @@
 #include <openrayman/game_data.h>
 #include <openrayman/game/saves.h>
 #include <openrayman/game/first_visit.h>
+#include <openrayman/game/animation_player.h>
 #include <random>
 
 #include <doctest/doctest.h>
@@ -311,6 +312,52 @@ TEST_CASE("real data: Hall of Doors prompt writes the active slot and reports su
 		CHECK_FALSE(vm.paused());
 		CHECK(session->automatic_actor == 0);
 	}
+	std::filesystem::remove_all(root);
+}
+
+TEST_CASE("real data: Hall No cover expires after the script fade regardless of prompt time")
+{
+	auto dir = real_game_dir(); if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Mapmonde");
+	auto header = read_level_header(files);
+	scene tree(files.memory, header);
+	game::live_memory memory(files.memory);
+	game::interpreter vm(memory, header.main_actor->address());
+	game::register_handlers(vm);
+	game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+	auto root = game::save_root() / ("hall-no-test-" + std::to_string(std::random_device{}()));
+	std::filesystem::create_directories(root / "Slot1");
+	vm.save_folder = root.string();
+	auto prompt = tree.node(89).at.address();
+	std::vector actors{prompt};
+	vm.set_actors(actors);
+	vm.set_variable(prompt, 0, game::value::integer(1));
+	vm.set_variable(tree.node(90).at.address(), 1, game::value::integer(0));
+	vm.set_variable(tree.node(90).at.address(), 5, game::value::of(game::value_type::actor, tree.node(7).data->address()));
+	game::input keys(memory, read_input_actions(files));
+	auto tick = [&] { keys.step(); game::step(vm, actors); };
+	tick();
+	REQUIRE(vm.paused());
+	// Stay at the question for three seconds: No creates a rectangle before
+	// procedure 306 rewinds the paused clock (0x409F00).
+	for(int i = 0; i < 180; ++i) tick();
+	// Supply the selection to the isolated prompt actor (movement normally
+	// comes from Rayman's input update, which this fixture does not run).
+	vm.set_variable(prompt, 7, game::value::integer(0));
+	REQUIRE(vm.get_variable(prompt, 7).as_int() == 0);
+	keys.set_key(0x1C, true); tick();
+	keys.set_key(0x1C, false);
+	REQUIRE_FALSE(vm.paused());
+	bool saw_cover = false;
+	for(const auto& rectangle : vm.particles().screen_rectangles()) saw_cover |= rectangle.alpha >= 254;
+	CHECK(saw_cover);
+	// This door uses 20 * frame_ms hold, then 254 / frame_ms fade steps.
+	// Allow 40 ticks (667 ms) for both and the behaviour transitions.
+	for(int i = 0; i < 40; ++i) tick();
+	CHECK(vm.particles().screen_rectangles().empty());
+	CHECK(vm.removed(prompt));
 	std::filesystem::remove_all(root);
 }
 
