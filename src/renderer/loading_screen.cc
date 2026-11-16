@@ -167,7 +167,8 @@ namespace openrayman
 		if(lum[3] <= 0) return;
 		for(int n = 0; n < 3; n++)
 		{
-			const float hop = std::max(0.0f, std::sin(seconds * 5.0f - float(n) * 0.8f));
+			// Resting while they fade in (0.3 s), then hopping one after another.
+			const float hop = std::max(0.0f, std::sin(std::max(0.0f, seconds - 0.3f) * 5.0f - float(n) * 0.8f));
 			const float cx = W - body * 3.0f - float(2 - n) * spacing;
 			const float cy = H - body * 3.4f - body * 1.6f * hop * hop;
 			// Wings first (shorter than the body is wide, roots at the core's edge), the glow and

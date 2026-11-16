@@ -2441,7 +2441,10 @@ namespace
 				// load's pause shows on a still picture rather than freezing them mid-hop.
 				const float lums = a.loading_at == app::loading_phase::in ? 0
 					: a.loading_at == app::loading_phase::hold ? a.loading_time / 0.3f : 1;
-				a.loading->draw(a.loading_picture, alpha, lums, float(SDL_GetTicks()) / 1000.0f, w, h);
+				// Their clock starts with them, so the first hop starts as they appear.
+				const float lum_seconds = a.loading_at == app::loading_phase::hold ? a.loading_time
+					: a.loading_at == app::loading_phase::out ? loading_hold + a.loading_time : 0;
+				a.loading->draw(a.loading_picture, alpha, lums, lum_seconds, w, h);
 			}
 		}
 
