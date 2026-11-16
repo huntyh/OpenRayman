@@ -34,6 +34,8 @@ namespace openrayman
 		void stop_source(std::uint32_t source, bool all_voices = false);
 		void set_paused(bool paused);
 		void pause_group(bool pause);
+		// Everything this player sends out, music and effects (0..1): the loading screen fades it.
+		void set_master_gain(float gain) { if(m_stream) SDL_SetAudioStreamGain(m_stream, gain); }
 
 	private:
 		struct voice

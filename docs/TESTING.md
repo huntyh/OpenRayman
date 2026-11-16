@@ -255,7 +255,9 @@ keys go to the game, and compare with the GOG game side by side:
       in over half a second, holds it two seconds with three yellow Lums hopping in the bottom
       right, then fades into the new level. Entering the Hall of Doors shows the wide picture
       with Rayman, Ly and Clark; the pictures keep their shape, wide ones fill the width without black bands above and below.
-      Rayman is already in place when the picture fades out (no new-game spot first).
+      Rayman is already in place when the picture fades out (no new-game spot first). The music
+      fades out with the old level, is silent under the picture and fades in with the new one.
+      Loading a saved game from the main menu goes straight to the Hall, without a picture.
 
 ## Known limitations
 

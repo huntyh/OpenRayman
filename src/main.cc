@@ -187,6 +187,7 @@ namespace
 		loading_phase loading_at = loading_phase::none;
 		float loading_time = 0; // seconds into the phase
 		std::string loading_picture;
+		float sound_gain = 1; // the sound player's output while a loading screen fades
 		std::uint32_t screen_font_actor = 0;
 		std::size_t level_index = 0;
 		std::string start_level = "Learn_10"; // --level <name>
@@ -2112,6 +2113,7 @@ namespace
 			a.sounds.reset();
 			a.game = std::move(game);
 			a.sounds = std::make_unique<sound_player>(*a.game);
+			a.sound_gain = 1;
 			a.archives = std::move(archives);
 			a.loading = std::make_unique<loading_screen>(a.archives, a.api);
 			a.loading_at = app::loading_phase::none;
@@ -3107,7 +3109,9 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 		if(a.vm && a.vm->quit_requested) return SDL_APP_SUCCESS;
 		// The scripts just asked for another level: fade its loading picture in first; the level
 		// changes when the picture covers the screen.
-		if(a.loading_at == app::loading_phase::none && a.vm && !a.vm->level_request.empty() && a.loading_screens && !a.screenshot)
+		// Not when the menu loads a saved game: it goes straight to the Hall of Doors (user, 2026-11-16).
+		const bool loading_a_save = a.saves && a.saves->loaded;
+		if(a.loading_at == app::loading_phase::none && a.vm && !a.vm->level_request.empty() && a.loading_screens && !a.screenshot && !loading_a_save)
 		{
 			a.loading_picture = loading_picture_for(a, a.vm->level_request);
 			SDL_Log("Loading screen for %s: %s", a.vm->level_request.c_str(), a.loading_picture.empty() ? "none" : a.loading_picture.c_str());
@@ -3119,6 +3123,20 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 		}
 		if(a.loading_at != app::loading_phase::in)
 			change_requested_level(a);
+		// The sound follows the picture: the old level fades to silence as it comes in, stays quiet
+		// under it, and the new level fades in with it going out (user, 2026-11-16).
+		if(a.sounds)
+		{
+			float gain = 1;
+			if(a.loading_at == app::loading_phase::in) gain = 1 - std::min(1.0f, a.loading_time / loading_fade);
+			else if(a.loading_at == app::loading_phase::hold) gain = 0;
+			else if(a.loading_at == app::loading_phase::out) gain = std::min(1.0f, a.loading_time / loading_fade);
+			if(gain != a.sound_gain)
+			{
+				a.sounds->set_master_gain(gain);
+				a.sound_gain = gain;
+			}
+		}
 		game::profiler::scope timed(game::profiler::zone::posing);
 		update_actors(a);
 	}
