@@ -3085,17 +3085,8 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 		float step = a.speed * dt * (keys[SDL_SCANCODE_LSHIFT] ? 4.0f : 1.0f);
 		a.camera.move(forward * step, right * step, up * step);
 
-		// A level change first fades its loading picture in over this level, which stands still.
-		if(a.loading_at == app::loading_phase::none && a.vm && !a.vm->level_request.empty() && a.loading_screens && !a.screenshot)
-		{
-			a.loading_picture = loading_picture_for(a, a.vm->level_request);
-			if(!a.loading_picture.empty())
-			{
-				a.loading_at = app::loading_phase::in;
-				a.loading_time = 0;
-			}
-		}
-		else if(a.loading_at != app::loading_phase::none)
+		// The loading screen's clock (a level change starts it below, once the scripts asked).
+		if(a.loading_at != app::loading_phase::none)
 		{
 			a.loading_time += dt;
 			const float length = a.loading_at == app::loading_phase::hold ? loading_hold : loading_fade;
@@ -3106,15 +3097,27 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 					: a.loading_at == app::loading_phase::hold ? app::loading_phase::out : app::loading_phase::none;
 			}
 		}
-		const bool loading_in = a.loading_at == app::loading_phase::in;
-		if(a.animating && !a.screenshot && !loading_in)
+		// While the picture fades in, this level stands still.
+		if(a.animating && !a.screenshot && a.loading_at != app::loading_phase::in)
 		{
 			a.animation_time += dt;
 			game::profiler::scope timed(game::profiler::zone::scripts);
 			run_scripts(a, dt);
 		}
 		if(a.vm && a.vm->quit_requested) return SDL_APP_SUCCESS;
-		if(!loading_in)
+		// The scripts just asked for another level: fade its loading picture in first; the level
+		// changes when the picture covers the screen.
+		if(a.loading_at == app::loading_phase::none && a.vm && !a.vm->level_request.empty() && a.loading_screens && !a.screenshot)
+		{
+			a.loading_picture = loading_picture_for(a, a.vm->level_request);
+			SDL_Log("Loading screen for %s: %s", a.vm->level_request.c_str(), a.loading_picture.empty() ? "none" : a.loading_picture.c_str());
+			if(!a.loading_picture.empty())
+			{
+				a.loading_at = app::loading_phase::in;
+				a.loading_time = 0;
+			}
+		}
+		if(a.loading_at != app::loading_phase::in)
 			change_requested_level(a);
 		game::profiler::scope timed(game::profiler::zone::posing);
 		update_actors(a);
