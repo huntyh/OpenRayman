@@ -859,6 +859,41 @@ namespace openrayman::game
 			if(!vertices || !kinds || !elements) return;
 			for(std::uint32_t e = 0; e < count; e++)
 			{
+				// Receiving spheres use the same entry layout as the moving actor's zones.
+				// Approximate their curved surface for the existing triangle contact queries.
+				if(half(kinds + e * 2) == 7)
+				{
+					std::uint32_t element = word(elements + e * 4), entries = word(element);
+					for(std::uint32_t i = 0; entries && i < half(element + 4); i++)
+					{
+						std::uint32_t entry = entries + i * 12, index = half(entry + 8);
+						if(index >= vertex_count || !m.contains(entry, 12) || !m.contains(vertices + index * 12, 12)) continue;
+						vec centre = read_vec(m, vertices + index * 12);
+						float radius = m.f32(entry);
+						if(radius <= 0) continue;
+						auto point = [&](int lat, int lon) {
+							float a = -1.57079632679f + float(lat) * 3.14159265359f / 4.0f;
+							float b = float(lon) * 6.28318530718f / 8.0f;
+							return frame.apply(vadd(centre, {radius * std::cos(a) * std::cos(b), radius * std::cos(a) * std::sin(b), radius * std::sin(a)}));
+						};
+						for(int lat = 0; lat < 4; lat++) for(int lon = 0; lon < 8; lon++)
+						{
+							vec p[] = {point(lat, lon), point(lat, lon + 1), point(lat + 1, lon), point(lat + 1, lon + 1)};
+							for(auto indices : {std::array<int, 3>{0, 1, 2}, std::array<int, 3>{1, 3, 2}})
+							{
+								collision_triangle tri;
+								tri.node = owner; tri.material = word(entry + 4);
+								tri.flags = material_flags(m, tri.material); tri.has_material = word(tri.material + 0xC) != 0;
+								for(int k = 0; k < 3; k++) tri.corners[k] = p[indices[k]];
+								vec n = vcross(vsub(tri.corners[1], tri.corners[0]), vsub(tri.corners[2], tri.corners[0]));
+								float length = vlen(n);
+								if(length < 1e-8f) continue;
+								tri.normal = vmul(n, 1 / length); to.push_back(tri);
+							}
+						}
+					}
+					continue;
+				}
 				if(half(kinds + e * 2) != 1) continue;
 				std::uint32_t element = word(elements + e * 4), indices = word(element + 8), normals = word(element + 0x10);
 				if(!element || !indices) continue;
@@ -929,6 +964,17 @@ namespace openrayman::game
 			key.group = set ? word(set + 0x28) : 0;
 			key.modes = set ? word(set + 0x3C) : 0;
 			actor_surfaces& cached = vm.surface_cache().actors[self];
+			// A kind-3 zone follows the actor, not its animation. Only physical-part collision
+			// depends on the frame; avoid rebuilding static zone meshes for every animation tick.
+			std::uint32_t entries = word(key.objects + 4);
+			std::uint16_t objects = key.objects ? half(key.objects + 0xC) : 0;
+			bool has_geometry = cached.objects == key.objects && (!cached.triangles.empty() || cached.sector)
+				? cached.animated_parts : false;
+			if(cached.objects != key.objects || (cached.triangles.empty() && !cached.sector))
+				for(std::uint32_t i = 0; i < objects; i++)
+					if(word(word(word(entries + i * 20 + 4) + 4) + 0xC)) { has_geometry = true; break; }
+			key.animated_parts = has_geometry;
+			if(!has_geometry) key.frame = 0;
 			if(!cached.triangles.empty() || cached.sector)
 				if(cached.placement == key.placement && cached.state == key.state && cached.frame == key.frame && cached.objects == key.objects
 					&& cached.zones == key.zones && cached.group == key.group && cached.modes == key.modes)
@@ -950,11 +996,6 @@ namespace openrayman::game
 			}
 			// The exe keeps a super object per animated physical part (0x4943C0). We derive
 			// the same placement from the current animation and object list, including hidden parts.
-			std::uint32_t list = cached.objects, entries = word(list + 4);
-			std::uint16_t objects = list ? half(list + 0xC) : 0;
-			bool has_geometry = false;
-			for(std::uint32_t i = 0; i < objects; i++)
-				if(word(word(word(entries + i * 20 + 4) + 4) + 0xC)) { has_geometry = true; break; }
 			auto add_part = [&](std::uint32_t object, affine placed) {
 				if(object >= objects) return;
 				std::uint32_t entry = entries + object * 20, physical = word(entry + 4);

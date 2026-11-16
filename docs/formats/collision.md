@@ -124,8 +124,9 @@ runtime's removal list supplies that check. Self-collision is excluded.
 These actor contacts enter the same floor/wall classification as scenery (0x43EEC0, 0x43F510).
 OpenRayman now includes actor **triangles** in its floor, wall, ceiling and water queries, using
 the existing disc/cylinder approximation. The ground contact slots keep the owning actor's super
-object at entry +0x24 as well as its material and world normal. Receiving spheres, boxes and
-capsules are not yet actor surfaces; segment casts and ledge probes still use scenery only.
+object at entry +0x24 as well as its material and world normal. Receiving spheres are approximated
+by triangles (see the Fairy Glade example below); boxes and capsules are not yet actor surfaces.
+Ledge probes still use scenery only.
 
 ### Learn_10's tutorial trapdoor
 
@@ -350,3 +351,39 @@ and the tested explosion behavior. Receiving actor spheres/boxes/capsules and
 exact sector-activity traversal for script casts remain incomplete. Scenery
 ignore flags are captured when geometry is built, so later scripted changes to
 those branch flags are not yet reflected dynamically.
+
+### Fairy Glade mushroom (card 128)
+
+Learn_30 node 4 has a selected kind-3 zone with a type-7 sphere (radius 1.2,
+centre approximately 0.0254, 0.0008, 0.8354 in actor coordinates). The
+movement gatherer includes this zone; inspection of Rayman2.exe 0x48EE70
+shows type 7 using 12-byte entries and the indexed centre and radius in its
+sphere test at 0x491A50. OpenRayman approximates receiving spheres with a
+48-triangle surface for its existing contact queries, so contact points and
+normals are approximate. The sphere's material is retained. Zone selection,
+priority, world membership, and bilateral collision options apply to spheres
+as they do to actor triangles; a sphere in an inactive zone is not solid.
+Static actor zones are cached independently of animation frames unless a
+physical part has collision geometry.
+
+The mushroom script tests whether Rayman is supported by it (condition 104,
+0x48B6E0, dynamics +0x284), moves him two units above its origin (procedure
+200, 0x46BF20), writes his var11 to (0,0,6), sets var8 to 7, and switches
+his normal behaviour to 9 and reflex to 13. Rayman behaviour 9 tests var8 == 7,
+copies var11 to var26..28 and switches to behaviour 24 / reflex 15. These
+script details and sphere values come from `ortool brain`, `peek`, and `run`
+on installed Learn_30 data; the executable addresses come from read-only
+inspection of Rayman2.exe. The static floor below has flag 0x0004 (grabbable),
+not a trampoline flag. The approximation has not been compared with a real
+game recording.
+
+Review of the executable's movement path: 0x499070 and 0x49A690 dispatch
+selected moving and receiving sphere elements when the relevant collision mask
+includes 0x80000; 0x49A0E0 and 0x499CF0 test their combined radii. Contact
+insertion at 0x48FCA0 only accepts a moving probe with material bit 0x8
+against a receiver with bit 0x4. The overlap helper 0x48EE70 excludes
+0xC000 materials before 0x491A50, while movement classification separately
+examines 0x4000 and 0x8000 at 0x43EEC0 and 0x43F510. These are distinct
+paths; the overlap helper's filter is not a general actor eligibility rule.
+This is own read-only inspection of Rayman2.exe; zone inventory comes from
+the installed level data.

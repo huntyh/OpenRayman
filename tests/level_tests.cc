@@ -3322,6 +3322,53 @@ TEST_CASE("real data: Rayman stands on Learn_10's closed tutorial trapdoor")
 	CHECK(errors == 0);
 }
 
+TEST_CASE("real data: Fairy Glade mushroom launches Rayman")
+{
+	auto dir = real_game_dir(); if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Learn_30");
+	auto header = read_level_header(files); scene tree(files.memory, header);
+	auto bank = read_animation_bank(files); game::live_memory m(files.memory);
+	auto rayman = header.placements.at(0).super_object.address();
+	game::interpreter vm(m, rayman); game::register_handlers(vm); game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
+	vm.set_animations(&bank); game::install_level_events(m, bank);
+	std::vector<std::uint32_t> actors;
+	for(const scene_node& n : tree.nodes()) if(n.type == super_object_type::actor) actors.push_back(n.at.address());
+	vm.set_actors(actors);
+	for(const actor_set::entry& e : read_actors(files.memory, tree, bank).actors)
+		game::set_global_placement(m, tree.node(e.node).at.address(), e.world);
+	for(auto bit : game::start_story_bits("Learn_30", false)) vm.set_story_bit(actors, bit);
+	game::apply_revisit_state(vm, tree, "Learn_30");
+	game::input keys(m, read_input_actions(files));
+	float highest = -100; bool supported = false; std::size_t errors = 0;
+	const auto mushroom = tree.node(4).at.address();
+	const auto base = m.u32(m.u32(vm.actor_of(rayman) + 8));
+	for(int tick = 0; tick < 310; tick++)
+	{
+		if(tick == 240) game::write_transform(m, rayman, {-104.7f, 216.1f, -2}, {1,0,0,0,1,0,0,0,1});
+		keys.step();
+		game::step(vm, actors, [&](std::uint32_t, const std::exception& e) {
+			if(errors++ == 0) MESSAGE(std::format("tick {}: {}", tick, e.what()));
+		});
+		// Headless equivalent of the viewer's visibility pass, as in ortool run.
+		for(auto so : actors) if(vm.active(so))
+		{
+			auto standard = m.u32(vm.actor_of(so) + 4);
+			m.write<std::uint32_t>(standard + 0x24, m.u32(standard + 0x24) & ~0x800u);
+		}
+		if(tick >= 240)
+		{
+			supported |= m.u32(base + 0x284) == mushroom;
+			highest = std::max(highest, game::global_placement(m, rayman)->m[2][3]);
+		}
+	}
+	CHECK(errors == 0);
+	CHECK(supported);
+	CHECK(highest > 1.0f);
+}
+
 TEST_CASE("real data: Murfy's tablet tip comes back each time Rayman returns")
 {
 	auto dir = real_game_dir();
@@ -3493,6 +3540,26 @@ TEST_CASE("actor floors carry a rider through translation and rotation and relea
 	CHECK(m.u32(base + 0x284) == 0);
 	CHECK(game::global_placement(m, rider)->m[2][3] < 1);
 	m.write<std::uint32_t>(set + 0x3C, 1);
+	// Receiving spheres obey the same zone selection and bilateral exclusions as triangles.
+	const auto sphere = m.allocate(12), material = m.allocate(16), collide = m.allocate(4);
+	m.write<std::uint16_t>(kinds, 7); m.write<std::uint16_t>(zone + 0x2C, 1);
+	m.write(vertices, vec3{0, 0, 0}); m.write(element, sphere);
+	m.write<std::uint16_t>(element + 4, 1); m.write<float>(sphere, 1);
+	m.write(sphere + 4, material); m.write(material + 0xC, collide);
+	// The geometry cache is keyed by the selected zone's state, as in ordinary play.
+	m.write<std::uint32_t>(set + 0x3C, 2);
+	CHECK(game::actor_collision_triangles(vm, rider).empty());
+	m.write<std::uint32_t>(set + 0x3C, 1);
+	auto sphere_triangles = game::actor_collision_triangles(vm, rider);
+	REQUIRE_FALSE(sphere_triangles.empty());
+	game::world_collision sphere_world(sphere_triangles, true);
+	CHECK(sphere_world.floor_at(4, 2, 3, 1)->height == doctest::Approx(2));
+	m.write<std::uint8_t>(set + 0x42, 8);
+	CHECK(game::actor_collision_triangles(vm, rider).empty());
+	m.write<std::uint8_t>(set + 0x42, 0);
+	m.write<std::uint8_t>(set + 0x41, 1);
+	CHECK(game::actor_collision_triangles(vm, rider).empty());
+	m.write<std::uint8_t>(set + 0x41, 0);
 	vm.remove(platform);
 	CHECK(game::actor_collision_triangles(vm, rider).empty());
 }

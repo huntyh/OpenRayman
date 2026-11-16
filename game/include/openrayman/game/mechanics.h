@@ -134,6 +134,7 @@ namespace openrayman::game
 		affine placement;
 		std::uint32_t state = 0, objects = 0, zones = 0, group = 0, modes = 0;
 		std::uint16_t frame = 0;
+		bool animated_parts = false;
 		std::uint32_t sector = 0;
 		std::vector<collision_triangle> triangles;
 		vec3 low{}, high{}; // the triangles' bounds
