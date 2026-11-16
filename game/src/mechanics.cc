@@ -606,8 +606,12 @@ namespace openrayman::game
 	{
 		// Water triangles are flat surfaces (0x4000); a steep one is a waterfall's wall, not a pond
 		// (0x437E60 compares the actor's Z with the water entry's own height, 0x4B72D4).
+		// 0x43EEC0 selects a water report by normal dot motion. This vertical body
+		// interval represents immersion from above: use the upward face, never the
+		// coincident underside. Rayman's macro 36 uses this normal to place his body
+		// below the surface; reporting the underside instead places him in the air.
 		return highest_surface(m_geometry->triangles, under(x, y), x, y, top, bottom, [this](const collision_triangle& t) {
-			return accepts(t) && (t.flags & surface::water) && std::abs(t.normal[2]) >= floor_normal;
+			return accepts(t) && (t.flags & surface::water) && t.normal[2] >= floor_normal;
 		});
 	}
 

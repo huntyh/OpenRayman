@@ -3736,6 +3736,46 @@ TEST_CASE("real data: sector wake delays the kids and story removal prevents the
 	}
 }
 
+TEST_CASE("water immersion chooses the upper face regardless of paired triangle order")
+{
+	collision_triangle up;
+	up.corners = {vec3{-5,-5,0}, vec3{5,-5,0}, vec3{0,5,0}};
+	up.normal = {0,0,1}; up.flags = surface::water;
+	auto down = up; down.normal = {0,0,-1};
+	std::vector<collision_triangle> triangles{down, up};
+	SUBCASE("underside first") {}
+	SUBCASE("upper face first") { std::reverse(triangles.begin(), triangles.end()); }
+	game::world_collision world(triangles);
+	auto wet = world.water_at(0, 0, 1, -1);
+	REQUIRE(wet);
+	CHECK(wet->height == 0);
+	CHECK(wet->normal == vec3{0,0,1});
+	CHECK_FALSE(world.water_at(0, 0, 2, 0.01f));
+	CHECK_FALSE(world.floor_at(0, 0, 1, -1));
+	CHECK_FALSE(world.ceiling_at(0, 0, 1, -1));
+	CHECK_FALSE(world.first_hit({0,0,1}, {0,0,-1}));
+	// Function 201's explicit water cast remains bidirectional.
+	CHECK(world.first_hit({0,0,-1}, {0,0,1}, surface::water).has_value());
+}
+
+TEST_CASE("real data: Learn_10 shallow water retains its surface and solid depth cast")
+{
+	auto dir = real_game_dir(); if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Learn_10");
+	scene tree(files.memory, read_level_header(files));
+	game::world_collision world(static_collision(files.memory, tree));
+	auto wet = world.water_at(-27, 291.5f, -27.5f, -28.5f);
+	REQUIRE(wet);
+	CHECK(wet->height == doctest::Approx(-28.040f).epsilon(0.0001));
+	CHECK(wet->normal[2] == doctest::Approx(1));
+	// Macro 36's unfiltered depth cast must pass through water to the shallow
+	// solid bed (function 198, 0x479720), preserving the splash/standing route.
+	auto bed = world.first_hit({-27,291.5f,wet->height - 0.001f}, {-27,291.5f,wet->height - 2});
+	REQUIRE(bed);
+	CHECK(bed->point[2] == doctest::Approx(-28.569f).epsilon(0.0001));
+}
+
 TEST_CASE("real data: Learn_30 swimming surface cast sees the river")
 {
 	auto dir = real_game_dir();
@@ -3752,6 +3792,12 @@ TEST_CASE("real data: Learn_30 swimming surface cast sees the river")
 	auto water = world.first_hit(below, above, 0x4000);
 	REQUIRE(water);
 	CHECK(water->point[2] == doctest::Approx(-8.339).epsilon(0.001));
+	// Card 118, rec_20261116_211454 clock 17783: paired planes must report
+	// the face used for entry from above (0x43EEC0), not its downward underside.
+	auto entry = world.water_at(-68.957f, 223.870f, -6.645f, -8.445f);
+	REQUIRE(entry);
+	CHECK(entry->height == doctest::Approx(-8.339f).epsilon(0.001));
+	CHECK(entry->normal[2] == doctest::Approx(1));
 }
 
 TEST_CASE("real data: Learn_30 swim ascent stays submerged and directional input steers")
@@ -3781,6 +3827,18 @@ TEST_CASE("real data: Learn_30 swim ascent stays submerged and directional input
 	for(auto bit : game::revisit_story_bits) REQUIRE(vm.set_story_bit(actors, bit));
 	game::apply_revisit_state(vm, tree, "Learn_30");
 	game::input keys(m, read_input_actions(files));
+	vec3 entry_position = {-85.3f, 201.1f, -6};
+	float entry_heading = 70;
+	float surface_lower_bound = -9.65f;
+	SUBCASE("original river entry") {}
+	SUBCASE("card 118 underside at the third jump landing")
+	{
+		entry_position = {-68.957f, 223.870f, -6};
+		entry_heading = 250; // swim back along the river, away from its bank
+		// The ceiling rejects the move, retaining the preceding Z rather than
+		// snapping to a fixed depth. This trajectory approaches it faster.
+		surface_lower_bound = -9.85f;
+	}
 	auto base = m.u32(m.u32(vm.actor_of(rayman) + 8));
 	auto report = m.u32(base + 0x150);
 	auto swimming = [&] { return vm.get_variable(rayman, 9).as_int() == 25; };
@@ -3791,8 +3849,8 @@ TEST_CASE("real data: Learn_30 swim ascent stays submerged and directional input
 		if(tick == 400)
 		{
 			// Falling into the recorded river, facing roughly the recording's heading.
-			const float cs = std::cos(70 * 0.0174532925f), sn = std::sin(70 * 0.0174532925f);
-			game::write_transform(m, rayman, {-85.3f, 201.1f, -6}, {-sn, cs, 0, -cs, -sn, 0, 0, 0, 1});
+			const float cs = std::cos(entry_heading * 0.0174532925f), sn = std::sin(entry_heading * 0.0174532925f);
+			game::write_transform(m, rayman, {entry_position[0], entry_position[1], entry_position[2]}, {-sn, cs, 0, -cs, -sn, 0, 0, 0, 1});
 			vm.camera_motion().tracked_target = 0;
 		}
 		keys.set_key(0x2C, tick >= 550 && tick < 620); // Z (dive)
@@ -3821,7 +3879,7 @@ TEST_CASE("real data: Learn_30 swim ascent stays submerged and directional input
 		{
 			CHECK(swimming());
 			CHECK(z <= -9.53f);
-			CHECK(z > -9.65f);
+			CHECK(z > surface_lower_bound);
 			CHECK((m.u32(report + 4) & 0x40) != 0);
 			CHECK(vm.get_variable(rayman, 49).as_float() == doctest::Approx(-8.339f).epsilon(0.001));
 		}
@@ -3837,10 +3895,77 @@ TEST_CASE("real data: Learn_30 swim ascent stays submerged and directional input
 	keys.set_key(0xCD, false);
 	keys.step(); game::step(vm, actors);
 	keys.set_key(0x1E, true);
-	for(int tick = 0; tick < 12; ++tick) { keys.step(); game::step(vm, actors); }
+	for(int tick = 0; tick < 18; ++tick) { keys.step(); game::step(vm, actors); }
 	CHECK((m.u32(base + 0xC) & 0x100000) == 0);
 	CHECK(game::global_placement(m, rayman)->m[2][3] > -8.339f);
+	// Follow the complete jump and re-entry after rising above the waterline.
+	keys.set_key(0x1E, false);
+	bool reentered = false;
+	for(int tick = 0; tick < 180; ++tick)
+	{
+		keys.step(); game::step(vm, actors);
+		float z = game::global_placement(m, rayman)->m[2][3];
+		if(z > -8.339f) CHECK_FALSE(swimming());
+		if(swimming())
+		{
+			reentered = true;
+			CHECK(z < -8.339f);
+		}
+	}
+	CHECK(reentered);
 	CHECK(vm.missing_by_actor[rayman].empty());
+}
+
+TEST_CASE("real data: Learn_30 oxygen source refills repeatedly while ordinary oxygen Lums disappear")
+{
+	auto dir = real_game_dir(); if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Learn_30");
+	scene tree(files.memory, read_level_header(files));
+	auto bank = read_animation_bank(files);
+	game::live_memory m(files.memory);
+	auto rayman = tree.node(90).at.address(), source = tree.node(58).at.address(), single = tree.node(57).at.address();
+	game::interpreter vm(m, rayman);
+	game::register_handlers(vm);
+	std::vector<std::uint32_t> actors;
+	for(const auto& node : tree.nodes())
+		if(node.type == super_object_type::actor) actors.push_back(node.at.address());
+	vm.set_actors(actors);
+	for(const auto& e : read_actors(files.memory, tree, bank).actors)
+		game::set_global_placement(m, tree.node(e.node).at.address(), e.world);
+	vm.next_tick(); vm.think(source); vm.think(single);
+	CHECK(vm.get_variable(source, 0).as_int() == 4);
+	CHECK(vm.get_variable(single, 0).as_int() == 3);
+	CHECK(vm.get_variable(source, 1).as_float() == 4);
+	CHECK(vm.get_variable(single, 1).as_float() == 4);
+	vm.camera().gauge_max = 200;
+	vm.camera().gauge = 0;
+	constexpr float upright[9] = {1,0,0,0,1,0,0,0,1};
+	// Card 135 recording clock 84133: collection is centre distance < 4
+	// (function 10, 0x47B480), not a zone/sector overlap. Procedure 382
+	// (0x470770) adds 50 each think; variant 4 deliberately skips removal.
+	game::write_transform(m, rayman, {-70.411f, 240.775f, -26.619f}, upright);
+	vm.next_tick(); vm.think(source);
+	CHECK(vm.camera().gauge == 50);
+	CHECK(vm.get_variable(source, 4).as_int() == 1);
+	CHECK_FALSE(vm.removed(source));
+	vm.next_tick(); vm.think(source);
+	CHECK(vm.camera().gauge == 100);
+	CHECK_FALSE(vm.removed(source));
+	game::write_transform(m, rayman, {-80, 230, -26}, upright);
+	vm.next_tick(); vm.think(source);
+	CHECK(vm.camera().gauge == 100);
+	CHECK(vm.get_variable(source, 4).as_int() == 0);
+	game::write_transform(m, rayman, {-70.411f, 240.775f, -26.619f}, upright);
+	vm.next_tick(); vm.think(source);
+	CHECK(vm.camera().gauge == 150);
+	CHECK_FALSE(vm.removed(source));
+	game::write_transform(m, rayman, {-49.14f, 241.05f, -21.58f}, upright);
+	vm.next_tick(); vm.think(single);
+	CHECK(vm.camera().gauge == 200);
+	CHECK(vm.removed(single));
+	CHECK(vm.missing_by_actor[source].empty());
+	CHECK(vm.missing_by_actor[single].empty());
 }
 
 TEST_CASE("real data: Bast_20 piranhas only catch Rayman in their wake region")

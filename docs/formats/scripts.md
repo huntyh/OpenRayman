@@ -1081,3 +1081,26 @@ can reverse the speed as the camera turns.
 
 Where this came from: own reading of Rayman2.exe at `0x46E450`, compared with Rayman's
 behaviour 27 and the Bast_20 and Learn_31 recordings, 2026-11-16.
+
+## Learn_30 oxygen sources (card 135)
+
+Node 58 at (-70.6005,241.001,-25.501) is a **repeatable oxygen source**, not a
+consumable Lum. Its model (0d/01 +0x8C34), behaviour 1 rule at +0x8F20, tests
+`main actor: function_10(me) < var1`. Function 10 (0x47B480) measures world
+bounding-sphere-centre distance; var1 is 4 for this actor and node 57 nearby.
+No zone overlap, sector test or collision triangle participates in collection.
+
+Node 58 has var0=4: while in reach it calls procedure 382(50), emits particles
+every four frames, and plays the entry sound once using var4 as a latch. It
+explicitly skips procedure 139 (0x467850, actor removal) for variant 4. Leaving
+reach clears var4, so returning plays the sound again. Node 57 has var0=3 and
+adds 50 once before removing itself. Procedure 382 (0x470770) adds to global
+0x4E9308, capped by 0x4E930C: Rayman's oxygen gauge. This visual persistence is
+the level's intended script behavior and needs no collection-radius change.
+
+Where this came from: installed Learn_30 scripts and initial variables via
+`ortool brain/run`; own analysis of Rayman2.exe at 0x47B480 and 0x470770.
+`rec_20261116_211316` shows node 58 active throughout, with Rayman passing
+within 1.157 units at clock 84133. A real-data test at that recorded position
+pins gauge increments 0 -> 50 -> 100, leaving and returning -> 150, source
+persistence and var4 reset, and node 57's single refill -> 200 with removal.

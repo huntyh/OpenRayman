@@ -511,3 +511,32 @@ in the tilt repeatedly.
 
 Where this came from: independent reading of Rayman2.exe at `0x4394A0`, `0x436E40` and
 `0x445F90`, compared with the Learn_31 recording, 2026-11-16.
+
+## Card 118: paired water faces and jump re-entry
+
+The failure in `rec_20261116_211454` occurs after the third jump out: clock
+16883 enters behaviour 35 (surface jump), 17000 (simulation tick 1020) crosses
+above the waterline at Z=-8.183 and clears contact; 17033 is airborne behaviour 26,
+17783 falls to (-68.957,223.870,-8.445) and reports slot 4 at water Z=-8.339
+with normal (0,0,-1). At 17800 the script starts behaviour 5 at Z=-6.691,
+speed Z=+29.020. The reported height is correct; the selected face is wrong.
+Macro 36 (Learn_30 Rayman, 0d/00 +0x14D2C) uses that normal for both the depth
+cast and the swim-entry placement `var62`. An underside reverses both, moving
+him into the air. Once above the plane he cannot find the swim ceiling.
+
+The executable's 0x43EEC0 filters water contacts using normal dot movement
+before submitting one to 0x43F510; 0x43F940 publishes the chosen contact in
+slot 4. Our vertical body-interval approximation previously accepted either
+face of the coincident paired water triangles and selected only by height.
+`water_at` now requires the upward face for immersion from above, consistent
+with the interval it represents. Explicit function-201 water casts still see
+both sides; water still does not block floors, walls or ceilings. This is a
+correction to the existing vertical approximation, not a complete swept water
+sensor implementation.
+
+Where this came from: own read-only analysis of Rayman2.exe decompiles at
+0x43EEC0, 0x43F510, 0x43F940, 0x499A80 and 0x499440; installed Learn_30
+scripts via `ortool brain`; the user's engine recording above. Regression
+checks pin the failed point's surface Z and upward normal, paired-triangle
+order, submerged ascent in both river regions, and the complete jump/re-entry.
+Exact original-game sensor timing remains a visual comparison.
