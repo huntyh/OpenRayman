@@ -2432,12 +2432,16 @@ namespace
 			// OPENRAYMAN_LOADING_PREVIEW=<picture> shows a loading screen fully (screenshots).
 			static const char* preview = std::getenv("OPENRAYMAN_LOADING_PREVIEW");
 			if(preview)
-				a.loading->draw(preview, 1, float(SDL_GetTicks()) / 1000.0f, w, h);
+				a.loading->draw(preview, 1, 1, float(SDL_GetTicks()) / 1000.0f, w, h);
 			else if(a.loading_at != app::loading_phase::none)
 			{
 				const float alpha = a.loading_at == app::loading_phase::in ? a.loading_time / loading_fade
 					: a.loading_at == app::loading_phase::out ? 1 - a.loading_time / loading_fade : 1;
-				a.loading->draw(a.loading_picture, alpha, float(SDL_GetTicks()) / 1000.0f, w, h);
+				// The Lums come in only after the level has loaded (the first moment of the hold), so the
+				// load's pause shows on a still picture rather than freezing them mid-hop.
+				const float lums = a.loading_at == app::loading_phase::in ? 0
+					: a.loading_at == app::loading_phase::hold ? a.loading_time / 0.3f : 1;
+				a.loading->draw(a.loading_picture, alpha, lums, float(SDL_GetTicks()) / 1000.0f, w, h);
 			}
 		}
 

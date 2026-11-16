@@ -26,8 +26,9 @@ namespace openrayman
 		loading_screen& operator=(const loading_screen&) = delete;
 		// Whether Vignette.cnt (or another archive) has this picture, e.g. "VigLoadLearn01".
 		bool has_picture(const std::string& name) const;
-		// Draws `picture` over the whole window at `alpha` (0..1); `seconds` drives the Lums.
-		void draw(const std::string& picture, float alpha, float seconds, int width, int height);
+		// Draws `picture` over the whole window at `alpha` (0..1), the Lums at `lums` (0..1, times
+		// alpha); `seconds` drives them.
+		void draw(const std::string& picture, float alpha, float lums, float seconds, int width, int height);
 	private:
 		GLuint texture(const std::string& path, bool additive);
 		void quad(GLuint texture, bool additive, float x, float y, float w, float h, const float colour[4], float u0, float v0, float u1, float v1);

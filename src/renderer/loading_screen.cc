@@ -127,7 +127,7 @@ namespace openrayman
 		glDrawArrays(GL_TRIANGLES, 0, 6);
 	}
 
-	void loading_screen::draw(const std::string& picture, float alpha, float seconds, int width, int height)
+	void loading_screen::draw(const std::string& picture, float alpha, float lums, float seconds, int width, int height)
 	{
 		if(width <= 0 || height <= 0 || alpha <= 0) return;
 		alpha = std::min(alpha, 1.0f);
@@ -163,6 +163,8 @@ namespace openrayman
 		static const char* const wing_frames[] = {"01", "02", "03", "02"};
 		const GLuint wing = texture(std::string("textures_personnages/divers/lum_aile") + wing_frames[int(seconds / 0.07f) % 4] + "_ad.gf", true);
 		const float spacing = body * 3.4f;
+		const float lum[] = {1, 1, 1, alpha * std::clamp(lums, 0.0f, 1.0f)};
+		if(lum[3] <= 0) return;
 		for(int n = 0; n < 3; n++)
 		{
 			const float hop = std::max(0.0f, std::sin(seconds * 5.0f - float(n) * 0.8f));
@@ -171,11 +173,11 @@ namespace openrayman
 			// Wings first (shorter than the body is wide, roots at the core's edge), the glow and
 			// the body over them; the same proportions as the save Lum (dialog_renderer).
 			const float side = body * 1.5f, overlap = body * 0.25f, gap = body * 0.33f;
-			quad(wing, true, cx + gap - overlap, cy - side + overlap, side, side, white, 0, 0, 1, 1);
-			quad(wing, true, cx - side + overlap - gap, cy - side + overlap, side, side, white, 1, 0, 0, 1);
-			const float glow_alpha[] = {1, 1, 1, alpha * 0.6f};
+			quad(wing, true, cx + gap - overlap, cy - side + overlap, side, side, lum, 0, 0, 1, 1);
+			quad(wing, true, cx - side + overlap - gap, cy - side + overlap, side, side, lum, 1, 0, 0, 1);
+			const float glow_alpha[] = {1, 1, 1, lum[3] * 0.6f};
 			quad(glow, true, cx - body * 1.6f, cy - body * 1.6f, body * 3.2f, body * 3.2f, glow_alpha, 0, 0, 2, 2);
-			quad(core, false, cx - body, cy - body, body * 2, body * 2, white, 0, 0, 2, 2);
+			quad(core, false, cx - body, cy - body, body * 2, body * 2, lum, 0, 0, 2, 2);
 		}
 	}
 }
