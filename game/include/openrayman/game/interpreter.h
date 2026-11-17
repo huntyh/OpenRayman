@@ -226,6 +226,10 @@ namespace openrayman::game
 		// without any.
 		std::int32_t ground_sound_type(std::uint32_t super_object) const;
 		std::vector<sound_request> take_sounds() { return std::exchange(m_sounds, {}); }
+		// Sound channel factors and group volume (422, 423, 256); playback integration pending.
+		std::map<std::uint32_t, std::int32_t> sound_channel_0_factors;
+		std::optional<std::int32_t> sound_channel_1_factor;
+		std::int32_t sound_channel_1_group_volume = 127;
 		bool stop_sounds_requested = false; // 0x406490: stop the playback group on return
 		// The on-screen text the scripts fill (procedures 505..507), still to be drawn.
 		game::screen_text& screen_text() { return m_screen_text; }
@@ -298,6 +302,10 @@ namespace openrayman::game
 		// clears them when the fourth, set by the engine, says so), 345 sets the third. The menu
 		// reads the pair at startup to know where it was asked to go; at boot all are 0.
 		std::array<std::uint8_t, 4> menu_request{};
+		// Wave globals (procedures 56..58); rendering does not yet consume these.
+		std::array<std::int32_t, 3> wave_speed{};
+		std::array<float, 3> wave_amplitude{};
+		std::uint8_t wave_mode = 0, wave_flags = 0;
 		// Procedures 86/87 (0x4054D0): the level the scripts asked to go to, for the engine to load
 		// after the tick; `level_request_flag` is true for 86 (what the exe does with it isn't read).
 		bool quit_requested = false; // procedure 101: host closes after the current tick
@@ -363,6 +371,8 @@ namespace openrayman::game
 			std::int16_t short_a = 0, short_b = 0;  // 0x4B9B74, 0x4B9B76: fields 12, 13
 			float real_a = 0, real_b = 0, real_c = 0; // 0x4B9B78..0x4B9B80: fields 14..16
 			std::int32_t integer = 0;               // 0x4B9B84, field 17
+			std::array<std::int8_t, 2> analog_center{};
+			std::array<std::int8_t, 4> analog_window{ -50, 50, -50, 50 };
 			std::array<std::uint32_t, 2> analog_actions{}; // 0x4B9B54/58: the stick, read by procedure 346
 			std::array<std::uint32_t, 5> actions{}; // 0x4B9B88..: up, down, left, right, walk (procedure 435)
 			bool snap = false;                      // 0x4B9B9C: skip the next smoothing (procedure 348)

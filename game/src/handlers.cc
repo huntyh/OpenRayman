@@ -122,6 +122,94 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 56 (0x472A00), 57 (0x472A80), 58 (0x472BA0): wave globals.
+		std::uint32_t wave_settings(call& c)
+		{
+			value v; next_arg(c, v);
+			if(c.index == 56)
+			{
+				c.vm.wave_speed[0] = std::int16_t(v.word());
+				next_arg(c, v);
+				c.vm.wave_speed[1] = std::int16_t(v.word());
+				c.vm.wave_speed[2] = 0;
+			}
+			else if(c.index == 57)
+				for(int i = 0; i < 3; ++i) c.vm.wave_amplitude[i] = v.component(i) * 0.1f;
+			else
+			{
+				auto n = std::uint8_t(v.word());
+				if(n < 64) c.vm.wave_mode = n;
+				else if(n == 64) c.vm.wave_flags &= ~1u;
+				else if(n == 65) c.vm.wave_flags |= 1u;
+				else if(n == 66) c.vm.wave_flags &= ~2u;
+				else if(n == 67) c.vm.wave_flags |= 2u;
+			}
+			return c.args;
+		}
+
+		// 64/65 (0x469520 cases 0x40/0x41): disable/enable an input action.
+		std::uint32_t enable_action(call& c)
+		{
+			value v; next_arg(c, v);
+			auto& m = c.vm.memory(); auto action = v.word();
+			if(action && m.contains(action, 0x15))
+			{
+				m.write<std::uint8_t>(action + 0x14, c.index == 65 ? 1 : 0);
+				m.write<std::int32_t>(action + 0x0c, -2);
+			}
+			return c.args;
+		}
+
+		// 2 (0x467D90 case 2 -> 0x413680): restore the saved health byte.
+		std::uint32_t restore_health(call& c)
+		{
+			value v; next_arg(c, v); auto& m = c.vm.memory();
+			auto actor = actor_value(c.vm, v);
+			auto standard = actor && m.contains(actor + 4, 4) ? m.u32(actor + 4) : 0;
+			if(standard && m.contains(standard, 0x31)) m.write<std::uint8_t>(standard + 0x21, m.u8(standard + 0x30));
+			return c.args;
+		}
+
+		// 208 (0x479680 case 0xd0 -> 0x411FC0): actor in contact report slot 3.
+		std::uint32_t contact_actor_208(call& c, value& out)
+		{
+			value v; next_arg(c, v); auto& m = c.vm.memory();
+			auto actor = actor_value(c.vm, v);
+			auto dyn = actor && m.contains(actor + 8, 4) ? m.u32(actor + 8) : 0;
+			auto base = dyn && m.contains(dyn, 4) ? m.u32(dyn) : 0;
+			auto report = base && m.contains(base + 0x150, 4) ? m.u32(base + 0x150) : 0;
+			auto so = report && m.contains(report + 0xa4, 4) ? m.u32(report + 0xa4) : 0;
+			for(int depth = 0; so && depth < 256; ++depth)
+			{
+				if(!m.contains(so, 0x20)) { so = 0; break; }
+				if(m.u32(so) == 2) break;
+				so = m.u32(so + 0x1c);
+			}
+			if(so && (!m.contains(so, 8) || m.u32(so) != 2)) so = 0;
+			auto other = so ? m.u32(so + 4) : 0;
+			if(so && (!other || !m.contains(other + 4, 4) || !m.u32(other + 4)))
+			{
+				m.write<std::uint32_t>(report + 0xa4, 0); other = 0;
+			}
+			out = value::of(value_type::actor, other);
+			return c.args;
+		}
+
+		// 422/423 (0x471D10 cases 0x1a6/0x1a7 -> 0x451880): channel factors.
+		std::uint32_t sound_factor(call& c)
+		{
+			auto target = c.index == 422 ? c.vm.target(c.self, true) : 0;
+			value v; next_arg(c, v); auto amount = std::int32_t(v.word());
+			if(c.index == 422)
+			{
+				if(amount == 127) c.vm.sound_channel_0_factors.erase(target);
+				else c.vm.sound_channel_0_factors[target] = amount;
+			}
+			else if(amount == 127) c.vm.sound_channel_1_factor.reset();
+			else c.vm.sound_channel_1_factor = amount;
+			return c.args;
+		}
+
 		// --- Conditions --------------------------------------------------------------------------
 
 		// 0..3 (0x489B40): and, or (short-circuit: the second argument is skipped when it can't
@@ -1794,6 +1882,20 @@ namespace openrayman::game
 			next_arg(c, v);
 			if(std::uint32_t cam = camera_object(c.vm, self))
 				set_camera_float(c.vm, cam, 0x18 + (c.index - 447) * 4, mode_temp.as_int(), mode.as_int(), v.as_float());
+			return c.args;
+		}
+
+		// 303 (0x4886A0 case 0x12f -> 0x488500): select camera float +0x5c.
+		std::uint32_t camera_parameter_303(call& c, value& out)
+		{
+			auto target = c.vm.target(c.self, true); value selector; next_arg(c, selector);
+			auto& m = c.vm.memory(); auto cam = camera_object(c.vm, target);
+			std::uint32_t which = camera_field::block_current;
+			if(cam && selector.as_int() == -1) which = camera_field::block_default;
+			else if(cam && selector.as_int() == 1 && (m.u8(cam + 0x74) & 1)) which = camera_field::block_override;
+			else if(cam && selector.as_int() != 1 && (m.u8(cam + 0x75) & 2)) which = camera_field::block_spare;
+			auto block = camera_block(c.vm, cam, which);
+			out = value::real(block ? m.f32(block + 0x5c) : 0.0f);
 			return c.args;
 		}
 
@@ -4832,6 +4934,39 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 350 (0x46F830 case 0x15e), 436 (0x46FB30): analog calibration globals.
+		std::uint32_t calibrate_analog(call& c)
+		{
+			auto& input = c.vm.movement; auto& center = input.analog_center; auto& window = input.analog_window;
+			if(c.index == 350)
+			{
+				value a, b; next_arg(c, a); next_arg(c, b);
+				for(int i = 0; i < 2; ++i) center[i] = std::int8_t(a.word() >> (8 * i));
+				for(int i = 0; i < 4; ++i)
+				{
+					window[i] = std::int8_t(b.word() >> (8 * i));
+					if(!window[i]) window[i] = i % 2 ? 50 : -50;
+				}
+				for(int i = 0; i < 2; ++i)
+				{
+					if(center[i] <= window[i * 2]) center[i] = std::int8_t(window[i * 2] + 1);
+					if(window[i * 2 + 1] <= center[i]) center[i] = std::int8_t(window[i * 2 + 1] - 1);
+				}
+			}
+			else
+			{
+				auto& m = c.vm.memory();
+				for(int i = 0; i < 2; ++i)
+				{
+					auto action = input.analog_actions[i];
+					center[i] = action && m.contains(action + 0x10, 4) ? std::int8_t(std::int32_t(m.f32(action + 0x10))) : 0;
+					if(window[i * 2 + 1] <= center[i]) window[i * 2 + 1] = std::int8_t(center[i] + 1);
+					if(center[i] <= window[i * 2]) window[i * 2] = std::int8_t(center[i] - 1);
+				}
+			}
+			return c.args;
+		}
+
 		// 418 (0x471A50): the exe re-acquires its pads after a cutscene (pad state passes 0x42E1E0 and
 		// 0x42E220). Ours reads the keyboard's real state every tick, so there is nothing to re-acquire;
 		// clearing held keys here would make a key held through the cutscene's end look released.
@@ -6000,6 +6135,8 @@ namespace openrayman::game
 		vm.on_procedure(313, set_view_size_or_origin);
 		vm.on_procedure(315, set_view_size_or_origin);
 		vm.on_procedure(347, set_analog_actions);
+		vm.on_procedure(350, calibrate_analog);
+		vm.on_procedure(436, calibrate_analog);
 		vm.on_procedure(418, reacquire_input);
 		for(std::uint32_t i : { 76, 77, 78 })
 			vm.on_procedure(i, loop_procedure);
@@ -6166,6 +6303,21 @@ namespace openrayman::game
 		vm.on_function(249, bit_array);
 		for(std::uint32_t i = 102; i <= 107; i++)
 			vm.on_function(i, gauge_function);
+
+		for(std::uint32_t i = 56; i <= 58; ++i) vm.on_procedure(i, wave_settings);
+		vm.on_procedure(2, restore_health);
+		vm.on_procedure(64, enable_action);
+		vm.on_procedure(65, enable_action);
+		// 366 (0x46FF90 case 0x16e) evaluates its argument and does nothing else.
+		vm.on_procedure(366, [](call& c) { value v; next_arg(c, v); return c.args; });
+		// 68 (0x47CC30 case 0x44): level request mailbox byte.
+		vm.on_function(68, [](call& c, value& out) { out = value::integer(c.vm.menu_request[2]); return c.args; });
+		vm.on_function(303, camera_parameter_303);
+		vm.on_function(208, contact_actor_208);
+		vm.on_procedure(422, sound_factor);
+		vm.on_procedure(423, sound_factor);
+		// 256 (0x47ABA0 case 0x100 -> 0x453680): channel 1 group volume.
+		vm.on_function(256, [](call& c, value& out) { out = value::integer(c.vm.sound_channel_1_group_volume); return c.args; });
 
 		vm.on_procedure(0, set_hit_points);
 		vm.on_procedure(6, set_hit_points);

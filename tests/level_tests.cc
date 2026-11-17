@@ -1180,6 +1180,73 @@ struct handler_fixture
 	bool condition(unsigned n, std::initializer_list<game::value> args = {}) { return invoke(node_type::condition, n, args).word() != 0; }
 };
 
+TEST_CASE("wave, health, input and request handlers")
+{
+	handler_fixture f;
+	f.procedure(56, {f.integer(-3), f.integer(7)});
+	CHECK(f.vm.wave_speed[0] == -3); CHECK(f.vm.wave_speed[1] == 7); CHECK(f.vm.wave_speed[2] == 0);
+	f.procedure(57, {game::value::vector(10, 20, -30)});
+	CHECK(f.vm.wave_amplitude[1] == doctest::Approx(2));
+	f.procedure(58, {f.integer(65)}); f.procedure(58, {f.integer(67)});
+	CHECK(f.vm.wave_flags == 3);
+	f.procedure(58, {f.integer(64)}); f.procedure(58, {f.integer(12)});
+	CHECK(f.vm.wave_flags == 2); CHECK(f.vm.wave_mode == 12);
+	f.m.write<std::uint8_t>(f.standard + 0x30, 9);
+	f.procedure(2, {f.me()}); CHECK(f.m.u8(f.standard + 0x21) == 9);
+	auto action = f.m.allocate(0x18);
+	f.procedure(65, {f.integer(action)}); CHECK(f.m.u8(action + 0x14) == 1);
+	CHECK(f.m.read<std::int32_t>(action + 0xc) == -2);
+	f.procedure(64, {f.integer(action)}); CHECK(f.m.u8(action + 0x14) == 0);
+	f.vm.menu_request[2] = 42; CHECK(f.function(68).as_int() == 42);
+	f.procedure(366, {f.integer(0)});
+}
+
+TEST_CASE("sound channel factors retain and remove overrides")
+{
+	handler_fixture f;
+	CHECK(f.function(256).as_int() == 127);
+	f.procedure(422, {f.integer(32)}); CHECK(f.vm.sound_channel_0_factors.at(f.so) == 32);
+	f.procedure(422, {f.integer(127)}); CHECK(f.vm.sound_channel_0_factors.empty());
+	f.procedure(423, {f.integer(63)}); REQUIRE(f.vm.sound_channel_1_factor); CHECK(*f.vm.sound_channel_1_factor == 63);
+	CHECK(f.function(256).as_int() == 127);
+	f.procedure(423, {f.integer(127)}); CHECK_FALSE(f.vm.sound_channel_1_factor);
+}
+
+TEST_CASE("analog calibration stores clamped centres and widens windows")
+{
+	handler_fixture f;
+	f.procedure(350, {f.integer(0x6420), f.integer(0)});
+	CHECK(f.vm.movement.analog_center[0] == 32); CHECK(f.vm.movement.analog_center[1] == 49);
+	CHECK(f.vm.movement.analog_window[0] == -50); CHECK(f.vm.movement.analog_window[3] == 50);
+	auto a = f.m.allocate(0x18); f.m.write<float>(a + 0x10, 60.0f);
+	f.vm.movement.analog_actions[0] = a; f.procedure(436, {});
+	CHECK(f.vm.movement.analog_center[0] == 60); CHECK(f.vm.movement.analog_window[1] == 61);
+}
+
+TEST_CASE("contact actor clears stale links without changing the contact word")
+{
+	handler_fixture f; auto report = f.m.allocate(0x170);
+	auto other = f.m.allocate(0x38), so = f.m.allocate(0x48), standard = f.m.allocate(0x34);
+	f.m.write(f.base + 0x150, report); f.m.write(report + 0xa4, so);
+	f.m.write<std::uint32_t>(report + 4, 0x10000); f.m.write<std::uint32_t>(so, 2);
+	f.m.write(so + 4, other); f.m.write(other + 4, standard);
+	CHECK(f.function(208, {f.me()}).word() == other);
+	f.m.write<std::uint32_t>(other + 4, 0);
+	CHECK(f.function(208, {f.me()}).word() == 0);
+	CHECK(f.m.u32(report + 0xa4) == 0); CHECK(f.m.u32(report + 4) == 0x10000);
+}
+
+TEST_CASE("camera parameter 303 selects the requested block")
+{
+	handler_fixture f;
+	auto cam = f.m.allocate(0x180); f.m.write(f.actor + 0x10, cam);
+	for(unsigned i = 0; i < 4; ++i) { auto block = f.m.allocate(0x7c); f.m.write(cam + i * 4, block); f.m.write<float>(block + 0x5c, float(i + 1)); }
+	CHECK(f.function(303, {f.integer(-1)}).as_float() == 1);
+	CHECK(f.function(303, {f.integer(1)}).as_float() == 2);
+	f.m.write<std::uint8_t>(cam + 0x74, 1); CHECK(f.function(303, {f.integer(1)}).as_float() == 4);
+	f.m.write<std::uint8_t>(cam + 0x75, 2); CHECK(f.function(303, {f.integer(0)}).as_float() == 3);
+}
+
 TEST_CASE("pivot turns move once without becoming next tick's inertia")
 {
 	// 0x4329B0 / 0x437AF0 / 0x43DDA0: both turns contribute to the

@@ -12,6 +12,26 @@ interpreter. The game keeps no names for anything here (no strings in the exe or
 names below are ours, given from what the exe's code does. Everything lives in the SNA memory
 image; offsets are from the start of each structure.
 
+Where this came from: own reading of the executable, guided by helper notes:
+
+- Procedure 56 (0x472A00): sets two wave phase speeds and clears the third.
+- Procedure 57 (0x472A80): sets wave amplitudes from a vector scaled by 0.1.
+- Procedure 58 (0x472BA0): sets the wave mode or toggles two wave flags.
+- Procedure 2 (0x467D90, case 2): restores an actor's saved health byte.
+- Procedure 64 (0x469520, case 0x40): disables an input action and resets its counter.
+- Procedure 65 (0x469520, case 0x41): enables an input action and resets its counter.
+- Procedure 350 (0x46F830, case 0x15E): sets packed analog centres and windows.
+- Procedure 436 (0x46FB30): samples analog centres and widens their windows.
+- Procedure 366 (0x46FF90, case 0x16E): evaluates its argument without another effect.
+- Procedure 422 (0x471D10, case 0x1A6): sets a per-target channel 0 sound factor.
+- Procedure 423 (0x471D10, case 0x1A7): sets the default channel 1 sound factor.
+- Function 256 (0x47ABA0, case 0x100): reads the channel 1 group volume.
+- Function 68 (0x47CC30, case 0x44): reads level-request byte 2.
+- Function 208 (0x479680, case 0xD0): reads the actor in contact report slot 3.
+- Function 303 (0x4886A0, case 0x12F): reads camera parameter +0x5C from the selected block.
+
+The wave values are retained in the interpreter; the renderer does not yet use them. Sound factors are stored but not yet applied to playback; analog calibration is stored but not yet applied to movement.
+
 ## From an actor to its scripts
 
 ```
