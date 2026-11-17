@@ -5018,3 +5018,50 @@ TEST_CASE("script global setters retain values and paired getters")
 	f.procedure(296, {f.integer(3)});
 	CHECK(f.vm.stationary_speed == 3.0f);
 }
+
+TEST_CASE("batch 23 state, camera and display readers")
+{
+	handler_fixture f;
+	f.m.write<std::uint8_t>(f.data + 0x104, 7); f.procedure(342, {f.integer(7)});
+	CHECK(f.m.u8(f.data + 0x103) == 7); CHECK(f.m.u8(f.data + 0x104) == 0);
+	f.m.write<std::uint8_t>(f.data + 0x104, 0xff); f.procedure(342, {f.integer(0)});
+	CHECK(f.m.u8(f.data + 0x104) == 0xff);
+	auto action = f.m.allocate(0x18); f.m.write<float>(action + 0x10, -71.9f);
+	CHECK(f.function(64, {f.integer(action)}).as_int() == -71);
+	f.vm.movement.analog_actions[0] = action; f.procedure(437, {});
+	CHECK(f.vm.movement.analog_window[0] == -71);
+	auto cam = f.m.allocate(0x180); f.m.write(f.actor + 0x10, cam);
+	for(unsigned i = 0; i < 4; ++i) { auto b = f.m.allocate(0x7c); f.m.write(cam + i * 4, b); f.m.write<float>(b + 0x18, float(i + 1)); f.m.write<float>(b + 0x30, float(10 + i)); }
+	CHECK(f.function(286, {f.integer(-1)}).as_float() == 1);
+	f.m.write<std::uint8_t>(cam + 0x74, 1); CHECK(f.function(292, {f.integer(1)}).as_float() == 13);
+	auto block = f.m.u32(cam + 12); f.m.write<std::uint16_t>(block + 0x72, 0x2000);
+	CHECK(f.condition(146, {f.integer(1)})); CHECK_FALSE(f.condition(146, {f.integer(-1)}));
+	CHECK(f.function(260).as_int() == 3); f.vm.display_available[1] = 1; f.vm.display_mode_ids[1] = 42; f.vm.display_current_mode = 42;
+	CHECK(f.function(260).as_int() == 1); CHECK(f.function(262, {f.integer(1)}).as_int() == 1);
+	f.procedure(356, {f.integer(0)}); CHECK(f.vm.display_pending_mode == 0);
+	CHECK(f.function(261).as_int() == 1); CHECK(f.vm.display_save_requested);
+	auto state = f.m.allocate(0x30), forbidden = f.m.allocate(8); f.m.write(f.data + 0x88, state);
+	f.m.write(state + 0x14, forbidden); f.m.write<std::uint32_t>(state + 0x1c, 1); f.m.write<std::uint32_t>(forbidden + 4, 123);
+	CHECK_FALSE(f.condition(71, {f.integer(123)})); CHECK(f.condition(71, {f.integer(124)}));
+	f.m.write<std::uint8_t>(state + 0x2a, 1); CHECK_FALSE(f.condition(71, {f.integer(124)}));
+}
+
+TEST_CASE("batch 23 frame invalidation and part transforms")
+{
+	handler_fixture f;
+	auto child = f.m.allocate(0x48); f.m.write(f.so + 8, child);
+	f.m.write(f.standard + 0x18, f.vm.frame_number()); f.m.write<std::uint32_t>(f.so + 0x28, 7);
+	f.m.write<std::uint32_t>(child + 0x28, 0xffffffffu); f.procedure(91, {f.me()});
+	CHECK(f.m.u32(f.standard + 0x18) == 0xffffffffu);
+	CHECK(f.m.u32(f.so + 0x28) == 0xfffffffeu); CHECK(f.m.u32(child + 0x28) == 0xffffffffu);
+	auto table = f.m.allocate(40), part = f.m.allocate(0x48), transform = f.m.allocate(0x58);
+	f.m.write(f.data + 0x90, table); f.m.write(table + 20, part); f.m.write(part + 0x24, transform);
+	f.m.write<std::uint32_t>(transform, 1); f.m.write<float>(transform + 4, 10);
+	f.procedure(219, {game::value::vector(2, 3, 4), f.integer(1), f.integer(1)});
+	CHECK(f.m.f32(transform + 4) == 12); CHECK(f.m.f32(transform + 8) == 3);
+	f.procedure(219, {game::value::vector(1, 1, 1), f.integer(1), f.integer(0)});
+	CHECK(f.m.f32(transform + 4) == 13); CHECK(f.m.f32(transform + 8) == 4);
+	f.procedure(231, {f.integer(1), game::value::vector(2, 3, 4)});
+	CHECK(f.m.u32(transform) == 4); CHECK(f.m.f32(transform + 0x34) == 2);
+	CHECK(f.m.f32(transform + 0x44) == 3); CHECK(f.m.f32(transform + 0x54) == 4);
+}

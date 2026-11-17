@@ -1885,18 +1885,38 @@ namespace openrayman::game
 			return c.args;
 		}
 
-		// 303 (0x4886A0 case 0x12f -> 0x488500): select camera float +0x5c.
+		// 284/285 (0x488590 cases 0x11c/0x11d), 286/287/292/303
+		// (0x4886A0 cases 0x11e/0x11f/0x124/0x12f): selected camera block.
+		std::uint32_t selected_camera_block(call& c, int selector)
+		{
+			auto& m = c.vm.memory(); auto cam = camera_object(c.vm, c.vm.target(c.self, true));
+			std::uint32_t which = camera_field::block_current;
+			if(cam && selector == -1) which = camera_field::block_default;
+			else if(cam && selector == 1 && (m.u8(cam + 0x74) & 1)) which = camera_field::block_override;
+			else if(cam && selector != 1 && (m.u8(cam + 0x75) & 2)) which = camera_field::block_spare;
+			return camera_block(c.vm, cam, which);
+		}
 		std::uint32_t camera_parameter_303(call& c, value& out)
 		{
-			auto target = c.vm.target(c.self, true); value selector; next_arg(c, selector);
-			auto& m = c.vm.memory(); auto cam = camera_object(c.vm, target);
-			std::uint32_t which = camera_field::block_current;
-			if(cam && selector.as_int() == -1) which = camera_field::block_default;
-			else if(cam && selector.as_int() == 1 && (m.u8(cam + 0x74) & 1)) which = camera_field::block_override;
-			else if(cam && selector.as_int() != 1 && (m.u8(cam + 0x75) & 2)) which = camera_field::block_spare;
-			auto block = camera_block(c.vm, cam, which);
-			out = value::real(block ? m.f32(block + 0x5c) : 0.0f);
+			value selector; next_arg(c, selector); auto block = selected_camera_block(c, selector.as_int());
+			auto& m = c.vm.memory();
+			if(c.index == 284 || c.index == 285)
+			{
+				auto v = block ? read3(m, block + (c.index == 284 ? 0 : 0xc)) : vec3{};
+				out = value::vector(v[0], v[1], v[2]);
+			}
+			else
+			{
+				auto offset = c.index == 303 ? 0x5c : 0x18 + (c.index - 286) * 4;
+				out = value::real(block ? m.f32(block + offset) : 0.0f);
+			}
 			return c.args;
+		}
+		// 146 (0x4894D0 case 0x92): selected camera block's fixed-position flag.
+		std::uint32_t camera_fixed_condition(call& c, bool& out)
+		{
+			value selector; next_arg(c, selector); auto block = selected_camera_block(c, selector.as_int());
+			out = block && (safe_u16(c.vm.memory(), block + 0x72) & 0x2000); return c.args;
 		}
 
 		// The two option-word setters' work: set or clear `mask`'s bits of the 16-bit word at
@@ -3213,8 +3233,7 @@ namespace openrayman::game
 			for(value& weight : weights)
 				next_arg(c, weight);
 			next_arg(c, direction);
-			next_arg(c, horizontal);
-			next_arg(c, vertical);
+			if(c.index == 113) { next_arg(c, horizontal); next_arg(c, vertical); }
 			out = value::of(value_type::actor, 0);
 			std::uint32_t self = c.vm.target(c.self, true);
 			vec3 origin = position_of(c.vm, self);
@@ -3236,8 +3255,8 @@ namespace openrayman::game
 					z = cross(x, y);
 				x = cross(y, z);
 			}
-			float yaw_limit = std::cos(horizontal.as_float() * 0.01745329252f);
-			float elevation_limit = std::sin(vertical.as_float() * 0.01745329252f);
+			float yaw_limit = c.index == 112 ? 0.8944f : std::cos(horizontal.as_float() * 0.01745329252f);
+			float elevation_limit = c.index == 112 ? 0.4473f : std::sin(vertical.as_float() * 0.01745329252f);
 			constexpr float extreme = 3.402822e38f; // 0x49CCB8/0x49CCBC, slightly below FLT_MAX
 			float best = -extreme * 0.5f;
 			std::vector<std::uint32_t> candidates = c.vm.actors();
@@ -3322,6 +3341,20 @@ namespace openrayman::game
 			return squared < radius * radius;
 		}
 
+		// 15 (0x489EE0 case 0x0f -> 0x40D390): overlap two kind-2 zones.
+		std::uint32_t zones_overlap(call& c, bool& result)
+		{
+			value av, ai, bv, bi; next_arg(c, av); next_arg(c, ai); next_arg(c, bv); next_arg(c, bi);
+			auto a = super_object_value(c.vm, av), b = super_object_value(c.vm, bv);
+			result = false; if(!a || !b) return c.args;
+			auto& m = c.vm.memory(); std::uint32_t af = 0, bf = 0;
+			auto az = find_zone_with_frame(c.vm, a, 0, std::uint8_t(ai.as_int()), af, 2);
+			auto bz = find_zone_with_frame(c.vm, b, 0, std::uint8_t(bi.as_int()), bf, 2);
+			for(const auto& x : touch_shapes(m, az)) for(const auto& y : touch_shapes(m, bz))
+				if(touch_overlap(m, x, af, y, bf)) { result = true; return c.args; }
+			return c.args;
+		}
+
 		// 19/20 (0x489EE0, case 0x48A012 -> 0x40D350/0x40CFA0): zone of A touches B.
 		// Selector 0 uses A's kind-2 collision list; selector 1 uses its channel's geometry.
 		std::uint32_t zone_touches_actor(call& c, bool& result)
@@ -3376,6 +3409,51 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 158 (0x46AB20 case 0x9e, operation 1): copy another actor's part transform.
+		std::uint32_t copy_animation_part(call& c)
+		{
+			auto self = c.vm.target(c.self, true); value source, channel; next_arg(c, source);
+			auto other = super_object_value(c.vm, source);
+			if(!other || other == self) return c.vm.skip(c.args);
+			c.args = c.vm.eval(other, c.args, channel); auto id = std::uint8_t(channel.as_int());
+			if(id == 0xff) return c.args;
+			auto& m = c.vm.memory(); auto data = actor_part(c.vm, other, actor_field::data_3d);
+			auto table = data ? safe_u32(m, data + 0x90) : 0;
+			auto part = table ? safe_u32(m, table + std::uint32_t(id) * 20) : 0;
+			auto from = part ? safe_u32(m, part + 0x24) : 0, to = transform_of(c.vm, self);
+			if(!from || !to || !m.contains(from, 0x58) || !m.contains(to, 0x58)) return c.args;
+			for(unsigned i = 0; i < 0x58; i += 4) m.write(to + i, m.u32(from + i));
+			m.write(self + 0x28, c.vm.frame_number());
+			if(data && m.contains(data + 0xfc)) m.write<std::uint8_t>(data + 0xfc, 1);
+			return c.args;
+		}
+
+		// 231 (0x46AB20 case 0xe7, operation 0x12 -> 0x445F90): set a part's scale.
+		std::uint32_t scale_animation_part(call& c)
+		{
+			auto self = c.vm.target(c.self, true); value channel, v; next_arg(c, channel);
+			auto id = std::uint8_t(channel.as_int()); if(id == 0xff) return c.vm.skip(c.args);
+			next_arg(c, v); auto& m = c.vm.memory();
+			auto data = actor_part(c.vm, self, actor_field::data_3d), table = data ? safe_u32(m, data + 0x90) : 0;
+			auto part = table ? safe_u32(m, table + std::uint32_t(id) * 20) : 0;
+			auto t = part ? safe_u32(m, part + 0x24) : 0;
+			if(!t || !m.contains(t, 0x58) || (safe_u32(m, part + 0x30) & 4)) return c.args;
+			auto scale = vec_of(v); if(safe_u32(m, part + 0x30) & 8) scale[1] = scale[2] = scale[0];
+			auto type = m.u32(t); bool identity = std::abs(scale[0]-1) < 0.01f && std::abs(scale[1]-1) < 0.01f && std::abs(scale[2]-1) < 0.01f;
+			for(unsigned i = 0; i < 3; ++i)
+			{
+				vec3 axis{};
+				if(identity || type == 0 || type > 2) axis = read3(m, t + 0x10 + i * 12);
+				else axis[i] = 1;
+				float factor = identity ? 1 : scale[i];
+				for(auto& x : axis) x *= factor;
+				write3(m, t + 0x34 + i * 12, axis);
+			}
+			m.write<std::uint32_t>(t, identity ? 3 : 4); m.write(part + 0x28, c.vm.frame_number());
+			if(m.contains(data + 0xfc)) m.write<std::uint8_t>(data + 0xfc, 1);
+			return c.args;
+		}
+
 		// 218 (0x46AB20, 0x46AFF0/0x46B846, tail 0x46B8B4): place a channel at a point.
 		std::uint32_t place_animation_part(call& c)
 		{
@@ -3405,13 +3483,22 @@ namespace openrayman::game
 					found |= bank->channels[animation.start_channels + i].id == id;
 				if(!found) return c.args;
 			}
-			vec3 world = vec_of(point);
-			if(!(flags.word() & 1)) world = touch_world(m, transform_of(c.vm, self), world);
-			c.vm.place_channel(self, id, world);
 			auto transform = part ? safe_u32(m, part + 0x24) : 0;
+			vec3 world = vec_of(point);
+			if(c.index == 219)
+			{
+				// 0x46AB20 case 0xDB: translate in the selected part's frame.
+				if(!part || !transform) return c.args;
+				auto origin = read3(m, transform + 4);
+				if(!(flags.word() & 1) && m.u32(transform) > 2) world = sub(touch_world(m, transform, world), origin);
+				world = {origin[0] + world[0], origin[1] + world[1], origin[2] + world[2]};
+			}
+			else if(!(flags.word() & 1)) world = touch_world(m, transform_of(c.vm, self), world);
+			c.vm.place_channel(self, id, world);
 			if(transform && m.contains(transform, 0x58))
 			{
 				write3(m, transform + 4, world);
+				if(c.index == 219 && m.u32(transform) == 1) m.write<std::uint32_t>(transform, 2);
 				m.write(part + 0x28, c.vm.frame_number());
 			}
 			if(m.contains(data + 0xFC)) m.write<std::uint8_t>(data + 0xFC, 1);
@@ -3960,6 +4047,41 @@ namespace openrayman::game
 				for(std::uint32_t link = list ? safe_u32(m, list) : 0; link && links.insert(link).second; link = safe_u32(m, link))
 					if(m.contains(link + 0x10, 16))
 					{ m.write(link + 0x10, m.u32(link + 0x14)); m.write(link + 0x18, m.u32(link + 0x1C)); }
+			}
+			return c.args;
+		}
+
+		// 91 (0x467970 case 0x5B -> 0x45C1A0/0x45BF30): invalidate a stamped actor and its tree.
+		std::uint32_t rerun_actor(call& c)
+		{
+			value who; next_arg(c, who);
+			auto& m = c.vm.memory();
+			auto actor = actor_value(c.vm, who), standard = actor ? safe_u32(m, actor + 4) : 0;
+			auto frame = c.vm.frame_number();
+			if(!standard || !m.contains(standard + 0x18, 4) || m.u32(standard + 0x18) != frame) return c.args;
+			m.write(standard + 0x18, frame - 1);
+			std::vector<std::uint32_t> pending{super_object_value(c.vm, who)};
+			std::set<std::uint32_t> seen;
+			while(!pending.empty())
+			{
+				auto so = pending.back(); pending.pop_back();
+				if(!so || !seen.insert(so).second || !m.contains(so, 0x2c)) continue;
+				if(m.u32(so + 0x28) != 0xffffffffu) m.write(so + 0x28, frame ? frame - 1 : 0xfffffffeu);
+				std::set<std::uint32_t> siblings;
+				for(auto child = safe_u32(m, so + 8); child && siblings.insert(child).second; child = safe_u32(m, child + 0x14)) pending.push_back(child);
+			}
+			return c.args;
+		}
+
+		// 342 (0x46E2A0 case 0x156 -> 0x4188F0): set the byte limit and reset the signed counter.
+		std::uint32_t set_animation_limit(call& c)
+		{
+			auto self = c.vm.target(c.self, true); value v; next_arg(c, v);
+			auto& m = c.vm.memory(); auto data = actor_part(c.vm, self, actor_field::data_3d);
+			if(data && m.contains(data + 0x103, 2))
+			{
+				auto limit = std::uint8_t(v.as_int()); m.write(data + 0x103, limit);
+				if(int(limit) <= int(std::int8_t(m.u8(data + 0x104)))) m.write<std::uint8_t>(data + 0x104, 0);
 			}
 			return c.args;
 		}
@@ -4938,7 +5060,26 @@ namespace openrayman::game
 		std::uint32_t calibrate_analog(call& c)
 		{
 			auto& input = c.vm.movement; auto& center = input.analog_center; auto& window = input.analog_window;
-			if(c.index == 350)
+			if(c.index == 349)
+			{
+				// The executable packs signed bytes by addition, including carry/sign extension.
+				auto a = (std::uint32_t(std::int32_t(center[1]) * 256 + std::int32_t(center[0])) & 0xffffu);
+				auto b = std::uint32_t(((std::int64_t(window[3]) * 256 + window[2]) * 256 + window[1]) * 256 + window[0]);
+				c.args = c.vm.assign(c.self, c.args, value::integer(std::int32_t(a)));
+				c.args = c.vm.assign(c.self, c.args, value::integer(std::int32_t(b)));
+			}
+			else if(c.index == 437)
+			{
+				auto& m = c.vm.memory();
+				for(int i = 0; i < 2; ++i)
+				{
+					auto action = input.analog_actions[i];
+					auto v = action && m.contains(action + 0x10, 4) ? std::int16_t(std::int32_t(m.f32(action + 0x10))) : std::int16_t(0);
+					if(window[i * 2 + 1] < v) window[i * 2 + 1] = std::int8_t(v);
+					else if(v < window[i * 2]) window[i * 2] = std::int8_t(v);
+				}
+			}
+			else if(c.index == 350)
 			{
 				value a, b; next_arg(c, a); next_arg(c, b);
 				for(int i = 0; i < 2; ++i) center[i] = std::int8_t(a.word() >> (8 * i));
@@ -6017,6 +6158,71 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 64 (0x47CBF0 -> 0x42E8D0): truncate the input action's analog value.
+		std::uint32_t analog_value(call& c, value& out)
+		{
+			value action; next_arg(c, action); auto& m = c.vm.memory(); auto p = action.word();
+			out = value::integer(p && m.contains(p + 0x10, 4) ? std::int32_t(m.f32(p + 0x10)) : 0);
+			return c.args;
+		}
+
+		// 356 (0x46FE00 -> 0x4222C0): queue a display slot for the host.
+		std::uint32_t request_display_mode(call& c)
+		{
+			value v; next_arg(c, v); auto i = v.as_int();
+			if(c.vm.display_pending_mode == -1 && i >= 0 && i < 3 &&
+				(!c.vm.display_available[i] || c.vm.display_mode_ids[i] != c.vm.display_current_mode))
+				c.vm.display_pending_mode = i;
+			return c.args;
+		}
+		// 260 (0x47AC50 -> 0x422200), 261 (0x47AC70 -> 0x422360),
+		// 262 (0x47AC90 -> 0x4221D0), 264 (0x47ACD0 -> 0x422270).
+		std::uint32_t display_mode_function(call& c, value& out)
+		{
+			if(c.index == 260)
+			{
+				int i = 0; while(i < 3 && (!c.vm.display_available[i] || c.vm.display_mode_ids[i] != c.vm.display_current_mode)) ++i;
+				out = value::integer(i);
+			}
+			else if(c.index == 261) { c.vm.display_save_requested = true; out = value::integer(1); }
+			else if(c.index == 262)
+			{
+				value index; next_arg(c, index); auto i = index.as_int();
+				out = value::integer(i >= 0 && i < 3 ? c.vm.display_available[i] : 0);
+			}
+			else
+			{
+				value index; next_arg(c, index); auto i = index.as_int(); auto& m = c.vm.memory();
+				if(!c.vm.display_label_buffer) c.vm.display_label_buffer = m.allocate(64);
+				if(i >= 0 && std::size_t(i) < c.vm.display_modes.size())
+				{
+					auto size = c.vm.display_modes[i]; auto label = std::to_string(size[0]) + "x" + std::to_string(size[1]);
+					for(std::size_t n = 0; n < label.size() && n < 63; ++n) m.write<std::uint8_t>(c.vm.display_label_buffer + std::uint32_t(n), std::uint8_t(label[n]));
+					m.write<std::uint8_t>(c.vm.display_label_buffer + std::uint32_t(std::min<std::size_t>(label.size(), 63)), 0);
+				}
+				out = value::of(value_type::text, c.vm.display_label_buffer);
+			}
+			return c.args;
+		}
+
+		// 71 (0x48A950 case 0x47 -> 0x40FF10): test the animation transition guard.
+		std::uint32_t can_change_state(call& c, bool& out)
+		{
+			value target; next_arg(c, target); auto& m = c.vm.memory();
+			auto data = actor_part(c.vm, c.self, actor_field::data_3d);
+			out = false; if(!data || !m.contains(data + 0x88, 4)) return c.args;
+			if(target.word() == safe_u32(m, data + 8)) { out = true; return c.args; }
+			auto state = safe_u32(m, data + 0x88);
+			if(!state || !m.contains(state, 0x2b)) { out = true; return c.args; }
+			std::set<std::uint32_t> seen;
+			for(auto link = safe_u32(m, state + 8); link && seen.insert(link).second; link = safe_u32(m, link))
+				if(safe_u32(m, link + 4) == target.word()) { out = true; return c.args; }
+			seen.clear(); auto link = safe_u32(m, state + 0x14); auto count = safe_u32(m, state + 0x1c);
+			for(std::uint32_t i = 0; link && i < count && seen.insert(link).second; ++i, link = safe_u32(m, link))
+				if(safe_u32(m, link + 4) == target.word()) return c.args;
+			out = m.u8(state + 0x2a) != 1; return c.args;
+		}
+
 		// 101 (0x468AB0): request engine shutdown (state 2), then stop the script.
 		std::uint32_t quit_game(call& c)
 		{
@@ -6166,6 +6372,8 @@ namespace openrayman::game
 		vm.on_procedure(313, set_view_size_or_origin);
 		vm.on_procedure(315, set_view_size_or_origin);
 		vm.on_procedure(347, set_analog_actions);
+		vm.on_procedure(349, calibrate_analog);
+		vm.on_procedure(437, calibrate_analog);
 		vm.on_procedure(350, calibrate_analog);
 		vm.on_procedure(436, calibrate_analog);
 		vm.on_procedure(418, reacquire_input);
@@ -6219,6 +6427,8 @@ namespace openrayman::game
 		vm.on_condition(104, carried_by);
 		vm.on_condition(33, contact_actor);
 		vm.on_condition(56, updated_this_frame);
+		vm.on_procedure(91, rerun_actor);
+		vm.on_procedure(342, set_animation_limit);
 		for(std::uint32_t i : { 183,184,185,186,187,189,191,192,193,195,196,197,199,202,203,204,205,206,208,209,210,211,212,281,282,283,284,285,286,287 })
 			vm.on_procedure(i, speed_components);
 		vm.on_procedure(80, [](call& c) { reinstall_state_mechanics(c.vm.memory(), c.vm.actor_of(c.self)); return c.args; }); // 0x467770
@@ -6291,9 +6501,13 @@ namespace openrayman::game
 		vm.on_function(49, list_function);
 		vm.on_function(50, list_function);
 		vm.on_procedure(22, touching_actors);
+		vm.on_condition(15, zones_overlap);
 		vm.on_condition(19, zone_touches_actor);
 		vm.on_condition(20, zone_touches_actor);
+		vm.on_procedure(158, copy_animation_part);
+		vm.on_procedure(231, scale_animation_part);
 		vm.on_procedure(218, place_animation_part);
+		vm.on_procedure(219, place_animation_part);
 		for(std::uint32_t i = 232; i <= 234; i++)
 			vm.on_procedure(i, write_collision_event);
 		for(std::uint32_t i = 205; i <= 207; i++)
@@ -6310,7 +6524,9 @@ namespace openrayman::game
 		vm.on_procedure(94, set_object_list);
 		vm.on_procedure(160, shift_self);
 		vm.on_function(67, generated_count);
+		vm.on_function(112, homing_target); // 0x476960 case 0x70
 		vm.on_function(113, homing_target);
+		vm.on_function(64, analog_value);
 		vm.on_function(154, collision_centre);
 		vm.on_function(186, direction_angle);
 		vm.on_function(187, direction_angle);
@@ -6343,7 +6559,8 @@ namespace openrayman::game
 		vm.on_procedure(366, [](call& c) { value v; next_arg(c, v); return c.args; });
 		// 68 (0x47CC30 case 0x44): level request mailbox byte.
 		vm.on_function(68, [](call& c, value& out) { out = value::integer(c.vm.menu_request[2]); return c.args; });
-		vm.on_function(303, camera_parameter_303);
+		for(auto i : {284, 285, 286, 287, 292, 303}) vm.on_function(i, camera_parameter_303);
+		vm.on_condition(146, camera_fixed_condition);
 		vm.on_function(208, contact_actor_208);
 		vm.on_procedure(422, sound_factor);
 		vm.on_procedure(423, sound_factor);
@@ -6445,6 +6662,9 @@ namespace openrayman::game
 		for(auto i : {502, 357, 296, 513}) vm.on_procedure(i, set_script_global);
 		vm.on_function(257, script_global_value);
 		vm.on_function(263, script_global_value);
+		vm.on_procedure(356, request_display_mode);
+		for(auto i : {260, 261, 262, 264}) vm.on_function(i, display_mode_function);
+		vm.on_condition(71, can_change_state);
 		vm.on_procedure(101, quit_game);
 		vm.on_procedure(86, change_level);
 		vm.on_procedure(87, change_level);

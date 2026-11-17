@@ -301,6 +301,14 @@ namespace openrayman::game
 		// clears them when the fourth, set by the engine, says so), 345 sets the third. The menu
 		// reads the pair at startup to know where it was asked to go; at boot all are 0.
 		std::array<std::uint8_t, 4> menu_request{};
+		// Executable display-mode enumeration and asynchronous mode request.
+		std::array<std::int8_t, 3> display_available{};
+		std::array<std::int32_t, 3> display_mode_ids{};
+		std::int32_t display_current_mode = -1, display_pending_mode = -1;
+		std::vector<std::array<int, 2>> display_modes;
+		std::uint32_t display_label_buffer = 0;
+		bool display_save_requested = false;
+
 		// Wave globals (procedures 56..58); rendering does not yet consume these.
 		std::array<std::int32_t, 3> wave_speed{};
 		std::array<float, 3> wave_amplitude{};

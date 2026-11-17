@@ -1148,3 +1148,31 @@ Where this came from: own reading of the executable decompilation, guided by the
 - Procedure 513 (0x4730E0 case 0x201): store the random-level selection byte.
 - Function 257 (0x47ABA0 case 0x101): read channel 0 volume.
 - Function 263 (0x47AD10): read the display offset as an integer percentage.
+
+
+### Batch 23 handlers
+
+Where this came from: own reading of the executable at the addresses shown, guided by the helper notes. No executable code copied. Part transforms use the port's existing channel-placement model; local matrix and descendant refresh are not yet reproduced. Display enumeration, applying mode changes and saving the display profile are not connected to the host.
+
+- Procedure 91 (0x467970 case 0x5B): invalidate the actor's current frame stamp and its tree's matrix stamps.
+- Procedure 342 (0x46E2A0 case 0x156): set the animation limit and reset its signed counter when reached.
+- Procedure 437 (0x46FBC0): extend the analog calibration window to the current axis values.
+- Procedure 349 (0x46F830 case 0x15D): write packed analog calibration values to variables.
+- Procedure 219 (0x46AB20 case 0xDB): move an animation part relative to its position.
+- Procedure 158 (0x46AB20 case 0x9E): copy another actor's part matrix.
+- Procedure 231 (0x46AB20 case 0xE7): set an animation part's scale.
+- Procedure 356 (0x46FE00): queue a display-mode request.
+- Function 64 (0x47CBF0): read an analog input value as an integer.
+- Function 112 (0x476960 case 0x70): select a target with fixed cone limits.
+- Function 260 (0x47AC50): find the current display-mode slot.
+- Function 261 (0x47AC70): request display-profile persistence and return success.
+- Function 262 (0x47AC90): read a display-mode availability byte.
+- Function 264 (0x47ACD0): format an enumerated display mode in the shared text buffer.
+- Function 284 (0x488590 case 0x11C): read the selected camera offset vector.
+- Function 285 (0x488590 case 0x11D): read the selected camera aim vector.
+- Function 286 (0x4886A0 case 0x11E): read selected minimum camera distance.
+- Function 287 (0x4886A0 case 0x11F): read selected maximum camera distance.
+- Function 292 (0x4886A0 case 0x124): read selected camera pitch parameter.
+- Condition 15 (0x489EE0 case 0x0F): test two collision zones for overlap.
+- Condition 146 (0x4894D0 case 0x92): test the selected camera block's fixed-position flag.
+- Condition 71 (0x48A950 case 0x47): test whether a state transition is permitted.
