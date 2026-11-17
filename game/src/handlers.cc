@@ -773,31 +773,12 @@ namespace openrayman::game
 			return c.args;
 		}
 
-		// 139 (0x467850): take an actor out of the world. When it's the running actor, its scripts
-		// stop for this frame (flag 3).
+		// 139/140 (0x467850 cases 0x8b/0x8c): remove an actor or the actor in a variable.
 		std::uint32_t remove_actor(call& c)
 		{
-			value who;
-			next_arg(c, who);
-			std::uint32_t target = c.vm.super_object_of(actor_value(c.vm, who));
-			if(!target)
-				return c.args;
-			// 0x4062A0: a placed actor (standard game +0x08 below 0x10000) of standard type 1
-			// (+0x14) is reset to how the level started it (0x406220 -> 0x405E50, mode 4) and waits
-			// there again: Murfy's tablet tips (Learn_10 node 42) come back each time Rayman returns,
-			// as the recorded game shows. Other placed actors stay out, and a generated actor's slot
-			// is free again (0x40C0C0).
-			std::uint32_t actor = c.vm.actor_of(target);
-			std::uint32_t standard = actor ? c.vm.memory().u32(actor + 4) : 0;
-			if(standard && c.vm.memory().u32(standard + 0x08) < 0x10000 && c.vm.memory().u32(standard + 0x14) == 1)
-				c.vm.reset_actor(target);
-			else
-			{
-				c.vm.remove(target);
-				c.vm.generated().release(target);
-			}
-			if(target == c.self)
-				c.vm.signal(3);
+			if(c.index == 140) return c.vm.remove_actor_variable(c.self, c.args);
+			value who; next_arg(c, who);
+			c.vm.remove_script_actor(c.self, actor_value(c.vm, who));
 			return c.args;
 		}
 
@@ -6339,7 +6320,9 @@ namespace openrayman::game
 		vm.on_procedure(2, restore_health);
 		vm.on_procedure(64, enable_action);
 		vm.on_procedure(65, enable_action);
-		// 366 (0x46FF90 case 0x16e) evaluates its argument and does nothing else.
+		// 365/366 (0x46FF90 cases 0x16d/0x16e) both evaluate one argument.
+		vm.on_procedure(365, [](call& c) { value v; next_arg(c, v); c.vm.saved_channel_1_event = c.vm.current_channel_1_event; return c.args; });
+		// 366 has no other effect.
 		vm.on_procedure(366, [](call& c) { value v; next_arg(c, v); return c.args; });
 		// 68 (0x47CC30 case 0x44): level request mailbox byte.
 		vm.on_function(68, [](call& c, value& out) { out = value::integer(c.vm.menu_request[2]); return c.args; });
@@ -6379,6 +6362,7 @@ namespace openrayman::game
 		vm.on_procedure(84, switch_actor);
 		vm.on_procedure(85, switch_actor);
 		vm.on_procedure(139, remove_actor);
+		vm.on_procedure(140, remove_actor);
 		for(std::uint32_t i : { 177, 178, 179, 180 })
 			vm.on_procedure(i, set_dynamics_axis);
 		vm.on_procedure(181, set_dynamics_xyz);

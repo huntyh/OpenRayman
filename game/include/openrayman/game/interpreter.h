@@ -219,7 +219,14 @@ namespace openrayman::game
 			std::uint32_t procedure = 0;
 			std::int32_t selector = -1;
 		};
-		void play_sound(std::uint32_t event, std::uint32_t source, std::uint32_t procedure, std::int32_t selector) { m_sounds.push_back({ event, source, procedure, selector }); }
+		void play_sound(std::uint32_t event, std::uint32_t source, std::uint32_t procedure, std::int32_t selector)
+		{
+			if(procedure == 117 && event) current_channel_1_event = event;
+			m_sounds.push_back({ event, source, procedure, selector });
+		}
+		// 0x451790 / 0x40A5A0: current descriptor and the checkpoint replay slot.
+		std::uint32_t current_channel_1_event = 0, saved_channel_1_event = 0;
+		void replay_saved_channel_1() { if(saved_channel_1_event) play_sound(saved_channel_1_event, 0, 117, -1); }
 		// The sound type (game material +0x08) of what an actor touches, for footsteps (0x40A180):
 		// from its contact report, slot 5 (+0xF0) with dynamics flag 0x10 and report flag 0x10, else
 		// the wall (+0x78) with 0x40 and 0x04, else the ground (+0x50) with report flag 0x01; 0
@@ -281,6 +288,8 @@ namespace openrayman::game
 		// Writes a value to what the node names (a variable, a field, an actor's variable), as an
 		// assignment would. Returns the node after it.
 		std::uint32_t assign(std::uint32_t self, std::uint32_t node, const value& v);
+		void remove_script_actor(std::uint32_t self, std::uint32_t actor);
+		std::uint32_t remove_actor_variable(std::uint32_t self, std::uint32_t node);
 		// The actor a procedure acts on: normally `self`, or the one an "actor: ..." operator named.
 		std::uint32_t target(std::uint32_t self, bool allow_override);
 		// Procedures report a change of flow (e.g. flow::restart after changing behaviour).

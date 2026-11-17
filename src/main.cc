@@ -965,7 +965,11 @@ namespace
 		{
 			std::uint32_t wanted = a.live->u32(element);
 			if(!wanted || wanted == from)
-				a.sounds->request(a.live->u32(element + 4), 0, 1.0f, 0.0f, -1);
+			{
+				auto event = a.live->u32(element + 4);
+				if(event) a.vm->current_channel_1_event = event;
+				a.sounds->request(event, 0, 1.0f, 0.0f, -1);
+			}
 			element = a.live->u32(element + 8);
 		}
 	}
@@ -1856,8 +1860,13 @@ namespace
 			openrayman::game::apply_sound_slots(*a.live, *a.game, levels[index]);
 			if(a.sounds)
 				a.sounds->stop_all();
-			if(a.sounds && !a.screenshot && header.startup_sound)
-				a.sounds->request(*header.startup_sound, 0, 1.0f, 0.0f, -1);
+			if(header.startup_sound)
+			{
+				a.vm->saved_channel_1_event = *header.startup_sound;
+				a.vm->current_channel_1_event = *header.startup_sound;
+				if(a.sounds && !a.screenshot)
+					a.sounds->request(*header.startup_sound, 0, 1.0f, 0.0f, -1);
+			}
 			a.sound_sources.clear();
 			const bool learn_opening = !a.save_slot && a.new_game &&
 				openrayman::game::learn_10_opening(levels[index]) &&

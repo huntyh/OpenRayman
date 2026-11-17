@@ -4067,11 +4067,13 @@ TEST_CASE("real data: Learn_30 deadly water returns Rayman to the entry")
 	int health = 0; bool dying = false, returned = false;
 	for(int tick = 0; tick < 550; ++tick)
 	{
+		if(checkpoint && tick == 320)
+			game::set_global_placement(m, rayman, *checkpoint_pose);
 		if(tick == 400)
 		{
 			health = m.u8(standard + 0x21);
 			if(checkpoint)
-				vm.set_variable(tree.node(6).at.address(), 29, game::value::of(game::value_type::actor, vm.actor_of(marker)));
+				CHECK(vm.get_variable(tree.node(6).at.address(), 29).word() == vm.actor_of(marker));
 			game::write_transform(m, rayman, {-19.467f, 194.857f, -5}, {0, 1, 0, -1, 0, 0, 0, 0, 1});
 		}
 		keys.step(); game::step(vm, actors);
@@ -4299,6 +4301,58 @@ TEST_CASE("procedure 92 snapshots a checkpoint for the next return")
 	CHECK(f.vm.return_player_placement->m[0][3] == 12);
 	f.procedure(79, {});
 	CHECK_FALSE(f.vm.return_player_placement);
+}
+
+TEST_CASE("procedure 140 removes the referenced actor and clears the same typed variable")
+{
+	handler_fixture f;
+	auto attach_variable = [&](std::uint32_t actor) {
+		auto brain = f.m.allocate(0x10), mind = f.m.allocate(0x20), vars = f.m.allocate(0x10);
+		auto ptr = f.m.allocate(4), decl = f.m.allocate(0x10), info = f.m.allocate(0x10), storage = f.m.allocate(4);
+		f.m.write(actor + 0xc, brain); f.m.write(brain, mind); f.m.write(mind + 0xc, vars);
+		f.m.write(vars, ptr); f.m.write(ptr, decl); f.m.write(vars + 8, storage);
+		f.m.write(decl + 4, info); f.m.write<std::uint8_t>(decl + 0xc, 1); f.m.write<std::uint32_t>(info + 4, 9);
+		return storage;
+	};
+	auto own = attach_variable(f.actor);
+	auto other_so = f.m.allocate(0x48), other_actor = f.m.allocate(0x38), standard = f.m.allocate(0x34);
+	f.m.write<std::uint32_t>(other_so, 2); f.m.write(other_so + 4, other_actor);
+	f.m.write(other_actor + 4, standard); f.m.write(standard + 0xc, other_so);
+	f.m.write<std::uint32_t>(standard + 0x14, 3); f.m.write<std::uint8_t>(standard + 0x29, 6);
+	auto other_var = attach_variable(other_actor);
+	auto emit = [&](std::uint32_t at, std::uint32_t param, node_type kind, std::uint8_t indent) {
+		f.m.write(at, param); f.m.write<std::uint8_t>(at + 6, indent); f.m.write<std::uint8_t>(at + 7, std::uint8_t(kind));
+	};
+	emit(f.script, 140, node_type::procedure, 1);
+	emit(f.script + 8, 0, node_type::variable, 2);
+	game::value out;
+	// Empty variables leave both removal state and flow alone.
+	CHECK(f.vm.eval(f.so, f.script, out) == f.script + 16); CHECK(out.word() == 0);
+	f.m.write(own, other_so);
+	CHECK(f.vm.eval(f.so, f.script, out) == f.script + 16);
+	CHECK(f.vm.removed(other_so)); CHECK(f.m.u32(own) == 0); CHECK(out.word() == 0);
+	// A cross-actor variable is resolved from the operand, not from the caller.
+	f.vm.restore(other_so); f.m.write(other_var, f.so); f.m.write(own, other_so);
+	f.m.write<std::uint32_t>(f.standard + 0x14, 3); f.m.write<std::uint8_t>(f.standard + 0x29, 6);
+	emit(f.script + 8, 12, node_type::operator_, 2);
+	emit(f.script + 16, other_actor, node_type::actor, 3);
+	emit(f.script + 24, 0, node_type::variable, 3);
+	CHECK(f.vm.eval(f.so, f.script, out) == f.script + 32);
+	CHECK(f.vm.removed(f.so)); CHECK(f.m.u32(other_var) == 0); CHECK(f.m.u32(own) == other_so);
+	CHECK(out.word() == 3);
+}
+
+TEST_CASE("procedure 365 captures channel one and replays the captured event")
+{
+	handler_fixture f;
+	f.procedure(365, {f.integer(0)}); CHECK(f.vm.saved_channel_1_event == 0);
+	f.vm.play_sound(100, 0, 117, -1); f.vm.play_sound(200, f.so, 115, -1);
+	f.procedure(365, {f.integer(5)}); CHECK(f.vm.saved_channel_1_event == 100);
+	f.vm.play_sound(300, 0, 117, -1); CHECK(f.vm.current_channel_1_event == 300);
+	f.vm.take_sounds(); f.vm.replay_saved_channel_1();
+	auto requests = f.vm.take_sounds(); REQUIRE(requests.size() == 1);
+	CHECK(requests[0].event == 100); CHECK(requests[0].procedure == 117);
+	CHECK(f.vm.current_channel_1_event == 100);
 }
 
 TEST_CASE("handler census: procedure 139 writes placed actor removal flags")
