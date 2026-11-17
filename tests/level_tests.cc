@@ -4999,3 +4999,22 @@ TEST_CASE("real data: Bast_20 recorded barrel approaches the cave from a differe
 	CHECK(roof->normal[2] == doctest::Approx(-0.984f).epsilon(0.01));
 	CHECK(std::ranges::find(sectors, roof->sector) == sectors.end()); // 0x494610 collision neighbours
 }
+
+TEST_CASE("script global setters retain values and paired getters")
+{
+	handler_fixture f;
+	f.procedure(152, {f.integer(-1)});
+	CHECK(f.vm.script_volume[1] == 127);
+	f.procedure(153, {f.integer(42)});
+	CHECK(f.function(257).as_int() == 42);
+	f.procedure(357, {f.integer(150)});
+	CHECK(f.function(263).as_int() == 100);
+	f.procedure(357, {f.integer(-1)});
+	CHECK(f.function(263).as_int() == 0);
+	f.procedure(502, {f.integer(257)});
+	f.procedure(513, {f.integer(258)});
+	CHECK(f.vm.scripted_camera == 1);
+	CHECK(f.vm.random_level_choice == 2);
+	f.procedure(296, {f.integer(3)});
+	CHECK(f.vm.stationary_speed == 3.0f);
+}

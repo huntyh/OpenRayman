@@ -5986,6 +5986,37 @@ namespace openrayman::game
 		}
 
 
+		// 152/153 (0x46BC60 cases 0x98/0x99 -> 0x408520/0x408550).
+		// The executable treats the argument as unsigned before clamping.
+		std::uint32_t set_script_volume(call& c)
+		{
+			value v; next_arg(c, v);
+			c.vm.script_volume[c.index == 152 ? 1 : 0] = std::min(std::uint32_t(v.as_int()), 127u);
+			return c.args;
+		}
+
+		// 502 (0x47F560), 357 (0x46FE40 -> 0x422570),
+		// 296 (0x46DE50), 513 (0x4730E0 case 0x201).
+		std::uint32_t set_script_global(call& c)
+		{
+			value v; next_arg(c, v);
+			switch(c.index)
+			{
+			case 502: c.vm.scripted_camera = std::uint8_t(v.as_int()); break;
+			case 357: c.vm.display_offset = float(std::clamp(v.as_int(), 0, 100)) * 0.01f; break;
+			case 296: c.vm.stationary_speed = v.as_float(); break;
+			case 513: c.vm.random_level_choice = std::uint8_t(v.as_int()); break;
+			}
+			return c.args;
+		}
+
+		// 257 (0x47ABA0 case 0x101), 263 (0x47AD10 -> 0x4225B0).
+		std::uint32_t script_global_value(call& c, value& out)
+		{
+			out = value::integer(c.index == 257 ? int(c.vm.script_volume[0]) : int(c.vm.display_offset * 100.0f));
+			return c.args;
+		}
+
 		// 101 (0x468AB0): request engine shutdown (state 2), then stop the script.
 		std::uint32_t quit_game(call& c)
 		{
@@ -6317,7 +6348,7 @@ namespace openrayman::game
 		vm.on_procedure(422, sound_factor);
 		vm.on_procedure(423, sound_factor);
 		// 256 (0x47ABA0 case 0x100 -> 0x453680): channel 1 group volume.
-		vm.on_function(256, [](call& c, value& out) { out = value::integer(c.vm.sound_channel_1_group_volume); return c.args; });
+		vm.on_function(256, [](call& c, value& out) { out = value::integer(int(c.vm.script_volume[1])); return c.args; });
 
 		vm.on_procedure(0, set_hit_points);
 		vm.on_procedure(6, set_hit_points);
@@ -6409,6 +6440,11 @@ namespace openrayman::game
 			vm.on_procedure(i, menu_request);
 		vm.on_function(252, language);
 		vm.on_procedure(242, set_language);
+		vm.on_procedure(152, set_script_volume);
+		vm.on_procedure(153, set_script_volume);
+		for(auto i : {502, 357, 296, 513}) vm.on_procedure(i, set_script_global);
+		vm.on_function(257, script_global_value);
+		vm.on_function(263, script_global_value);
 		vm.on_procedure(101, quit_game);
 		vm.on_procedure(86, change_level);
 		vm.on_procedure(87, change_level);

@@ -229,7 +229,6 @@ namespace openrayman::game
 		// Sound channel factors and group volume (422, 423, 256); playback integration pending.
 		std::map<std::uint32_t, std::int32_t> sound_channel_0_factors;
 		std::optional<std::int32_t> sound_channel_1_factor;
-		std::int32_t sound_channel_1_group_volume = 127;
 		bool stop_sounds_requested = false; // 0x406490: stop the playback group on return
 		// The on-screen text the scripts fill (procedures 505..507), still to be drawn.
 		game::screen_text& screen_text() { return m_screen_text; }
@@ -306,6 +305,11 @@ namespace openrayman::game
 		std::array<std::int32_t, 3> wave_speed{};
 		std::array<float, 3> wave_amplitude{};
 		std::uint8_t wave_mode = 0, wave_flags = 0;
+		// Script-controlled executable globals; audio and rendering consumers are not yet connected.
+		std::array<std::uint32_t, 2> script_volume{127, 127};
+		std::uint8_t scripted_camera = 0, random_level_choice = 0;
+		float display_offset = 0.0f, stationary_speed = 0.7f;
+
 		// Procedures 86/87 (0x4054D0): the level the scripts asked to go to, for the engine to load
 		// after the tick; `level_request_flag` is true for 86 (what the exe does with it isn't read).
 		bool quit_requested = false; // procedure 101: host closes after the current tick
