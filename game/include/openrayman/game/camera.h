@@ -93,6 +93,7 @@ namespace openrayman::game
 	// Procedure 444's solve (0x47DA40 -> 0x485810): the camera's scripts have filled the parameter
 	// block that is in force, so work out the look-at point, the offset point and the wanted position,
 	// and hand the numbers and the block's speeds to the mechanics through `vm.camera_motion()`.
+	vec3 query_camera_position(interpreter& vm, std::uint32_t super_object);
 	void solve_camera(interpreter& vm, std::uint32_t super_object, bool offset_only = false);
 	// Procedure 499's immediate candidate search and placement (0x47EDD0).
 	void cut_camera(interpreter& vm, std::uint32_t super_object);

@@ -649,7 +649,7 @@ namespace openrayman::game
 		};
 	}
 
-	static void solve_camera_impl(interpreter& vm, std::uint32_t super_object, bool offset_only, bool immediate_cut)
+	static void solve_camera_impl(interpreter& vm, std::uint32_t super_object, bool offset_only, bool immediate_cut, vec3* query = nullptr)
 	{
 		live_memory& m = vm.memory();
 		std::uint32_t actor = vm.actor_of(super_object);
@@ -905,6 +905,28 @@ namespace openrayman::game
 		}
 		state.super_object = super_object;
 		state.trace.collision_radius = camera_radius(m, super_object);
+		if(query)
+		{
+			// 0x488E20 -> 0x486EA0: search without relocating the camera.
+			*query = {};
+			if(target_transform)
+			{
+				vec3 up = flags_72 & 0x4000 ? normalised(read3(m, cam + 0x4C)) : vec3{ 0, 0, 1 };
+				vec3 ref = flags_72 & 0x4000 ? normalised(read3(m, cam + 0x40)) : normalised(read3(m, target_transform + 0x1C));
+				if(length(up) < 0.5f) up = { 0, 0, 1 };
+				if(length(ref) < 0.5f) ref = { 0, -1, 0 };
+				vec3 anchor = add(read3(m, target_transform + 4), rotate(m, target_transform, read3(m, block + camera_field::vector_b)));
+				obstacle_search search{ vm, m, state, cam, block, target_transform, anchor, aim, position, want, off, ref, up, flags_72, state.trace.global_flags };
+				if(auto found = search.search(state.trace.global_flags & 4 ? 13 : 5, float(vm.frame_ms()) * 0.001f))
+				{
+					*query = found->first;
+					for(unsigned k = 0; k < 3; ++k) m.write<float>(cam + 0x1C + k * 4, (*query)[k]);
+					m.write<std::uint8_t>(cam + 0x17C, 0);
+				}
+				m.write<int>(cam + 0x60, 0);
+			}
+			return;
+		}
 		if(immediate_cut)
 		{
 			// 0x47EDD0 calls 0x486EA0 / 0x486F40 directly, without the
@@ -1120,6 +1142,13 @@ namespace openrayman::game
 	void solve_camera(interpreter& vm, std::uint32_t super_object, bool offset_only)
 	{
 		solve_camera_impl(vm, super_object, offset_only, false);
+	}
+
+	vec3 query_camera_position(interpreter& vm, std::uint32_t super_object)
+	{
+		vec3 result{};
+		solve_camera_impl(vm, super_object, false, false, &result);
+		return result;
 	}
 
 	void cut_camera(interpreter& vm, std::uint32_t super_object)

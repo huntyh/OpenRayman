@@ -1180,6 +1180,55 @@ struct handler_fixture
 	bool condition(unsigned n, std::initializer_list<game::value> args = {}) { return invoke(node_type::condition, n, args).word() != 0; }
 };
 
+TEST_CASE("condition 54 treats missing sectors as clear")
+{
+	handler_fixture f;
+	CHECK(f.condition(54, {f.me()}));
+}
+
+TEST_CASE("condition 54 tests scenery in the selected sectors")
+{
+	handler_fixture f;
+	auto t1 = f.m.allocate(0x58), t2 = f.m.allocate(0x58);
+	auto other = f.m.allocate(0x48), actor2 = f.m.allocate(0x38), standard2 = f.m.allocate(0x34);
+	auto sector = f.m.allocate(0x48), data = f.m.allocate(0x48), info1 = f.m.allocate(4), info2 = f.m.allocate(4);
+	f.m.write(f.so + 0x24, t1); f.m.write<std::uint32_t>(other, 2); f.m.write(other + 4, actor2); f.m.write(other + 0x24, t2);
+	f.m.write(actor2 + 4, standard2); f.m.write(standard2 + 0xC, other);
+	f.m.write(f.actor + 0x20, info1); f.m.write(actor2 + 0x20, info2); f.m.write(info1, sector); f.m.write(info2, sector); f.m.write(sector + 4, data);
+	f.m.write<float>(t2 + 4, 2);
+	collision_triangle wall; wall.corners = {vec3{1,-1,-1}, vec3{1,1,-1}, vec3{1,0,1}}; wall.normal = {-1,0,0}; wall.sector = sector;
+	f.vm.set_world(game::world_collision({wall}));
+	auto target = game::value::of(game::value_type::actor, actor2);
+	CHECK_FALSE(f.condition(54, {target}));
+	wall.flags = 0x8000; f.vm.set_world(game::world_collision({wall}));
+	CHECK(f.condition(54, {target}));
+}
+
+TEST_CASE("function 313 returns camera placement without a recovery request")
+{
+	handler_fixture f;
+	auto transform = f.m.allocate(0x58);
+	f.m.write(f.so + 0x24, transform);
+	f.m.write<float>(transform + 4, 3); f.m.write<float>(transform + 8, -2); f.m.write<float>(transform + 12, 7);
+	auto result = f.function(313);
+	CHECK(result.component(0) == doctest::Approx(3));
+	CHECK(result.component(1) == doctest::Approx(-2));
+	CHECK(result.component(2) == doctest::Approx(7));
+}
+
+TEST_CASE("procedure 135 integrates rotation and respects the dynamics lock")
+{
+	handler_fixture f;
+	f.m.write<std::uint32_t>(f.base + 0xD0, 1);
+	f.procedure(135, {f.integer(90)});
+	float angle = 90.0f * float(f.vm.frame_ms()) * 0.0174532925199433f / 1000;
+	CHECK(f.m.f32(f.base + 0xE0) == doctest::Approx(std::cos(angle)));
+	CHECK(f.m.f32(f.base + 0xE4) == doctest::Approx(-std::sin(angle)));
+	f.m.write<std::uint32_t>(f.base + 0xC, 0x80);
+	f.procedure(135, {f.integer(90)});
+	CHECK(f.m.f32(f.base + 0xE4) == doctest::Approx(-std::sin(angle)));
+}
+
 TEST_CASE("wave, health, input and request handlers")
 {
 	handler_fixture f;

@@ -1129,6 +1129,51 @@ namespace openrayman::game
 			return world;
 		}
 
+		// 54 (0x48ACE0 -> 0x48ABF0): visibility through the two sectors and
+		// the first sector's drawn-with list. Actor children are not queried.
+		std::uint32_t line_of_sight(call& c, bool& out)
+		{
+			value other;
+			next_arg(c, other);
+			auto self = c.vm.target(c.self, true);
+			auto them = super_object_value(c.vm, other);
+			live_memory& m = c.vm.memory();
+			auto sector_of = [&](std::uint32_t so) {
+				auto actor = c.vm.actor_of(so);
+				auto info = actor && m.contains(actor + 0x20, 4) ? m.u32(actor + 0x20) : 0;
+				return info && m.contains(info, 4) ? m.u32(info) : 0u;
+			};
+			auto a = sector_of(self), b = sector_of(them);
+			out = true;
+			if(!a || !b) return c.args;
+			std::vector<std::uint32_t> sectors{a, b};
+			auto data = m.contains(a + 4, 4) ? m.u32(a + 4) : 0;
+			if(data && m.contains(data + 0x24, 12))
+			{
+				auto entry = m.u32(data + 0x24), count = m.u32(data + 0x2C);
+				for(std::uint32_t i = 0; i < count && entry && m.contains(entry, 12); ++i)
+				{
+					sectors.push_back(m.u32(entry + 4));
+					entry = m.u32(entry + 8);
+				}
+			}
+			auto endpoint = [&](std::uint32_t so) {
+				vec3 p = position_of(c.vm, so);
+				auto t = transform_of(c.vm, so);
+				auto offset = so && m.contains(so + 0x34, 4) ? m.u32(so + 0x34) : 0;
+				if(t && offset && m.contains(offset, 12) && m.contains(t, 0x34))
+					for(unsigned i = 0; i < 3; ++i) {
+						auto axis = read3(m, t + 0x10 + i * 12);
+						for(unsigned j = 0; j < 3; ++j) p[j] += m.f32(offset + i * 4) * axis[j];
+					}
+				return p;
+			};
+			auto world = c.vm.world().in_sectors(sectors);
+			// 0x48EE70 / 0x4914D0: ignore 0xC000 materials and back faces.
+			out = !world.first_hit(endpoint(self), endpoint(them), 0, false, 0, true);
+			return c.args;
+		}
+
 		// 18 (0x47B860): the waypoint's world position, or zero for a null reference.
 		std::uint32_t waypoint_location(call& c, value& out)
 		{
@@ -2239,6 +2284,23 @@ namespace openrayman::game
 			m.write<float>(cam + 0x5C, saved_gap);
 			if(block)
 				m.write<std::uint16_t>(block + 0x72, saved);
+			return c.args;
+		}
+
+		// 313 (0x488E20): the current eye, or a recovery candidate when requested.
+		std::uint32_t camera_solved_position(call& c, value& out)
+		{
+			auto self = c.vm.target(c.self, true);
+			auto cam = camera_object(c.vm, self);
+			auto& m = c.vm.memory();
+			out = value_of(position_of(c.vm, self));
+			if(cam && m.u8(cam + 0x17C))
+			{
+				back_up_camera_block(c.vm, cam);
+				camera_state saved = c.vm.camera_motion();
+				out = value_of(query_camera_position(c.vm, self));
+				c.vm.camera_motion() = saved;
+			}
 			return c.args;
 		}
 
@@ -4636,6 +4698,36 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 135 (0x4697D0 -> 0x432EE0): integrate a degrees-per-second turn.
+		std::uint32_t spin_dynamics(call& c)
+		{
+			auto self = c.vm.target(c.self, true);
+			value speed; next_arg(c, speed);
+			auto base = dynamics_base(c, self, 0x128);
+			auto& m = c.vm.memory();
+			if(!base || (m.u32(base + 0xC) & 0x80)) return c.args;
+			float angle = speed.as_float() * float(c.vm.frame_ms()) * (0.0174532925199433f / 1000.0f);
+			if(angle == 0) return c.args;
+			auto t = base + 0xD0;
+			vec3 x = read3(m, t + 0x10), y = read3(m, t + 0x1C), z = read3(m, t + 0x28);
+			if(m.u32(t) < 3) { x = {1,0,0}; y = {0,1,0}; z = {0,0,1}; m.write<std::uint32_t>(t, 1); }
+			float cs = std::cos(angle), sn = std::sin(angle);
+			if(m.u32(base + 8) & 8)
+			{
+				auto turn = [&](vec3 v) { return vec3{ cs*v[0] - sn*v[1], sn*v[0] + cs*v[1], v[2] }; };
+				x = turn(x); y = turn(y); z = turn(z);
+			}
+			else
+			{
+				vec3 old = x;
+				for(unsigned i = 0; i < 3; ++i) { x[i] = cs*old[i] - sn*y[i]; y[i] = sn*old[i] + cs*y[i]; }
+			}
+			set_axes(m, t, x, y, z);
+			// Our mechanics publishes the actor transform directly instead of base +0xD0.
+			if(auto transform = transform_of(c.vm, self)) set_axes(m, transform, x, y, z);
+			return c.args;
+		}
+
 		// 81 (0x467770 case 0x51): the running intelligence starts its script over, and the scripts
 		// stop for this frame (0x4808E0 with 0xB).
 		std::uint32_t start_over(call& c)
@@ -6341,10 +6433,12 @@ namespace openrayman::game
 		for(std::uint32_t i : { 44, 45, 46, 47 })
 			vm.on_condition(i, input_state);
 		vm.on_condition(48, time_elapsed);
+		vm.on_condition(54, line_of_sight);
 		for(std::uint32_t i : { 49, 50, 51, 52, 53 })
 			vm.on_condition(i, valid);
 		vm.on_condition(66, collision_event_flag);
 		vm.on_procedure(157, place_self);
+		vm.on_procedure(135, spin_dynamics);
 		vm.on_procedure(136, turn_by);
 		vm.on_procedure(81, start_over);
 		vm.on_procedure(79, restart_level);
@@ -6513,6 +6607,7 @@ namespace openrayman::game
 		vm.on_function(187, direction_angle);
 		vm.on_function(190, contact_normal);
 		vm.on_function(310, camera_move_vector);
+		vm.on_function(313, camera_solved_position);
 		vm.on_function(31, absolute);
 		vm.on_function(42, smooth);
 		vm.on_function(62, frame_time);

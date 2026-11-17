@@ -78,7 +78,7 @@ namespace openrayman::game
 		// Script casts include water/0x8000 and approach front faces (0x479720/0x491250).
 		// Other callers keep the existing solid query. ignored_objects filters scenery branch flags.
 		std::optional<segment_hit> first_hit(const std::array<float, 3>& start, const std::array<float, 3>& end,
-			std::uint16_t any_of = 0, bool script = false, std::uint32_t ignored_objects = 0) const;
+			std::uint16_t any_of = 0, bool script = false, std::uint32_t ignored_objects = 0, bool visibility = false) const;
 
 		struct sweep_hit : segment_hit
 		{

@@ -1179,3 +1179,9 @@ Where this came from: own reading of the executable at the addresses shown, guid
 - Condition 15 (0x489EE0 case 0x0F): test two collision zones for overlap.
 - Condition 146 (0x4894D0 case 0x92): test the selected camera block's fixed-position flag.
 - Condition 71 (0x48A950 case 0x47): test whether a state transition is permitted.
+
+Condition 54 (0x48ACE0 -> 0x48ABF0 -> 0x45D8F0/0x48EE70) evaluates the target and argument's offset world positions and checks the target sector, the argument sector, and the target sector's drawn-with list. Actor children are skipped; collision material flags 0xC000 are ignored and triangles are one-sided. OpenRayman queries its sector-tagged static triangles; static sphere and box primitives are not represented in this world cast, so those can be missed. Own reading of these executable routines and 0x482A00 / 0x4914D0; no executable code copied.
+
+Function 313 (0x488E20) returns the camera object's world position when its recovery request byte is clear. When set, it backs up the camera block and searches for a recovery candidate, clearing the request on success. OpenRayman reuses its approximate camera obstacle search; its collision and sector limitations are described in camera.md. Own analysis of 0x488E20, 0x486EA0 and the existing camera solve.
+
+Procedure 135 (0x4697D0 -> 0x432EE0) integrates the argument as degrees per second and rotates the dynamics matrix at +0xD0 unless end flag 0x80 is set, preserving translation. Flag 8 chooses the world-Z branch; otherwise the rotation is composed in local axes. OpenRayman also publishes the result to the actor transform because its mechanics does not otherwise hand off the dynamics matrix. This handoff is an approximation pending a matched movement replay. Own analysis of 0x4697D0, 0x432EE0, 0x4454A0 and 0x43E870.

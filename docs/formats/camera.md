@@ -617,3 +617,5 @@ It currently stores only view 1 and draws the top and bottom boundaries.
 
 Provenance: own reading of the Learn_10 actor 6 scripts, Rayman2.exe at 0x46BD40 and
 0x404E70, and the user's live intro and Globox recordings of the world view at 0x500458.
+
+Function 313 (0x488E20) returns the camera placement when its request byte is clear. With a request it searches for a recovery position, using 0x486EA0, clears the request on success and resets the search mode when a target exists. OpenRayman reuses its existing approximate obstacle search without relocating the camera; the collision limitations above apply. Own reading of those executable routines.

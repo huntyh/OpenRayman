@@ -417,3 +417,5 @@ recording, Bast_20 collision data and generated actor scripts, plus the
 Rayman2.exe decompilations at the addresses above. A real-data regression checks
 the recorded point's sector relationship and the unflagged inward-facing roof.
 No executable code or game geometry was copied.
+
+Condition 54's scene ray (0x48ABF0 -> 0x45D8F0 -> 0x48EE70) traverses the two actors' sectors and the first sector's drawn-with list, skips actor children, ignores collide flags 0xC000, and tests one-sided triangles as well as sphere and box elements. OpenRayman's equivalent is limited to its sector-tagged static triangles. Own reading of the executable at those addresses and 0x4914D0.
