@@ -1114,3 +1114,17 @@ Procedure 92 (`0x467C60` -> `0x4064D0`) evaluates player and camera marker actor
 Own reading of Rayman2.exe at `0x467C60`, `0x4064D0`, `0x406490` and `0x403150`, and Rayman's macro 7 in the installed level scripts. No executable code was copied. A synthetic test checks argument handling and snapshot values; a complete playing-state hazard reproduction remains open.
 
 Learn_30 nodes 35 and 36 set controller node 6's var29 to themselves when Rayman enters their zones. Rayman's macro 7 passes this marker to procedure 92 after the death animation. A real-level test sets node 35 as the marker, drops Rayman onto node 155's `0x4400` water at (-19.467, 194.857, -5), and verifies loss of two health and return to the marker; it also checks the no-marker return to the entry. The test assigns the marker directly and does not verify walking through its zone or the fade.
+
+
+### Additional script globals
+
+Where this came from: own reading of the executable decompilation, guided by the helper notes; no executable code copied. These globals are retained by the interpreter; their host audio, rendering, movement and level-selection effects are not yet connected.
+
+- Procedure 152 (0x46BC60 case 0x98): set channel 1 volume, unsigned-clamped to 127.
+- Procedure 153 (0x46BC60 case 0x99): set channel 0 volume, unsigned-clamped to 127.
+- Procedure 502 (0x47F560): store the scripted-camera byte.
+- Procedure 357 (0x46FE40): clamp and store the display offset as a fraction.
+- Procedure 296 (0x46DE50): store the stationary-speed threshold.
+- Procedure 513 (0x4730E0 case 0x201): store the random-level selection byte.
+- Function 257 (0x47ABA0 case 0x101): read channel 0 volume.
+- Function 263 (0x47AD10): read the display offset as an integer percentage.

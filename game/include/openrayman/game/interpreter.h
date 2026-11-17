@@ -298,6 +298,11 @@ namespace openrayman::game
 		// clears them when the fourth, set by the engine, says so), 345 sets the third. The menu
 		// reads the pair at startup to know where it was asked to go; at boot all are 0.
 		std::array<std::uint8_t, 4> menu_request{};
+		// Script-controlled executable globals; audio and rendering consumers are not yet connected.
+		std::array<std::uint32_t, 2> script_volume{127, 127};
+		std::uint8_t scripted_camera = 0, random_level_choice = 0;
+		float display_offset = 0.0f, stationary_speed = 0.7f;
+
 		// Procedures 86/87 (0x4054D0): the level the scripts asked to go to, for the engine to load
 		// after the tick; `level_request_flag` is true for 86 (what the exe does with it isn't read).
 		bool quit_requested = false; // procedure 101: host closes after the current tick
