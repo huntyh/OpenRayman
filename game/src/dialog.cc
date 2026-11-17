@@ -164,6 +164,26 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 239 (0x469960 case 0xEF): insert a byte before an existing character.
+		std::uint32_t insert_character(call& c, dialog_state& state)
+		{
+			value dest, index; argument(c, dest); argument(c, index);
+			auto text = resolve(c.vm, state, dest);
+			auto at = std::int16_t(index.word());
+			if(!text || at < 0 || at >= std::int16_t(text->size()))
+				return c.vm.skip(c.args);
+			value character; argument(c, character);
+			text->insert(text->begin() + at, char(character.word()));
+			if(dest.type == value_type::id) store(c.vm, state, dest, *text);
+			else if(dest.type == value_type::text && c.vm.memory().contains(dest.word(), text->size() + 1))
+			{
+				auto bytes = c.vm.memory().span(dest.word(), text->size() + 1);
+				std::copy(text->begin(), text->end(), reinterpret_cast<char*>(bytes.data()));
+				bytes[text->size()] = std::byte{};
+			}
+			return c.args;
+		}
+
 		// 243 (0x469AC0): format an integer into the resolved text destination.
 		std::uint32_t format_integer(call& c, dialog_state& state)
 		{
@@ -304,6 +324,7 @@ namespace openrayman::game
 			return c.args;
 		});
 		vm.on_procedure(430, [state](call& c) { return concatenate(c, *state); });
+		vm.on_procedure(239, [state](call& c) { return insert_character(c, *state); });
 		vm.on_procedure(243, [state](call& c) { return format_integer(c, *state); });
 		// 218 (0x478E10 case 0xDA): the character at an index of a text, counted after its leading
 		// /x: codes; 0 outside it. The menu's name entry reads the letter it is changing with it.

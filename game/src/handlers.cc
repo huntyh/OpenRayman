@@ -126,12 +126,13 @@ namespace openrayman::game
 		std::uint32_t wave_settings(call& c)
 		{
 			value v; next_arg(c, v);
-			if(c.index == 56)
+			if(c.index == 56 || c.index == 59)
 			{
 				c.vm.wave_speed[0] = std::int16_t(v.word());
 				next_arg(c, v);
 				c.vm.wave_speed[1] = std::int16_t(v.word());
-				c.vm.wave_speed[2] = 0;
+				if(c.index == 59) { next_arg(c, v); c.vm.wave_speed[2] = std::int16_t(v.word()); }
+				else c.vm.wave_speed[2] = 0;
 			}
 			else if(c.index == 57)
 				for(int i = 0; i < 3; ++i) c.vm.wave_amplitude[i] = v.component(i) * 0.1f;
@@ -145,6 +146,63 @@ namespace openrayman::game
 				else if(n == 67) c.vm.wave_flags |= 2u;
 			}
 			return c.args;
+		}
+
+		// 60/61 (0x472B00 cases 0x3c/0x3d): raw line-wave words.
+		std::uint32_t line_wave(call& c)
+		{
+			auto& words = c.index == 60 ? c.vm.line_wave_scale : c.vm.line_wave_offset;
+			value v; for(auto& word : words) { next_arg(c, v); word = v.word(); }
+			return c.args;
+		}
+
+		// 407 (0x471780 case 0x197 -> 0x494C10): freeze animation.
+		std::uint32_t freeze_animation(call& c)
+		{
+			auto data = actor_part(c.vm, c.vm.target(c.self, true), actor_field::data_3d);
+			if(data) set_playback_rate(c.vm.memory(), data, 0);
+			return c.args;
+		}
+
+		// 275/277 (0x47B170 cases 0x113/0x115): bitwise XOR and OR.
+		std::uint32_t bitwise_puzzle(call& c, value& out)
+		{
+			value a, b; next_arg(c, a); next_arg(c, b);
+			out = value::integer(std::int32_t(c.index == 275 ? a.word() ^ b.word() : a.word() | b.word()));
+			return c.args;
+		}
+
+		// 441/442 (0x4720E0 cases 0x1B9/0x1BA -> 0x423EB0/0x423F60).
+		std::uint32_t wave_snapshot(call& c)
+		{
+			auto& v = c.vm; auto& snapshot = v.saved_wave;
+			if(c.index == 441)
+			{
+				snapshot.speed = v.wave_speed; snapshot.amplitude = v.wave_amplitude;
+				snapshot.phase = v.wave_phase; snapshot.extra = v.wave_extra;
+				snapshot.extra_word = v.wave_extra_word; snapshot.mode = v.wave_mode; snapshot.flags = v.wave_flags;
+			}
+			else
+			{
+				v.wave_speed = snapshot.speed; v.wave_amplitude = snapshot.amplitude;
+				v.wave_phase = snapshot.phase; v.wave_extra = snapshot.extra;
+				v.wave_extra_word = snapshot.extra_word; v.wave_mode = snapshot.mode; v.wave_flags = snapshot.flags;
+			}
+			return c.args;
+		}
+
+		// 388 (0x470B20 case 0x184 -> 0x426F40): store the low byte as a word.
+		std::uint32_t store_level_word(call& c)
+		{
+			value address, v; next_arg(c, address); next_arg(c, v);
+			if(c.vm.memory().contains(address.word(), 4)) c.vm.memory().write<std::uint32_t>(address.word(), v.word() & 0xff);
+			return c.args;
+		}
+
+		// 83 (0x467970 case 0x53): queue the next main actor.
+		std::uint32_t select_main_actor(call& c)
+		{
+			value v; next_arg(c, v); c.vm.request_main_actor(super_object_value(c.vm, v)); return c.args;
 		}
 
 		// 64/65 (0x469520 cases 0x40/0x41): disable/enable an input action.
@@ -205,6 +263,7 @@ namespace openrayman::game
 				if(amount == 127) c.vm.sound_channel_0_factors.erase(target);
 				else c.vm.sound_channel_0_factors[target] = amount;
 			}
+			else if(c.index == 424) { if(amount == 127) c.vm.sound_channel_0_factor.reset(); else c.vm.sound_channel_0_factor = amount; }
 			else if(amount == 127) c.vm.sound_channel_1_factor.reset();
 			else c.vm.sound_channel_1_factor = amount;
 			return c.args;
@@ -2057,6 +2116,32 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 468 (0x47E2E0): camera's second target and blend word.
+		std::uint32_t set_camera_second_target(call& c)
+		{
+			auto self = c.vm.target(c.self, true); value temporary, mode, who, weight;
+			next_arg(c, temporary); next_arg(c, mode); next_arg(c, who); next_arg(c, weight);
+			auto& m = c.vm.memory(); auto cam = camera_object(c.vm, self); if(!cam) return c.args;
+			auto current = camera_block(c.vm, cam, camera_field::block_current);
+			auto spare = camera_block(c.vm, cam, camera_field::block_spare);
+			auto over = camera_block(c.vm, cam, camera_field::block_override);
+			if(!current || !spare || !over) return c.args;
+			if(m.u8(cam + 0x75) & 2)
+			{
+				std::memcpy(m.span(current, 0x7c).data(), m.span(spare, 0x7c).data(), 0x7c);
+				m.write<std::uint8_t>(cam + 0x75, m.u8(cam + 0x75) & ~2u);
+				if(m.u8(cam + 0x74) & 1) std::memcpy(m.span(over, 0x7c).data(), m.span(spare, 0x7c).data(), 0x7c);
+			}
+			if(temporary.as_int() == 1) back_up_camera_block(c.vm, cam);
+			auto target = super_object_value(c.vm, who);
+			if(mode.as_int() == -1) { auto def = camera_block(c.vm, cam, camera_field::block_default); target = def ? safe_u32(m, def + 0x68) : 0; }
+			else if(mode.as_int() == 0) target = 0;
+			m.write((temporary.as_int() == 1 ? over : current) + 0x6c, target);
+			if(temporary.as_int() != 1) { m.write(spare + 0x6c, target); m.write(over + 0x6c, target); }
+			m.write(cam + 0x58, weight.word());
+			return c.args;
+		}
+
 		// 159 (0x467CF0): start the camera's eight tracked points at the target's position, each with
 		// the small weight 0.03 (camera +0x78 three floats each, +0xD8 the point, +0x138 the weight).
 		// The exe only does it when the target's camera object is the main actor's camera; our own
@@ -3363,7 +3448,31 @@ namespace openrayman::game
 		bool touch_overlap(live_memory& m, const touch_shape& a, std::uint32_t ta, const touch_shape& b, std::uint32_t tb)
 		{
 			if(a.kind == 8 && b.kind == 8)
-				return false;
+			{
+				// Separating-axis test for the two transformed boxes, including scaled frames.
+				auto box = [&](const touch_shape& shape, std::uint32_t frame) {
+					std::array<vec3, 4> points{};
+					points[0] = touch_world(m, frame, shape.a);
+					for(int i = 0; i < 3; ++i) { auto p = shape.a; p[i] = shape.b[i]; points[i+1] = sub(touch_world(m, frame, p), points[0]); }
+					return points;
+				};
+				auto x = box(a, ta), y = box(b, tb); auto delta = sub(y[0], x[0]);
+				auto separated = [&](const vec3& axis) {
+					if(dot(axis, axis) < 1e-12f) return false;
+					float lo = 0, hi = 0;
+					for(int i = 1; i <= 3; ++i) { auto v = dot(x[i], axis); lo += std::min(0.0f, v); hi += std::max(0.0f, v); }
+					float other_lo = dot(delta, axis), other_hi = other_lo;
+					for(int i = 1; i <= 3; ++i) { auto v = dot(y[i], axis); other_lo += std::min(0.0f, v); other_hi += std::max(0.0f, v); }
+					return hi < other_lo || other_hi < lo;
+				};
+				for(int i = 1; i <= 3; ++i)
+				{
+					int j = i % 3 + 1, k = j % 3 + 1;
+					if(separated(cross(x[j], x[k])) || separated(cross(y[j], y[k]))) return false;
+					for(int n = 1; n <= 3; ++n) if(separated(cross(x[i], y[n]))) return false;
+				}
+				return true;
+			}
 			if(a.kind == 8)
 				return touch_overlap(m, b, tb, a, ta);
 			vec3 centre = touch_world(m, ta, a.a);
@@ -3452,6 +3561,101 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 22/24 (0x489EE0 cases 0x16/0x18 -> 0x40D570): all active
+		// collision zones and parts of A against those of active B, optionally filtering B material.
+		std::uint32_t actors_touch(call& c, bool& result)
+		{
+			value av, bv, mask; next_arg(c, av); next_arg(c, bv);
+			if(c.index == 24) next_arg(c, mask);
+			result = false; auto a = super_object_value(c.vm, av), b = super_object_value(c.vm, bv);
+			if(!a || !b || c.vm.removed(b)) return c.args;
+			auto& m = c.vm.memory(); auto standard = actor_part(c.vm, b, actor_field::standard_game);
+			if(!standard || !(m.u8(standard + 0x29) & 4)) return c.args;
+			using framed_zone = std::pair<std::vector<touch_shape>, std::uint32_t>;
+			auto collect = [&](std::uint32_t so, bool target) {
+				std::vector<framed_zone> all;
+				auto add = [&](std::uint32_t zone, std::uint32_t frame) { auto shapes = touch_shapes(m, zone); if(!shapes.empty()) all.emplace_back(std::move(shapes), frame); };
+				auto set = collision_set(c.vm, so), head = set ? safe_u32(m, set + 4) : 0;
+				for(std::uint32_t i = 0; head && i < safe_u32(m, head + 8); ++i)
+					add(find_zone(c.vm, so, 2, i), transform_of(c.vm, so));
+				auto data = actor_part(c.vm, so, actor_field::data_3d);
+				auto list = data ? safe_u32(m, data + 0x10) : 0;
+				if(!target || (list && (m.u8(list + 0xe) & 2)))
+				{
+					std::set<std::uint32_t> seen;
+					bool first = true;
+					for(auto entry = data ? safe_u32(m, data + 0x98) : 0; entry && seen.insert(entry).second; entry = safe_u32(m, entry + 8))
+					{
+						auto part = target || !first ? safe_u32(m, entry + 4) : 0;
+						if(!part) part = safe_u32(m, entry);
+						first = false;
+						if(!(safe_u32(m, part) & 0x18)) continue;
+						auto object = safe_u32(m, part + 4), geometry = object ? safe_u32(m, object + 4) : 0;
+						if(geometry) add(safe_u32(m, geometry + 8), safe_u32(m, part + 0x24));
+					}
+				}
+				return all;
+			};
+			auto source = collect(a, false), target = collect(b, true); auto bits = std::uint16_t(mask.word());
+			auto matches = [&](const touch_shape& shape) {
+				auto mat = shape.material && shape.material != 0xffffffff ? safe_u32(m, shape.material + 0xc) : 0;
+				return !bits || (mat && mat != 0xffffffff && (safe_u16(m, mat + 2) & bits) == bits);
+			};
+			for(const auto& [xs, xf] : source) for(const auto& [ys, yf] : target)
+			{
+				if(bits && std::none_of(ys.begin(), ys.end(), matches)) continue;
+				bool found = false;
+				for(const auto& x : xs)
+				{
+					for(const auto& y : ys) if(touch_overlap(m, x, xf, y, yf))
+					{
+						found = true; if(matches(y)) { result = true; return c.args; } break;
+					}
+					if(found) break;
+				}
+			}
+			return c.args;
+		}
+
+		// 387 (0x4709D0 case 0x183): attach or detach an actor's light.
+		std::uint32_t switch_actor_light(call& c)
+		{
+			value who, off, mode; next_arg(c, who); next_arg(c, off); next_arg(c, mode);
+			auto& m = c.vm.memory(); auto so = super_object_value(c.vm, who);
+			auto actor = c.vm.actor_of(so), light = actor && m.contains(actor + 0x1c, 4) ? m.u32(actor + 0x1c) : 0;
+			if(!light || !m.contains(light, 0x38) || !m.contains(so + 0x30, 4)) return c.args;
+			auto node = m.u32(light + 0x34);
+			if(node && m.contains(node, 0x10))
+			{
+				auto next = m.u32(node + 4), prev = m.u32(node + 8), list = m.u32(node + 0xc);
+				if(next && m.contains(next + 8, 4)) m.write(next + 8, prev);
+				if(prev && m.contains(prev + 4, 4)) m.write(prev + 4, next);
+				if(list && m.contains(list, 12))
+				{
+					if(m.u32(list) == node) m.write(list, next);
+					if(m.u32(list + 4) == node) m.write(list + 4, prev);
+					m.write(list + 8, m.u32(list + 8) - 1);
+				}
+				m.write<std::uint32_t>(node + 4, 0); m.write<std::uint32_t>(node + 8, 0); m.write<std::uint32_t>(node + 0xc, 0);
+				if(!(off.word() & 0xff))
+				{
+					auto sector = c.vm.actor_sector(so);
+					if(!sector) sector = c.vm.sector_at(position_of(c.vm, so));
+					auto data = sector && m.contains(sector + 4, 4) ? m.u32(sector + 4) : 0;
+					if(data && m.contains(data + 0x18, 12))
+					{
+						auto head = data + 0x18, tail = m.u32(head + 4);
+						m.write(node + 8, tail); m.write(node + 0xc, head);
+						if(tail && m.contains(tail + 4, 4)) m.write(tail + 4, node); else m.write(head, node);
+						m.write(head + 4, node); m.write(head + 8, m.u32(head + 8) + 1);
+					}
+				}
+			}
+			auto flags = m.u32(so + 0x30); m.write(so + 0x30, (mode.word() & 0xff) ? flags | 0x20000u : flags & ~0x20000u);
+			m.write<std::uint8_t>(light, (off.word() & 0xff) ? 1 : 0); m.write<std::uint8_t>(light + 1, std::uint8_t(mode.word()));
+			return c.args;
+		}
+
 		// 158 (0x46AB20 case 0x9e, operation 1): copy another actor's part transform.
 		std::uint32_t copy_animation_part(call& c)
 		{
@@ -3493,6 +3697,34 @@ namespace openrayman::game
 				write3(m, t + 0x34 + i * 12, axis);
 			}
 			m.write<std::uint32_t>(t, identity ? 3 : 4); m.write(part + 0x28, c.vm.frame_number());
+			if(m.contains(data + 0xfc)) m.write<std::uint8_t>(data + 0xfc, 1);
+			return c.args;
+		}
+
+		// 217 (0x46AB20 layout 9, operation 10): orient a part toward a direction.
+		std::uint32_t aim_animation_part(call& c)
+		{
+			auto self = c.vm.target(c.self, true); value direction, channel, world;
+			next_arg(c, direction); next_arg(c, channel); auto id = std::uint8_t(channel.word());
+			if(id == 0xff) return c.vm.skip(c.args);
+			next_arg(c, world); auto& m = c.vm.memory();
+			auto data = actor_part(c.vm, self, actor_field::data_3d), table = data ? safe_u32(m, data + 0x90) : 0;
+			auto part = table ? safe_u32(m, table + id * 20u) : 0, t = part ? safe_u32(m, part + 0x24) : 0;
+			if(!t || !m.contains(t, 0x58)) return c.args;
+			vec3 d = vec_of(direction), old_y = read3(m, t + 0x1c), old_z = read3(m, t + 0x28);
+			if(!(world.word() & 0xff))
+			{
+				auto frame = transform_of(c.vm, self);
+				if(frame) d = sub(touch_world(m, frame, d), touch_world(m, frame, {}));
+			}
+			vec3 y = length(d) > 0 ? normalised(vec3{-d[0], -d[1], -d[2]}) : old_y;
+			vec3 reference = old_y;
+			if(std::abs(y[0]) >= 0.001f || std::abs(y[1]) >= 0.001f) reference = {-y[0], -y[1], y[2] + 2};
+			else if(std::abs(old_y[0]) < 0.001f && std::abs(old_y[1]) < 0.001f) reference = old_z;
+			auto right = cross(reference, y); right[2] = 0; auto z = cross(right, y);
+			if((z[2] > 0) != (old_z[2] > 0)) for(auto& x : z) x = -x;
+			auto x = normalised(cross(y, z)); z = normalised(z);
+			set_axes(m, t, x, y, z); m.write(part + 0x28, c.vm.frame_number());
 			if(m.contains(data + 0xfc)) m.write<std::uint8_t>(data + 0xfc, 1);
 			return c.args;
 		}
@@ -3545,6 +3777,76 @@ namespace openrayman::game
 				m.write(part + 0x28, c.vm.frame_number());
 			}
 			if(m.contains(data + 0xFC)) m.write<std::uint8_t>(data + 0xFC, 1);
+			return c.args;
+		}
+
+		// 18 (0x468180 case 0x12 -> 0x483740/0x40DB00): fill a list with
+		// active actors whose positions fall inside a kind-0 region.
+		std::uint32_t actors_in_region(call& c)
+		{
+			value list, number; next_arg(c, list); next_arg(c, number); auto& m = c.vm.memory();
+			auto at = list.word(); if(!at || !m.contains(at, 4)) return c.args;
+			m.write<std::uint8_t>(at, 0); auto capacity = m.u8(at + 1), n = std::uint8_t(number.word());
+			if(!capacity || !n) return c.args;
+			auto self = c.self, zone = find_zone(c.vm, self, 0, n - 1), frame = transform_of(c.vm, self);
+			if(!zone || !frame) return c.args;
+			auto shapes = touch_shapes(m, zone);
+			auto inside = [&](const vec3& p) {
+				for(const auto& shape : shapes)
+					if(shape.kind == 7) { auto d = sub(p, shape.a); if(dot(d,d) <= shape.radius*shape.radius) return true; }
+					else if(shape.kind == 8) {
+						bool hit = true; for(int i=0;i<3;++i) hit &= p[i] >= std::min(shape.a[i],shape.b[i]) && p[i] <= std::max(shape.a[i],shape.b[i]);
+						if(hit) return true;
+					}
+				auto vertices = safe_u32(m, zone), kinds = safe_u32(m, zone + 0x10), elements = safe_u32(m, zone + 0x14);
+				for(unsigned i=0; i<safe_u16(m, zone+0x2e); ++i)
+				{
+					auto kind = safe_i16(m, kinds + 2*i); auto element = safe_u32(m, elements + 4*i);
+					if(kind == 9 && element)
+						for(unsigned j=0; j<safe_u16(m, element+4); ++j)
+						{
+							auto e = safe_u32(m, element) + 12*j; int ai = safe_i16(m,e), bi = safe_i16(m,e+2);
+							if(ai < 0 || bi < 0 || !m.contains(vertices + ai*12, 12) || !m.contains(vertices + bi*12, 12)) continue;
+							auto a = read3(m,vertices+ai*12), b = read3(m,vertices+bi*12), ab = sub(b,a), ap = sub(p,a);
+							float den = dot(ab,ab), t = den ? std::clamp(dot(ap,ab)/den,0.0f,1.0f) : 0, radius = safe_f32(m,e+4);
+							auto d = sub(ap, {ab[0]*t,ab[1]*t,ab[2]*t}); if(dot(d,d) <= radius*radius) return true;
+						}
+					if(kind == 1 && element)
+					{
+						unsigned crossings = 0; auto triangles = safe_u32(m, element+8);
+						for(unsigned j=0; j<safe_u16(m, element+4); ++j)
+						{
+							auto e = triangles + 6*j; int ia=safe_i16(m,e), ib=safe_i16(m,e+2), ic=safe_i16(m,e+4);
+							if(ia<0 || ib<0 || ic<0 || !m.contains(vertices+ia*12,12) || !m.contains(vertices+ib*12,12) || !m.contains(vertices+ic*12,12)) continue;
+							auto a=read3(m,vertices+ia*12), b=read3(m,vertices+ib*12), d=read3(m,vertices+ic*12);
+							float det=(b[0]-a[0])*(d[1]-a[1])-(b[1]-a[1])*(d[0]-a[0]); if(std::abs(det)<1e-9f) continue;
+							float u=((p[0]-a[0])*(d[1]-a[1])-(p[1]-a[1])*(d[0]-a[0]))/det;
+							float v=((b[0]-a[0])*(p[1]-a[1])-(b[1]-a[1])*(p[0]-a[0]))/det;
+							if(u>=0 && v>=0 && u+v<=1 && a[2]+u*(b[2]-a[2])+v*(d[2]-a[2]) >= p[2]) ++crossings;
+						}
+						if(crossings & 1) return true;
+					}
+				}
+				return false;
+			};
+			std::vector<std::uint32_t> sectors; auto sector = c.vm.sector_at(position_of(c.vm, self));
+			if(sector)
+			{
+				sectors.push_back(sector); auto sd = safe_u32(m, sector + 4), link = sd ? safe_u32(m, sd + 0x3c) : 0;
+				for(unsigned i=0; link && i<safe_u32(m, sd+0x44); ++i, link=safe_u32(m,link+4)) sectors.push_back(safe_u32(m,link));
+			}
+			std::vector<std::uint32_t> candidates = c.vm.actors();
+			for(auto so : c.vm.generated().alive()) candidates.push_back(so);
+			unsigned count = 0;
+			for(auto so : candidates)
+			{
+				if(so == self || c.vm.removed(so)) continue;
+				if(!sectors.empty() && std::ranges::find(sectors, c.vm.sector_at(position_of(c.vm,so))) == sectors.end()) continue;
+				auto standard = actor_part(c.vm, so, actor_field::standard_game);
+				if(!standard || !(m.u8(standard+0x29)&4) || !inside(in_frame(m,frame,position_of(c.vm,so)))) continue;
+				if(!m.contains(at+4+count*4, 4)) break;
+				m.write(at+4+count*4, so); m.write<std::uint8_t>(at, std::uint8_t(++count)); if(count == capacity) break;
+			}
 			return c.args;
 		}
 
@@ -4487,6 +4789,30 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 14/16 (0x472450 cases 0xE/0x10): set transparency on an animation part.
+		std::uint32_t part_transparency(call& c)
+		{
+			value channel, setting; next_arg(c, channel); next_arg(c, setting);
+			auto& m = c.vm.memory(); auto self = c.vm.target(c.self, true);
+			auto data = actor_part(c.vm, self, actor_field::data_3d);
+			auto table = data ? safe_u32(m, data + 0x90) : 0;
+			auto part = table ? safe_u32(m, table + (channel.word() & 0xffffu) * 20) : 0;
+			if(!part || !m.contains(part + 0x38, 4)) return c.args;
+			if(c.index == 14)
+			{
+				auto flags = safe_u32(m, self + 0x2c);
+				if(setting.word() == 0) { flags |= 8; m.write(part + 0x30, m.u32(part + 0x30) & ~0x10000u); }
+				else flags &= ~8u;
+				m.write(part + 0x2c, flags);
+			}
+			else
+			{
+				m.write(part + 0x30, m.u32(part + 0x30) | 0x10000u);
+				m.write<float>(part + 0x38, std::clamp(setting.as_float(), 0.0f, 255.0f));
+			}
+			return c.args;
+		}
+
 		// 13 (0x472D60): bit n (0..31) of an actor's draw flags: 0 clears, 1 sets, 2 flips. Kept in
 		// the super object (+0x2C) and the 3D data (+0xE8).
 		std::uint32_t draw_flag(call& c)
@@ -4698,16 +5024,10 @@ namespace openrayman::game
 			return c.args;
 		}
 
-		// 135 (0x4697D0 -> 0x432EE0): integrate a degrees-per-second turn.
-		std::uint32_t spin_dynamics(call& c)
+		// 0x432EE0: rotate the dynamics matrix and publish it to our actor transform.
+		void turn_dynamics(interpreter& vm, std::uint32_t self, std::uint32_t base, float angle)
 		{
-			auto self = c.vm.target(c.self, true);
-			value speed; next_arg(c, speed);
-			auto base = dynamics_base(c, self, 0x128);
-			auto& m = c.vm.memory();
-			if(!base || (m.u32(base + 0xC) & 0x80)) return c.args;
-			float angle = speed.as_float() * float(c.vm.frame_ms()) * (0.0174532925199433f / 1000.0f);
-			if(angle == 0) return c.args;
+			auto& m = vm.memory(); if(!base || (m.u32(base + 0xc) & 0x80) || angle == 0) return;
 			auto t = base + 0xD0;
 			vec3 x = read3(m, t + 0x10), y = read3(m, t + 0x1C), z = read3(m, t + 0x28);
 			if(m.u32(t) < 3) { x = {1,0,0}; y = {0,1,0}; z = {0,0,1}; m.write<std::uint32_t>(t, 1); }
@@ -4724,6 +5044,43 @@ namespace openrayman::game
 			}
 			set_axes(m, t, x, y, z);
 			// Our mechanics publishes the actor transform directly instead of base +0xD0.
+			if(auto transform = transform_of(vm, self)) set_axes(m, transform, x, y, z);
+		}
+
+		// 135 (0x4697D0 -> 0x432EE0): integrate a degrees-per-second turn.
+		std::uint32_t spin_dynamics(call& c)
+		{
+			auto self = c.vm.target(c.self, true); value speed; next_arg(c, speed);
+			auto base = dynamics_base(c, self, 0x128);
+			turn_dynamics(c.vm, self, base, speed.as_float() * float(c.vm.frame_ms()) * (0.0174532925199433f / 1000.0f));
+			return c.args;
+		}
+
+		// 415/416 (0x471570 cases 0x19f/0x1a0 -> 0x432EE0): turn toward a world point.
+		std::uint32_t turn_toward_point(call& c)
+		{
+			auto self = c.vm.target(c.self, true); value point, speed; next_arg(c, point); next_arg(c, speed);
+			auto& m = c.vm.memory(); auto t = transform_of(c.vm, self); auto base = dynamics_base(c, self, 0x128);
+			if(!t || !base) return c.args;
+			auto p = in_frame(m, t, vec_of(point)); float planar = std::hypot(p[0], p[1]);
+			if(planar == 0) return c.args;
+			float yaw = std::acos(std::clamp(-p[1] / planar, -1.0f, 1.0f));
+			float cap = std::abs(speed.as_float()) * 0.0174532925199433f;
+			if(c.index == 416) cap *= float(c.vm.frame_ms()) * 0.001f;
+			yaw = std::min(yaw, cap); if(p[0] < 0) yaw = -yaw;
+			turn_dynamics(c.vm, self, base, yaw); return c.args;
+		}
+
+		// 138 (0x472100 case 0x8A -> 0x433020): face the other actor.
+		std::uint32_t face_actor(call& c)
+		{
+			auto self = c.vm.target(c.self, true); value v; next_arg(c, v); auto other = super_object_value(c.vm, v);
+			auto& m = c.vm.memory(); auto base = dynamics_base(c, self, 0x128);
+			if(!other || !base || (m.u32(base + 0xc) & 0x80)) return c.args;
+			auto direction = sub(position_of(c.vm, other), position_of(c.vm, self));
+			if(length(direction) == 0) return c.args;
+			auto t = base + 0xd0; auto z = read3(m, t + 0x28); auto y = normalised(vec3{-direction[0], -direction[1], -direction[2]});
+			auto x = cross(y, z); y = cross(z, x); set_axes(m, t, x, y, z);
 			if(auto transform = transform_of(c.vm, self)) set_axes(m, transform, x, y, z);
 			return c.args;
 		}
@@ -5430,6 +5787,50 @@ namespace openrayman::game
 				axes[j][std::size_t(k)] = w[std::size_t(k)] * cs - u[std::size_t(k)] * sn;
 			}
 			set_axes(m, t, axes[0], axes[1], axes[2]);
+			return c.args;
+		}
+
+		// 168..170 and 221..223 (0x46AB20, layouts 7/10, operations 8/14):
+		// rotate about a local axis, optionally keeping a local pivot in place.
+		std::uint32_t rotate_local_pivot_or_part(call& c)
+		{
+			auto self = c.vm.target(c.self, true); auto& m = c.vm.memory();
+			value angle, pivot, channel; bool part_rotation = c.index >= 221;
+			std::uint32_t part = 0, data = 0;
+			if(part_rotation)
+			{
+				next_arg(c, channel); auto id = std::uint8_t(channel.word());
+				if(id == 0xff) return c.vm.skip(c.args);
+				next_arg(c, angle);
+				data = actor_part(c.vm, self, actor_field::data_3d);
+				auto table = data ? safe_u32(m, data + 0x90) : 0;
+				part = table ? safe_u32(m, table + id * 20u) : 0;
+				if(!part) return c.args;
+			}
+			else { next_arg(c, angle); next_arg(c, pivot); }
+			auto t = part_rotation ? safe_u32(m, part + 0x24) : transform_of(c.vm, self);
+			if(!t || !m.contains(t, 0x58)) return c.args;
+			vec3 axes[3] = { read3(m, t + 0x10), read3(m, t + 0x1c), read3(m, t + 0x28) };
+			const vec3 previous[3] = {axes[0], axes[1], axes[2]};
+			auto before = part_rotation ? vec3{} : touch_world(m, t, vec_of(pivot));
+			unsigned axis = c.index - (part_rotation ? 221 : 168);
+			float a = angle.as_float() * 0.01745329252f, cs = std::cos(a), sn = std::sin(a);
+			if(axis == 1) sn = -sn;
+			auto i = (axis + 1) % 3, j = (axis + 2) % 3;
+			auto u = axes[i], v = axes[j];
+			for(unsigned k = 0; k < 3; ++k) { axes[i][k] = cs*u[k] + sn*v[k]; axes[j][k] = cs*v[k] - sn*u[k]; }
+			set_axes(m, t, axes[0], axes[1], axes[2]);
+			if(part_rotation)
+			{
+				m.write(part + 0x28, c.vm.frame_number());
+				if(m.contains(data + 0xfc)) m.write<std::uint8_t>(data + 0xfc, 1);
+			}
+			else
+			{
+				auto after = touch_world(m, t, vec_of(pivot)), shift = sub(before, after), at = read3(m, t + 4);
+				write3(m, t + 4, {at[0]+shift[0], at[1]+shift[1], at[2]+shift[2]});
+				queue_pivot_shift(c, self, shift, previous);
+			}
 			return c.args;
 		}
 
@@ -6142,6 +6543,16 @@ namespace openrayman::game
 				} };
 		}
 
+		// Meta 3 (0x481120 / 0x48CDA0): wait for the current animation pass.
+		meta_handler wait_animation_pass()
+		{
+			return { [](call& c, std::uint32_t) { return c.args; },
+				[](interpreter& vm, std::uint32_t self, std::uint32_t) -> std::uint8_t {
+					auto data = actor_part(vm, self, actor_field::data_3d);
+					return data && vm.memory().u8(data + data_3d::reached_end) ? flow::done : flow::stop;
+				} };
+		}
+
 		meta_handler wait_animation()
 		{
 			// 2: wait for the current animation to end.
@@ -6439,6 +6850,7 @@ namespace openrayman::game
 		vm.on_condition(66, collision_event_flag);
 		vm.on_procedure(157, place_self);
 		vm.on_procedure(135, spin_dynamics);
+		vm.on_procedure(138, face_actor); vm.on_procedure(415, turn_toward_point); vm.on_procedure(416, turn_toward_point);
 		vm.on_procedure(136, turn_by);
 		vm.on_procedure(81, start_over);
 		vm.on_procedure(79, restart_level);
@@ -6579,8 +6991,11 @@ namespace openrayman::game
 		vm.on_condition(15, zones_overlap);
 		vm.on_condition(19, zone_touches_actor);
 		vm.on_condition(20, zone_touches_actor);
+		vm.on_condition(22, actors_touch); vm.on_condition(24, actors_touch);
 		vm.on_procedure(158, copy_animation_part);
 		vm.on_procedure(231, scale_animation_part);
+		vm.on_procedure(18, actors_in_region);
+		vm.on_procedure(217, aim_animation_part);
 		vm.on_procedure(218, place_animation_part);
 		vm.on_procedure(219, place_animation_part);
 		for(std::uint32_t i = 232; i <= 234; i++)
@@ -6595,6 +7010,7 @@ namespace openrayman::game
 		vm.on_procedure(37, list_drop);
 		vm.on_procedure(11, transparency_on);
 		vm.on_procedure(12, transparency_level);
+		vm.on_procedure(14, part_transparency); vm.on_procedure(16, part_transparency);
 		vm.on_procedure(13, draw_flag);
 		vm.on_procedure(94, set_object_list);
 		vm.on_procedure(160, shift_self);
@@ -6627,7 +7043,7 @@ namespace openrayman::game
 		for(std::uint32_t i = 102; i <= 107; i++)
 			vm.on_function(i, gauge_function);
 
-		for(std::uint32_t i = 56; i <= 58; ++i) vm.on_procedure(i, wave_settings);
+		for(std::uint32_t i = 56; i <= 59; ++i) vm.on_procedure(i, wave_settings);
 		vm.on_procedure(2, restore_health);
 		vm.on_procedure(64, enable_action);
 		vm.on_procedure(65, enable_action);
@@ -6642,6 +7058,13 @@ namespace openrayman::game
 		vm.on_function(208, contact_actor_208);
 		vm.on_procedure(422, sound_factor);
 		vm.on_procedure(423, sound_factor);
+		vm.on_procedure(424, sound_factor);
+		vm.on_procedure(60, line_wave); vm.on_procedure(61, line_wave);
+		vm.on_procedure(355, empty_procedure); // 0x472F90: empty handler
+		vm.on_procedure(407, freeze_animation);
+		vm.on_procedure(387, switch_actor_light); vm.on_procedure(388, store_level_word); vm.on_procedure(83, select_main_actor);
+		vm.on_procedure(441, wave_snapshot); vm.on_procedure(442, wave_snapshot);
+		vm.on_function(275, bitwise_puzzle); vm.on_function(277, bitwise_puzzle);
 		// 256 (0x47ABA0 case 0x100 -> 0x453680): channel 1 group volume.
 		vm.on_function(256, [](call& c, value& out) { out = value::integer(int(c.vm.script_volume[1])); return c.args; });
 
@@ -6724,12 +7147,15 @@ namespace openrayman::game
 			vm.on_procedure(i, rotate_local);
 		vm.on_procedure(166, rotate_about_axis);
 		vm.on_procedure(167, rotate_about_axis);
+		for(unsigned i = 168; i <= 170; ++i) vm.on_procedure(i, rotate_local_pivot_or_part);
+		for(unsigned i = 221; i <= 223; ++i) vm.on_procedure(i, rotate_local_pivot_or_part);
 		vm.on_procedure(173, set_scale);
 		vm.on_procedure(235, clear_contacts);
 		vm.on_procedure(236, clear_contacts);
 		vm.on_meta_action(0, wait_time());
 		vm.on_meta_action(1, change_state_and_wait());
 		vm.on_meta_action(2, wait_animation());
+		vm.on_meta_action(3, wait_animation_pass());
 		vm.on_procedure(174, set_custom_bits);
 		vm.on_procedure(351, set_array_bit);
 		for(std::uint32_t i : { 343, 344, 345 })
@@ -6763,6 +7189,7 @@ namespace openrayman::game
 			vm.on_procedure(i, set_camera_fixed_vector);
 		vm.on_procedure(444, camera_commit);
 		vm.on_procedure(467, set_camera_target);
+		vm.on_procedure(468, set_camera_second_target);
 		vm.on_procedure(159, start_camera_points);
 		vm.on_procedure(491, set_camera_setting);
 		vm.on_procedure(492, camera_settings_copy);

@@ -155,6 +155,8 @@ namespace openrayman::game
 		// For handlers.
 		live_memory& memory() { return m_memory; }
 		std::uint32_t main_actor() const { return m_main_actor; }
+		void request_main_actor(std::uint32_t so) { pending_main_actor = so; }
+		void apply_pending_main_actor() { if(pending_main_actor) { m_main_actor = pending_main_actor; pending_main_actor = 0; } }
 		// The game's clock in milliseconds (0x5003EC), which timers in scripts compare against.
 		std::uint32_t clock() const { return m_clock; }
 		// Native frame counter 0x5003E4, used by condition 56.
@@ -235,6 +237,7 @@ namespace openrayman::game
 		std::vector<sound_request> take_sounds() { return std::exchange(m_sounds, {}); }
 		// Sound channel factors and group volume (422, 423, 256); playback integration pending.
 		std::map<std::uint32_t, std::int32_t> sound_channel_0_factors;
+		std::optional<std::int32_t> sound_channel_0_factor;
 		std::optional<std::int32_t> sound_channel_1_factor;
 		bool stop_sounds_requested = false; // 0x406490: stop the playback group on return
 		// The on-screen text the scripts fill (procedures 505..507), still to be drawn.
@@ -319,9 +322,19 @@ namespace openrayman::game
 		bool display_save_requested = false;
 
 		// Wave globals (procedures 56..58); rendering does not yet consume these.
+		std::array<std::uint32_t, 3> line_wave_scale{}, line_wave_offset{};
 		std::array<std::int32_t, 3> wave_speed{};
 		std::array<float, 3> wave_amplitude{};
 		std::uint8_t wave_mode = 0, wave_flags = 0;
+		std::array<std::uint32_t, 3> wave_phase{}, wave_extra{};
+		std::uint32_t wave_extra_word = 0;
+		struct wave_snapshot {
+			std::array<std::int32_t, 3> speed{};
+			std::array<float, 3> amplitude{};
+			std::array<std::uint32_t, 3> phase{}, extra{};
+			std::uint32_t extra_word = 0;
+			std::uint8_t mode = 0, flags = 0;
+		} saved_wave;
 		// Script-controlled executable globals; audio and rendering consumers are not yet connected.
 		std::array<std::uint32_t, 2> script_volume{127, 127};
 		std::uint8_t scripted_camera = 0, random_level_choice = 0;
@@ -490,7 +503,7 @@ namespace openrayman::game
 		void note_missing(const char* kind, std::uint32_t index);
 
 		live_memory& m_memory;
-		std::uint32_t m_main_actor = 0;
+		std::uint32_t m_main_actor = 0, pending_main_actor = 0;
 		std::map<std::uint32_t, condition_handler> m_conditions;
 		std::map<std::uint32_t, function_handler> m_functions;
 		std::map<std::uint32_t, procedure_handler> m_procedures;

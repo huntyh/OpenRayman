@@ -14,6 +14,45 @@ image; offsets are from the start of each structure.
 
 Where this came from: own reading of the executable, guided by helper notes:
 
+- Procedure 239 (0x469960, case 0xEF): inserts a byte into an existing string; an invalid index skips its character argument.
+- Procedure 441 (0x4720E0, case 0x1B9): snapshots the wave globals.
+- Procedure 442 (0x4720E0, case 0x1BA): restores the wave snapshot.
+- Procedure 221 (0x46AB20, layout 10, operation 14): rotates a part around its local X axis.
+- Procedure 222 (0x46AB20, layout 10, operation 14): rotates a part around its local Y axis.
+- Procedure 223 (0x46AB20, layout 10, operation 14): rotates a part around its local Z axis.
+- Procedure 83 (0x467970, case 0x53): queues a new main actor for the next actor frame.
+- Procedure 168 (0x46AB20, layout 7, operation 8): rotates around local X while keeping a local pivot fixed.
+- Procedure 169 (0x46AB20, layout 7, operation 8): rotates around local Y while keeping a local pivot fixed.
+- Procedure 170 (0x46AB20, layout 7, operation 8): rotates around local Z while keeping a local pivot fixed.
+- Procedure 415 (0x471570, case 0x19F): turns toward a world point by a bounded angle.
+- Procedure 416 (0x471570, case 0x1A0): turns toward a world point at a bounded rate.
+- Procedure 387 (0x4709D0, case 0x183): switches an actor light and its sector-list membership.
+- Procedure 138 (0x472100, case 0x8A): turns the dynamics orientation toward another actor.
+- Procedure 18 (0x468180, case 0x12): fills a list with active actors inside a kind-0 region.
+- Procedure 217 (0x46AB20, layout 9, operation 10): aims an animation part's negative Y axis along a direction.
+- Procedure 468 (0x47E2E0): sets the camera's second target and blend word.
+- Procedure 388 (0x470B20, case 0x184): writes the second argument's low byte as a dword at the first argument's address.
+- Function 258 (0x47ABF0 -> 0x404E20): tests whether a save slot has a nonblank name.
+- Function 92 (0x47D830, case 0x5C): deletes a save slot and clears the current slot when selected.
+- Condition 22 (0x489EE0, case 0x16 -> 0x40D570): tests active actor collision shapes for overlap.
+- Condition 24 (0x489EE0, case 0x18 -> 0x40D570): tests overlap with a material mask on the second actor.
+
+Procedure 18 checks actors in the current and neighbouring sectors using live sector positions; its candidate order and triangle boundary handling can differ from the executable's sector lists. Conditions 22 and 24 test the sphere and box elements handled by 0x48F610. Procedure 468 blends the aim and offset points, but the camera solver does not yet reproduce its second-target direction mode. Light state and linked lists are updated; the renderer's reconstructed light collection may not reflect every change. Save slots use three numbered directories and compact by moving the last occupied slot into the deleted slot.
+
+- Procedure 14 (0x472450, case 0xE): sets an animation part transparency flag.
+- Procedure 16 (0x472450, case 0x10): sets an animation part transparency level.
+- Procedure 355 (0x472F90): empty handler.
+- Procedure 407 (0x471780, case 0x197): freezes the target animation.
+- Procedure 59 (0x472A00, case 0x3B): sets three wave speeds.
+- Procedure 60 (0x472B00, case 0x3C): stores three line-wave scale words.
+- Procedure 61 (0x472B00, case 0x3D): stores three line-wave offset words.
+- Procedure 424 (0x471D10, case 0x1A8): sets the default channel 0 sound factor.
+- Function 275 (0x47B170, case 0x113): bitwise XOR.
+- Function 277 (0x47B170, case 0x115): bitwise OR.
+- Meta-action 3 (0x481120 / 0x48CDA0): waits for the current animation pass to end.
+
+Line-wave settings and the channel 0 factor are retained but not yet applied to rendering or audio. Functions 275 and 277 do not advance the executable's weather random seed.
+
 - Procedure 140 (0x467850, case 0x8C): removes the actor held by a typed variable, signals 3 if it is the running actor, and clears the variable after removal.
 - Procedure 365 (0x46FF90, case 0x16D): captures channel 1's current sound descriptor in replay slot 0 after evaluating its argument. OpenRayman tracks script, level-start and sector requests as event IDs and exposes replay, but the executable's mode-7 replay trigger is not yet wired.
 

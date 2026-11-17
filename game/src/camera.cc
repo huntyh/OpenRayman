@@ -782,13 +782,22 @@ namespace openrayman::game
 		if(target_transform)
 			aim = add(have_tracked_position && !(flags_72 & 0x2) && !(m.u8(cam + 0x74) & 0x2) ? tracked_position : read3(m, target_transform + 4), rotate(m, target_transform, read3(m, block + camera_field::vector_b)));
 
+		// 0x483F90: blend the two tracked points when procedure 468 supplies a second target.
+		auto second = m.u32(block + 0x6c);
+		auto second_transform = second ? global_transform(m, second) : 0;
+		if(target_transform && second_transform)
+		{
+			auto second_point = add(read3(m, second_transform + 4), rotate(m, second_transform, read3(m, block + camera_field::vector_b)));
+			aim = add(aim, mul(sub(second_point, aim), m.f32(cam + 0x58)));
+		}
+
 		// The offset point (0x4840A0): vector A from the aim point, in the target's orientation, or
 		// the vector a script fixed in the camera object (495).
 		vec3 off{};
 		if(flags_72 & fixed_vector_a)
 			off = read3(m, cam + camera_object_field::vectors);
 		else if(target_transform)
-			off = add(aim, rotate(m, target_transform, read3(m, block + camera_field::vector_a)));
+			off = second_transform ? aim : add(aim, rotate(m, target_transform, read3(m, block + camera_field::vector_a)));
 
 		if(offset_only) { state.off = off; return; }
 

@@ -402,3 +402,26 @@ TEST_CASE("autosave preference is asked once, persists both choices and fades th
 	CHECK(game::saving_alpha(session) == 0);
 	std::filesystem::remove_all(root);
 }
+
+TEST_CASE("real data: slot occupancy and deletion use the selected save root")
+{
+ auto dir = real_game_dir(); if(!dir) return;
+ auto data = game_data::locate(*dir); REQUIRE(data);
+ auto files = load_level_files(*data,"Menu"); auto header = read_level_header(files); scene tree(files.memory,header);
+ game::live_memory memory(files.memory); game::interpreter vm(memory,header.main_actor->address()); game::register_handlers(vm);
+ auto root = game::save_root() / ("slot-handler-test-" + std::to_string(std::random_device{}()));
+ game::write_save_slot(root,*dir,2,{}, {}, "ABC",0); vm.save_folder=root.string();
+ auto session=std::make_shared<game::save_session>(); session->slot=2;
+ game::install_save_handlers(vm,files,header,tree,*dir,session);
+ auto script=memory.allocate(24); memory.write<std::uint8_t>(script+7,std::uint8_t(node_type::function));
+ memory.write<std::uint32_t>(script+8,2); memory.write<std::uint8_t>(script+14,1); memory.write<std::uint8_t>(script+15,std::uint8_t(node_type::integer));
+ auto invoke=[&](unsigned id) { memory.write(script,id); game::value out; vm.eval(header.main_actor->address(),script,out); return out.as_int(); };
+ CHECK(invoke(258)==1); CHECK(invoke(92)==1); CHECK(session->slot==0); CHECK(invoke(258)==0);
+ CHECK_FALSE(std::filesystem::exists(root/"Slot2"));
+ game::write_save_slot(root,*dir,1,{}, {}, "ONE",0); game::write_save_slot(root,*dir,3,{}, {}, "THR",0);
+ REQUIRE(game::write_autosave(root,3,true)); memory.write<std::uint32_t>(script+8,1);
+ CHECK(invoke(92)==1); CHECK(invoke(258)==1); CHECK_FALSE(std::filesystem::exists(root/"Slot3"));
+ std::ifstream name(root/"Slot1"/"slot.txt"); std::string text; std::getline(name,text); name.close(); CHECK(text=="THR");
+ CHECK(game::read_autosave(root,1)==true); CHECK_FALSE(game::read_autosave(root,3));
+ std::filesystem::remove_all(root);
+}

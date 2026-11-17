@@ -1488,6 +1488,9 @@ TEST_CASE("conditions 19 and 20 test kind-2 zones, material masks and the target
 	CHECK_FALSE(test(19, 1, 0));
 	f.m.write<std::uint8_t>(standard + 0x29, 4);
 	CHECK(test(19, 1, 0)); CHECK(test(19, 1, 5)); CHECK_FALSE(test(19, 1, 3));
+	CHECK(f.condition(22, {f.me(), f.object(other)}));
+	CHECK(f.condition(24, {f.me(), f.object(other), f.integer(5)}));
+	CHECK_FALSE(f.condition(24, {f.me(), f.object(other), f.integer(2)}));
 	CHECK_FALSE(test(19, 0, 0)); CHECK_FALSE(test(19, 2, 0));
 	f.m.write<std::uint32_t>(f.collision + 0x34, 2); CHECK_FALSE(test(19, 1, 0));
 	f.m.write<std::uint32_t>(f.collision + 0x34, 1);
@@ -5167,4 +5170,126 @@ TEST_CASE("batch 23 frame invalidation and part transforms")
 	f.procedure(231, {f.integer(1), game::value::vector(2, 3, 4)});
 	CHECK(f.m.u32(transform) == 4); CHECK(f.m.f32(transform + 0x34) == 2);
 	CHECK(f.m.f32(transform + 0x44) == 3); CHECK(f.m.f32(transform + 0x54) == 4);
+}
+
+TEST_CASE("batch four wave, sound and integer handlers")
+{
+ handler_fixture f;
+ f.procedure(59, {f.integer(-2), f.integer(3), f.integer(65535)});
+ CHECK(f.vm.wave_speed[0] == -2); CHECK(f.vm.wave_speed[2] == -1);
+ f.procedure(60, {f.integer(1), f.integer(2), f.integer(3)});
+ f.procedure(61, {f.integer(4), f.integer(5), f.integer(6)});
+ CHECK(f.vm.line_wave_scale[1] == 2); CHECK(f.vm.line_wave_offset[2] == 6);
+ CHECK(f.function(275, {f.integer(5), f.integer(3)}).as_int() == 6);
+ CHECK(f.function(277, {f.integer(5), f.integer(3)}).as_int() == 7);
+ f.procedure(424, {f.integer(42)}); REQUIRE(f.vm.sound_channel_0_factor); CHECK(*f.vm.sound_channel_0_factor == 42);
+ f.procedure(424, {f.integer(127)}); CHECK_FALSE(f.vm.sound_channel_0_factor);
+ f.procedure(355, {});
+}
+
+TEST_CASE("part transparency uses target flags and channel entry")
+{
+ handler_fixture f;
+ auto data = f.m.u32(f.actor); auto table = f.m.allocate(40); auto part = f.m.allocate(0x40);
+ f.m.write(data + 0x90, table); f.m.write(table + 20, part);
+ f.m.write<std::uint32_t>(f.so + 0x2c, 0x20);
+ f.m.write<std::uint32_t>(part + 0x30, 0x10000);
+ f.procedure(14, {f.integer(1), f.integer(0)});
+ CHECK(f.m.u32(part + 0x2c) == 0x28); CHECK(f.m.u32(part + 0x30) == 0);
+ f.procedure(16, {f.integer(1), f.integer(300)});
+ CHECK(f.m.f32(part + 0x38) == doctest::Approx(255)); CHECK((f.m.u32(part + 0x30) & 0x10000) != 0);
+}
+
+TEST_CASE("batch four snapshots, level words and pending player")
+{
+ handler_fixture f;
+ f.vm.wave_speed = {1,2,3}; f.vm.wave_amplitude = {4,5,6}; f.vm.wave_phase = {7,8,9};
+ f.vm.wave_extra = {10,11,12}; f.vm.wave_extra_word = 13; f.vm.wave_mode = 14; f.vm.wave_flags = 3;
+ f.procedure(441, {}); f.vm.wave_speed = {}; f.vm.wave_amplitude = {}; f.vm.wave_phase = {}; f.vm.wave_extra = {};
+ f.vm.wave_extra_word = 0; f.vm.wave_mode = 0; f.vm.wave_flags = 0;
+ f.procedure(442, {}); CHECK(f.vm.wave_speed[2] == 3); CHECK(f.vm.wave_amplitude[1] == doctest::Approx(5));
+ CHECK(f.vm.wave_phase[2] == 9); CHECK(f.vm.wave_extra[0] == 10); CHECK(f.vm.wave_extra_word == 13);
+ CHECK(f.vm.wave_mode == 14); CHECK(f.vm.wave_flags == 3);
+ auto word = f.m.allocate(4); f.procedure(388, {f.integer(word), f.integer(0x1234)}); CHECK(f.m.u32(word) == 0x34);
+ auto so = f.m.allocate(0x48), actor = f.m.allocate(0x38); f.m.write<std::uint32_t>(so, 2); f.m.write(so+4, actor);
+ f.procedure(83, {f.object(so)}); CHECK(f.vm.main_actor() == f.so); f.vm.apply_pending_main_actor(); CHECK(f.vm.main_actor() == so);
+}
+
+TEST_CASE("batch four rotations preserve pivot and select part")
+{
+ handler_fixture f; auto t = f.m.allocate(0x58); f.m.write(f.so+0x24,t); affine identity; game::set_global_placement(f.m,f.so,identity);
+ f.procedure(170, {f.integer(90), game::value::vector(1,0,0)});
+ CHECK(f.m.f32(t+4) == doctest::Approx(1)); CHECK(f.m.f32(t+8) == doctest::Approx(-1));
+ auto part = f.m.allocate(0x48), pt = f.m.allocate(0x58), table = f.m.allocate(20);
+ f.m.write(f.data+0x90,table); f.m.write(table,part); f.m.write(part+0x24,pt); game::set_global_placement(f.m,part,identity);
+ f.procedure(221, {f.integer(0), f.integer(90)});
+ CHECK(f.m.f32(pt+0x20) == doctest::Approx(0)); CHECK(f.m.f32(pt+0x24) == doctest::Approx(1));
+ CHECK(f.m.u8(f.data+0xfc) == 1);
+ f.procedure(217, {game::value::vector(1,0,0), f.integer(0), f.integer(1)});
+ CHECK(f.m.f32(pt+0x1c) == doctest::Approx(-1));
+}
+
+TEST_CASE("batch four camera second target and text insertion")
+{
+ handler_fixture f; auto cam=f.m.allocate(0x80), blocks=f.m.allocate(4*0x7c);
+ f.m.write(f.actor+0x10,cam); for(unsigned i=0;i<4;++i) f.m.write(cam+4*i,blocks+0x7c*i);
+ f.m.write(blocks+0x68,f.so);
+ f.procedure(468,{f.integer(0),f.integer(-1),f.me(),game::value::real(0.3f)});
+ for(unsigned i=1;i<4;++i) CHECK(f.m.u32(blocks+i*0x7c+0x6c)==f.so);
+ CHECK(f.m.f32(cam+0x58)==doctest::Approx(0.3));
+ game::register_dialog_handlers(f.vm);
+ game::set_dialog_resolver(f.vm, [](int id) -> std::optional<std::string> { return id == 1 ? std::optional<std::string>("7") : std::nullopt; });
+ auto id = game::value::of(game::value_type::id,1);
+ f.procedure(239,{id,f.integer(0),f.integer('0')});
+ CHECK(game::resolve_dialog_value(f.vm,id).value_or("") == "07");
+ f.procedure(239,{id,f.integer(2),f.integer('1')});
+ CHECK(game::resolve_dialog_value(f.vm,id).value_or("") == "07");
+}
+
+TEST_CASE("batch four region and dynamics queries")
+{
+ handler_fixture f; auto t=f.m.allocate(0x58), tb=f.m.allocate(0x58);
+ auto other=f.m.allocate(0x48), actor=f.m.allocate(0x38), standard=f.m.allocate(0x34);
+ f.m.write(f.so+0x24,t); f.m.write<std::uint32_t>(other,2); f.m.write(other+4,actor); f.m.write(other+0x24,tb);
+ f.m.write(actor+4,standard); f.m.write<std::uint8_t>(standard+0x29,4);
+ affine identity; game::set_global_placement(f.m,f.so,identity); game::set_global_placement(f.m,other,identity);
+ auto head=f.m.allocate(12), link=f.m.allocate(8), zone=f.m.allocate(0x30), vertices=f.m.allocate(12);
+ auto kinds=f.m.allocate(2), elements=f.m.allocate(4), element=f.m.allocate(8), sphere=f.m.allocate(12), list=f.m.allocate(12);
+ f.m.write(f.collision,head); f.m.write(head,link); f.m.write<std::uint32_t>(head+8,1); f.m.write(link+4,zone); f.m.write<std::uint32_t>(f.collision+0x2c,1);
+ f.m.write(zone,vertices); f.m.write(zone+0x10,kinds); f.m.write(zone+0x14,elements); f.m.write<std::uint16_t>(zone+0x2e,1);
+ f.m.write<std::uint16_t>(kinds,7); f.m.write(elements,element); f.m.write(element,sphere); f.m.write<std::uint16_t>(element+4,1); f.m.write<float>(sphere,2);
+ f.m.write<std::uint8_t>(list+1,2); f.vm.set_actors({f.so,other}); f.m.write<std::uint32_t>(f.collision+0x30,1);
+ f.procedure(18,{f.integer(list),f.integer(1)}); CHECK(f.m.u8(list)==1); CHECK(f.m.u32(list+4)==other);
+ f.m.write<float>(tb+4,3); f.procedure(18,{f.integer(list),f.integer(1)}); CHECK(f.m.u8(list)==0);
+ f.m.write<std::uint32_t>(f.base+0xd0,1);
+ f.procedure(415,{game::value::vector(3,0,0),f.integer(45)});
+ CHECK(f.m.f32(f.base+0xe0)==doctest::Approx(std::sqrt(0.5f)));
+ f.m.write<std::uint32_t>(f.base+0xc,0x80); auto x=f.m.f32(f.base+0xe0);
+ f.procedure(416,{game::value::vector(-3,0,0),f.integer(180)}); CHECK(f.m.f32(f.base+0xe0)==x);
+}
+
+TEST_CASE("batch four light detach updates flags and links")
+{
+ handler_fixture f; auto light=f.m.allocate(0x38), node=f.m.allocate(0x10), list=f.m.allocate(12);
+ f.m.write(f.actor+0x1c,light); f.m.write(light+0x34,node); f.m.write(node+0xc,list);
+ f.m.write(list,node); f.m.write(list+4,node); f.m.write<std::uint32_t>(list+8,1);
+ f.procedure(387,{f.me(),f.integer(1),f.integer(1)});
+ CHECK(f.m.u32(list)==0); CHECK(f.m.u32(list+8)==0); CHECK(f.m.u8(light)==1);
+ CHECK(f.m.u8(light+1)==1); CHECK((f.m.u32(f.so+0x30)&0x20000)!=0);
+}
+
+TEST_CASE("batch four collision boxes overlap after transformation")
+{
+ handler_fixture f; auto head=f.m.allocate(12), link=f.m.allocate(8), zone=f.m.allocate(0x30), vertices=f.m.allocate(24);
+ auto kinds=f.m.allocate(2), elements=f.m.allocate(4), element=f.m.allocate(8), box=f.m.allocate(8);
+ f.m.write(f.collision+4,head); f.m.write(head,link); f.m.write<std::uint32_t>(head+8,1); f.m.write(link+4,zone);
+ f.m.write<std::uint32_t>(f.collision+0x34,1); f.m.write(zone,vertices); f.m.write(zone+0x10,kinds); f.m.write(zone+0x14,elements);
+ f.m.write<std::uint16_t>(zone+0x2e,1); f.m.write<std::uint16_t>(kinds,8); f.m.write(elements,element); f.m.write(element,box);
+ f.m.write<std::uint16_t>(element+4,1); f.m.write<std::uint16_t>(box+2,1);
+ f.m.write(vertices,vec3{-1,-1,-1}); f.m.write(vertices+12,vec3{1,1,1});
+ auto other=f.m.allocate(0x48), actor=f.m.allocate(0x38), standard=f.m.allocate(0x34), ta=f.m.allocate(0x58), tb=f.m.allocate(0x58);
+ f.m.write(f.so+0x24,ta); f.m.write<std::uint32_t>(other,2); f.m.write(other+4,actor); f.m.write(other+0x24,tb);
+ f.m.write(actor+4,standard); f.m.write(actor+0x14,f.collision); f.m.write<std::uint8_t>(standard+0x29,4);
+ affine identity; game::set_global_placement(f.m,f.so,identity); game::set_global_placement(f.m,other,identity);
+ CHECK(f.condition(22,{f.me(),f.object(other)})); f.m.write<float>(tb+4,3); CHECK_FALSE(f.condition(22,{f.me(),f.object(other)}));
 }

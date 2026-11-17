@@ -667,6 +667,7 @@ namespace openrayman::game
 			think(self);
 			advance(self);
 		};
+		vm.apply_pending_main_actor();
 		vm.update_activation(super_objects);
 		// Snapshot traversal: a script may restore another actor during this pass.
 		const auto order = vm.run_order;

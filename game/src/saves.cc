@@ -440,6 +440,83 @@ namespace openrayman::game
 			catch(const std::exception& e) { session->error = e.what(); }
 			return c.args;
 		});
+		// 92 (0x47D830 case 0x5C -> 0x410FF0/0x4083D0): delete a slot.
+		vm.on_function(92, [=](call& c, value& out) {
+			value arg; c.args = c.vm.eval(c.self, c.args, arg);
+			unsigned slot = arg.word() ? arg.word() : 1;
+			out = value::integer(0);
+			if(slot < 1 || slot > 3) return c.args;
+			std::error_code error;
+			auto dest = root / ("Slot" + std::to_string(slot));
+			try
+			{
+				auto protected_folder = game_folder;
+				if(protected_folder.filename() == "Data" || protected_folder.filename() == "data") protected_folder = protected_folder.parent_path();
+				if(inside(root, protected_folder) || inside(dest, protected_folder)) { session->error = "save destination must be outside the game folder"; return c.args; }
+			}
+			catch(const std::filesystem::filesystem_error& e) { session->error = e.what(); return c.args; }
+			// 0x410FF0 copies the last listed slot over the deleted one, then removes
+			// the old last slot. Move whole directories so our metadata follows the saves.
+			unsigned last = slot;
+			bool present = std::filesystem::exists(dest, error);
+			for(unsigned i = slot + 1; !error && i <= 3; ++i)
+				if(std::filesystem::exists(root / ("Slot" + std::to_string(i)) / "General.sav", error)) last = i;
+			if(!error && present && last != slot)
+			{
+				auto source = root / ("Slot" + std::to_string(last));
+				auto backup = root / (".Slot-delete-" + std::to_string(std::random_device{}()));
+				try
+				{
+					auto protected_folder = game_folder;
+					if(protected_folder.filename() == "Data" || protected_folder.filename() == "data") protected_folder = protected_folder.parent_path();
+					if(inside(source, protected_folder) || std::filesystem::exists(backup)) { session->error = "cannot stage slot deletion"; return c.args; }
+				}
+				catch(const std::filesystem::filesystem_error& e) { session->error = e.what(); return c.args; }
+				std::filesystem::rename(dest, backup, error);
+				if(!error)
+				{
+					std::filesystem::rename(source, dest, error);
+					if(error) { std::error_code ignored; std::filesystem::rename(backup, dest, ignored); }
+					else { std::error_code ignored; std::filesystem::remove_all(backup, ignored); }
+				}
+				if(!error)
+				{
+					forget_autosave(root, slot);
+					std::error_code ignored;
+					if(std::filesystem::exists(autosave_file(root, last), ignored))
+						std::filesystem::rename(autosave_file(root, last), autosave_file(root, slot), ignored);
+				}
+			}
+			else if(!error)
+			{
+				std::filesystem::remove_all(dest, error);
+				if(!error) forget_autosave(root, slot);
+			}
+			if(!error)
+			{
+				if(session->slot == slot) { session->slot = 0; session->autosave.reset(); session->settings_slot = 0; }
+				out = value::integer(1);
+			}
+			else session->error = error.message();
+			return c.args;
+		});
+		// 258 (0x47ABF0 -> 0x404E20): a slot with a nonblank name is occupied.
+		vm.on_function(258, [=](call& c, value& out) {
+			value arg; c.args = c.vm.eval(c.self, c.args, arg);
+			int slot = std::int16_t(arg.word()); bool occupied = false;
+			if(slot >= 1 && slot <= 3)
+			{
+				std::error_code error;
+				if(std::filesystem::exists(root / ("Slot" + std::to_string(slot)) / "General.sav", error))
+				{
+					std::string name = "RAY";
+					std::ifstream metadata(root / ("Slot" + std::to_string(slot)) / "slot.txt");
+					if(metadata) std::getline(metadata, name);
+					occupied = !name.empty() && name.front() != ' ';
+				}
+			}
+			out = value::integer(occupied ? 1 : 0); return c.args;
+		});
 		vm.on_function(94, [=](call& c, value& out) { out = value::integer(session->slot); return c.args; });
 		// 95: 0x47D730 skips leading formatting, retains three bytes and returns a
 		// colliding slot (excluding the third argument), or zero. Argument two is evaluated.
