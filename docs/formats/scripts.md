@@ -14,6 +14,9 @@ image; offsets are from the start of each structure.
 
 Where this came from: own reading of the executable, guided by helper notes:
 
+- Procedure 140 (0x467850, case 0x8C): removes the actor held by a typed variable, signals 3 if it is the running actor, and clears the variable after removal.
+- Procedure 365 (0x46FF90, case 0x16D): captures channel 1's current sound descriptor in replay slot 0 after evaluating its argument. OpenRayman tracks script, level-start and sector requests as event IDs and exposes replay, but the executable's mode-7 replay trigger is not yet wired.
+
 - Procedure 56 (0x472A00): sets two wave phase speeds and clears the third.
 - Procedure 57 (0x472A80): sets wave amplitudes from a vector scaled by 0.1.
 - Procedure 58 (0x472BA0): sets the wave mode or toggles two wave flags.

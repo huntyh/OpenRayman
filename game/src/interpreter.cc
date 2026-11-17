@@ -1002,6 +1002,42 @@ namespace openrayman::game
 		}
 	}
 
+	// 0x4062A0: shared removal path for procedures 139 and 140.
+	void interpreter::remove_script_actor(std::uint32_t self, std::uint32_t actor)
+	{
+		auto target = super_object_of(actor);
+		if(!target) return;
+		auto standard = actor_of(target) ? m_memory.u32(actor_of(target) + 4) : 0;
+		if(standard && m_memory.u32(standard + 8) < 0x10000 && m_memory.u32(standard + 0x14) == 1)
+			reset_actor(target);
+		else { remove(target); m_generated.release(target); }
+		if(target == self) signal(3);
+	}
+
+	// Procedure 140 (0x467850 case 0x8c): resolve the variable once, remove its
+	// actor, then clear that same slot. The getter reports failure for a null object.
+	std::uint32_t interpreter::remove_actor_variable(std::uint32_t self, std::uint32_t at)
+	{
+		auto n = node(at);
+		std::uint32_t owner = self, var_node = at;
+		if(n.type == std::uint8_t(node_type::operator_))
+		{
+			value who;
+			var_node = eval(self, at + node_size, who);
+			owner = who.type == value_type::super_object ? who.word() : super_object_of(who.word());
+		}
+		auto var = node(var_node);
+		auto slot = variable(owner, var.param);
+		if(slot.address && (slot.type == 9 || slot.type == 24) && m_memory.u32(slot.address))
+		{
+			auto v = read_variable(slot);
+			auto actor = v.type == value_type::super_object ? actor_of(v.word()) : v.word();
+			remove_script_actor(self, actor);
+			write_variable(slot, value::of(v.type, 0));
+		}
+		return var_node + node_size;
+	}
+
 	std::uint32_t interpreter::assign(std::uint32_t self, std::uint32_t node, const value& v)
 	{
 		place p;
