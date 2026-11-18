@@ -1,3 +1,4 @@
+#include <renderer/submission_state.h>
 #include <cstdio>
 #include <cstdlib>
 #include <format>
@@ -27,8 +28,7 @@ namespace openrayman
 		// Every draw goes through here, so the profiler can count calls and triangles.
 		void draw_triangles(GLint first, GLsizei vertices)
 		{
-			glDrawArrays(GL_TRIANGLES, first, vertices);
-			game::profiler::add(game::profiler::counter::draw_calls);
+			submission::DrawArrays(GL_TRIANGLES, first, vertices);
 			game::profiler::add(game::profiler::counter::triangles, std::uint64_t(vertices / 3));
 		}
 
@@ -85,7 +85,7 @@ namespace openrayman
 				else if(u_lighting == 4)
 					v_light = u_material_diffuse;
 				else if(u_lighting == 5)
-					v_light = a_color; // as given, for the collision overlay
+					v_light = a_color; // as given: particle tints, collision overlay and backdrop
 				else if(u_lighting == 1)
 					v_light = lit(a_color);
 				else if(u_lighting == 2)
@@ -558,7 +558,7 @@ namespace openrayman
 		{
 			GLuint texture = 0;
 			glGenTextures(1, &texture);
-			glBindTexture(GL_TEXTURE_2D, texture);
+			submission::BindTexture(GL_TEXTURE_2D, texture);
 			glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, GLsizei(width), GLsizei(height), 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
 			glGenerateMipmap(GL_TEXTURE_2D);
@@ -653,14 +653,14 @@ namespace openrayman
 		m_u_fog = glGetUniformLocation(m_program, "u_fog");
 		m_u_fog_infinite = glGetUniformLocation(m_program, "u_fog_infinite");
 		m_u_additive = glGetUniformLocation(m_program, "u_additive");
-		glUseProgram(m_program);
-		glUniform1i(glGetUniformLocation(m_program, "u_texture"), 0);
+		submission::UseProgram(m_program);
+		submission::Uniform1i(glGetUniformLocation(m_program, "u_texture"), 0);
 
 		auto vertex_layout = [](GLuint& vao, GLuint& vbo) {
 			glGenVertexArrays(1, &vao);
 			glGenBuffers(1, &vbo);
-			glBindVertexArray(vao);
-			glBindBuffer(GL_ARRAY_BUFFER, vbo);
+			submission::BindVertexArray(vao);
+			submission::BindBuffer(GL_ARRAY_BUFFER, vbo);
 			glEnableVertexAttribArray(0);
 			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), reinterpret_cast<void*>(offsetof(vertex, position)));
 			glEnableVertexAttribArray(1);
@@ -673,9 +673,10 @@ namespace openrayman
 			glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(vertex), reinterpret_cast<void*>(offsetof(vertex, color)));
 			glEnableVertexAttribArray(5);
 			glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, sizeof(vertex), reinterpret_cast<void*>(offsetof(vertex, cull)));
-			glBindVertexArray(0);
+			submission::BindVertexArray(0);
 		};
 		vertex_layout(m_vao, m_vbo);
+		glGenBuffers(1, &m_deferred_ebo);
 		vertex_layout(m_sprite_vao, m_sprite_vbo);
 
 		const std::uint8_t white[4] = { 255, 255, 255, 255 };
@@ -687,6 +688,7 @@ namespace openrayman
 		clear();
 		glDeleteTextures(1, &m_white);
 		glDeleteBuffers(1, &m_vbo);
+		glDeleteBuffers(1, &m_deferred_ebo);
 		glDeleteVertexArrays(1, &m_vao);
 		glDeleteBuffers(1, &m_sprite_vbo);
 		glDeleteVertexArrays(1, &m_sprite_vao);
@@ -777,25 +779,26 @@ namespace openrayman
 
 	void level_renderer::set_blend(blend mode) const
 	{
+		submission::blending(int(mode));
 		// See-through surfaces go over the solid scene, without hiding each other.
 		if(mode == blend::none)
 		{
-			glDisable(GL_BLEND);
+			submission::EnableBlend(false);
 			glDepthMask(GL_TRUE);
-			glUniform1f(m_u_alpha_cut, 0.5f);
-			glUniform1f(m_u_additive, 0.0f);
-			glUniform1f(m_u_light_alpha, 0.0f);
+			submission::Uniform1f(m_u_alpha_cut, 0.5f);
+			submission::Uniform1f(m_u_additive, 0.0f);
+			submission::Uniform1f(m_u_light_alpha, 0.0f);
 			return;
 		}
-		glEnable(GL_BLEND);
+		submission::EnableBlend(true);
 		glDepthMask(GL_FALSE);
-		glUniform1f(m_u_alpha_cut, 0.01f);
-		glUniform1f(m_u_additive, mode == blend::additive ? 1.0f : 0.0f);
-		glUniform1f(m_u_light_alpha, 1.0f);
+		submission::Uniform1f(m_u_alpha_cut, 0.01f);
+		submission::Uniform1f(m_u_additive, mode == blend::additive ? 1.0f : 0.0f);
+		submission::Uniform1f(m_u_light_alpha, 1.0f);
 		if(mode == blend::additive)
-			glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+			submission::BlendFunc(GL_SRC_ALPHA, GL_ONE);
 		else
-			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+			submission::BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	}
 
 	void level_renderer::load_effect_materials(const std::map<std::uint32_t, visual_material>& materials,
@@ -1241,7 +1244,7 @@ namespace openrayman
 			m_shadow_texture = texture_for(*shadow_material->texture, archives, stats).id;
 			if(m_shadow_texture)
 			{
-				glBindTexture(GL_TEXTURE_2D, m_shadow_texture);
+				submission::BindTexture(GL_TEXTURE_2D, m_shadow_texture);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
 			}
@@ -1325,7 +1328,7 @@ namespace openrayman
 				b.first = first, b.count = GLsizei(vertices.size()) - first;
 		}
 
-		glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+		submission::BindBuffer(GL_ARRAY_BUFFER, m_vbo);
 		glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(vertices.size() * sizeof(vertex)), vertices.data(), GL_STATIC_DRAW);
 		if(stats.min.x > stats.max.x) // no level vertices
 			stats.min = stats.max = glm::vec3(0);
@@ -1510,31 +1513,32 @@ namespace openrayman
 
 	void level_renderer::draw(const glm::mat4& view, const glm::mat4& projection, const light* fog_override, float fog_infinite) const
 	{
+		submission::scope submissions(true);
 		glEnable(GL_DEPTH_TEST);
 		glDisable(GL_CULL_FACE); // which faces are double sided isn't decoded yet
-		glUseProgram(m_program);
-		glUniform4f(m_u_well, 0, 0, 0, 0);
-		glUniform4f(m_u_falls, 0, 0, 0, 0);
-		glUniform2f(m_u_swirl, 0, 0);
+		submission::UseProgram(m_program);
+		submission::Uniform4f(m_u_well, 0, 0, 0, 0);
+		submission::Uniform4f(m_u_falls, 0, 0, 0, 0);
+		submission::Uniform2f(m_u_swirl, 0, 0);
 		glm::mat4 view_projection = projection * view;
 		const glm::mat4 fog_identity(1.0f);
-		glUniformMatrix4fv(m_u_fog_model, 1, GL_FALSE, glm::value_ptr(fog_identity));
-		glUniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(view_projection));
-		glUniform1f(m_u_edge_clamp, m_edge_clamp ? 1.0f : 0.0f);
+		submission::UniformMatrix4fv(m_u_fog_model, 1, GL_FALSE, glm::value_ptr(fog_identity));
+		submission::UniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(view_projection));
+		submission::Uniform1f(m_u_edge_clamp, m_edge_clamp ? 1.0f : 0.0f);
 		glActiveTexture(GL_TEXTURE0);
 
 		// Where everything goes this frame: cards turn towards the camera.
 		const glm::mat4 camera = glm::inverse(view);
 		const glm::vec3 eye(camera[3]);
-		glUniform3f(m_u_camera, eye.x, eye.y, eye.z);
+		submission::Uniform3f(m_u_camera, eye.x, eye.y, eye.z);
 		const glm::vec3 forward = -glm::normalize(glm::vec3(camera[2]));
-		glUniform3f(m_u_camera_forward, forward.x, forward.y, forward.z);
-		glUniform1f(m_u_luminosity, m_luminosity - 0.5f);
+		submission::Uniform3f(m_u_camera_forward, forward.x, forward.y, forward.z);
+		submission::Uniform1f(m_u_luminosity, m_luminosity - 0.5f);
 		// Uniforms keep their values between frames and start at 0: a part alpha of 0 on the first frame
 		// cut every solid surface away (the --screenshot frame showed no solid scenery).
-		glUniform1f(m_u_part_alpha, 1.0f);
-		glUniform1f(m_u_sharpen, 0.0f);
-		glUniform1f(m_u_sky_haze, 0.0f);
+		submission::Uniform1f(m_u_part_alpha, 1.0f);
+		submission::Uniform1f(m_u_sharpen, 0.0f);
+		submission::Uniform1f(m_u_sky_haze, 0.0f);
 		std::vector<part> parts;
 		parts.reserve(m_level_cards.size() + m_parts.size());
 		follow_camera(eye);
@@ -1556,7 +1560,7 @@ namespace openrayman
 		// (0x44B1B0) the exe sets the first fog light of that sector's own list, or none (0x44AE80).
 		// So from the cave the valley outside is fogged, though the cave has no fog. The camera's
 		// sector gives the background (and, here, what has no sector of its own).
-		glUniform1f(m_u_fog_infinite, fog_override ? fog_infinite : 0.0f);
+		submission::Uniform1f(m_u_fog_infinite, fog_override ? fog_infinite : 0.0f);
 		std::optional<std::size_t> fogged = no_sector; // what the fog uniforms hold now
 		auto use_fog = [&](std::optional<std::size_t> sector) {
 			if(sector == fogged)
@@ -1565,11 +1569,11 @@ namespace openrayman
 			const light* fog = m_lighting ? (fog_override ? fog_override : (sector && *sector < m_lights.sectors.size() ? m_lights.fog(*sector) : nullptr)) : nullptr;
 			if(!fog)
 			{
-				glUniform4f(m_u_fog, 0, 0, 0, 0);
+				submission::Uniform4f(m_u_fog, 0, 0, 0, 0);
 				return;
 			}
-			glUniform4f(m_u_fog_color, fog->color[0], fog->color[1], fog->color[2], 1);
-			glUniform4f(m_u_fog, fog->near, fog->far, fog->fog_near_blend, fog->fog_far_blend);
+			submission::Uniform4f(m_u_fog_color, fog->color[0], fog->color[1], fog->color[2], 1);
+			submission::Uniform4f(m_u_fog, fog->near, fog->far, fog->fog_near_blend, fog->fog_far_blend);
 		};
 		use_fog(m_camera_sector);
 		if(m_world_hidden)
@@ -1603,23 +1607,24 @@ namespace openrayman
 			glDisable(GL_DEPTH_TEST);
 			set_blend(blend::none);
 			glDepthMask(GL_FALSE);
-			glUniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(fog_identity));
-			glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(fog_identity));
-			glUniform1i(m_u_lighting, 5);
-			glUniform4f(m_u_fog, 0, 0, 0, 0);
-			glUniform2f(m_u_uv_offset, 0, 0);
-			glBindTexture(GL_TEXTURE_2D, m_white);
-			glBindVertexArray(m_sprite_vao);
-			glBindBuffer(GL_ARRAY_BUFFER, m_sprite_vbo);
+			submission::UniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(fog_identity));
+			submission::UniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(fog_identity));
+			submission::Uniform1i(m_u_lighting, 5);
+			submission::Uniform4f(m_u_fog, 0, 0, 0, 0);
+			submission::Uniform2f(m_u_uv_offset, 0, 0);
+			submission::BindTexture(GL_TEXTURE_2D, m_white);
+			submission::BindVertexArray(m_sprite_vao);
+			submission::BindBuffer(GL_ARRAY_BUFFER, m_sprite_vbo);
 			glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(triangles.size() * sizeof(vertex)), triangles.data(), GL_STREAM_DRAW);
 			draw_triangles(0, GLsizei(triangles.size()));
 			glEnable(GL_DEPTH_TEST);
 			glDepthMask(GL_TRUE);
-			glUniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(view_projection));
+			submission::UniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(view_projection));
 			fogged = no_sector;
 			use_fog(m_camera_sector);
 		}
 
+		submission::stage(submission::pass::sky);
 		// The sky first, behind everything: the camera's sector's, unlit and unfogged, centred on the
 		// camera so it never comes nearer. It counts as infinitely far, so a fog override's infinite
 		// distance hides it like any far object (the real game shows only the background colour
@@ -1632,22 +1637,22 @@ namespace openrayman
 			{
 				glm::vec4 fog_was(0.0f);
 				glGetUniformfv(m_program, m_u_fog, glm::value_ptr(fog_was));
-				glUniform4f(m_u_fog, 0, 0, 0, 0);
+				submission::Uniform4f(m_u_fog, 0, 0, 0, 0);
 				set_blend(blend::none);
-				glUniform1f(m_u_alpha_cut, -1.0f);
+				submission::Uniform1f(m_u_alpha_cut, -1.0f);
 				glDisable(GL_DEPTH_TEST);
 				glDepthMask(GL_FALSE);
-				glUniform1i(m_u_lighting, 3);
+				submission::Uniform1i(m_u_lighting, 3);
 				glm::mat4 model = glm::translate(glm::mat4(1.0f), eye) * glm::scale(glm::mat4(1.0f), glm::vec3(500.0f));
-				glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(model));
+				submission::UniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(model));
 				const batch& b = sky->second;
-				glBindVertexArray(m_vao);
-				glBindTexture(GL_TEXTURE_2D, texture_at(b.animation, b.texture));
-				glUniform2f(m_u_uv_offset, float(std::fmod(b.scroll_offset.x + double(b.scroll.x) * m_time, 1.0)), float(std::fmod(b.scroll_offset.y + double(b.scroll.y) * m_time, 1.0)));
+				submission::BindVertexArray(m_vao);
+				submission::BindTexture(GL_TEXTURE_2D, texture_at(b.animation, b.texture));
+				submission::Uniform2f(m_u_uv_offset, float(std::fmod(b.scroll_offset.x + double(b.scroll.x) * m_time, 1.0)), float(std::fmod(b.scroll_offset.y + double(b.scroll.y) * m_time, 1.0)));
 				draw_triangles(b.first, b.count);
 				glEnable(GL_DEPTH_TEST);
 				glDepthMask(GL_TRUE);
-				glUniform4fv(m_u_fog, 1, glm::value_ptr(fog_was));
+				submission::Uniform4fv(m_u_fog, 1, glm::value_ptr(fog_was));
 			}
 		}
 
@@ -1670,17 +1675,17 @@ namespace openrayman
 			part_sector[i] = p.sector ? p.sector : m_lights.sector_at({ at.x, at.y, at.z });
 		}
 
-		glBindVertexArray(m_vao);
+		submission::BindVertexArray(m_vao);
 		const glm::mat4 identity(1.0f);
 		auto use_lights = [this](const part_lights& l) {
-			glUniform1f(m_u_sharpen, l.sharpen ? 1.0f : 0.0f);
-			glUniform1i(m_u_light_count, l.count);
+			submission::Uniform1f(m_u_sharpen, l.sharpen ? 1.0f : 0.0f);
+			submission::Uniform1i(m_u_light_count, l.count);
 			if(l.count == 0)
 				return;
-			glUniform1iv(m_u_light_kind, l.count, l.kind.data());
-			glUniform3fv(m_u_light_vector, l.count, glm::value_ptr(l.vector[0]));
-			glUniform4fv(m_u_light_color, l.count, glm::value_ptr(l.color[0]));
-			glUniform2fv(m_u_light_range, l.count, glm::value_ptr(l.range[0]));
+			submission::Uniform1iv(m_u_light_kind, l.count, l.kind.data());
+			submission::Uniform3fv(m_u_light_vector, l.count, glm::value_ptr(l.vector[0]));
+			submission::Uniform4fv(m_u_light_color, l.count, glm::value_ptr(l.color[0]));
+			submission::Uniform2fv(m_u_light_range, l.count, glm::value_ptr(l.range[0]));
 		};
 		// One-sided surfaces (material flag 0x400): the drivers drop triangles by the sign of their
 		// projected area (GliVd1vf.dll 0x1000311B, 0x10003520/0x10003580; GliDX6vf.dll 0x1000237B).
@@ -1709,11 +1714,13 @@ namespace openrayman
 			glFrontFace(faces == cull::keep_positive ? GL_CCW : GL_CW);
 		};
 		auto set_model = [&](const glm::mat4& model) {
-			glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(model));
+			submission::UniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(model));
 			mirrored = glm::determinant(glm::mat3(model)) < 0.0f;
 		};
+		bool indexed_deferred = false;
 		bool backdrop_pass = false;
 		bool sky_pass = false;
+		submission::stage(submission::pass::setup);
 		// The sky pass's own view, model and eye, to return to after a lightning card.
 		glm::mat4 sky_vp_now(1.0f), sky_model_now(1.0f);
 		glm::vec3 sky_eye_now(0.0f);
@@ -1740,22 +1747,22 @@ namespace openrayman
 				if(sky_pass && m_lighting && !sky_fog)
 					for(const auto sector : m_backdrop_skies)
 						if(drawn(sector) && (sky_fog = m_lights.fog(sector))) break;
-				glUniform1f(m_u_sky_haze, sky_fog ? m_sky_haze : 0.0f);
+				submission::Uniform1f(m_u_sky_haze, sky_fog ? m_sky_haze : 0.0f);
 				if(sky_fog)
-					glUniform3fv(m_u_sky_haze_color, 1, sky_fog->color.data());
+					submission::Uniform3fv(m_u_sky_haze_color, 1, sky_fog->color.data());
 				use_cull(b.faces);
 				// Depth writes are independent of alpha blending (0x424A00; GliVd1vf 0x10007E18).
 				// Deferred triangles have depth writes cleared by the driver queue (0x1000125F).
 				glDepthMask(cores || ((mode == blend::none || screen_depth) && b.depth_write) ? GL_TRUE : GL_FALSE);
 				const GLuint texture = texture_at(b.animation, b.texture);
-				glBindTexture(GL_TEXTURE_2D, texture);
+				submission::BindTexture(GL_TEXTURE_2D, texture);
 				static const bool classic_lightning = [] {
 					const char* v = std::getenv("OPENRAYMAN_LIGHTNING_CLASSIC");
 					return v && std::strcmp(v, "1") == 0;
 				}();
 				const bool lightning = mode == blend::alpha && !classic_lightning && m_lightning_textures.contains(texture);
-				glUniform1f(m_u_lightning, lightning ? 1.0f : 0.0f);
-				if(lightning) glBlendFunc(GL_DST_COLOR, GL_ONE);
+				submission::Uniform1f(m_u_lightning, lightning ? 1.0f : 0.0f);
+				if(lightning) submission::BlendFunc(GL_DST_COLOR, GL_ONE);
 				// Lightning cards stay where the game puts them, seen from the real camera: drawn from
 				// the far sky eye they sank to the horizon, far ahead (user, 2026-11-13). They only
 				// brighten what is behind them, so the far clouds they light can stay far. No depth
@@ -1763,60 +1770,67 @@ namespace openrayman
 				const bool flash_near = lightning && sky_pass;
 				if(flash_near)
 				{
-					glUniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(view_projection));
-					glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(fog_identity));
-					glUniformMatrix4fv(m_u_fog_model, 1, GL_FALSE, glm::value_ptr(fog_identity));
-					glUniform3fv(m_u_sky_eye, 1, glm::value_ptr(eye));
-					glUniform3fv(m_u_camera, 1, glm::value_ptr(eye));
+					submission::UniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(view_projection));
+					submission::UniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(fog_identity));
+					submission::UniformMatrix4fv(m_u_fog_model, 1, GL_FALSE, glm::value_ptr(fog_identity));
+					submission::Uniform3fv(m_u_sky_eye, 1, glm::value_ptr(eye));
+					submission::Uniform3fv(m_u_camera, 1, glm::value_ptr(eye));
 					glDisable(GL_DEPTH_TEST);
 				}
 				// 0x424C00 wraps the current offset at a whole texture width, including mirrored textures.
 				const double scroll_time = m_time * (sky_pass ? m_sky_drift : 1.0f);
 				// Ours: the Hall of Doors' river spreads out from the waterfall's foot (u_falls).
 				const bool falls = m_falls_reversed && b.well == 3 && m_fall_foot;
-				glUniform4f(m_u_falls, falls ? 1.0f : 0.0f, falls ? m_fall_foot->x : 0.0f, falls ? m_fall_foot->y : 0.0f, float(std::fmod(m_time, 3600.0)));
+				submission::Uniform4f(m_u_falls, falls ? 1.0f : 0.0f, falls ? m_fall_foot->x : 0.0f, falls ? m_fall_foot->y : 0.0f, falls ? float(std::fmod(m_time, 3600.0)) : 0.0f);
 				// The star materials keep counting past whole widths: their scrambled tiles are picked by
 				// position, so wrapping every width would reshuffle the whole field.
 				const double wrap = m_well && (b.well == 1 || b.well == 2) ? 1000.0 : 1.0;
 				glm::vec2 offset(std::fmod(b.scroll_offset.x + double(b.scroll.x) * scroll_time, wrap), std::fmod(b.scroll_offset.y + double(b.scroll.y) * scroll_time, wrap));
-				glUniform2f(m_u_uv_offset, offset.x, offset.y);
-				glUniform2f(m_u_swirl, m_swirl_centre && m_world_hidden && b.pause_swirl ? 1.0f : 0.0f, float(m_time));
+				submission::Uniform2f(m_u_uv_offset, offset.x, offset.y);
+				submission::Uniform2f(m_u_swirl, m_swirl_centre && m_world_hidden && b.pause_swirl ? 1.0f : 0.0f, m_world_hidden && b.pause_swirl ? float(m_time) : 0.0f);
 				if(m_lake && b.well == 2)
 				{
 					// The Hall of Doors' star overlay: it ripples in place and twinkles (no depth, no flow).
-					glUniform4f(m_u_well, 2.0f, 0.0f, 0.0f, 0.0f);
-					glUniform2f(m_u_lake, 1.0f, float(std::fmod(m_time, 6283.1853)));
+					submission::Uniform4f(m_u_well, 2.0f, 0.0f, 0.0f, 0.0f);
+					submission::Uniform2f(m_u_lake, 1.0f, float(std::fmod(m_time, 6283.1853)));
 				}
 				else if(m_well && b.well == 1)
 				{
 					// Star layers below the surface; the deeper ones also drift slowly on their own.
 					// The lake's deep layers drift at a quarter of the well's pace: a lake, not a river.
 					const double drift = m_lake ? 0.25 : 1.0;
-					glUniform4f(m_u_well, 1.0f, m_well_depth, float(std::fmod(m_time * -0.02 * drift, 1000.0)), float(std::fmod(m_time * -0.05 * drift, 1000.0)));
-					glUniform2f(m_u_lake, m_lake ? 1.0f : 0.0f, float(std::fmod(m_time, 6283.1853)));
-					glUniform1f(m_u_twinkle, m_twinkle ? 1.0f : 0.0f);
+					submission::Uniform4f(m_u_well, 1.0f, m_well_depth, float(std::fmod(m_time * -0.02 * drift, 1000.0)), float(std::fmod(m_time * -0.05 * drift, 1000.0)));
+					submission::Uniform2f(m_u_lake, m_lake ? 1.0f : 0.0f, float(std::fmod(m_time, 6283.1853)));
+					submission::Uniform1f(m_u_twinkle, m_twinkle ? 1.0f : 0.0f);
 					const bool flat = m_star_flat && m_star_texels > 0 && m_star_floor < 1e29f;
-					glUniform2f(m_u_star_floor, flat ? m_star_floor : 0.0f, flat ? m_star_texels : 0.0f);
+					submission::Uniform2f(m_u_star_floor, flat ? m_star_floor : 0.0f, flat ? m_star_texels : 0.0f);
 				}
-				glUniform4fv(m_u_material_ambient, 1, glm::value_ptr(b.ambient));
-				glUniform4fv(m_u_material_diffuse, 1, glm::value_ptr(b.diffuse));
-				draw_triangles(b.first, b.count);
-				glUniform2f(m_u_swirl, 0, 0);
+				submission::Uniform4fv(m_u_material_ambient, 1, glm::value_ptr(b.ambient));
+				submission::Uniform4fv(m_u_material_diffuse, 1, glm::value_ptr(b.diffuse));
+				if(indexed_deferred)
+				{
+					submission::DrawElements(GL_TRIANGLES, b.count, GL_UNSIGNED_INT,
+						reinterpret_cast<const void*>(std::uintptr_t(b.first) * sizeof(GLuint)));
+					game::profiler::add(game::profiler::counter::triangles, std::uint64_t(b.count / 3));
+				}
+				else
+					draw_triangles(b.first, b.count);
+				submission::Uniform2f(m_u_swirl, 0, 0);
 				glDepthMask(mode == blend::none || cores ? GL_TRUE : GL_FALSE);
-				glUniform4f(m_u_well, 0, 0, 0, 0);
-				glUniform4f(m_u_falls, 0, 0, 0, 0);
+				submission::Uniform4f(m_u_well, 0, 0, 0, 0);
+				submission::Uniform4f(m_u_falls, 0, 0, 0, 0);
 				if(flash_near)
 				{
 					const glm::mat4 sky_fog_now = glm::inverse(sky_model_now);
-					glUniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(sky_vp_now));
-					glUniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(sky_model_now));
-					glUniformMatrix4fv(m_u_fog_model, 1, GL_FALSE, glm::value_ptr(sky_fog_now));
-					glUniform3fv(m_u_sky_eye, 1, glm::value_ptr(sky_eye_now));
-					glUniform3fv(m_u_camera, 1, glm::value_ptr(fog_override ? eye : sky_eye_now));
+					submission::UniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(sky_vp_now));
+					submission::UniformMatrix4fv(m_u_model, 1, GL_FALSE, glm::value_ptr(sky_model_now));
+					submission::UniformMatrix4fv(m_u_fog_model, 1, GL_FALSE, glm::value_ptr(sky_fog_now));
+					submission::Uniform3fv(m_u_sky_eye, 1, glm::value_ptr(sky_eye_now));
+					submission::Uniform3fv(m_u_camera, 1, glm::value_ptr(fog_override ? eye : sky_eye_now));
 					glEnable(GL_DEPTH_TEST);
 				}
-				if(lightning) glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-				glUniform1f(m_u_lightning, 0.0f);
+				if(lightning) submission::BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+				submission::Uniform1f(m_u_lightning, 0.0f);
 			}
 		};
 		auto morph_geometry = [&](const part& p) -> const geometric_object* {
@@ -1841,7 +1855,7 @@ namespace openrayman
 				if(!set.empty() && set[0].size() == a.vertices.size()) colours = &set[0];
 			}
 			if(source.vertices.empty() || (!b && !colours)) return;
-			glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+			submission::BindBuffer(GL_ARRAY_BUFFER, m_vbo);
 			if(restore)
 			{
 				glBufferSubData(GL_ARRAY_BUFFER, GLintptr(source.first * sizeof(vertex)), GLsizeiptr(source.vertices.size()), source.vertices.data());
@@ -1875,12 +1889,13 @@ namespace openrayman
 		if(!m_backdrop_sectors.empty())
 		{
 			auto draw_static_pass = [&](const glm::vec3& pass_eye, const glm::mat4& model) {
+				submission::stage(submission::pass::sky);
 				set_model(model);
-				glUniform1i(m_u_lighting, m_lighting ? 1 : 0);
+				submission::Uniform1i(m_u_lighting, m_lighting ? 1 : 0);
 				set_blend(blend::none);
 				draw_batches(m_batches, blend::none);
-				glUniform1f(m_u_alpha_cut, 0.9f);
-				glUniform1f(m_u_light_alpha, 1.0f);
+				submission::Uniform1f(m_u_alpha_cut, 0.9f);
+				submission::Uniform1f(m_u_light_alpha, 1.0f);
 				for(const auto& s : m_see_through)
 					if(m_solid_cores.contains(s.b.texture))
 						draw_batches(std::span(&s.b, 1), blend::alpha, true);
@@ -1921,19 +1936,19 @@ namespace openrayman
 				sky_projection[3][2] = -2.0f * far * near / (far - near);
 			}
 			const glm::mat4 sky_vp = sky_projection * glm::inverse(sky_camera);
-			glUniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(sky_vp));
-			glUniform3fv(m_u_camera, 1, glm::value_ptr(fog_override ? eye : sky_eye));
-			glUniform3fv(m_u_sky_eye, 1, glm::value_ptr(sky_eye));
+			submission::UniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(sky_vp));
+			submission::Uniform3fv(m_u_camera, 1, glm::value_ptr(fog_override ? eye : sky_eye));
+			submission::Uniform3fv(m_u_sky_eye, 1, glm::value_ptr(sky_eye));
 			const glm::mat4 sky_model = glm::translate(identity, sky_anchor) *
 				glm::scale(identity, glm::vec3(m_sky_stretch, m_sky_stretch, 1)) * glm::translate(identity, -sky_anchor);
 			const glm::mat4 sky_fog_model = glm::inverse(sky_model);
 			sky_vp_now = sky_vp;
 			sky_model_now = sky_model;
 			sky_eye_now = sky_eye;
-			glUniformMatrix4fv(m_u_fog_model, 1, GL_FALSE, glm::value_ptr(sky_fog_model));
+			submission::UniformMatrix4fv(m_u_fog_model, 1, GL_FALSE, glm::value_ptr(sky_fog_model));
 			draw_static_pass(sky_eye, sky_model);
-			glUniformMatrix4fv(m_u_fog_model, 1, GL_FALSE, glm::value_ptr(identity));
-			glUniform1f(m_u_sky_haze, 0.0f);
+			submission::UniformMatrix4fv(m_u_fog_model, 1, GL_FALSE, glm::value_ptr(identity));
+			submission::Uniform1f(m_u_sky_haze, 0.0f);
 			glDepthMask(GL_TRUE);
 			glClear(GL_DEPTH_BUFFER_BIT);
 			sky_pass = false;
@@ -1942,26 +1957,28 @@ namespace openrayman
 			glm::mat4 far_camera = camera;
 			far_camera[3] = glm::vec4(far_eye, 1);
 			const glm::mat4 far_vp = projection * glm::inverse(far_camera);
-			glUniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(far_vp));
+			submission::UniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(far_vp));
 			// A scripted flash measures depth from the real eye. Parallax must not
 			// change its coverage on the distant scenery relative to the sky/world.
-			glUniform3fv(m_u_camera, 1, glm::value_ptr(fog_override ? eye : far_eye));
+			submission::Uniform3fv(m_u_camera, 1, glm::value_ptr(fog_override ? eye : far_eye));
 			draw_static_pass(far_eye, identity);
 			glDepthMask(GL_TRUE);
 			glClear(GL_DEPTH_BUFFER_BIT);
-			glUniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(view_projection));
-			glUniform3fv(m_u_camera, 1, glm::value_ptr(eye));
+			submission::UniformMatrix4fv(m_u_view_projection, 1, GL_FALSE, glm::value_ptr(view_projection));
+			submission::Uniform3fv(m_u_camera, 1, glm::value_ptr(eye));
 			backdrop_pass = false;
 			use_fog(m_camera_sector);
 		}
 
 		// Solid surfaces first, the level's and the actors'.
+		submission::stage(submission::pass::opaque);
 		blend current = blend::none;
 		set_blend(current);
 		set_model(identity);
-		glUniform1i(m_u_lighting, m_lighting ? 1 : 0);
+		submission::Uniform1i(m_u_lighting, m_lighting ? 1 : 0);
 		draw_batches(m_batches, blend::none);
-		glUniform1i(m_u_lighting, m_lighting ? 2 : 0);
+		submission::stage(submission::pass::actors);
+		submission::Uniform1i(m_u_lighting, m_lighting ? 2 : 0);
 		for(std::size_t i = 0; i < parts.size(); i++)
 		{
 			if(parts[i].screen || parts[i].alpha < 1)
@@ -1969,19 +1986,20 @@ namespace openrayman
 			set_model(parts[i].model);
 			use_lights(part_light[i]);
 			use_fog(part_sector[i]);
-			glUniform1f(m_u_part_alpha, parts[i].alpha);
+			submission::Uniform1f(m_u_part_alpha, parts[i].alpha);
 			morph(parts[i], false);
 			draw_batches(m_meshes[parts[i].mesh].batches, blend::none);
 			morph(parts[i], true);
 		}
-		glUniform1f(m_u_sharpen, 0.0f);
-		glUniform1f(m_u_part_alpha, 1.0f);
+		submission::Uniform1f(m_u_sharpen, 0.0f);
+		submission::Uniform1f(m_u_part_alpha, 1.0f);
+		submission::stage(submission::pass::cores);
 		// The nearly opaque middle of cut-out-like soft surfaces (a leaf, not its fringe) is solid
 		// too: it hides whatever see-through things lie behind it, however they're sorted (sprites come
 		// last). Not for soft gradients like light rays, whose bright body must stay see-through.
-		glUniform1f(m_u_alpha_cut, 0.9f);
-		glUniform1f(m_u_light_alpha, 1.0f);
-		glUniform1i(m_u_lighting, m_lighting ? 1 : 0);
+		submission::Uniform1f(m_u_alpha_cut, 0.9f);
+		submission::Uniform1f(m_u_light_alpha, 1.0f);
+		submission::Uniform1i(m_u_lighting, m_lighting ? 1 : 0);
 		set_model(identity);
 		auto draw_cores = [&](std::span<const batch> batches) {
 			for(const batch& b : batches)
@@ -1992,7 +2010,7 @@ namespace openrayman
 		};
 		for(const see_through& s : m_see_through)
 			draw_cores(std::span(&s.b, 1));
-		glUniform1i(m_u_lighting, m_lighting ? 2 : 0);
+		submission::Uniform1i(m_u_lighting, m_lighting ? 2 : 0);
 		for(std::size_t i = 0; i < parts.size(); i++)
 		{
 			if(parts[i].screen || parts[i].alpha < 1)
@@ -2000,16 +2018,17 @@ namespace openrayman
 			set_model(parts[i].model);
 			use_lights(part_light[i]);
 			use_fog(part_sector[i]);
-			glUniform1f(m_u_part_alpha, parts[i].alpha);
+			submission::Uniform1f(m_u_part_alpha, parts[i].alpha);
 			morph(parts[i], false);
 			draw_cores(m_meshes[parts[i].mesh].batches);
 			morph(parts[i], true);
 		}
-		glUniform1f(m_u_sharpen, 0.0f);
-		glUniform1f(m_u_part_alpha, 1.0f);
+		submission::Uniform1f(m_u_sharpen, 0.0f);
+		submission::Uniform1f(m_u_part_alpha, 1.0f);
 
 		use_fog(m_camera_sector);
 		use_cull(cull::none);
+		submission::stage(submission::pass::shadows);
 		// Shadows: blobs laid on the ground below the actors that cast them, over the solid surfaces.
 		if(m_shadow_texture && !m_shadows.empty())
 		{
@@ -2062,23 +2081,24 @@ namespace openrayman
 			if(!quads.empty())
 			{
 				set_blend(current = blend::alpha);
-				glUniform1i(m_u_lighting, 3);
+				submission::Uniform1i(m_u_lighting, 3);
 				set_model(identity);
-				glUniform2f(m_u_uv_offset, 0, 0);
-				glUniform1f(m_u_edge_clamp, 2.0f);
+				submission::Uniform2f(m_u_uv_offset, 0, 0);
+				submission::Uniform1f(m_u_edge_clamp, 2.0f);
 				glEnable(GL_POLYGON_OFFSET_FILL);
 				glPolygonOffset(-1, -1);
-				glBindVertexArray(m_sprite_vao);
-				glBindBuffer(GL_ARRAY_BUFFER, m_sprite_vbo);
+				submission::BindVertexArray(m_sprite_vao);
+				submission::BindBuffer(GL_ARRAY_BUFFER, m_sprite_vbo);
 				glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(quads.size() * sizeof(vertex)), quads.data(), GL_STREAM_DRAW);
-				glBindTexture(GL_TEXTURE_2D, m_shadow_texture);
+				submission::BindTexture(GL_TEXTURE_2D, m_shadow_texture);
 				draw_triangles(0, GLsizei(quads.size()));
 				glDisable(GL_POLYGON_OFFSET_FILL);
-				glUniform1f(m_u_edge_clamp, m_edge_clamp ? 1.0f : 0.0f);
-				glBindVertexArray(m_vao);
+				submission::Uniform1f(m_u_edge_clamp, m_edge_clamp ? 1.0f : 0.0f);
+				submission::BindVertexArray(m_vao);
 			}
 		}
 
+		submission::stage(submission::pass::deferred);
 		// Then soft and glowing triangles over the solid scene, using the driver's depth buckets.
 		constexpr std::size_t level = SIZE_MAX;
 		struct see_through_draw
@@ -2136,8 +2156,22 @@ namespace openrayman
 		std::ranges::stable_sort(order, [&](const see_through_draw& a, const see_through_draw& b) {
 			return a.key < b.key;
 		});
+		// Index the original expanded vertices in EXACT sorted order, including reversed depth
+		// ties. GL 3.3 and ES 3.0 both support uint indices. Upload once for all three stages.
+		if(!submission::baseline())
+		{
+			std::vector<GLuint> indices;
+			indices.reserve(order.size() * 3);
+			for(const auto& d : order)
+				for(int corner = 0; corner < 3; ++corner)
+					indices.push_back(GLuint(d.first + corner));
+			submission::BindVertexArray(m_vao);
+			submission::BindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_deferred_ebo);
+			glBufferData(GL_ELEMENT_ARRAY_BUFFER, GLsizeiptr(indices.size() * sizeof(GLuint)), indices.data(), GL_STREAM_DRAW);
+		}
 		// 0: world transparency, 1: opaque screen cut-outs, 2: deferred screen geometry.
 		auto draw_order = [&](int stage) {
+			submission::stage(submission::pass::deferred);
 			std::size_t placed = level - 1; // whose model and lights are set
 			for(std::size_t k = 0; k < order.size(); k++)
 			{
@@ -2153,8 +2187,8 @@ namespace openrayman
 					placed = d.part;
 					bool is_level = d.part == level;
 					set_model(is_level ? identity : parts[d.part].model);
-					glUniform1i(m_u_lighting, m_lighting ? (is_level ? 1 : 2) : 0);
-					glUniform1f(m_u_part_alpha, is_level ? 1.0f : parts[d.part].alpha);
+					submission::Uniform1i(m_u_lighting, m_lighting ? (is_level ? 1 : 2) : 0);
+					submission::Uniform1f(m_u_part_alpha, is_level ? 1.0f : parts[d.part].alpha);
 					if(!is_level)
 					{
 						use_lights(part_light[d.part]);
@@ -2162,35 +2196,42 @@ namespace openrayman
 						morph(parts[d.part], false);
 						if(parts[d.part].screen)
 						{
-							glUniform4f(m_u_fog, 0, 0, 0, 0);
+							submission::Uniform4f(m_u_fog, 0, 0, 0, 0);
 							fogged = no_sector;
 						}
 					}
 					else
-						glUniform1f(m_u_sharpen, 0.0f);
+						submission::Uniform1f(m_u_sharpen, 0.0f);
 				}
-				// Neighbours in the order that continue the same batch go in one draw call.
+				// Adjacent sorted triangles with identical state share a draw, even for
+				// reversed/scattered vertex ranges. Never reorder triangles or cross parts.
 				batch run = *d.b;
 				run.mode = d.mode;
-				run.first = d.first;
+				run.first = submission::baseline() ? d.first : GLint(k * 3);
 				run.count = 3;
-				while(k + 1 < order.size() && order[k + 1].b == d.b && order[k + 1].first == run.first + run.count)
+				while(k + 1 < order.size() && order[k + 1].part == d.part &&
+					order[k + 1].mode == d.mode && (submission::baseline()
+						? order[k + 1].b == d.b && order[k + 1].first == run.first + run.count
+						: order[k + 1].b->same_state(*d.b)))
 					run.count += 3, k++;
+				indexed_deferred = !submission::baseline();
 				draw_batches(std::span(&run, 1), run.mode, false, solid_screen);
+				indexed_deferred = false;
 			}
 			if(placed < parts.size()) morph(parts[placed], true);
 			set_model(identity);
-			glUniform1f(m_u_sharpen, 0.0f);
-			glUniform1f(m_u_part_alpha, 1.0f);
+			submission::Uniform1f(m_u_sharpen, 0.0f);
+			submission::Uniform1f(m_u_part_alpha, 1.0f);
 			use_fog(m_camera_sector);
 			use_cull(cull::none);
 			// Sprites are glows and flames: they shine by themselves.
-			glUniform1i(m_u_lighting, m_lighting ? 3 : 0);
-			glUniform2f(m_u_uv_offset, 0, 0);
+			submission::Uniform1i(m_u_lighting, m_lighting ? 3 : 0);
+			submission::Uniform2f(m_u_uv_offset, 0, 0);
 		};
 		draw_order(0);
 
 		auto draw_sprites = [&](bool screen) {
+			submission::stage(submission::pass::sprites);
 			// The level's sprites, and the actors' where their parts are now.
 			std::vector<sprite_instance> sprites = screen ? std::vector<sprite_instance>{} : m_sprites;
 			for(sprite_instance& s : sprites)
@@ -2243,8 +2284,8 @@ namespace openrayman
 					vertex tl{ s.center - x + y, { 0, 0 }, lit, bounds }, tr{ s.center + x + y, { u, 0 }, lit, bounds };
 					quads.insert(quads.end(), { bl, tl, br, br, tl, tr });
 				}
-				glBindVertexArray(m_sprite_vao);
-				glBindBuffer(GL_ARRAY_BUFFER, m_sprite_vbo);
+				submission::BindVertexArray(m_sprite_vao);
+				submission::BindBuffer(GL_ARRAY_BUFFER, m_sprite_vbo);
 				glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(quads.size() * sizeof(vertex)), quads.data(), GL_STREAM_DRAW);
 				// Additive sprites take no fog: the game's driver clears their fog factor (GliDX6vf.dll
 				// 0x10008F4C for texture flag 0x20 without 0x08, used by the sprite routine 0x1000181D).
@@ -2259,18 +2300,20 @@ namespace openrayman
 					if(sprites[first].mode != current)
 						set_blend(current = sprites[first].mode);
 					if(sprites[first].mode == blend::additive)
-						glUniform4f(m_u_fog, 0, 0, 0, 0);
+						submission::Uniform4f(m_u_fog, 0, 0, 0, 0);
 					else
-						glUniform4fv(m_u_fog, 1, glm::value_ptr(fog_was));
-					glBindTexture(GL_TEXTURE_2D, sprites[first].texture);
+						submission::Uniform4fv(m_u_fog, 1, glm::value_ptr(fog_was));
+					submission::BindTexture(GL_TEXTURE_2D, sprites[first].texture);
 					draw_triangles(GLint(first * 6), GLsizei((last - first) * 6));
 					first = last;
 				}
-				glUniform4fv(m_u_fog, 1, glm::value_ptr(fog_was));
+				submission::Uniform4fv(m_u_fog, 1, glm::value_ptr(fog_was));
 			}
 		};
 		draw_sprites(false);
-		// Particles, farthest first: each fades on its own, so each is its own draw.
+		submission::stage(submission::pass::particles);
+		// Particles keep their far-to-near order. A per-vertex tint lets adjacent
+		// quads of the same texture/blend share a draw even when they fade differently.
 		if(!m_particles.empty() && !m_effect_materials.empty())
 		{
 			glm::vec3 right(view[0][0], view[1][0], view[2][0]);
@@ -2285,6 +2328,14 @@ namespace openrayman
 			glm::vec3 lit = glm::normalize(glm::vec3(0.3f, 0.2f, 0.9f));
 			std::vector<vertex> quads;
 			quads.reserve(farthest_first.size() * 6);
+			struct particle_draw { GLuint texture; blend mode; glm::vec4 tint; };
+			std::vector<particle_draw> draws;
+			auto append_particle = [&](const particle& p, const sprite_instance& m, std::initializer_list<vertex> corners) {
+				const float a = std::clamp(p.alpha, 0.0f, 1.0f);
+				const glm::vec4 tint = m.mode == blend::additive ? glm::vec4(a) : glm::vec4(1, 1, 1, a);
+				draws.push_back({p.age >= 0 ? texture_once(m.animation, m.texture, p.age) : texture_at(m.animation, m.texture), m.mode, tint});
+				for(vertex v : corners) { v.color = tint; quads.push_back(v); }
+			};
 			for(const particle* p : farthest_first)
 			{
 				const sprite_instance& m = m_effect_materials.at(p->material);
@@ -2307,7 +2358,7 @@ namespace openrayman
 					glm::vec4 bounds{ 0, 0, 1, 1 };
 					const vertex a{ mid - along - across, { 0, 0 }, lit, bounds }, b{ mid - along + across, { 1, 0 }, lit, bounds };
 					const vertex c{ mid + along - across, { 0, 1 }, lit, bounds }, e{ mid + along + across, { 1, 1 }, lit, bounds };
-					quads.insert(quads.end(), { a, b, c, c, b, e });
+					append_particle(*p, m, { a, b, c, c, b, e });
 					continue;
 				}
 				const float half_height = p->half_height < 0 ? p->half_size : p->half_height;
@@ -2326,25 +2377,26 @@ namespace openrayman
 					bounds.y = 0, bounds.w = 1;
 				vertex bl{ p->center - x - y, { 0, v }, lit, bounds }, br{ p->center + x - y, { u, v }, lit, bounds };
 				vertex tl{ p->center - x + y, { 0, 0 }, lit, bounds }, tr{ p->center + x + y, { u, 0 }, lit, bounds };
-				quads.insert(quads.end(), { bl, tl, br, br, tl, tr });
+				append_particle(*p, m, { bl, tl, br, br, tl, tr });
 			}
-			glBindVertexArray(m_sprite_vao);
-			glBindBuffer(GL_ARRAY_BUFFER, m_sprite_vbo);
+			submission::BindVertexArray(m_sprite_vao);
+			submission::BindBuffer(GL_ARRAY_BUFFER, m_sprite_vbo);
 			glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(quads.size() * sizeof(vertex)), quads.data(), GL_STREAM_DRAW);
-			glUniform1i(m_u_lighting, 4);
-			glUniform1f(m_u_light_alpha, 1.0f);
-			for(std::size_t i = 0; i < farthest_first.size(); i++)
+
+			submission::Uniform1i(m_u_lighting, submission::baseline() ? 4 : 5);
+			submission::Uniform1f(m_u_light_alpha, 1.0f);
+			for(std::size_t i = 0; i < draws.size();)
 			{
-				const sprite_instance& m = m_effect_materials.at(farthest_first[i]->material);
-				if(m.mode != current)
-					set_blend(current = m.mode);
-				// Glowing ones fade by getting darker, see-through ones by their alpha.
-				float a = std::clamp(farthest_first[i]->alpha, 0.0f, 1.0f);
-				glm::vec4 tint = m.mode == blend::additive ? glm::vec4(a, a, a, a) : glm::vec4(1, 1, 1, a);
-				glUniform4fv(m_u_material_diffuse, 1, glm::value_ptr(tint));
-				const float age = farthest_first[i]->age;
-				glBindTexture(GL_TEXTURE_2D, age >= 0 ? texture_once(m.animation, m.texture, age) : texture_at(m.animation, m.texture));
-				draw_triangles(GLint(i * 6), 6);
+				const auto& d = draws[i];
+				if(d.mode != current) set_blend(current = d.mode);
+				std::size_t end = i + 1;
+				if(submission::baseline())
+					submission::Uniform4fv(m_u_material_diffuse, 1, glm::value_ptr(d.tint));
+				else
+					while(end < draws.size() && draws[end].texture == d.texture && draws[end].mode == d.mode) ++end;
+				submission::BindTexture(GL_TEXTURE_2D, d.texture);
+				draw_triangles(GLint(i * 6), GLsizei((end - i) * 6));
+				i = end;
 			}
 		}
 
@@ -2353,7 +2405,7 @@ namespace openrayman
 			// 0x419A30 / 0x45CC80: a separate view. Keyed faces write depth before deferred glows.
 			glDepthMask(GL_TRUE);
 			glClear(GL_DEPTH_BUFFER_BIT);
-			glBindVertexArray(m_vao);
+			submission::BindVertexArray(m_vao);
 			draw_order(1);
 			draw_order(2);
 			draw_sprites(true);
@@ -2373,15 +2425,15 @@ namespace openrayman
 				for(const glm::vec3& corner : f.corners)
 					faces.push_back(vertex{ corner, { 0, 0 }, f.normal, { -1e6f, -1e6f, 1e6f, 1e6f }, colour });
 			}
-			glBindVertexArray(m_sprite_vao);
-			glBindBuffer(GL_ARRAY_BUFFER, m_sprite_vbo);
+			submission::BindVertexArray(m_sprite_vao);
+			submission::BindBuffer(GL_ARRAY_BUFFER, m_sprite_vbo);
 			glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(faces.size() * sizeof(vertex)), faces.data(), GL_STREAM_DRAW);
 			set_model(glm::mat4(1));
-			glUniform1i(m_u_lighting, 5);
-			glUniform1f(m_u_light_alpha, 1.0f);
-			glUniform4f(m_u_fog, 0, 0, 0, 0);
+			submission::Uniform1i(m_u_lighting, 5);
+			submission::Uniform1f(m_u_light_alpha, 1.0f);
+			submission::Uniform4f(m_u_fog, 0, 0, 0, 0);
 			set_blend(current = blend::alpha);
-			glBindTexture(GL_TEXTURE_2D, m_white);
+			submission::BindTexture(GL_TEXTURE_2D, m_white);
 			glDepthMask(GL_FALSE);
 			glEnable(GL_POLYGON_OFFSET_FILL);
 			glPolygonOffset(-1, -2);
@@ -2391,7 +2443,7 @@ namespace openrayman
 		}
 
 		set_blend(blend::none);
-		glBindVertexArray(0);
+		submission::BindVertexArray(0);
 		glDisable(GL_DEPTH_TEST);
 	}
 }

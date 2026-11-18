@@ -181,6 +181,7 @@ namespace
 
 		// --screenshot <file>: render one frame, save it as BMP and quit. Used for smoke tests.
 		std::optional<fs::path> screenshot;
+		int benchmark_frames = 1; // Frozen screenshot frames; finish naturally, without killing a process.
 		std::optional<fs::path> snapshot;
 		std::optional<bool> autosave_option; // --autosave on|off // P: the next drawn frame goes here (screenshots/ beside the program)
 
@@ -2698,7 +2699,7 @@ namespace
 					captured = a.tick;
 				}
 			}
-		if(screenshot)
+		if(screenshot && a.benchmark_frames <= 1)
 		{
 			SDL_Surface* surface = SDL_CreateSurface(w, h, SDL_PIXELFORMAT_ABGR8888);
 			glPixelStorei(GL_PACK_ALIGNMENT, 1);
@@ -3074,6 +3075,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 			game::profiler::set_enabled(true);
 		}
 	}
+	if(const char* frames = std::getenv("OPENRAYMAN_BENCHMARK_FRAMES"))
+		a->benchmark_frames = std::clamp(std::atoi(frames), 1, 100000);
 	if(!folder)
 		folder = load_saved_folder();
 
@@ -3490,7 +3493,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 			SDL_DelayPrecise(a.next_frame_ns - after);
 		}
 	}
-	return a.screenshot ? SDL_APP_SUCCESS : SDL_APP_CONTINUE;
+	return a.screenshot && --a.benchmark_frames <= 0 ? SDL_APP_SUCCESS : SDL_APP_CONTINUE;
 }
 
 void SDL_AppQuit(void* appstate, SDL_AppResult)

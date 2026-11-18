@@ -41,6 +41,7 @@ namespace openrayman::game::profiler
 	{
 		static constexpr std::array<std::string_view, counters> names = {
 			"draw calls", "triangles", "ticks", "actors", "collision gathers",
+			"program binds", "texture binds", "blend changes", "uniform updates", "buffer binds", "vao binds",
 		};
 		return names[std::size_t(c)];
 	}

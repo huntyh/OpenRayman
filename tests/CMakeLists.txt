@@ -15,6 +15,11 @@ add_executable(openrayman_tests
 	screen_text_tests.cc
 )
 target_link_libraries(openrayman_tests PRIVATE openrayman::lib openrayman::game doctest::doctest)
+if(OPENRAYMAN_BUILD_ENGINE)
+	target_sources(openrayman_tests PRIVATE submission_tests.cc)
+	target_include_directories(openrayman_tests PRIVATE ../src)
+	target_link_libraries(openrayman_tests PRIVATE glad)
+endif()
 openrayman_warnings(openrayman_tests)
 target_compile_definitions(openrayman_tests PRIVATE OPENRAYMAN_TEST_VERSION="${PROJECT_VERSION}")
 

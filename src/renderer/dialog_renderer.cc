@@ -1,3 +1,4 @@
+#include <renderer/submission_state.h>
 // OpenRayman is free software: you can redistribute it and/or modify it under the terms of the
 // GNU General Public License, version 3. See LICENSE_openrayman for the full license.
 #include <renderer/dialog_renderer.h>
@@ -27,7 +28,7 @@ namespace openrayman
 			void main() { colour = texture(image, v_uv) * v_colour; }
 		)");
 		glGenVertexArrays(1, &m_vao); glGenBuffers(1, &m_vbo);
-		glBindVertexArray(m_vao); glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+		submission::BindVertexArray(m_vao); submission::BindBuffer(GL_ARRAY_BUFFER, m_vbo);
 		glEnableVertexAttribArray(0); glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(SDL_Vertex), reinterpret_cast<void*>(offsetof(SDL_Vertex, position)));
 		glEnableVertexAttribArray(1); glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(SDL_Vertex), reinterpret_cast<void*>(offsetof(SDL_Vertex, color)));
 		glEnableVertexAttribArray(2); glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(SDL_Vertex), reinterpret_cast<void*>(offsetof(SDL_Vertex, tex_coord)));
@@ -533,15 +534,17 @@ namespace openrayman
 					}
 			}
 		}
-		glDisable(GL_DEPTH_TEST); glEnable(GL_BLEND); glDisable(GL_CULL_FACE);
-		glUseProgram(m_program); glUniform1i(glGetUniformLocation(m_program, "image"), 0);
-		glActiveTexture(GL_TEXTURE0); glBindVertexArray(m_vao); glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+		submission::scope submissions(true);
+		submission::stage(submission::pass::hud);
+		glDisable(GL_DEPTH_TEST); submission::EnableBlend(true); glDisable(GL_CULL_FACE);
+		submission::UseProgram(m_program); submission::Uniform1i(glGetUniformLocation(m_program, "image"), 0);
+		glActiveTexture(GL_TEXTURE0); submission::BindVertexArray(m_vao); submission::BindBuffer(GL_ARRAY_BUFFER, m_vbo);
 		for(const auto& batch : m_batches)
 		{
-			glBlendFunc(GL_SRC_ALPHA, batch.additive ? GL_ONE : GL_ONE_MINUS_SRC_ALPHA);
-			glBindTexture(GL_TEXTURE_2D, batch.texture);
+			submission::BlendFunc(GL_SRC_ALPHA, batch.additive ? GL_ONE : GL_ONE_MINUS_SRC_ALPHA);
+			submission::BindTexture(GL_TEXTURE_2D, batch.texture);
 			glBufferData(GL_ARRAY_BUFFER, batch.vertices.size() * sizeof(SDL_Vertex), batch.vertices.data(), GL_STREAM_DRAW);
-			glDrawArrays(GL_TRIANGLES, 0, GLsizei(batch.vertices.size()));
+			submission::DrawArrays(GL_TRIANGLES, 0, GLsizei(batch.vertices.size()));
 		}
 	}
 }

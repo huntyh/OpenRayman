@@ -173,6 +173,15 @@ namespace openrayman
 			glm::vec2 scroll_offset{ 0 };
 			std::size_t element_order = 0;
 			bool pause_swirl = false;
+			// Only identical draw state may share a deferred draw. Ranges and source-object
+			// identity are irrelevant: object fog-cull centres and lighting sums are per vertex.
+			bool same_state(const batch& b) const
+			{
+				return texture == b.texture && mode == b.mode && animation == b.animation &&
+					scroll == b.scroll && ambient == b.ambient && diffuse == b.diffuse &&
+					sector == b.sector && faces == b.faces && well == b.well &&
+					depth_write == b.depth_write && scroll_offset == b.scroll_offset && pause_swirl == b.pause_swirl;
+			}
 		};
 		static constexpr std::size_t no_sector = std::size_t(-1);
 
@@ -266,6 +275,7 @@ namespace openrayman
 		GLint m_u_material_ambient = -1, m_u_material_diffuse = -1, m_u_luminosity = -1, m_u_light_alpha = -1;
 		GLint m_u_fog_color = -1, m_u_fog = -1, m_u_fog_infinite = -1, m_u_additive = -1;
 		GLuint m_vao = 0, m_vbo = 0;
+		GLuint m_deferred_ebo = 0; // sorted triangle indices; shared static/actor vertex buffer
 		GLuint m_sprite_vao = 0, m_sprite_vbo = 0; // rebuilt every frame
 		std::vector<sprite_instance> m_sprites;     // of the static geometry, in world space
 		GLuint m_white = 0; // for untextured materials
