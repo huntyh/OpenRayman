@@ -11,6 +11,7 @@ add_library(openrayman_game STATIC
 	src/generated.cc
 	src/live_memory.cc
 	src/mechanics.cc
+	src/options.cc
 	src/particles.cc
 	src/profiler.cc
 	src/saves.cc

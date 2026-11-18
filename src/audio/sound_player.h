@@ -36,6 +36,7 @@ namespace openrayman
 		void pause_group(bool pause);
 		// Everything this player sends out, music and effects (0..1): the loading screen fades it.
 		void set_master_gain(float gain) { if(m_stream) SDL_SetAudioStreamGain(m_stream, gain); }
+		void set_volumes(float music, float effects, const std::map<std::uint32_t, std::int32_t>& sources);
 
 	private:
 		struct voice
@@ -100,6 +101,8 @@ namespace openrayman
 		SDL_AudioStream* m_stream = nullptr;
 		std::map<std::uint32_t, bnm_bank> m_banks;
 		std::mutex m_mutex;
+		float m_music_gain = 1, m_effects_gain = 1;
+		std::map<std::uint32_t, std::int32_t> m_source_factors;
 		std::vector<voice> m_voices;
 		unsigned m_pause_group = 1;
 		theme m_theme;

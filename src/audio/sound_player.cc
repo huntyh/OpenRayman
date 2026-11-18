@@ -352,6 +352,12 @@ namespace openrayman
 		log_music(m_theme.segments[m_music_index], m_music_index);
 	}
 
+	void sound_player::set_volumes(float music, float effects, const std::map<std::uint32_t, std::int32_t>& sources)
+	{
+		std::lock_guard lock(m_mutex);
+		m_music_gain = music; m_effects_gain = effects; m_source_factors = sources;
+	}
+
 	void sound_player::place(std::uint32_t source, float gain, float pan)
 	{
 		std::lock_guard lock(m_mutex);
@@ -451,7 +457,7 @@ namespace openrayman
 					for(unsigned c = 0; c < 2; ++c)
 					{
 						unsigned input = segment->channels == 1 ? 0 : c;
-						mix[c] += (segment->samples[a * segment->channels + input] * (1 - fraction) + segment->samples[b * segment->channels + input] * fraction) * segment->volume * player.m_theme.volume * music_gain *
+						mix[c] += (segment->samples[a * segment->channels + input] * (1 - fraction) + segment->samples[b * segment->channels + input] * fraction) * segment->volume * player.m_theme.volume * music_gain * player.m_music_gain *
 							(player.m_fade_remaining ? music_fade_gain(player.m_fade_remaining) : 1.0f);
 					}
 					player.m_music_position += static_cast<double>(segment->rate) / 22050.0;
@@ -482,7 +488,9 @@ namespace openrayman
 					unsigned input = v.channels == 1 ? 0 : channel;
 					float sample = v.samples[a * v.channels + input] * (1 - fraction) + v.samples[b * v.channels + input] * fraction;
 					float balance = channel == 0 ? 1 - std::max(0.0f, v.pan) : 1 + std::min(0.0f, v.pan);
-					mix[channel] += sample * v.volume * v.gain * balance * effects_gain;
+					auto factor = player.m_source_factors.find(v.source);
+					float source_gain = factor == player.m_source_factors.end() ? 1.0f : float(std::clamp(factor->second, 0, 127)) / 127.0f;
+					mix[channel] += sample * v.volume * v.gain * balance * effects_gain * player.m_effects_gain * source_gain;
 				}
 				v.position += v.step;
 			}

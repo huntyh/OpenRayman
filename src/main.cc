@@ -22,6 +22,7 @@
 
 #include <openrayman/actor.h>
 #include <openrayman/game/saves.h>
+#include <openrayman/game/options.h>
 #include <openrayman/game/animation_player.h>
 #include <openrayman/game/first_visit.h>
 #include <openrayman/game/handlers.h>
@@ -111,6 +112,11 @@ namespace
 	struct app
 	{
 		SDL_Window* window = nullptr;
+		game::engine_options options;
+		game::options_page options_ui;
+		game::screen_text options_previous_text;
+		std::array<bool, 6> options_keys{};
+		bool options_releasing = false;
 		SDL_GLContext context = nullptr;
 		gl::api api = gl::api::desktop_gl33;
 		GLuint program = 0;
@@ -1149,6 +1155,11 @@ namespace
 				break;
 			}
 			// Screenshots and the --time run at load stay silent.
+			const auto factor_gain = [](int amount) { return float(std::clamp(amount, 0, 127)) / 127.0f; };
+			const float music_volume = float(a.options.music) / 10.0f * factor_gain(int(a.vm->script_volume[1])) * factor_gain(a.vm->sound_channel_1_factor.value_or(127));
+			const float effects_volume = float(a.options.effects) / 10.0f * factor_gain(int(a.vm->script_volume[0])) * factor_gain(a.vm->sound_channel_0_factor.value_or(127));
+			if(a.sounds) a.sounds->set_volumes(music_volume, effects_volume, a.vm->sound_channel_0_factors);
+			if(a.music) a.music->set_gain(music_volume * a.sound_gain);
 			for(const auto& request : a.vm->take_sounds())
 				if(a.sounds && !a.screenshot && !a.silent_run)
 				{
@@ -1838,8 +1849,11 @@ namespace
 			if(a.carried_entry) a.vm->menu_request = *std::exchange(a.carried_entry, {});
 			openrayman::game::register_dialog_handlers(*a.vm);
 			auto saved_language = openrayman::game::read_language(openrayman::game::save_root());
+			if(a.options.language >= 0) saved_language = unsigned(a.options.language);
 			openrayman::game::set_dialog_resolver(*a.vm, files, saved_language.value_or(0));
-			a.vm->on_language_selected = [](unsigned language) {
+			a.vm->on_language_selected = [&a](unsigned language) {
+				a.options.language = int(language);
+				if(!game::write_options(game::save_root(), a.options)) SDL_Log("Could not save engine settings");
 				if(!openrayman::game::write_language(openrayman::game::save_root(), language))
 					SDL_Log("Could not save the language selection");
 			};
@@ -1928,6 +1942,92 @@ namespace
 				a.autosave_option.reset();
 			}
 			openrayman::game::install_save_handlers(*a.vm, files, header, tree, a.game->data_dir().parent_path(), a.saves);
+			a.options_ui = {};
+			a.options_keys = {};
+			a.options_releasing = false;
+			if(levels[index] == "Menu")
+			{
+				const auto controller = tree.node(6).at.address();
+				a.vm->before_think = [&a, controller](std::uint32_t self) {
+					if(self != controller || !a.input) return false;
+					auto& vm = *a.vm;
+					auto& m = vm.memory();
+					const auto actor = m.u32(self + 4), brain = m.u32(actor + 0xC), mind = m.u32(brain);
+					const auto normal = m.u32(mind + 4), model = m.u32(mind);
+					const auto list = m.u32(m.u32(model));
+					const auto behaviour = m.u32(normal + 8);
+					// Node 6 behaviours 2 and 11 are the two main-menu variants. Catch
+					// confirmation before either script modifies slots or opens behaviour 3.
+					std::array<bool, 6> keys{a.input->key(0xC8), a.input->key(0xD0), a.input->key(0xCB),
+						a.input->key(0xCD), a.input->key(0x1C) || a.input->key(0x39) || a.input->pad_button(0, 10), a.input->key(1)};
+					const auto before = a.options_keys;
+					a.options_keys = keys;
+					if(a.options_releasing)
+					{
+						if(std::ranges::none_of(keys, [](bool key) { return key; })) a.options_releasing = false;
+						return true;
+					}
+					if(!a.options_ui.active)
+					{
+						if((behaviour != list + 2 * 12 && behaviour != list + 11 * 12) || vm.get_variable(self, 17).as_int() != 3 || !keys[4] || before[4]) return false;
+						a.options_previous_text = vm.screen_text();
+						a.options_ui = {}; a.options_ui.active = true;
+						a.options.language = vm.language;
+						vm.play_sound(0x66c03d0, 0, 119, -1);
+					}
+					else
+					{
+						for(std::size_t key = 0; key < keys.size(); ++key)
+							if(keys[key] && !before[key])
+							{
+								bool autosave = a.saves->autosave.value_or(false);
+								if(a.options_ui.navigate(game::options_page::action(key), a.options, autosave, a.saves->slot != 0))
+								{
+									bool saved = game::write_options(game::save_root(), a.options);
+									if(a.saves->slot && a.saves->autosave.value_or(false) != autosave)
+									{
+										const bool saved_autosave = game::write_autosave(game::save_root(), a.saves->slot, autosave);
+										if(saved_autosave) a.saves->autosave = autosave;
+										saved = saved_autosave && saved;
+									}
+									a.options_ui.error = saved ? "" : "Could not save settings";
+									vm.language = std::uint8_t(a.options.language);
+									if(vm.on_language_selected) vm.on_language_selected(vm.language);
+									if(bool(SDL_GetWindowFlags(a.window) & SDL_WINDOW_FULLSCREEN) != a.options.fullscreen)
+										if(!SDL_SetWindowFullscreen(a.window, a.options.fullscreen)) a.options_ui.error = "Display change failed";
+									a.vsync = app::vsync_mode(a.options.vsync); apply_vsync(a);
+									a.fps_limit = a.options.fps; a.next_frame_ns = 0;
+									a.loading_screens = a.options.loading_screens;
+								}
+								vm.play_sound(key < 4 ? 0x66c03f0 : 0x66c03d0, 0, 119, -1);
+								break;
+							}
+					}
+					if(a.options_ui.active)
+					{
+						a.options_ui.draw(vm.screen_text(), a.options, a.saves->autosave.value_or(false), a.saves->slot);
+						vm.set_variable(self, 53, game::value::integer(500));
+						vm.set_variable(self, 54, game::value::integer(350 + a.options_ui.selected * 100));
+					}
+					else
+					{
+						vm.screen_text() = a.options_previous_text;
+						constexpr int labels[] = {0x166, 0x167, 0x16d, 0x168, 0x16a, 0x16b};
+						for(std::size_t i = 0; i < 6; ++i)
+							if(auto label = game::resolve_dialog_value(vm, game::value::of(game::value_type::id, labels[i])))
+							{
+								const auto slot = vm.screen_text().at(i);
+								vm.screen_text().set(i, slot.x, slot.y, *label, slot.alpha, slot.size, slot.owner);
+								vm.screen_text().set_field(i, 7, i == 3 ? 3.0f : 1.0f);
+								vm.screen_text().set_field(i, 1, i == 3 ? 1.0f : 0.0f);
+							}
+						vm.set_variable(self, 53, game::value::integer(500));
+						vm.set_variable(self, 54, game::value::integer(550));
+						a.options_releasing = true;
+					}
+					return true;
+				};
+			}
 			if(a.carried_general)
 			{
 				openrayman::game::apply_save_entries(*a.vm, tree, a.registry.general, *a.carried_general, a.registry.general_size);
@@ -2646,6 +2746,10 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 	}
 
 	a->music = std::make_unique<music_player>();
+	a->options = game::read_options(game::save_root());
+	a->vsync = app::vsync_mode(a->options.vsync);
+	a->fps_limit = a->options.fps;
+	a->loading_screens = a->options.loading_screens;
 
 	// The gamepads already plugged in are opened as if they had just been added, so the first one
 	// gets game pad 0 (which is the one the game's actions test).
@@ -2818,6 +2922,10 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 			}
 		}
 	}
+	a->options.vsync = int(a->vsync);
+	a->options.fps = a->fps_limit;
+	a->options.loading_screens = a->loading_screens;
+	if(a->options.fullscreen) SDL_SetWindowFullscreen(a->window, true);
 	apply_vsync(*a);
 	if(const char* log = std::getenv("OPENRAYMAN_PROFILE"))
 	{
@@ -2910,6 +3018,8 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 			if(event->key.key == SDLK_F9 && !event->key.repeat)
 			{
 				a.vsync = a.vsync == app::vsync_mode::on ? app::vsync_mode::strict : a.vsync == app::vsync_mode::strict ? app::vsync_mode::off : app::vsync_mode::on;
+				a.options.vsync = int(a.vsync);
+				if(!game::write_options(game::save_root(), a.options)) SDL_Log("Could not save engine settings");
 				apply_vsync(a);
 				return SDL_APP_CONTINUE;
 			}

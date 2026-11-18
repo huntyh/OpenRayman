@@ -27,6 +27,7 @@ namespace openrayman
 		void stop();
 
 		void set_paused(bool paused);
+		void set_gain(float gain) { if(m_stream) SDL_SetAudioStreamGain(m_stream, gain); }
 		bool paused() const { return m_paused; }
 
 		// Seconds played of the current track, and its total length.

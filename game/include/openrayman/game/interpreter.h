@@ -109,6 +109,8 @@ namespace openrayman::game
 		// One frame of an actor's brain (0x4120D0): its reflex first, then, unless the reflex took
 		// over, its normal behaviour.
 		void think(std::uint32_t super_object);
+		// Host-owned menu: true suspends this actor's reflex and normal scripts for this tick.
+		std::function<bool(std::uint32_t)> before_think;
 		// When set, step() adds each actor's thinking time (nanoseconds) here, to find costly scripts.
 		std::map<std::uint32_t, std::int64_t>* think_costs = nullptr;
 		// Optional diagnostic for the order in which step updates actors.
@@ -235,7 +237,8 @@ namespace openrayman::game
 		// without any.
 		std::int32_t ground_sound_type(std::uint32_t super_object) const;
 		std::vector<sound_request> take_sounds() { return std::exchange(m_sounds, {}); }
-		// Sound channel factors and group volume (422, 423, 256); playback integration pending.
+		// Sound channel factors and group volume (422..424, 256/257); the host mixer
+		// multiplies these with the user's music/effects preference, including existing voices.
 		std::map<std::uint32_t, std::int32_t> sound_channel_0_factors;
 		std::optional<std::int32_t> sound_channel_0_factor;
 		std::optional<std::int32_t> sound_channel_1_factor;

@@ -1704,6 +1704,7 @@ namespace openrayman::game
 
 	void interpreter::think(std::uint32_t self)
 	{
+		if(before_think && before_think(self)) return;
 		std::uint32_t actor = actor_of(self);
 		if(!actor || removed(self) || !brain_runs(self))
 			return;

@@ -1,5 +1,89 @@
 # The main menu
 
+## Engine Options (cards 25 and 61, 2026-11-18)
+
+The main menu's Options entry now opens our own page, with the game's screen-slot
+font, blue/white gradient, yellow selection, pulsing letters and butterfly. This
+replacement applies to the **Menu level main menu**; the in-level pause menu is
+unchanged. The labels and layout of the replacement are OpenRayman's design.
+
+The stock path was traced with `ortool brain <game> Menu 6` (and node 39 for the
+scene/cursor context). Node **6**, normal behaviours **2 and 11**, handles the two
+main-menu variants. Confirm action 9 (`06/00 +0xB4C`) at `var17 == 3` hides the
+main slots, sets IDs **0x173, 0x174, 0x175, 0x172** at y=200/400/600/800, and
+switches to **behaviour 3, reflex 0**. These entries lead to display, sound,
+controls and Back. The display branch reads mode function 260, availability 262
+and brightness 263; the sound branch reads 256/257, draws two kind-120 gauges
+through 503, and uses behaviour 4 / reflex 4 to change volumes through 152/153.
+Procedures 505..507 own the text slots, as described below. These old display
+and control pages are not useful configuration for our SDL/OpenGL engine.
+
+`src/main.cc` installs `interpreter::before_think` for this controller. Before
+either main-menu behaviour can consume confirmation on selection 3, it saves
+the text table and opens `game::options_page`. While open, that hook skips
+**both the controller's reflex and normal scripts**. No stock Options branch,
+gauge or input handler runs. The rest of the Menu scene keeps animating. Our
+page fills the same `screen_text` table used by 505..507, so it goes through
+the existing font, tint, pulse and centred 4:3 drawing path, rather than a new
+overlay font. The butterfly still reads controller variables 53/54; these now
+follow our selected row. Move uses sound event **0x66C03F0**; confirm/back uses
+**0x66C03D0**, queued through the existing procedure-119 playback route, as in
+the menu scripts.
+
+Up/Down selects a row; Left/Right changes its value; Enter opens a sub-page or
+selects Back; Esc returns one page. Closing the root restores the saved slots,
+refreshes the six main-menu labels in the current language, restores the
+butterfly target to Options, and waits for the navigation keys to be released
+before resuming the original controller. Its behaviour, selection, schedules
+and variables have otherwise remained on the main menu throughout the visit.
+
+| Page | Entries |
+| --- | --- |
+| Sound | Music and effects volume, 0..100% in 10% steps; affects existing playback immediately |
+| Display | Fullscreen; Vsync On/Strict/Off (the same implementation as F9); FPS limit Off/30/60/90/120/144/165/240; loading screens On/Off |
+| Game | English, Français, Español, Italiano, Deutsch (the five language-prompt choices); autosave for the active slot |
+
+Autosave displays **No active save** and cannot be changed until a slot is
+active. A choice updates the existing `autosave_SlotN.txt` and live save session;
+it does not write a save or choose Slot1 implicitly. Config values are in
+**`save_root()/openrayman.cfg`**, a simple `key=value` file beside the slots.
+Keys are `music`, `effects` (0..10), `fullscreen` (0/1), `vsync` (0=On,
+1=Strict, 2=Off), `fps_limit` (0=Off), `loading_screens` (0/1), and `language`
+(0..4; -1 leaves the existing preference/prompt in charge). Missing, unknown
+or malformed entries retain defaults. Writes stage a complete temporary file
+before replacing the config contents. Failure is reported on the page.
+Language selection also retains compatibility with our `language.txt`.
+Config loads before command-line parsing, so `--vsync`, `--fps-limit` and
+`--loading-screens` override it. Menu edits and F9 persist the resulting choice.
+
+The theme mixer and the separate music preview player multiply the user's
+music gain by `script_volume[1]/127` (152, read by 256) and channel-1 factor
+(423). Sample voices, including dialogue, multiply the effects gain by
+`script_volume[0]/127` (153, read by 257), global channel-0 factor (424), and
+per-source channel-0 factor (422). Existing resource volume, spatial gain,
+panning, music transition fades and the loading-screen master fade still
+multiply these gains. Mixer settings are transferred under its audio mutex,
+so changing a slider also changes voices and music already playing.
+
+The small entry tables in `game/src/options.cc` are the extension point.
+Explicitly reserved, with no controls implemented yet: cutscene bars **#5**,
+widescreen/HDR **#43**, antialiasing **#51**, controller **#101**, rumble **#102**.
+
+Validation: headless tests cover config round trips, invalid/missing entries,
+write failure, wrapped navigation, page back/close, volume bounds, read-only
+no-slot autosave and selection-slot flags. Engine captures exercise opening,
+editing, sub-pages, Esc return, active synthetic-slot autosave and CLI
+precedence at 1280x720 and 960x720. Capture paths and run notes are in
+`NOTES_OPTIONS.md`; screenshots remain outside the repository.
+
+Provenance: own reading of Menu node 6 bytecode and the existing clean-room
+screen-slot implementation; read-only Ghidra text exports for **0x451880**
+(channel factors), **0x453680** (volume getter) and **0x469960** (language
+selection). The stock slots/rendering provenance is detailed below. All new
+page/navigation/config code is ours; assets are loaded from the installation
+at runtime. No executable code or game assets were copied into the repository,
+and no installed saves or original-game options files were read or written.
+
 See [text.md](text.md) for the 2026-11-07 comparison of dialog/narration and
 menu/HUD paths, corrected screen-camera projection, font-root loading, inline
 texture-bank selection, and the remaining colour/spacing live reads.
