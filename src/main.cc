@@ -117,6 +117,12 @@ namespace
 		game::screen_text options_previous_text;
 		std::array<bool, 6> options_keys{};
 		bool options_releasing = false;
+		bool name_input_active = false, name_input_started = false;
+		std::string typed_name;
+		std::uint32_t menu_controller = 0;
+		std::optional<SDL_FingerID> menu_finger;
+		float finger_x = 0, finger_y = 0;
+		bool finger_moved = false;
 		SDL_GLContext context = nullptr;
 		gl::api api = gl::api::desktop_gl33;
 		GLuint program = 0;
@@ -329,6 +335,88 @@ namespace
 		if(std::getline(in, line) && !line.empty())
 			return fs::path(reinterpret_cast<const char8_t*>(line.c_str()));
 		return std::nullopt;
+	}
+
+	bool apply_display(app& a)
+	{
+#ifdef SDL_PLATFORM_ANDROID
+		return true;
+#else
+		if(a.options.fullscreen == 0) return SDL_SetWindowFullscreen(a.window, false);
+		if(a.options.fullscreen == 1)
+			return SDL_SetWindowFullscreenMode(a.window, nullptr) && SDL_SetWindowFullscreen(a.window, true);
+		int count = 0;
+		auto modes = SDL_GetFullscreenDisplayModes(SDL_GetDisplayForWindow(a.window), &count);
+		if(!modes || !count) { SDL_free(modes); return false; }
+		const SDL_DisplayMode* chosen = nullptr;
+		for(int i = 0; i < count; ++i)
+			if(modes[i]->w == a.options.display_width && modes[i]->h == a.options.display_height &&
+				int(std::lround(modes[i]->refresh_rate * 1000)) == a.options.refresh_millihz) { chosen = modes[i]; break; }
+		// Missing/stale mode (monitor changed): choose the current display's preferred mode.
+		if(!chosen) chosen = modes[0];
+		a.options.display_width = chosen->w; a.options.display_height = chosen->h;
+		a.options.refresh_millihz = int(std::lround(chosen->refresh_rate * 1000));
+		bool ok = SDL_SetWindowFullscreenMode(a.window, chosen) && SDL_SetWindowFullscreen(a.window, true);
+		if(!ok) SDL_Log("Exclusive %dx%d @ %.3f Hz failed: %s", chosen->w, chosen->h, chosen->refresh_rate, SDL_GetError());
+		SDL_free(modes);
+		return ok;
+#endif
+	}
+
+	bool menu_open(const app& a)
+	{
+		return a.playing && a.vm && a.input && (a.menu_controller || a.vm->paused() || a.saves->confirmation || a.saves->question || a.saves->explaining);
+	}
+
+	std::vector<game::menu_target> menu_targets(app& a)
+	{
+		std::vector<game::menu_target> targets;
+		if(!menu_open(a)) return targets;
+		int w = 0, h = 0; SDL_GetWindowSize(a.window, &w, &h);
+		auto slots = a.saves->confirmation ? game::confirmation_slots(*a.saves) : a.vm->screen_text();
+		if(a.saves->question || a.saves->explaining) {
+			slots.clear();
+			if(a.saves->question) { slots.set(2,390,580,"Yes",255,14); slots.set(3,560,580,"No",255,14); }
+			else slots.set(2,500,660,"/C:Press Enter to continue.",255,10);
+		}
+		for(std::size_t i = 0; i < game::screen_text::slot_count; ++i) {
+			const auto& slot = slots.at(i);
+			if(!slot.used || !slot.alpha || slot.text.empty()) continue;
+			bool values = false;
+			if(a.saves->confirmation || a.saves->question) { if(i != 2 && i != 3) continue; }
+			else if(a.saves->explaining) { if(i != 2) continue; }
+			else if(a.options_ui.active) {
+				auto entries = a.options_ui.entries(a.options);
+				if(i < 1 || i > entries.size()) continue;
+				auto id = entries[i-1].id;
+				values = id != game::option_id::sound && id != game::option_id::display && id != game::option_id::game && id != game::option_id::back;
+			}
+			else if(!game::script_menu_entry(*a.vm, slot.owner, int(i), a.vm->paused())) continue;
+			targets.push_back({game::screen_slot_rectangle(slot,w,h),int(i),slot.owner,values});
+		}
+		return targets;
+	}
+
+	// All mouse and touch paths share this hit test and selection route.
+	void point_menu(app& a, float x, float y, bool activate)
+	{
+		auto targets = menu_targets(a);
+		auto hit = game::hit_test_menu(targets,x,y);
+		if(!hit) return;
+		const auto& target = targets[hit->target];
+		bool changed = false;
+		if(a.saves->confirmation) {
+			if(a.saves->confirmation_submitted) return;
+			bool choice = target.entry == 2; changed = choice != a.saves->confirmation_choice; a.saves->confirmation_choice = choice;
+		}
+		else if(a.saves->question) {
+			bool choice = target.entry == 2; changed = choice != a.saves->choice; a.saves->choice = choice;
+		}
+		else if(a.saves->explaining) {}
+		else if(a.options_ui.active) { changed = a.options_ui.selected != target.entry-1; a.options_ui.selected = target.entry-1; }
+		else changed = game::select_script_menu_entry(*a.vm,target.owner,target.entry,a.vm->paused());
+		if(changed) a.vm->play_sound(0x66c03f0,0,119,-1);
+		if(activate) a.input->pulse_key(target.value ? (hit->right ? 0xCD : 0xCB) : 0x1C);
 	}
 
 	void save_folder(const fs::path& folder)
@@ -1098,7 +1186,10 @@ namespace
 						a.input->set_key(h.key, down[h.key]);
 				}
 				a.input->step();
-				openrayman::game::update_save_ui(*a.saves, openrayman::game::save_root(), a.input->key(0xCB), a.input->key(0xCD), a.input->key(0x1C));
+				const bool was_choice = a.saves->confirmation_choice;
+				openrayman::game::update_save_ui(*a.saves, openrayman::game::save_root(), a.input->key(0xCB) || ((a.saves->confirmation || a.saves->question) && a.input->key(0xC8)),
+					a.input->key(0xCD) || ((a.saves->confirmation || a.saves->question) && a.input->key(0xD0)), a.input->key(0x1C), a.input->key(1));
+				if(a.saves->confirmation && was_choice != a.saves->confirmation_choice) a.vm->play_sound(0x66c03f0, 0, 119, -1);
 			}
 			a.tick++;
 			// A --time run has no rendered frames between ticks. Refresh the same
@@ -1942,15 +2033,24 @@ namespace
 				a.autosave_option.reset();
 			}
 			openrayman::game::install_save_handlers(*a.vm, files, header, tree, a.game->data_dir().parent_path(), a.saves);
+			if(a.name_input_active) SDL_StopTextInput(a.window);
+			a.name_input_active = false; a.menu_controller = 0;
 			a.options_ui = {};
 			a.options_keys = {};
 			a.options_releasing = false;
 			if(levels[index] == "Menu")
 			{
 				const auto controller = tree.node(6).at.address();
+			a.menu_controller = controller;
 				a.vm->before_think = [&a, controller](std::uint32_t self) {
 					if(self != controller || !a.input) return false;
 					auto& vm = *a.vm;
+					bool naming = a.playing && !a.saves->confirmation && game::menu_name_screen(vm, controller);
+					if(naming != a.name_input_active) {
+						a.name_input_active = naming;
+						if(naming) { a.typed_name.clear(); a.name_input_started = false; SDL_StartTextInput(a.window); }
+						else SDL_StopTextInput(a.window);
+					}
 					auto& m = vm.memory();
 					const auto actor = m.u32(self + 4), brain = m.u32(actor + 0xC), mind = m.u32(brain);
 					const auto normal = m.u32(mind + 4), model = m.u32(mind);
@@ -1972,6 +2072,18 @@ namespace
 						if((behaviour != list + 2 * 12 && behaviour != list + 11 * 12) || vm.get_variable(self, 17).as_int() != 3 || !keys[4] || before[4]) return false;
 						a.options_previous_text = vm.screen_text();
 						a.options_ui = {}; a.options_ui.active = true;
+#ifdef SDL_PLATFORM_ANDROID
+						a.options_ui.desktop_display = false;
+#else
+						int count = 0;
+						if(auto modes = SDL_GetFullscreenDisplayModes(SDL_GetDisplayForWindow(a.window), &count)) {
+							for(int i = 0; i < count; ++i) {
+								game::options_page::display_mode mode{modes[i]->w, modes[i]->h, int(std::lround(modes[i]->refresh_rate * 1000))};
+								if(std::ranges::find(a.options_ui.modes, mode) == a.options_ui.modes.end()) a.options_ui.modes.push_back(mode);
+							}
+							SDL_free(modes);
+						}
+#endif
 						a.options.language = vm.language;
 						vm.play_sound(0x66c03d0, 0, 119, -1);
 					}
@@ -1981,8 +2093,14 @@ namespace
 							if(keys[key] && !before[key])
 							{
 								bool autosave = a.saves->autosave.value_or(false);
+								const auto previous = a.options;
 								if(a.options_ui.navigate(game::options_page::action(key), a.options, autosave, a.saves->slot != 0))
 								{
+									bool display_ok = true;
+									if(previous.fullscreen != a.options.fullscreen || previous.display_width != a.options.display_width || previous.display_height != a.options.display_height || previous.refresh_millihz != a.options.refresh_millihz) {
+										display_ok = apply_display(a);
+										if(!display_ok) { a.options = previous; apply_display(a); }
+									}
 									bool saved = game::write_options(game::save_root(), a.options);
 									if(a.saves->slot && a.saves->autosave.value_or(false) != autosave)
 									{
@@ -1993,8 +2111,7 @@ namespace
 									a.options_ui.error = saved ? "" : "Could not save settings";
 									vm.language = std::uint8_t(a.options.language);
 									if(vm.on_language_selected) vm.on_language_selected(vm.language);
-									if(bool(SDL_GetWindowFlags(a.window) & SDL_WINDOW_FULLSCREEN) != a.options.fullscreen)
-										if(!SDL_SetWindowFullscreen(a.window, a.options.fullscreen)) a.options_ui.error = "Display change failed";
+									if(!display_ok) a.options_ui.error = "Display change failed";
 									a.vsync = app::vsync_mode(a.options.vsync); apply_vsync(a);
 									a.fps_limit = a.options.fps; a.next_frame_ns = 0;
 									a.loading_screens = a.options.loading_screens;
@@ -2006,7 +2123,7 @@ namespace
 					if(a.options_ui.active)
 					{
 						a.options_ui.draw(vm.screen_text(), a.options, a.saves->autosave.value_or(false), a.saves->slot);
-						vm.set_variable(self, 53, game::value::integer(500));
+						vm.set_variable(self, 53, game::value::integer(150));
 						vm.set_variable(self, 54, game::value::integer(350 + a.options_ui.selected * 100));
 					}
 					else
@@ -2412,12 +2529,19 @@ namespace
 				auto dialogs = game::visible_dialogs(*a.vm);
 				// Paused (procedure 306), the speech boxes (Murfy's tutorial subtitles) wait with the
 				// world; only the pause menu's text shows (user, 2026-11-15, card 38).
-				if(a.vm->paused())
+				if(a.vm->paused() || a.saves->confirmation)
 					dialogs.clear();
+				auto menu_slots = a.saves->confirmation ? game::confirmation_slots(*a.saves) : a.vm->screen_text();
+				if(a.saves->question) {
+					menu_slots.clear();
+					menu_slots.set(0,500,450,"/C:Enable autosave?",255,14);
+					menu_slots.set(2,390,580,"Yes",255,14); menu_slots.set(3,560,580,"No",255,14);
+					menu_slots.set_field(a.saves->choice ? 2 : 3,7,3);
+				}
 				// Screen slots are the separate menu/HUD text path (0x465C10). Their
 				// text IDs are resolved by the script handlers before reaching here.
 				if(a.screen_font_actor)
-					for(std::size_t slot_index = 0; const auto& slot : a.vm->screen_text().all())
+					for(std::size_t slot_index = 0; const auto& slot : menu_slots.all())
 						// 0x465C10: while paused (procedure 306) only slots 0..14 are drawn, the pause
 						// menu's own; the in-game HUD's counters (the level's Lums and cages) wait.
 						if(slot_index++ < 15 || !a.vm->paused())
@@ -2462,8 +2586,7 @@ namespace
 				};
 				if(a.saves->question)
 				{
-					add_save_text("/C:Enable autosave?", 500, 450, 14, 1, false);
-					add_save_text(a.saves->choice ? "/C:/O400:Yes  /O600:No" : "/C:/O600:Yes  /O400:No", 500, 580, 14, 1, false);
+					// Drawn from the same slots used for pointer hit testing.
 				}
 				else if(a.saves->explaining)
 				{
@@ -2925,7 +3048,10 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv)
 	a->options.vsync = int(a->vsync);
 	a->options.fps = a->fps_limit;
 	a->options.loading_screens = a->loading_screens;
-	if(a->options.fullscreen) SDL_SetWindowFullscreen(a->window, true);
+	if(!apply_display(*a)) {
+		SDL_Log("Saved display mode unavailable; using a window");
+		a->options.fullscreen = 0; SDL_SetWindowFullscreen(a->window, false);
+	}
 	apply_vsync(*a);
 	if(const char* log = std::getenv("OPENRAYMAN_PROFILE"))
 	{
@@ -2974,6 +3100,7 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 			return SDL_APP_SUCCESS;
 
 		case SDL_EVENT_WINDOW_FOCUS_LOST:
+			a.menu_finger.reset();
 			if(a.input)
 				a.input->release_all();
 			break;
@@ -2995,13 +3122,42 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 					feed_pad(a, p);
 			break;
 
+		case SDL_EVENT_TEXT_INPUT:
+			if(a.name_input_active && a.playing && a.vm) {
+				auto accepted = game::filter_menu_name(event->text.text, 3 - a.typed_name.size());
+				if(!accepted.empty()) {
+					a.name_input_started = true; a.typed_name += accepted;
+					game::write_menu_name(*a.vm, a.menu_controller, a.typed_name);
+				}
+			}
+			break;
+
 		case SDL_EVENT_KEY_UP:
+			if(event->key.key == SDLK_AC_BACK && a.playing && a.input) { a.input->set_key(1,false); return SDL_APP_CONTINUE; }
 			if(a.input && a.playing)
 				if(std::uint8_t key = game_key(event->key.scancode))
 					a.input->set_key(key, false);
 			break;
 
 		case SDL_EVENT_KEY_DOWN:
+			if(event->key.key == SDLK_AC_BACK && a.playing && a.input) { a.input->set_key(1,true); return SDL_APP_CONTINUE; }
+			if(a.name_input_active && a.playing && a.vm) {
+				if(event->key.key == SDLK_SPACE) return SDL_APP_CONTINUE;
+				if(event->key.key == SDLK_UP || event->key.key == SDLK_DOWN || event->key.key == SDLK_LEFT || event->key.key == SDLK_RIGHT) {
+					a.typed_name.clear(); a.name_input_started = false;
+				}
+				if(event->key.key == SDLK_BACKSPACE) {
+					if(!a.name_input_started) {
+						const auto row = std::size_t(a.vm->get_variable(a.menu_controller, 17).as_int());
+						a.typed_name = game::filter_menu_name(a.vm->screen_text().at(row).text.substr(3));
+					}
+					a.name_input_started = true;
+					if(!a.typed_name.empty()) a.typed_name.pop_back();
+					game::write_menu_name(*a.vm, a.menu_controller, a.typed_name);
+					return SDL_APP_CONTINUE;
+				}
+				if(event->key.key == SDLK_RETURN && a.name_input_started && a.typed_name.empty()) return SDL_APP_CONTINUE;
+			}
 			if(event->key.key == SDLK_F8 && !event->key.repeat)
 			{
 				a.show_profile = !a.show_profile;
@@ -3026,6 +3182,7 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 			if(a.mode == app::view::level && event->key.key == SDLK_TAB && !event->key.repeat)
 			{
 				a.playing = !a.playing && a.input;
+				if(!a.playing && a.name_input_active) { SDL_StopTextInput(a.window); a.name_input_active = false; }
 				if(a.input)
 					a.input->release_all();
 				a.actor_note = a.playing ? "playing: keys go to the game, Tab to fly" : "flying";
@@ -3144,6 +3301,13 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 
 		case SDL_EVENT_MOUSE_BUTTON_DOWN:
 		case SDL_EVENT_MOUSE_BUTTON_UP:
+			if(menu_open(a)) {
+				if(event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.which != SDL_TOUCH_MOUSEID) {
+					if(event->button.button == SDL_BUTTON_RIGHT) a.input->pulse_key(1);
+					else if(event->button.button == SDL_BUTTON_LEFT) point_menu(a,event->button.x,event->button.y,true);
+				}
+				break;
+			}
 			if(a.mode == app::view::level && event->button.button == SDL_BUTTON_RIGHT)
 			{
 				a.looking = event->type == SDL_EVENT_MOUSE_BUTTON_DOWN;
@@ -3152,18 +3316,48 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 			break;
 
 		case SDL_EVENT_MOUSE_MOTION:
+			if(menu_open(a)) {
+				if(event->motion.which != SDL_TOUCH_MOUSEID) point_menu(a,event->motion.x,event->motion.y,false);
+				break;
+			}
 			if(a.mode == app::view::level && a.looking)
 				a.camera.look(event->motion.xrel, event->motion.yrel);
 			break;
 
 		case SDL_EVENT_MOUSE_WHEEL:
+			if(menu_open(a)) {
+				float y = event->wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -event->wheel.y : event->wheel.y;
+				for(int i=0;i<std::min(10,int(std::ceil(std::abs(y))));++i) a.input->pulse_key(y>0 ? 0xC8 : 0xD0);
+				break;
+			}
 			if(a.mode == app::view::level)
 				a.speed = std::clamp(a.speed * (event->wheel.y > 0 ? 1.25f : 0.8f), 1.0f, 200.0f);
 			else
 				step_texture(a, event->wheel.y > 0 ? -1 : 1);
 			break;
 
+		case SDL_EVENT_FINGER_DOWN:
+			if(menu_open(a) && !a.menu_finger) {
+				a.menu_finger = event->tfinger.fingerID; a.finger_x = event->tfinger.x; a.finger_y = event->tfinger.y; a.finger_moved = false;
+			}
+			break;
+		case SDL_EVENT_FINGER_MOTION:
+			if(a.menu_finger == event->tfinger.fingerID) {
+				int w=0,h=0; SDL_GetWindowSize(a.window,&w,&h);
+				if(std::hypot((event->tfinger.x-a.finger_x)*w,(event->tfinger.y-a.finger_y)*h)>12) a.finger_moved = true;
+			}
+			break;
+		case SDL_EVENT_FINGER_CANCELED:
+			if(a.menu_finger == event->tfinger.fingerID) a.menu_finger.reset();
+			break;
 		case SDL_EVENT_FINGER_UP:
+			if(menu_open(a)) {
+				if(a.menu_finger == event->tfinger.fingerID && !a.finger_moved) {
+					int w=0,h=0; SDL_GetWindowSize(a.window,&w,&h);
+					point_menu(a,event->tfinger.x*w,event->tfinger.y*h,true);
+				}
+				a.menu_finger.reset(); break;
+			}
 			// Touch: right half for next, left half for previous texture.
 			step_texture(a, event->tfinger.x > 0.5f ? 1 : -1);
 			break;

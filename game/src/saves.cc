@@ -147,6 +147,7 @@ namespace openrayman::game
 				text.erase(0, end + 1);
 			}
 			text.resize(std::min<std::size_t>(3, text.size()));
+			while(!text.empty() && text.back() == ' ') text.pop_back();
 			return text;
 		}
 
@@ -247,14 +248,20 @@ namespace openrayman::game
 		std::filesystem::remove(autosave_file(folder, slot), ignored);
 	}
 
-	void update_save_ui(save_session& session, const std::filesystem::path& folder, bool left, bool right, bool enter)
+	void update_save_ui(save_session& session, const std::filesystem::path& folder, bool left, bool right, bool enter, bool escape)
 	{
 		if(session.saving_ticks) --session.saving_ticks;
-		if(session.explaining)
+		if(session.confirmation && !session.confirmation_submitted)
+		{
+			if((left && !session.left_down) || (right && !session.right_down)) session.confirmation_choice = !session.confirmation_choice;
+			if(escape && !session.escape_down) session.confirmation_answer = false;
+			else if(enter && !session.enter_down) session.confirmation_answer = session.confirmation_choice;
+		}
+		else if(session.explaining)
 		{
 			// After Yes: the Lum stays shown with its explanation; Enter lets it fade and go on.
 			session.saving_ticks = std::max(session.saving_ticks, 31u);
-			if(enter && !session.enter_down)
+			if((enter && !session.enter_down) || (escape && !session.escape_down))
 			{
 				session.explaining = false;
 				session.saving_ticks = 30;
@@ -263,8 +270,9 @@ namespace openrayman::game
 		else if(session.question)
 		{
 			if((left && !session.left_down) || (right && !session.right_down)) session.choice = !session.choice;
-			if(enter && !session.enter_down)
+			if((enter && !session.enter_down) || (escape && !session.escape_down))
 			{
+				if(escape && !session.escape_down) session.choice = false;
 				if(write_autosave(folder, session.slot, session.choice))
 				{
 					session.autosave = session.choice;
@@ -278,7 +286,24 @@ namespace openrayman::game
 				else session.error = "cannot store autosave preference";
 			}
 		}
-		session.left_down = left; session.right_down = right; session.enter_down = enter;
+		session.escape_down = escape; session.left_down = left; session.right_down = right; session.enter_down = enter;
+	}
+
+	screen_text confirmation_slots(const save_session& session)
+	{
+		screen_text slots;
+		const auto kind = session.confirmation_kind;
+		std::string title = kind == 1 || kind == 2 ? session.name + " already exists." : kind == 3 ? "Load this saved game?" : kind == 4 ? "Delete this saved game?" : kind == 6 && session.confirmation_save ? "Save before leaving?" : kind == 5 || kind == 7 ? "Abandon the current game?" : "Quit OpenRayman?";
+		slots.set(0, 500, 360, "/C:" + title, 255, 13);
+		if(kind == 1 || kind == 2) slots.set(1, 500, 440, "/C:Overwrite this saved game?", 255, 12);
+		slots.set(2, 390, 580, "Yes", 255, 14);
+		slots.set(3, 560, 580, "No", 255, 14);
+		for(int i = 2; i < 4; ++i) {
+			const bool selected = (i == 2) == session.confirmation_choice;
+			slots.set_field(i, 7, selected ? 3.0f : 1.0f);
+			slots.set_field(i, 1, selected ? 1.0f : 0.0f);
+		}
+		return slots;
 	}
 
 	float saving_alpha(const save_session& session)
@@ -302,6 +327,18 @@ namespace openrayman::game
 		};
 		settings();
 		session->automatic_actor = 0;
+		session->confirmation = false; session->confirmation_answer.reset();
+		auto current_behaviour = [&vm](std::uint32_t actor) {
+			auto& m = vm.memory();
+			auto mind = m.u32(m.u32(m.u32(actor + 4) + 0xC));
+			return m.u32(m.u32(mind + 4) + 8);
+		};
+		vm.skip_reflex = [=](std::uint32_t actor) {
+			if(!session->confirmation || actor != session->confirmation_actor) return false;
+			if(current_behaviour(actor) == session->confirmation_behaviour) return true;
+			session->confirmation = false; session->confirmation_answer.reset();
+			return false;
+		};
 		auto confirm_action = read_input_actions(files).first.address() + 9 * input_action_size;
 		// The Hall actor's original Yes -> write -> success -> resume path still runs.
 		// Only its confirmation conditions and text are replaced while autosave is enabled.
@@ -309,6 +346,21 @@ namespace openrayman::game
 			if(text.type != value_type::id) return false;
 			settings();
 			auto id = text.word();
+			if(id == 0x5043 && ((level == "Menu" && actor == tree.node(6).at.address()) || vm.paused()))
+			{
+				if(!session->confirmation) {
+					session->confirmation = true; session->confirmation_choice = false; session->confirmation_submitted = false;
+					session->confirmation_behaviour = current_behaviour(actor);
+					session->confirmation_answer.reset(); session->confirmation_actor = actor;
+					session->confirmation_kind = vm.paused() ? 7 : vm.get_variable(actor, 55).as_int();
+					session->confirmation_save = !vm.paused() && vm.get_variable(actor, 40).as_int() != 0;
+					session->confirmation_variable = vm.paused() ? 77 : 41;
+					vm.set_variable(actor, unsigned(session->confirmation_variable), value::integer(0));
+					vm.set_variable(actor, vm.paused() ? 46u : 53u, value::integer(150));
+					vm.set_variable(actor, vm.paused() ? 47u : 54u, value::integer(650));
+				}
+				return true;
+			}
 			bool hall_question = id == 0x18F || id == 0x190;
 			// The Menu's "save before quitting?" (0x5043, var55 6) is always asked, autosave or not:
 			// answering it for the player saved the Hall portal selected at Esc as the return point
@@ -338,7 +390,22 @@ namespace openrayman::game
 			}
 			return false;
 		};
-		vm.on_input_condition = [=](std::uint32_t actor, unsigned condition, std::uint32_t action) -> std::optional<bool> {
+		vm.on_input_condition = [=, &vm](std::uint32_t actor, unsigned condition, std::uint32_t action) -> std::optional<bool> {
+			if(level == "Menu" && actor == tree.node(6).at.address() && condition == 45 && action == confirm_action && menu_name_screen(vm,actor)) {
+				const int row = vm.get_variable(actor,17).as_int();
+				if(row >= 0 && row < int(screen_text::slot_count)) {
+					const auto& text = vm.screen_text().at(std::size_t(row)).text;
+					if(text.size() <= 3 || filter_menu_name(std::string_view(text).substr(3)).empty()) return false;
+				}
+			}
+			if(session->confirmation && actor == session->confirmation_actor) {
+				if(!session->confirmation_submitted && condition == 45 && action == confirm_action && session->confirmation_answer.has_value()) {
+					vm.set_variable(actor, unsigned(session->confirmation_variable), value::integer(*session->confirmation_answer));
+					session->confirmation_submitted = true;
+					return true;
+				}
+				return false;
+			}
 			if((session->question || session->explaining) && actor == session->question_actor) return false;
 			if(session->automatic_actor == actor && condition == 45 && action == confirm_action)
 			{

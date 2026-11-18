@@ -1754,7 +1754,7 @@ namespace openrayman::game
 
 		m_acting = 0;
 		bool reflex_took_over = false;
-		if(std::uint32_t reflex = m_memory.u32(mind + mind_field::reflex))
+		if(std::uint32_t reflex = m_memory.u32(mind + mind_field::reflex); reflex && !(skip_reflex && skip_reflex(self)))
 		{
 			m_memory.write<std::uint8_t>(mind + mind_field::running_normal, 0);
 			reflex_took_over = run(self, reflex);

@@ -40,14 +40,14 @@ and variables have otherwise remained on the main menu throughout the visit.
 | Page | Entries |
 | --- | --- |
 | Sound | Music and effects volume, 0..100% in 10% steps; affects existing playback immediately |
-| Display | Fullscreen; Vsync On/Strict/Off (the same implementation as F9); FPS limit Off/30/60/90/120/144/165/240; loading screens On/Off |
+| Display | Windowed/Borderless/Exclusive, exclusive resolution/refresh; Vsync On/Strict/Off (the same implementation as F9); FPS limit Off/30/60/90/120/144/165/240; loading screens On/Off |
 | Game | English, Français, Español, Italiano, Deutsch (the five language-prompt choices); autosave for the active slot |
 
 Autosave displays **No active save** and cannot be changed until a slot is
 active. A choice updates the existing `autosave_SlotN.txt` and live save session;
 it does not write a save or choose Slot1 implicitly. Config values are in
 **`save_root()/openrayman.cfg`**, a simple `key=value` file beside the slots.
-Keys are `music`, `effects` (0..10), `fullscreen` (0/1), `vsync` (0=On,
+Keys are `music`, `effects` (0..10), `fullscreen` (0=Windowed, 1=Borderless, 2=Exclusive), `vsync` (0=On,
 1=Strict, 2=Off), `fps_limit` (0=Off), `loading_screens` (0/1), and `language`
 (0..4; -1 leaves the existing preference/prompt in charge). Missing, unknown
 or malformed entries retain defaults. Writes stage a complete temporary file
@@ -707,3 +707,81 @@ Where this came from: own analysis of executable handlers 0x47D830 (90/93/94),
 bytecode. Scripted tests and screenshots are recorded in `build/helpers/saves_report.md`.
 Autosave UI and settings are our own additions, listed in IMPROVEMENTS.md. No executable
 code, external implementation or game assets were copied into source files.
+
+## Menu2 display improvements (2026-11-18)
+
+Our display choice is `fullscreen=0` Windowed, `1` Borderless (compatible with
+old configs), or `2` Exclusive. Exclusive adds a Mode row populated from the
+window display's SDL fullscreen modes. `display_width`, `display_height` and
+`refresh_millihz` persist the mode independently of enumeration order. Missing
+or stale modes fall back to that display's preferred mode. Borderless explicitly
+clears the mode; Exclusive supplies one before entering fullscreen. The SDL
+platform guard hides these desktop entries on Android. Options rows use size 11 (fitted down for long mode strings)
+and the butterfly target x=150, clear of the centred language/value text.
+Provenance: our UI design; SDL3 official video API documentation for mode semantics.
+
+## Centred confirmations (#142)
+
+Own bytecode analysis with `ortool brain <game> Menu 6`: behaviour 9 and
+reflex 3 share composed text ID 0x5043 in slot 9 at (70,825). Reflex rule
+0d/01 +0x38060 chooses the question using var55 (1 new-game overwrite,
+2 save overwrite, 3 load confirmation, 4 delete, 5 abandon, 6 quit/save before leaving).
+Var41 is Yes=1/No=0. Behaviour rule +0x173B8 consumes action 9 via condition
+45 and follows the chosen original branch. OpenRayman's on_screen_text hook
+suppresses that composed slot, records the kind, and draws a separate centred
+screen. Its input hook blocks the controller's input until our answer is ready,
+then sets var41 and supplies that one confirmation. Esc supplies No through the
+same branch. This does not perform any save/delete/quit operation itself.
+Provenance: own reading of the installed Menu bytecode; replacement UI is ours.
+
+## Keyboard save names (#74)
+
+Own bytecode reading: Menu node 6 behaviours 7/8 with reflex 2 are name entry.
+Reflex +0x3792C cycles ASCII 48..57 and 65..90 and writes procedure 507 at
+var17, var59+3. Var59 wraps 0..2, var58 is its current character. The three
+leading bytes are /c:. SDL text input starts/stops with this state; typed text
+is ASCII-filtered, uppercased and limited to three cells. UTF-8 non-ASCII bytes
+are discarded, so unsupported glyphs and inline formatting cannot enter names.
+The same slot-source string used by 507 is updated, with unused cells spaces;
+var58/59 and the flashing cell follow typing. First typing replaces the initial
+AAA, Backspace removes the last typed character, Enter confirms via the existing
+action. Arrow/pad picking remains the scripts' implementation. The SDL3 window
+text-input API also invokes Android's keyboard. Provenance: own bytecode reading
+and official SDL text-input API; all implementation is ours.
+
+## Mouse and touch (#143)
+
+Our hit test measures the same screen-slot glyph layout as the renderer, including
+inline codes, glyph advance/height, punctuation and pulse extent. It uses the
+renderer's centred 4:3 transform in window coordinates (also on high-DPI displays).
+Only selectable entries get targets; blank, transparent, disabled and heading slots
+are excluded. Main-menu var14 flags 2/3 select var17 and target arrays 15/16;
+pause var12 flags 2/3 select var16 and target arrays 13/14 (targets vars46/47).
+This mapping comes from our own bytecode reading of Menu node 6 and Fix actor
+04/00 +0x13E64 (`ortool brain <game> Learn_10 04/00+0x13E64`).
+
+Mouse and touch share hit_test_menu and selection. Mouse hover updates selection
+and plays 0x66C03F0 only on a change. Click queues Enter; value rows queue Left/Right
+according to the clicked half. Right click queues Esc, wheel queues Up/Down. Virtual
+presses are merged with physical keys, with release ticks between queued presses.
+Touch confirms a tap on release; drags beyond 12 window pixels, cancelled touches
+and secondary fingers do not activate entries. SDL's synthetic touch mouse events
+are ignored. Android AC_BACK maps to Esc. Gameplay/fly-camera controls stay outside
+this route when no menu is showing. Autosave and confirmation questions expose their
+actual Yes/No slots to this same layout path. Esc answers autosave No as well.
+
+The pause controller also has a broken 0x5043 Abandon question, using var77 as the
+answer (reflex +0x484F4 / +0x484F8, behaviour +0x3CB38). It uses the centred
+confirmation takeover and returns its answer through var77. Main-menu variants
+continue to use var41. Provenance: own bytecode/layout analysis; all new UI code
+is OpenRayman's deliberate addition.
+
+For kind 6, var40 distinguishes Save before leaving (1) from Quit (0); the replacement preserves that distinction. Kind 3 is a load confirmation, kind 4 delete; kind 5 and the pause question abandon the active game.
+
+Confirmation answers are latched through the original meta-action delay. A narrow
+skip_reflex hook suspends only the controller's directional reflex while the
+normal script consumes the single supplied confirm and leaves that behaviour.
+This prevents a held arrow or stick from changing an already-submitted answer.
+The prompt remains drawn until the transition finishes. Empty typed names cannot
+confirm through Enter, pad or pointer. Held-direction overwrite and pause-return
+regression tests exercise the normal scripts rather than bypassing that delay.

@@ -367,6 +367,109 @@ namespace openrayman::game
 		store(vm, *state, source->second, *text);
 	}
 
+	menu_rectangle screen_slot_rectangle(const screen_text::slot& slot, int width, int height)
+	{
+		if(!slot.used || !slot.alpha || slot.text.empty() || width <= 0 || height <= 0) return {};
+		dialog_text text;
+		text.prepared = slot.text; text.screen = true; text.tint = std::array<float,4>{1,1,1,1};
+		auto metrics = screen_slot_metrics(slot.size);
+		text.widths.fill(float(metrics.advance)); text.widths[0] = float(metrics.space);
+		text.line_height = float(metrics.line_height); text.default_scale = 1;
+		auto layout = layout_dialog(text);
+		float left = layout.centred ? (1000 - layout.width) / 2 : slot.x;
+		float x0 = 100000, x1 = -100000, y0 = 100000, y1 = -100000;
+		const float pulse = slot.wobble ? 7.0f : 0;
+		for(const auto& glyph : layout.glyphs) {
+			if(glyph.byte == ' ') continue;
+			x0 = std::min(x0, left + glyph.x); x1 = std::max(x1, left + glyph.x + glyph.advance);
+			float y = slot.y + glyph.y + float(screen_slot_punctuation_offset(glyph.byte, metrics.height));
+			y0 = std::min(y0, y - pulse); y1 = std::max(y1, y + metrics.height + pulse);
+		}
+		if(x1 <= x0 || y1 <= y0) return {};
+		float area = std::min(1.0f, (4.0f / 3.0f) * float(height) / float(width));
+		return {(0.5f + (x0 / 1000 - 0.5f) * area) * width, y0 * height / 1000,
+			(x1 - x0) * area * width / 1000, (y1 - y0) * height / 1000};
+	}
+
+	std::optional<menu_hit> hit_test_menu(std::span<const menu_target> targets, float x, float y)
+	{
+		for(std::size_t i = 0; i < targets.size(); ++i) {
+			const auto& r = targets[i].bounds;
+			if(r.width > 0 && r.height > 0 && x >= r.x && y >= r.y && x < r.x + r.width && y < r.y + r.height)
+				return menu_hit{i, x >= r.x + r.width / 2};
+		}
+		return std::nullopt;
+	}
+
+	namespace {
+		int menu_array(interpreter& vm, std::uint32_t owner, int variable, int entry) {
+			auto array = vm.get_variable(owner, unsigned(variable)); auto& m = vm.memory();
+			if(array.type != value_type::buffer || !m.contains(array.word(),8) || entry < 0 || entry >= m.u8(array.word()+4)) return 0;
+			return int(m.u32(array.word() + 8 + unsigned(entry) * 4));
+		}
+	}
+	bool script_menu_entry(interpreter& vm, std::uint32_t owner, int entry, bool pause)
+	{
+		if(!owner || entry < 0 || entry >= vm.get_variable(owner, pause ? 17 : 21).as_int()) return false;
+		int flag = menu_array(vm, owner, pause ? 12 : 14, entry);
+		return flag == 2 || flag == 3;
+	}
+	bool select_script_menu_entry(interpreter& vm, std::uint32_t owner, int entry, bool pause)
+	{
+		if(!script_menu_entry(vm, owner, entry, pause)) return false;
+		const unsigned selection = pause ? 16 : 17;
+		int previous = vm.get_variable(owner, selection).as_int();
+		if(previous == entry) return false;
+		if(previous >= 0 && previous < int(screen_text::slot_count)) {
+			vm.screen_text().set_field(std::size_t(previous), 7, menu_array(vm,owner,pause ? 12 : 14,previous) == 3 ? 2.0f : 1.0f);
+			vm.screen_text().set_field(std::size_t(previous), 1, 0);
+		}
+		vm.set_variable(owner, selection, value::integer(entry));
+		vm.set_variable(owner, pause ? 46 : 53, value::integer(menu_array(vm,owner,pause ? 13 : 15,entry)));
+		vm.set_variable(owner, pause ? 47 : 54, value::integer(menu_array(vm,owner,pause ? 14 : 16,entry)));
+		vm.screen_text().set_field(std::size_t(entry), 7, 3);
+		vm.screen_text().set_field(std::size_t(entry), 1, 1);
+		return true;
+	}
+
+	bool menu_name_screen(interpreter& vm, std::uint32_t controller)
+	{
+		auto& m = vm.memory();
+		const auto actor = m.u32(controller + 4), brain = m.u32(actor + 0xC), mind = m.u32(brain), model = m.u32(mind);
+		const auto list = m.u32(m.u32(model)), reflexes = m.u32(m.u32(model + 4));
+		const auto normal = m.u32(m.u32(mind + 4) + 8), reflex = m.u32(m.u32(mind + 8) + 8);
+		return (normal == list + 7 * 12 || normal == list + 8 * 12) && reflex == reflexes + 2 * 12;
+	}
+
+	std::string filter_menu_name(std::string_view text, std::size_t limit)
+	{
+		std::string result;
+		for(unsigned char byte : text) {
+			if(byte >= 'a' && byte <= 'z') byte -= 'a' - 'A';
+			if(((byte >= 'A' && byte <= 'Z') || (byte >= '0' && byte <= '9')) && result.size() < limit) result += char(byte);
+		}
+		return result;
+	}
+
+	bool write_menu_name(interpreter& vm, std::uint32_t controller, std::string_view name)
+	{
+		if(!menu_name_screen(vm, controller)) return false;
+		const int row = vm.get_variable(controller, 17).as_int();
+		if(row < 0 || row >= int(screen_text::slot_count)) return false;
+		auto filtered = filter_menu_name(name);
+		// Three fixed cells after /c:, exactly where reflex 2 writes with procedure 507.
+		for(std::size_t i = 0; i < 3; ++i) {
+			char ch = i < filtered.size() ? filtered[i] : ' ';
+			vm.screen_text().put_char(std::size_t(row), i + 3, ch);
+			put_text_slot_source_char(vm, std::size_t(row), i + 3, ch);
+		}
+		int cursor = std::min(2, int(filtered.size()));
+		vm.set_variable(controller, 59, value::integer(cursor));
+		vm.set_variable(controller, 58, value::integer(cursor < int(filtered.size()) ? filtered[std::size_t(cursor)] : 'A'));
+		vm.screen_text().set_field(std::size_t(row), 5, float(cursor + 1));
+		return true;
+	}
+
 	void set_dialog_resolver(interpreter& vm, dialog_resolver resolver)
 	{
 		auto it = systems.find(&vm);

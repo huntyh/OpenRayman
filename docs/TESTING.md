@@ -246,7 +246,7 @@ keys go to the game, and compare with the GOG game side by side:
 - [ ] The language prompt types in letter by letter; English is highlighted. Colours (blue
       entries, yellow cursor entry swaying up and down) and positions look like the game's.
 - [ ] Enter on English: the main menu (New Game, Load, Delete, Options, Site Rayman2, Exit).
-      Up/Down move the yellow entry; Load and Delete are not greyed (two save slots installed).
+      Up/Down move the yellow entry; Load and Delete reflect the saves in OpenRayman's own folder (use synthetic slots for testing).
 - [ ] Enter on New Game: the name screen with `AAA` and the arrow hint; arrows change letters.
 - [ ] Enter on the name: Jail_10 loads and the intro starts ("A planet of anguish and pain…").
       The save it writes goes to OpenRayman's own folder, so the GOG save folder stays untouched.
@@ -260,13 +260,40 @@ keys go to the game, and compare with the GOG game side by side:
       fades out with the old level, is silent under the picture and fades in with the new one.
       Loading a saved game from the main menu goes straight to the Hall, without a picture.
 
+### Engine menu additions (Menu2)
+
+Use an isolated OpenRayman save root for these checks (PowerShell):
+
+```powershell
+$env:APPDATA = "$PWD/build/menu2-appdata"
+$env:OPENRAYMAN_SAVE_DIR = "$PWD/build/menu2-saves"
+& ./build/windows-debug/bin/openrayman.exe --game "F:/Games/Rayman 2" --level Menu
+```
+
+- [ ] Options > Display: switch Windowed / Borderless / Exclusive, choose a resolution
+      and refresh in Exclusive, restart and check persistence. Borderless fills the desktop.
+      Check all Options pages at 1280x720 and 960x720: no cursor overlaps Language or values.
+      Exclusive was rejected by Windows in the agent session (DISP_CHANGE_FAILED); verify
+      successful switching in the normal desktop session. A failed edit restores the prior mode.
+- [ ] Type a9z on New Game: A9Z, no fourth character; accents/punctuation ignored.
+      Backspace deletes, Enter confirms, Space does not confirm. Arrows/pad still pick letters.
+      On Android verify the keyboard opens/closes with the name screen and Back acts as Esc.
+- [ ] Use an existing synthetic name: the overwrite question occupies its own centred
+      screen, initially No. Esc preserves the slot; Yes overwrites it. Check Delete/Exit
+      questions and Learn_10 > Esc > Abandon > Esc. Hold an arrow through confirmation:
+      the submitted answer must stay fixed. Cursor stays clear of Yes/No.
+- [ ] Hover and click entries on main, Options and pause pages and prompts. Hover sound
+      plays only when selection changes. Disabled rows, headings and gaps do nothing.
+      Click the two halves of a value, right click to go back, scroll both ways. Touch taps
+      select/confirm; dragging/cancelling and additional fingers do not activate entries.
+
+
 ## Known limitations
 
 Don't report these as bugs, they're the next steps:
 
 - Some actors are invisible on purpose (triggers, waypoints)
-- The original's long text can still run off the screen (the "Yahoo!" for all Lums, the
-  overwrite-save message; board #6)
+- The original's "Yahoo!" text for all Lums can still run off the screen (board #6).
 
 Tip: compare with the real game at the same spot.
 

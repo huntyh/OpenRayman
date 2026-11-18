@@ -11,7 +11,7 @@ TEST_CASE("engine config round trip, missing and malformed settings")
 	REQUIRE_FALSE(std::filesystem::exists(root));
 	CHECK(read_options(root) == engine_options{});
 	engine_options expected;
-	expected.music = 3; expected.effects = 0; expected.fullscreen = true;
+	expected.music = 3; expected.effects = 0; expected.fullscreen = 2; expected.display_width = 1920; expected.display_height = 1080; expected.refresh_millihz = 59940;
 	expected.vsync = 2; expected.fps = 144; expected.loading_screens = false; expected.language = 4;
 	REQUIRE(write_options(root, expected));
 	CHECK(read_options(root) == expected);
@@ -20,7 +20,7 @@ TEST_CASE("engine config round trip, missing and malformed settings")
 	CHECK(read_options(root) == expected);
 	{
 		std::ofstream out(root / "openrayman.cfg");
-		out << "music=-1\neffects=11\nvsync=3\nfps_limit=garbage\nlanguage=5\nfullscreen=2\nloading_screens=0 trailing\nunknown=1\nmusic=6\n";
+		out << "music=-1\neffects=11\nvsync=3\nfps_limit=garbage\nlanguage=5\nfullscreen=3\nloading_screens=0 trailing\nunknown=1\nmusic=6\n";
 	}
 	engine_options valid; valid.music = 6;
 	CHECK(read_options(root) == valid);
@@ -59,4 +59,26 @@ TEST_CASE("Options navigation wraps, edits only with arrows and backs out one pa
 	CHECK(slots.at(2).colour == 3);
 	CHECK(slots.at(2).text.find("On") != std::string::npos);
 	press(action::back); press(action::back); CHECK_FALSE(ui.active);
+}
+
+TEST_CASE("Exclusive mode row follows fullscreen choice and display modes round trip")
+{
+ options_page ui; ui.active = true; ui.current = options_page::page::display;
+ engine_options v; bool autosave = false;
+ ui.modes = {{1280,720,60000}, {1920,1080,59940}};
+ CHECK(ui.entries(v).size() == 5);
+ ui.navigate(options_page::action::right, v, autosave, false); CHECK(v.fullscreen == 1);
+ ui.navigate(options_page::action::right, v, autosave, false); CHECK(v.fullscreen == 2);
+ CHECK(ui.entries(v).size() == 6);
+ ui.selected = 1;
+ CHECK(ui.navigate(options_page::action::right, v, autosave, false));
+ CHECK(v.display_width == 1920); CHECK(v.refresh_millihz == 59940);
+ ui.desktop_display = false; CHECK(ui.entries(v).size() == 4);
+}
+
+TEST_CASE("Fullscreen config accepts all three choices and legacy on means borderless")
+{
+ const auto root=std::filesystem::temp_directory_path()/("display-config-"+std::to_string(std::random_device{}()));
+ for(int mode : {0,1,2}) { engine_options v; v.fullscreen=mode; REQUIRE(write_options(root,v)); CHECK(read_options(root)==v); }
+ std::filesystem::remove_all(root);
 }

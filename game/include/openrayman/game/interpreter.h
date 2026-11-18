@@ -111,6 +111,8 @@ namespace openrayman::game
 		void think(std::uint32_t super_object);
 		// Host-owned menu: true suspends this actor's reflex and normal scripts for this tick.
 		std::function<bool(std::uint32_t)> before_think;
+		// A host-owned modal can suspend the reflex while its normal script consumes an answer.
+		std::function<bool(std::uint32_t)> skip_reflex;
 		// When set, step() adds each actor's thinking time (nanoseconds) here, to find costly scripts.
 		std::map<std::uint32_t, std::int64_t>* think_costs = nullptr;
 		// Optional diagnostic for the order in which step updates actors.

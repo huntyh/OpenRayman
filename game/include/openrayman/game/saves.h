@@ -19,6 +19,12 @@ namespace openrayman::game
 		bool first_save = false, question = false, choice = false;
 		// After Yes: the saving Lum with a short explanation, until Enter.
 		bool explaining = false;
+		bool confirmation_save = false, confirmation_submitted = false;
+		std::uint32_t confirmation_behaviour = 0;
+		bool confirmation = false, confirmation_choice = false, escape_down = false;
+		std::optional<bool> confirmation_answer;
+		std::uint32_t confirmation_actor = 0;
+		int confirmation_kind = 0, confirmation_variable = 41;
 		bool left_down = false, right_down = false, enter_down = false;
 		std::uint32_t automatic_actor = 0, question_actor = 0;
 		bool automatic_saved = false;
@@ -32,7 +38,8 @@ namespace openrayman::game
 	std::optional<bool> read_autosave(const std::filesystem::path& folder, unsigned slot);
 	bool write_autosave(const std::filesystem::path& folder, unsigned slot, bool enabled);
 	void forget_autosave(const std::filesystem::path& folder, unsigned slot);
-	void update_save_ui(save_session& session, const std::filesystem::path& folder, bool left, bool right, bool enter);
+	void update_save_ui(save_session& session, const std::filesystem::path& folder, bool left, bool right, bool enter, bool escape = false);
+	screen_text confirmation_slots(const save_session& session);
 	float saving_alpha(const save_session& session);
 	void install_save_handlers(interpreter& vm, const level_files& files, const level_header& header,
 		const scene& tree, const std::filesystem::path& game_folder, std::shared_ptr<save_session> session);

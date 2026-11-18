@@ -3,6 +3,7 @@
 #include <openrayman/game/sound_placement.h>
 
 #include <doctest/doctest.h>
+#include <openrayman/game/dialog.h>
 
 TEST_CASE("screen text preserves the size from the script position")
 {
@@ -162,4 +163,35 @@ TEST_CASE("music transition fade lasts one second at the mixer rate")
 	CHECK(music_fade_gain(music_fade_frames) == doctest::Approx(1.0f));
 	CHECK(music_fade_gain(music_fade_frames / 2) == doctest::Approx(0.5f));
 	CHECK(music_fade_gain(0) == doctest::Approx(0.0f));
+}
+
+TEST_CASE("Menu name keyboard filtering is ASCII uppercase and three cells")
+{
+ using openrayman::game::filter_menu_name;
+ CHECK(filter_menu_name("a9z") == "A9Z");
+ CHECK(filter_menu_name("abcDEF") == "ABC");
+ CHECK(filter_menu_name("a /:!z") == "AZ");
+ CHECK(filter_menu_name("012345") == "012");
+ CHECK(filter_menu_name("\xC3\xA9\xE4\xB8\xAD") == "");
+ CHECK(filter_menu_name("ab", 1) == "A");
+ CHECK(filter_menu_name("a", 0) == "");
+}
+
+TEST_CASE("Menu hit testing follows slot layout at 4:3 and 16:9 and rejects gaps")
+{
+ using namespace openrayman::game;
+ screen_text slots; slots.set(0,500,400,"/C:ABC",255,15);
+ for(int width : {960,1280}) {
+  auto r=screen_slot_rectangle(slots.at(0),width,720);
+  CHECK(r.width==doctest::Approx(92.16)); CHECK(r.x+r.width/2==doctest::Approx(width/2));
+  CHECK(r.y==doctest::Approx(288)); CHECK(r.height==doctest::Approx(27.36));
+  std::vector<menu_target> targets{{r,7}};
+  auto left=hit_test_menu(targets,r.x+1,r.y+1), right=hit_test_menu(targets,r.x+r.width-1,r.y+1);
+  REQUIRE(left); REQUIRE(right); CHECK_FALSE(left->right); CHECK(right->right); CHECK(left->target==0);
+  CHECK_FALSE(hit_test_menu(targets,r.x-1,r.y)); CHECK_FALSE(hit_test_menu(targets,r.x+r.width,r.y));
+  CHECK_FALSE(hit_test_menu(targets,r.x,r.y+r.height+1));
+ }
+ slots.set_field(0,0,0); CHECK(screen_slot_rectangle(slots.at(0),1280,720).width==0);
+ slots.set(0,100,400,"/C:ABC/O200:DEF",255,15); auto r=screen_slot_rectangle(slots.at(0),960,720);
+ CHECK(r.x+r.width/2==doctest::Approx(480)); CHECK(r.width==doctest::Approx(184.32));
 }

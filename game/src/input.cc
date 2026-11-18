@@ -40,6 +40,7 @@ namespace openrayman::game
 
 	void input::release_all()
 	{
+		m_presses.clear(); m_press_ticks = 0; m_press_gap = false;
 		m_keys.fill(false);
 		for(std::size_t pad = 0; pad < pad_count; pad++)
 			release_pad(pad);
@@ -191,6 +192,12 @@ namespace openrayman::game
 		// keep the same per-button table.
 		m_before = m_now;
 		m_now = m_keys;
+		if(!m_press_ticks && !m_press_gap && !m_presses.empty()) {
+			m_press_key = m_presses.front(); m_presses.pop_front();
+			m_press_ticks = m_press_key == 0xC8 || m_press_key == 0xD0 ? 6u : 1u;
+		}
+		if(m_press_ticks) { m_now[m_press_key] = true; if(!--m_press_ticks) m_press_gap = true; }
+		else m_press_gap = false;
 		for(std::size_t k = 0; k < 256; k++)
 		{
 			if(m_now[k] != m_before[k])

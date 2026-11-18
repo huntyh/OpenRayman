@@ -189,8 +189,8 @@ leading formatting commands, keeps **three bytes** of the name and returns a col
 or zero. Procedure **431** (`0x4702A0`) sets the name and completion count (0..1000).
 Functions **215..217** (`0x478E10`) supply the scripts' slot text. The original options file's
 11-byte display record per slot (`0x407B80`) does not allow an 11-character player name.
-Typed name entry (card 74, including function 218) is unchanged. Functions 91/92 (menu
-Load/Delete) remain outside this writing change; `--save` uses the existing loader.
+Typed name entry (card 74) now shares the same three-character buffer as the arrow picker; see menu.md for SDL text input, filtering and confirmation. Functions 91/92 (menu
+Load/Delete) are now implemented; `--save` uses the existing loader.
 
 The writer stages a complete slot beside its destination, keeping unchanged level saves on
 ordinary saves and discarding them for a new game. It encodes the original payload format,
@@ -238,3 +238,16 @@ Captures and progress notes: `build/helpers/saves_report.md`. Installed-save obs
 elsewhere in this document are historical: this work reads no installed saves. All generated
 saves use OpenRayman's isolated save root. Autosave UI, metadata and publication are our own
 design. No executable code or other project's implementation was copied.
+
+## Menu2 confirmations and typed names (2026-11-18)
+
+OpenRayman's centred Yes/No screen replaces the Menu's composed 0x5043 questions
+(overwrite, delete, quit) and the pause menu's Abandon question. No is the initial
+choice; Esc supplies No. The original scripts receive var41 (Menu) or var77
+(pause) and run their existing write/delete/exit branches. Tests exercise actual
+overwrite Yes and Esc No with synthetic saves and assert the saved name/completion.
+Keyboard names use SDL3 text input, uppercase ASCII letters/digits, and at most
+three cells. The same procedure-507 source string is changed, so function 95,
+431 and the save metadata see the typed name. Trailing unused cells are removed
+when normalising the save name. See menu.md for field mappings and provenance.
+All validation uses the worktree's isolated save root, never installed saves.

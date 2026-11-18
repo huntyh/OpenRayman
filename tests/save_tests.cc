@@ -196,10 +196,10 @@ TEST_CASE("real data: scripted new game saves successfully and registered fields
 	auto menu = tree.node(6).at.address();
 	vm.set_variable(menu, 55, game::value::integer(6));
 	vm.set_variable(menu, 40, game::value::integer(0));
-	CHECK_FALSE(vm.on_screen_text(menu, game::value::of(game::value_type::id, 0x5043)));
+	CHECK(vm.on_screen_text(menu, game::value::of(game::value_type::id, 0x5043)));
 	vm.set_variable(menu, 40, game::value::integer(1));
 	// Quitting always asks, even with autosave on.
-	CHECK_FALSE(vm.on_screen_text(menu, game::value::of(game::value_type::id, 0x5043)));
+	CHECK(vm.on_screen_text(menu, game::value::of(game::value_type::id, 0x5043)));
 	session->automatic_actor = 0;
 	REQUIRE(std::filesystem::exists(root / "Slot1/General.sav"));
 	// The new-game save contains the general values the executable resets on continue.
@@ -424,4 +424,138 @@ TEST_CASE("real data: slot occupancy and deletion use the selected save root")
  std::ifstream name(root/"Slot1"/"slot.txt"); std::string text; std::getline(name,text); name.close(); CHECK(text=="THR");
  CHECK(game::read_autosave(root,1)==true); CHECK_FALSE(game::read_autosave(root,3));
  std::filesystem::remove_all(root);
+}
+
+TEST_CASE("real data: replacement confirmations feed Yes and Esc No through the script input hook")
+{
+ auto dir = real_game_dir(); if(!dir) return;
+ auto data = game_data::locate(*dir); REQUIRE(data);
+ auto files = load_level_files(*data, "Menu"); auto header = read_level_header(files); scene tree(files.memory, header);
+ game::live_memory memory(files.memory); game::interpreter vm(memory, header.main_actor->address());
+ game::register_handlers(vm); game::register_dialog_handlers(vm); game::set_dialog_resolver(vm, files);
+ vm.save_folder = (game::save_root() / "confirmation-test").string();
+ auto session = std::make_shared<game::save_session>();
+ game::install_save_handlers(vm, files, header, tree, *dir, session);
+ auto actor = tree.node(6).at.address(); auto action = read_input_actions(files).first.address() + 9 * input_action_size;
+ for(int kind : {1,2,3,4,5,6}) {
+  for(bool yes : {false,true}) {
+   vm.set_variable(actor,55,game::value::integer(kind));
+   REQUIRE(vm.on_screen_text(actor, game::value::of(game::value_type::id,0x5043)));
+   CHECK(session->confirmation); CHECK_FALSE(session->confirmation_choice);
+   CHECK(vm.on_input_condition(actor,45,action) == false);
+   game::update_save_ui(*session, vm.save_folder, false, false, false);
+   game::update_save_ui(*session, vm.save_folder, yes, false, yes, !yes);
+   CHECK(vm.on_input_condition(actor,45,action) == true);
+   CHECK(vm.get_variable(actor,41).as_int() == int(yes)); CHECK(session->confirmation_submitted);
+   CHECK(vm.skip_reflex(actor));
+   CHECK(vm.on_input_condition(actor,45,action) == false); // one supplied press only
+   session->confirmation = false;
+  }
+ }
+}
+
+TEST_CASE("real data: overwrite replacement follows the original Yes write and Esc No branches")
+{
+ auto dir = real_game_dir(); if(!dir) return;
+ auto data = game_data::locate(*dir); REQUIRE(data);
+ for(bool yes : {false,true}) {
+  auto files = load_level_files(*data,"Menu"); auto header = read_level_header(files); scene tree(files.memory,header);
+  game::live_memory memory(files.memory); game::interpreter vm(memory,header.main_actor->address());
+  game::register_handlers(vm); game::register_dialog_handlers(vm); game::set_dialog_resolver(vm,files);
+  auto root = game::save_root() / ("overwrite-test-" + std::to_string(std::random_device{}()));
+  game::write_save_slot(root,*dir,1,{},{{"Menu",{}}},"AAA",123,true);
+  vm.save_folder = root.string(); auto session = std::make_shared<game::save_session>();
+  game::install_save_handlers(vm,files,header,tree,*dir,session);
+  std::vector<std::uint32_t> actors; for(const auto& n : tree.nodes()) if(n.type == super_object_type::actor) actors.push_back(n.at.address());
+  vm.set_actors(actors); game::input keys(memory,read_input_actions(files)); bool seen = false;
+  for(int tick=0; tick<1400; ++tick) {
+   keys.set_key(0x1c,tick==240 || tick==600 || tick==900 || (yes && tick==1200));
+   keys.set_key(0xcb,yes && tick>=1100 && tick<1350); keys.set_key(1,!yes && tick==1100); keys.step();
+   game::update_save_ui(*session,root,keys.key(0xcb),false,keys.key(0x1c),keys.key(1));
+   game::step(vm,actors,[](std::uint32_t,const std::exception& e){ FAIL(e.what()); });
+   if(tick==1000) { CHECK(session->confirmation); CHECK_FALSE(session->confirmation_choice); seen = session->confirmation; }
+  }
+  CHECK(seen); CHECK_FALSE(session->confirmation);
+  std::ifstream info(root / "Slot1/slot.txt"); std::string name; unsigned completion=0; std::getline(info,name); info>>completion; info.close();
+  CHECK(name=="AAA"); CHECK(completion == (yes ? 0u : 123u)); CHECK(session->first_save == false);
+  CHECK(session->slot == (yes ? 1u : 0u));
+  std::filesystem::remove_all(root);
+ }
+}
+
+TEST_CASE("real data: typed name shares the picker buffer and reaches the scripted save")
+{
+ auto dir=real_game_dir(); if(!dir) return; auto data=game_data::locate(*dir); REQUIRE(data);
+ auto files=load_level_files(*data,"Menu"); auto header=read_level_header(files); scene tree(files.memory,header);
+ game::live_memory memory(files.memory); game::interpreter vm(memory,header.main_actor->address());
+ game::register_handlers(vm); game::register_dialog_handlers(vm); game::set_dialog_resolver(vm,files);
+ auto root=game::save_root()/("typed-name-test-"+std::to_string(std::random_device{}())); vm.save_folder=root.string();
+ auto session=std::make_shared<game::save_session>(); game::install_save_handlers(vm,files,header,tree,*dir,session);
+ std::vector<std::uint32_t> actors; for(const auto& n:tree.nodes()) if(n.type==super_object_type::actor) actors.push_back(n.at.address());
+ vm.set_actors(actors); game::input keys(memory,read_input_actions(files)); auto controller=tree.node(6).at.address();
+ CHECK_FALSE(game::write_menu_name(vm,controller,"BAD"));
+ for(int tick=0;tick<1050;++tick) {
+  keys.set_key(0x1c,tick==240 || tick==600 || tick==900); keys.step();
+  game::step(vm,actors,[](std::uint32_t,const std::exception& e){FAIL(e.what());});
+  if(tick==750) {
+   REQUIRE(game::menu_name_screen(vm,controller));
+   REQUIRE(game::write_menu_name(vm,controller,""));
+   CHECK(vm.on_input_condition(controller,45,read_input_actions(files).first.address()+9*input_action_size)==false);
+   REQUIRE(game::write_menu_name(vm,controller,"a9"));
+   auto row=std::size_t(vm.get_variable(controller,17).as_int());
+   CHECK(vm.screen_text().at(row).text.substr(3)=="A9 ");
+   REQUIRE(game::write_menu_name(vm,controller,"a")); // Backspace result
+   CHECK(vm.screen_text().at(row).text.substr(3)=="A  ");
+   REQUIRE(game::write_menu_name(vm,controller,"a9z"));
+   CHECK(vm.get_variable(controller,59).as_int()==2); CHECK(vm.get_variable(controller,58).as_int()=='Z');
+  }
+ }
+ REQUIRE(session->slot==1); CHECK(session->name=="A9Z");
+ std::ifstream in(root/"Slot1/slot.txt"); std::string name; std::getline(in,name); in.close(); CHECK(name=="A9Z");
+ CHECK_FALSE(game::menu_name_screen(vm,controller)); std::filesystem::remove_all(root);
+}
+
+TEST_CASE("real data: pointer selection skips disabled Menu entries and virtual presses have release edges")
+{
+ auto dir=real_game_dir(); if(!dir) return; auto data=game_data::locate(*dir); REQUIRE(data);
+ auto files=load_level_files(*data,"Menu"); auto header=read_level_header(files); scene tree(files.memory,header);
+ game::live_memory memory(files.memory); game::interpreter vm(memory,header.main_actor->address());
+ game::register_handlers(vm); game::register_dialog_handlers(vm); game::set_dialog_resolver(vm,files);
+ vm.save_folder=(game::save_root()/"pointer-empty-test").string();
+ auto session=std::make_shared<game::save_session>(); game::install_save_handlers(vm,files,header,tree,*dir,session);
+ std::vector<std::uint32_t> actors; for(const auto& n:tree.nodes()) if(n.type==super_object_type::actor) actors.push_back(n.at.address());
+ vm.set_actors(actors); game::input keys(memory,read_input_actions(files)); auto controller=tree.node(6).at.address();
+ for(int tick=0;tick<600;++tick) { keys.set_key(0x1c,tick==240); keys.step(); game::step(vm,actors); }
+ CHECK(game::script_menu_entry(vm,controller,0,false)); CHECK_FALSE(game::script_menu_entry(vm,controller,1,false));
+ CHECK_FALSE(game::select_script_menu_entry(vm,controller,1,false));
+ REQUIRE(game::select_script_menu_entry(vm,controller,3,false));
+ CHECK(vm.get_variable(controller,17).as_int()==3); CHECK(vm.screen_text().at(3).colour==3); CHECK(vm.screen_text().at(0).colour==1);
+ CHECK_FALSE(game::select_script_menu_entry(vm,controller,3,false));
+ keys.pulse_key(0x1c); keys.pulse_key(0x1c);
+ keys.step(); CHECK(keys.key(0x1c)); keys.step(); CHECK_FALSE(keys.key(0x1c)); keys.step(); CHECK(keys.key(0x1c)); keys.step(); CHECK_FALSE(keys.key(0x1c));
+ keys.set_key(0x1c,true); keys.pulse_key(0x1c); keys.step(); keys.step(); CHECK(keys.key(0x1c));
+ keys.release_all(); keys.step(); CHECK_FALSE(keys.key(0x1c));
+}
+
+TEST_CASE("real data: pointer pause selection and Abandon Esc return through the pause controller")
+{
+ auto dir=real_game_dir(); if(!dir) return; auto data=game_data::locate(*dir); REQUIRE(data);
+ auto files=load_level_files(*data,"Learn_10"); auto header=read_level_header(files); scene tree(files.memory,header);
+ game::live_memory memory(files.memory); game::interpreter vm(memory,header.main_actor->address());
+ game::register_handlers(vm); game::register_dialog_handlers(vm); game::set_dialog_resolver(vm,files);
+ vm.save_folder=(game::save_root()/"pause-pointer-empty-test").string(); auto session=std::make_shared<game::save_session>();
+ game::install_save_handlers(vm,files,header,tree,*dir,session);
+ std::vector<std::uint32_t> actors; for(const auto& n:tree.nodes()) if(n.type==super_object_type::actor) actors.push_back(n.at.address());
+ game::apply_revisit_state(vm,tree,"Learn_10");
+ vm.set_actors(actors); game::input keys(memory,read_input_actions(files));
+ for(int tick=0;tick<450;++tick) { keys.set_key(1,tick>=240 && tick<245); keys.step(); game::step(vm,actors); }
+ REQUIRE(vm.paused()); auto owner=vm.screen_text().at(0).owner; REQUIRE(owner!=0);
+ CHECK(game::script_menu_entry(vm,owner,0,true)); CHECK_FALSE(game::script_menu_entry(vm,owner,1,true));
+ REQUIRE(game::select_script_menu_entry(vm,owner,4,true)); CHECK(vm.get_variable(owner,16).as_int()==4);
+ keys.pulse_key(0x1c);
+ for(int tick=0;tick<80;++tick) { keys.step(); game::update_save_ui(*session,vm.save_folder,false,false,keys.key(0x1c),false); game::step(vm,actors); }
+ REQUIRE(session->confirmation); CHECK(session->confirmation_variable==77); CHECK_FALSE(session->confirmation_choice);
+ keys.pulse_key(1);
+ for(int tick=0;tick<80;++tick) { keys.step(); game::update_save_ui(*session,vm.save_folder,false,false,false,keys.key(1)); game::step(vm,actors); }
+ CHECK_FALSE(session->confirmation); CHECK(vm.paused()); CHECK(vm.level_request.empty()); CHECK(vm.get_variable(owner,77).as_int()==0);
 }

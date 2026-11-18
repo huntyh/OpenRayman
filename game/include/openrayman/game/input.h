@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cstdint>
+#include <deque>
 
 namespace openrayman::game
 {
@@ -34,6 +35,8 @@ namespace openrayman::game
 
 		// Everything up: a window that lost the focus, or a pad that went away.
 		void release_all();
+		// Ordered virtual presses for pointer/wheel navigation, merged with held physical keys.
+		void pulse_key(std::uint8_t scan_code) { m_presses.push_back(scan_code); }
 		void release_pad(std::size_t pad);
 
 		// One 60 Hz tick.
@@ -58,6 +61,10 @@ namespace openrayman::game
 		live_memory& m_memory;
 		std::uint32_t m_first;
 		std::size_t m_count;
+		std::deque<std::uint8_t> m_presses;
+		unsigned m_press_ticks = 0;
+		std::uint8_t m_press_key = 0;
+		bool m_press_gap = false;
 		std::array<bool, 256> m_keys{};   // as the events left them
 		std::array<bool, 256> m_now{};    // this tick
 		std::array<bool, 256> m_before{}; // last tick

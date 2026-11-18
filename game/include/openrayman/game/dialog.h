@@ -7,6 +7,9 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <span>
+#include <openrayman/game/screen_text.h>
 #include <vector>
 
 namespace openrayman { struct level_files; }
@@ -18,6 +21,10 @@ namespace openrayman::game
 	std::optional<std::string> resolve_dialog_value(interpreter& vm, const value& v);
 	// Procedures 505/507: the string a screen text slot shows, and one letter written into it.
 	void remember_text_slot_source(interpreter& vm, std::size_t slot, const value& text);
+	// Keyboard entry shares procedure 507's backing text with the arrow picker.
+	bool menu_name_screen(interpreter& vm, std::uint32_t controller);
+	std::string filter_menu_name(std::string_view text, std::size_t limit = 3);
+	bool write_menu_name(interpreter& vm, std::uint32_t controller, std::string_view name);
 	void put_text_slot_source_char(interpreter& vm, std::size_t slot, std::size_t at, char c);
 
 	// Object-list index selected by the dialog renderer (0x409720), before bounds checking.
@@ -65,6 +72,14 @@ namespace openrayman::game
 	};
 	// Layout is in the text actor's local units. The renderer supplies the screen projection.
 	dialog_layout layout_dialog(const dialog_text& text);
+
+	struct menu_rectangle { float x, y, width, height; };
+	struct menu_target { menu_rectangle bounds; int entry; std::uint32_t owner = 0; bool value = false; };
+	struct menu_hit { std::size_t target; bool right; };
+	menu_rectangle screen_slot_rectangle(const screen_text::slot& slot, int width, int height);
+	std::optional<menu_hit> hit_test_menu(std::span<const menu_target> targets, float x, float y);
+	bool script_menu_entry(interpreter& vm, std::uint32_t owner, int entry, bool pause);
+	bool select_script_menu_entry(interpreter& vm, std::uint32_t owner, int entry, bool pause);
 
 	// The loader must provide the selected language's text IDs. Bytes are kept in game encoding.
 	using dialog_resolver = std::function<std::optional<std::string>(std::int32_t)>;
