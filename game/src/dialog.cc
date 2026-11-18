@@ -108,6 +108,7 @@ namespace openrayman::game
 			std::map<std::uint32_t, entry> actors;
 			// Initial value of the placement byte at 0x4A40B4 in Rayman2.exe.
 			bool screen = true;
+			unsigned language = 0;
 			std::array<float, 256> widths;
 			std::vector<float> scales;
 			float line_height = 2, default_scale = 0;
@@ -121,6 +122,12 @@ namespace openrayman::game
 
 		std::optional<std::string> resolve(interpreter& vm, dialog_state& state, const value& v)
 		{
+			// Script typing caches localized IDs. A language switch must discard those
+			// copies, while keeping composed common buffers (save names, numbers, etc.).
+			if(state.language != vm.language) {
+				std::erase_if(state.changed, [](const auto& item) { return item.first < 20000; });
+				state.language = vm.language;
+			}
 			if(v.type == value_type::id)
 			{
 				auto it = state.changed.find(v.as_int());

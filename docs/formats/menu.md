@@ -26,9 +26,9 @@ gauge or input handler runs. The rest of the Menu scene keeps animating. Our
 page fills the same `screen_text` table used by 505..507, so it goes through
 the existing font, tint, pulse and centred 4:3 drawing path, rather than a new
 overlay font. The butterfly still reads controller variables 53/54; these now
-follow our selected row. Move uses sound event **0x66C03F0**; confirm/back uses
-**0x66C03D0**, queued through the existing procedure-119 playback route, as in
-the menu scripts.
+follow our selected row. Move uses sound event **29**; confirm/back uses **28**,
+queued through procedure 119. The dump's 0x66C03F0 / 0x66C03D0 are saved
+references replaced by Menu.snd at load, not playable event IDs.
 
 Up/Down selects a row; Left/Right changes its value; Enter opens a sub-page or
 selects Back; Esc returns one page. Closing the root restores the saved slots,
@@ -145,9 +145,9 @@ So the menu's logic is the game's own AI bytecode and needs no new interpreter f
 The interesting part is where the words come from. They are not in the level.
 
 - **`textures_alphabet`** in `Textures.cnt` holds **238** glyph textures, one per character:
-  `s_a_aaa`, `s_b_aaa`, … `vs_a_aaa` (accented), `vs_cedille_aaa`, digits and punctuation
+  `s_a_aaa`, `s_b_aaa`, … `vs_a_aaa`, accented `s_accae_aaa`, digits and punctuation
   (`s_2point_aaa`, `s_interro_aaa`, `s_guillemet_aaa`, `s_pcent_aaa`). The names separate an ASCII
-  set (`s_`) from an accented one (`vs_`); the sizes differ per glyph, so each glyph is cropped from
+  families (`s_`, `vs_`); the sizes differ per glyph, so each glyph is cropped from
   its own texture rather than read out of a shared atlas. They are resolved through Fix's texture
   table, so they are available in every level, not just this one.
 - **`textures_background/logo_*`** are the title art: 18 textures in six groups of three
@@ -785,3 +785,49 @@ This prevents a held arrow or stick from changing an already-submitted answer.
 The prompt remains drawn until the transition finishes. Empty typed names cannot
 confirm through Enter, pad or pointer. Held-direction overwrite and pause-return
 regression tests exercise the normal scripts rather than bypassing that delay.
+
+## Menu round 3 (2026-11-18, cards 143, 148 and 25)
+
+`game::menu_back_entry` supplies a final Back row in slot 7 for controller 6's
+save-slot, name, Load and Delete pages (behaviours 7, 8, 10, 13 and 14). Main,
+stock Options and pause already have a way out; the first language prompt cannot
+be left. No save-slot array or count is extended. Up from the first selectable
+row or Down from the last reaches Back; the name picker uses Down to focus Back,
+Up/Down from Back returns to the picker. Up on the picker still changes its
+letter, and Left/Right still changes its cell. The same row is a pointer target.
+Its tint, pulse, font and butterfly target are the existing screen-slot path.
+Activation queues the original Esc key and skips that tick's controller, so the
+following tick takes the page's original exit branch. Empty names cannot block
+activation of Back. The name hint is ours, in two centred rows (slots 8 and 6),
+with the Enter key red; the temporary second row is removed on leaving.
+
+Custom labels, prompts, saving messages and language names are all in
+`game/src/ui_text.cc`, with columns English/French/German/Spanish/Italian and an
+explicit mapping from VM order English/French/Spanish/Italian/German. Tests
+require five nonempty translations per key and verify every extended byte we
+use has a font object. Enter on Language cycles the value, as do Left/Right and
+the clicked halves. The language byte read by function 252 changes immediately;
+our config and language.txt persist it. Switching discards the dialog system's
+typed copies of localized IDs below 20000, keeping common composed buffers.
+Returning to the main menu resolves its labels in the newly selected language.
+
+Stock main-menu size is 20. Options now start at size 20 and fit long label/value
+rows individually into 720 units of the centred 4:3 area. Butterfly x=60 leaves
+room before that block. Node 7 is the camera-anchor actor: its behaviour-1 rule
+at 0d/01 +0x43FF0 normally chooses var0[1] when controller 6 is in stock Options
+behaviour 3. While our page is open we select that same waypoint and temporarily
+clear its watched actor (var2), so its original movement and camera scripts keep
+running without its main-menu rule overwriting the target. Closing restores the
+watched controller; the original rules choose the main-menu waypoint again.
+
+Sound verification: node-6 confirm/exit references 0x66C03D0 map through Menu.snd
+to bank-0 event 28 (resource 23, Menu1.wav); movement 0x66C03F0 maps to event 29
+(resource 24, Menu4.wav). Options and pointer movement use these IDs. Autosave
+question/explanation input now plays them too; stock confirmations and added
+Back rows leave confirmation/exit playback to the original scripts.
+
+Provenance: own reading of the installed Menu node 6/7 bytecode, sound slot pairs
+and bank 0, plus runtime font-object inspection. New UI behavior and translations
+are OpenRayman's design. Regression tests compare Load/Delete Back against Esc
+and check that leaving name entry never writes a save. No game code or assets
+were copied. Captures and isolated test saves are described in NOTES_MENU3.md.

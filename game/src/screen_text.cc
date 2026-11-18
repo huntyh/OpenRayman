@@ -10,6 +10,9 @@ namespace openrayman::game
 		// 0x465D40 / 0x4660B0: uppercase ASCII, then shift bytes strictly above A0.
 		// The dialog-object path (0x409720) instead shifts A0 itself as well.
 		if(byte < 0x20) return std::nullopt;
+		// The shipped menu font has no cedilla entry. Draw C here; the slot
+		// renderer adds its cedilla from the existing comma glyph at runtime.
+		if(byte == 0xE7 || byte == 0xC7) byte = 'C';
 		if(byte >= 'a' && byte <= 'z') byte -= 0x20;
 		return int(byte) - (byte > 0xa0 ? 0x40 : 0x20) + offset;
 	}

@@ -11,11 +11,13 @@ add_library(openrayman_game STATIC
 	src/generated.cc
 	src/live_memory.cc
 	src/mechanics.cc
+	src/menu.cc
 	src/options.cc
 	src/particles.cc
 	src/profiler.cc
 	src/saves.cc
 	src/screen_text.cc
+	src/ui_text.cc
 )
 add_library(openrayman::game ALIAS openrayman_game)
 target_include_directories(openrayman_game PUBLIC include)

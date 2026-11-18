@@ -433,6 +433,15 @@ namespace openrayman
 					SDL_Vertex v[] = {{{x0,y0},top,{0,0}}, {{x1,y0},top,{1,0}}, {{x1,y1},bottom,{1,1}},
 						{{x0,y0},top,{0,0}}, {{x1,y1},bottom,{1,1}}, {{x0,y1},bottom,{0,1}}};
 					append(g->texture, false, v);
+					if(item.byte == 0xE7 || item.byte == 0xC7) {
+						const int bank = item.index - *game::screen_slot_glyph_index(item.byte);
+						if(const auto* cedilla = glyph_for(font, *game::screen_slot_glyph_index(',') + bank)) {
+							// Same runtime font/tint as the letter. A small comma below
+							// C supplies the missing cedilla without storing a new asset.
+							const float w = (x1-x0)*0.65f, h = (y1-y0)*0.65f;
+							quad(cedilla->texture,false,x0+(x1-x0)*0.17f,y1-h*0.30f,w,h,bottom,0,1);
+						}
+					}
 				}
 				continue;
 			}

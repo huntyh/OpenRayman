@@ -288,6 +288,42 @@ $env:OPENRAYMAN_SAVE_DIR = "$PWD/build/menu2-saves"
       select/confirm; dragging/cancelling and additional fingers do not activate entries.
 
 
+### Menu round 3 review (cards #143, #148, #25)
+
+- [ ] In Load and Delete, select Back with Up/Down, then Enter. Hover/click and
+      tap it too: the butterfly should land on it and it should return just like
+      Esc. On New Game, type a name, press Down to select Back, then Enter: no
+      game should be created. Also try after Backspace has emptied the name.
+- [ ] Compare stock navigation with Options, the autosave question and the new
+      Back rows: the move and confirm/back clacks should sound the same, once
+      per action. Listen in the desktop session (capture mode suppresses audio).
+- [ ] Options > Game > Language: press Enter or Left/Right. Labels should change
+      immediately; back out twice and the main menu should use the same language.
+      Restart and verify it persists. Repeat for all five languages. Français
+      should have a visible cedilla and Español a tilde; no accented letters
+      should disappear in the translated prompts.
+- [ ] At 1280x720 and 960x720, check the larger Options rows, cursor clearance,
+      the camera flight into/out of Options, and the two-line typed-name hint
+      with a red Enter. All should fit. Android touch/keyboard still needs a
+      device check.
+
+`python tools/menu3_captures.py` reproduces the agent's screenshots in the OS
+temporary folder/openrayman-menu3. It isolates APPDATA and saves in the worktree's
+build folder. Its Load/Delete fixtures are display-only empty saves; do not load
+them. For an interactive check create valid synthetic slots in a separate folder:
+
+```powershell
+$env:APPDATA = Join-Path $PWD 'build/menu3-review-appdata'
+$env:OPENRAYMAN_SAVE_DIR = Join-Path $PWD 'build/menu3-review-saves'
+$env:OPENRAYMAN_GAME_DIR = 'F:/Games/Rayman 2'
+& ./build/windows-debug/bin/ortool.exe mksave Learn_10 1
+& ./build/windows-debug/bin/ortool.exe mksave Learn_10 2
+& ./build/windows-debug/bin/openrayman.exe --game "F:/Games/Rayman 2" --level Menu
+```
+
+Two slots are needed because the stock main-menu script disables Delete with
+only one save.
+
 ## Known limitations
 
 Don't report these as bugs, they're the next steps:

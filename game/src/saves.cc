@@ -1,6 +1,7 @@
 #include <openrayman/game/saves.h>
 #include <openrayman/input.h>
 #include <openrayman/game/dialog.h>
+#include <openrayman/game/ui_text.h>
 #include <cctype>
 #include <random>
 #include <openrayman/error.h>
@@ -289,15 +290,16 @@ namespace openrayman::game
 		session.escape_down = escape; session.left_down = left; session.right_down = right; session.enter_down = enter;
 	}
 
-	screen_text confirmation_slots(const save_session& session)
+	screen_text confirmation_slots(const save_session& session, unsigned language)
 	{
 		screen_text slots;
 		const auto kind = session.confirmation_kind;
-		std::string title = kind == 1 || kind == 2 ? session.name + " already exists." : kind == 3 ? "Load this saved game?" : kind == 4 ? "Delete this saved game?" : kind == 6 && session.confirmation_save ? "Save before leaving?" : kind == 5 || kind == 7 ? "Abandon the current game?" : "Quit OpenRayman?";
+		auto tr = [language](ui_key key) { return ui_text(key, language); };
+		std::string title = kind == 1 || kind == 2 ? session.name + tr(ui_key::exists) : tr(kind == 3 ? ui_key::load_question : kind == 4 ? ui_key::delete_question : kind == 6 && session.confirmation_save ? ui_key::save_question : kind == 5 || kind == 7 ? ui_key::abandon_question : ui_key::quit_question);
 		slots.set(0, 500, 360, "/C:" + title, 255, 13);
-		if(kind == 1 || kind == 2) slots.set(1, 500, 440, "/C:Overwrite this saved game?", 255, 12);
-		slots.set(2, 390, 580, "Yes", 255, 14);
-		slots.set(3, 560, 580, "No", 255, 14);
+		if(kind == 1 || kind == 2) slots.set(1, 500, 440, "/C:" + tr(ui_key::overwrite_question), 255, 12);
+		slots.set(2, 390, 580, tr(ui_key::yes), 255, 14);
+		slots.set(3, 560, 580, tr(ui_key::no), 255, 14);
 		for(int i = 2; i < 4; ++i) {
 			const bool selected = (i == 2) == session.confirmation_choice;
 			slots.set_field(i, 7, selected ? 3.0f : 1.0f);

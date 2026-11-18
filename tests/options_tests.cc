@@ -82,3 +82,12 @@ TEST_CASE("Fullscreen config accepts all three choices and legacy on means borde
  for(int mode : {0,1,2}) { engine_options v; v.fullscreen=mode; REQUIRE(write_options(root,v)); CHECK(read_options(root)==v); }
  std::filesystem::remove_all(root);
 }
+
+TEST_CASE("Language activates with Enter and wraps with either arrow")
+{
+	options_page page; page.active=true; page.current=options_page::page::game;
+	engine_options options; options.language=0; bool autosave=false;
+	CHECK(page.navigate(options_page::action::confirm,options,autosave,false)); CHECK(options.language==1);
+	CHECK(page.navigate(options_page::action::left,options,autosave,false)); CHECK(options.language==0);
+	CHECK(page.navigate(options_page::action::left,options,autosave,false)); CHECK(options.language==4);
+}

@@ -1,6 +1,7 @@
 add_executable(openrayman_tests
 	save_tests.cc
 	options_tests.cc
+	menu_tests.cc
 	main.cc
 	binary_reader_tests.cc
 	checksum_tests.cc

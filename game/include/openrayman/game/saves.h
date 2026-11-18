@@ -39,7 +39,7 @@ namespace openrayman::game
 	bool write_autosave(const std::filesystem::path& folder, unsigned slot, bool enabled);
 	void forget_autosave(const std::filesystem::path& folder, unsigned slot);
 	void update_save_ui(save_session& session, const std::filesystem::path& folder, bool left, bool right, bool enter, bool escape = false);
-	screen_text confirmation_slots(const save_session& session);
+	screen_text confirmation_slots(const save_session& session, unsigned language = 0);
 	float saving_alpha(const save_session& session);
 	void install_save_handlers(interpreter& vm, const level_files& files, const level_header& header,
 		const scene& tree, const std::filesystem::path& game_folder, std::shared_ptr<save_session> session);

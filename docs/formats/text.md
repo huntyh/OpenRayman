@@ -252,3 +252,19 @@ Where this came from: the placement rule is our own; the reference look is the r
 Ray2Fix as the user plays it (user, 2026-11-13: the narration starts about 350 pixels in on a
 2000 pixel wide screen), and the HUD spread across the screen is the user's choice (2026-11-08).
 The exe's own placement (whole viewport) is from our analysis in the sections above.
+
+## Custom menu strings and cedilla (2026-11-18)
+
+Own inspection of the installed Menu font's initial 882-entry object list confirms
+the accented menu bytes é=E9, è=E8, ñ=F1, ä=E4, ö=F6, ü=FC, í=ED, and the
+other entries checked by the menu tests. UTF-8 source translations are converted
+to these single-byte codes. Capital É uses E9, the font's existing accented E.
+Our French wording avoids unsupported circumflex entries.
+
+Both ç=E7 and Ç=C7 map to null font objects in this installation. Contrary to an
+earlier description in menu.md, its Textures.cnt has no cedilla texture either.
+Changing byte encoding alone cannot display it. Our screen-slot path maps these
+bytes to C and draws a small comma below the letter, using the same runtime font
+bank, colour, alpha and pulse. This deliberate extension supplies the cedilla in
+Français without storing or generating a game asset on disk. Normal characters
+and the original game's byte mapping otherwise retain their existing layout.

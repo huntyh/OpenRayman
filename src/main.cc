@@ -32,6 +32,8 @@
 #include <openrayman/game/live_memory.h>
 #include <openrayman/game/profiler.h>
 #include <openrayman/game/sound_slots.h>
+#include <openrayman/game/menu.h>
+#include <openrayman/game/ui_text.h>
 #include <openrayman/game/sound_placement.h>
 #include <openrayman/animation.h>
 #include <openrayman/brain.h>
@@ -114,6 +116,8 @@ namespace
 		SDL_Window* window = nullptr;
 		game::engine_options options;
 		game::options_page options_ui;
+		game::menu_back_entry menu_back;
+		std::uint32_t menu_camera_anchor = 0;
 		game::screen_text options_previous_text;
 		std::array<bool, 6> options_keys{};
 		bool options_releasing = false;
@@ -375,11 +379,11 @@ namespace
 		std::vector<game::menu_target> targets;
 		if(!menu_open(a)) return targets;
 		int w = 0, h = 0; SDL_GetWindowSize(a.window, &w, &h);
-		auto slots = a.saves->confirmation ? game::confirmation_slots(*a.saves) : a.vm->screen_text();
+		auto slots = a.saves->confirmation ? game::confirmation_slots(*a.saves, a.vm->language) : a.vm->screen_text();
 		if(a.saves->question || a.saves->explaining) {
 			slots.clear();
-			if(a.saves->question) { slots.set(2,390,580,"Yes",255,14); slots.set(3,560,580,"No",255,14); }
-			else slots.set(2,500,660,"/C:Press Enter to continue.",255,10);
+			if(a.saves->question) { slots.set(2,390,580,game::ui_text(game::ui_key::yes,a.vm->language),255,14); slots.set(3,560,580,game::ui_text(game::ui_key::no,a.vm->language),255,14); }
+			else slots.set(2,500,660,"/C:" + game::ui_text(game::ui_key::continue_hint,a.vm->language),255,10);
 		}
 		for(std::size_t i = 0; i < game::screen_text::slot_count; ++i) {
 			const auto& slot = slots.at(i);
@@ -393,6 +397,7 @@ namespace
 				auto id = entries[i-1].id;
 				values = id != game::option_id::sound && id != game::option_id::display && id != game::option_id::game && id != game::option_id::back;
 			}
+			else if(a.menu_back.active && i == game::menu_back_entry::slot) {}
 			else if(!game::script_menu_entry(*a.vm, slot.owner, int(i), a.vm->paused())) continue;
 			targets.push_back({game::screen_slot_rectangle(slot,w,h),int(i),slot.owner,values});
 		}
@@ -416,8 +421,12 @@ namespace
 		}
 		else if(a.saves->explaining) {}
 		else if(a.options_ui.active) { changed = a.options_ui.selected != target.entry-1; a.options_ui.selected = target.entry-1; }
-		else changed = game::select_script_menu_entry(*a.vm,target.owner,target.entry,a.vm->paused());
-		if(changed) a.vm->play_sound(0x66c03f0,0,119,-1);
+		else if(a.menu_back.active && target.entry == game::menu_back_entry::slot) changed = a.menu_back.select(*a.vm,a.menu_controller,true);
+		else {
+			changed = a.menu_back.select(*a.vm,a.menu_controller,false);
+			changed = game::select_script_menu_entry(*a.vm,target.owner,target.entry,a.vm->paused()) || changed;
+		}
+		if(changed) a.vm->play_sound(game::menu_move_sound,0,119,-1);
 		if(activate) a.input->pulse_key(target.value ? (hit->right ? 0xCD : 0xCB) : 0x1C);
 	}
 
@@ -1188,10 +1197,13 @@ namespace
 						a.input->set_key(h.key, down[h.key]);
 				}
 				a.input->step();
-				const bool was_choice = a.saves->confirmation_choice;
+				const bool was_choice = a.saves->confirmation ? a.saves->confirmation_choice : a.saves->choice;
+				const bool prompt = a.saves->confirmation || a.saves->question || a.saves->explaining;
+				const bool answered = prompt && ((a.input->key(0x1C) && !a.saves->enter_down) || (a.input->key(1) && !a.saves->escape_down));
 				openrayman::game::update_save_ui(*a.saves, openrayman::game::save_root(), a.input->key(0xCB) || ((a.saves->confirmation || a.saves->question) && a.input->key(0xC8)),
 					a.input->key(0xCD) || ((a.saves->confirmation || a.saves->question) && a.input->key(0xD0)), a.input->key(0x1C), a.input->key(1));
-				if(a.saves->confirmation && was_choice != a.saves->confirmation_choice) a.vm->play_sound(0x66c03f0, 0, 119, -1);
+				if(prompt && was_choice != (a.saves->confirmation ? a.saves->confirmation_choice : a.saves->choice)) a.vm->play_sound(game::menu_move_sound, 0, 119, -1);
+				if(answered && !a.saves->confirmation) a.vm->play_sound(game::menu_confirm_sound, 0, 119, -1);
 			}
 			a.tick++;
 			// A --time run has no rendered frames between ticks. Refresh the same
@@ -2038,13 +2050,25 @@ namespace
 			if(a.name_input_active) SDL_StopTextInput(a.window);
 			a.name_input_active = false; a.menu_controller = 0;
 			a.options_ui = {};
+			a.menu_back = {};
+			a.menu_camera_anchor = 0;
 			a.options_keys = {};
 			a.options_releasing = false;
 			if(levels[index] == "Menu")
 			{
 				const auto controller = tree.node(6).at.address();
+				a.menu_camera_anchor = tree.node(7).at.address();
 			a.menu_controller = controller;
 				a.vm->before_think = [&a, controller](std::uint32_t self) {
+					if(self == a.menu_camera_anchor) {
+						auto& vm = *a.vm;
+						vm.set_variable(self, 2, game::value::of(game::value_type::super_object, a.options_ui.active ? 0 : controller));
+						if(a.options_ui.active) {
+							const auto array = vm.get_variable(self, 0);
+							vm.set_variable(self, 1, game::value::of(game::value_type::waypoint, vm.memory().u32(array.word() + 12)));
+						}
+						return false;
+					}
 					if(self != controller || !a.input) return false;
 					auto& vm = *a.vm;
 					bool naming = a.playing && !a.saves->confirmation && game::menu_name_screen(vm, controller);
@@ -2064,6 +2088,7 @@ namespace
 						a.input->key(0xCD), a.input->key(0x1C) || a.input->key(0x39) || a.input->pad_button(0, 10), a.input->key(1)};
 					const auto before = a.options_keys;
 					a.options_keys = keys;
+					if(!a.options_ui.active && !a.saves->confirmation && a.menu_back.update(vm, *a.input, controller)) return true;
 					if(a.options_releasing)
 					{
 						if(std::ranges::none_of(keys, [](bool key) { return key; })) a.options_releasing = false;
@@ -2087,7 +2112,7 @@ namespace
 						}
 #endif
 						a.options.language = vm.language;
-						vm.play_sound(0x66c03d0, 0, 119, -1);
+						vm.play_sound(game::menu_confirm_sound, 0, 119, -1);
 					}
 					else
 					{
@@ -2110,22 +2135,23 @@ namespace
 										if(saved_autosave) a.saves->autosave = autosave;
 										saved = saved_autosave && saved;
 									}
-									a.options_ui.error = saved ? "" : "Could not save settings";
+									a.options_ui.error = saved ? "" : game::ui_text(game::ui_key::save_error,vm.language);
 									vm.language = std::uint8_t(a.options.language);
-									if(vm.on_language_selected) vm.on_language_selected(vm.language);
-									if(!display_ok) a.options_ui.error = "Display change failed";
+									if(previous.language != a.options.language && !game::write_language(game::save_root(), vm.language))
+										a.options_ui.error = game::ui_text(game::ui_key::save_error,vm.language);
+									if(!display_ok) a.options_ui.error = game::ui_text(game::ui_key::display_error,vm.language);
 									a.vsync = app::vsync_mode(a.options.vsync); apply_vsync(a);
 									a.fps_limit = a.options.fps; a.next_frame_ns = 0;
 									a.loading_screens = a.options.loading_screens;
 								}
-								vm.play_sound(key < 4 ? 0x66c03f0 : 0x66c03d0, 0, 119, -1);
+								vm.play_sound(key < 4 ? game::menu_move_sound : game::menu_confirm_sound, 0, 119, -1);
 								break;
 							}
 					}
 					if(a.options_ui.active)
 					{
 						a.options_ui.draw(vm.screen_text(), a.options, a.saves->autosave.value_or(false), a.saves->slot);
-						vm.set_variable(self, 53, game::value::integer(150));
+						vm.set_variable(self, 53, game::value::integer(60));
 						vm.set_variable(self, 54, game::value::integer(350 + a.options_ui.selected * 100));
 					}
 					else
@@ -2534,11 +2560,12 @@ namespace
 				// world; only the pause menu's text shows (user, 2026-11-15, card 38).
 				if(a.vm->paused() || a.saves->confirmation)
 					dialogs.clear();
-				auto menu_slots = a.saves->confirmation ? game::confirmation_slots(*a.saves) : a.vm->screen_text();
+				auto tr = [&](game::ui_key key) { return game::ui_text(key, a.vm->language); };
+				auto menu_slots = a.saves->confirmation ? game::confirmation_slots(*a.saves, a.vm->language) : a.vm->screen_text();
 				if(a.saves->question) {
 					menu_slots.clear();
-					menu_slots.set(0,500,450,"/C:Enable autosave?",255,14);
-					menu_slots.set(2,390,580,"Yes",255,14); menu_slots.set(3,560,580,"No",255,14);
+					menu_slots.set(0,500,450,"/C:" + tr(game::ui_key::autosave_question),255,14);
+					menu_slots.set(2,390,580,tr(game::ui_key::yes),255,14); menu_slots.set(3,560,580,tr(game::ui_key::no),255,14);
 					menu_slots.set_field(a.saves->choice ? 2 : 3,7,3);
 				}
 				// Screen slots are the separate menu/HUD text path (0x465C10). Their
@@ -2593,23 +2620,23 @@ namespace
 				}
 				else if(a.saves->explaining)
 				{
-					add_save_text("/C:When this Lum is shown,", 500, 400, 12, 1, false);
-					add_save_text("/C:the game is saving.", 500, 480, 12, 1, false);
-					add_save_text("/C:Please do not turn off your system.", 500, 560, 10, 1, false);
-					add_save_text("/C:Press /O200:Enter/O-1: to continue.", 500, 660, 10, 1, false);
+					add_save_text("/C:" + tr(game::ui_key::lum_hint), 500, 400, 12, 1, false);
+					add_save_text("/C:" + tr(game::ui_key::saving_hint), 500, 480, 12, 1, false);
+					add_save_text("/C:" + tr(game::ui_key::power_hint), 500, 560, 10, 1, false);
+					add_save_text("/C:" + tr(game::ui_key::continue_hint), 500, 660, 10, 1, false);
 				}
 				float saving = game::saving_alpha(*a.saves);
 				// It floats with the Lum beside it (the same gentle bob).
 				if(saving > 0)
 				{
 					const float seconds = float(SDL_GetTicks()) / 1000.0f, bob = 3.1f * std::sin(seconds * 3.0f);
-					add_save_text("Saving", 815, 920 + bob, 8, saving, true);
+					add_save_text(tr(game::ui_key::saving), 755, 920 + bob, 8, saving, true);
 					// The dots hop one after another, as if a wave ran under them (each character is 18 units
 					// wide at this size, screen_slot_metrics).
 					for(int dot = 0; dot < 3; ++dot)
 					{
 						const float hop = std::max(0.0f, std::sin(seconds * 5.0f - float(dot) * 0.8f));
-						add_save_text(".", 815 + 18.0f * float(6 + dot), 920 + bob - 14.0f * hop * hop, 8, saving, true);
+						add_save_text(".", 755 + 18.0f * float(tr(game::ui_key::saving).size() + dot), 920 + bob - 14.0f * hop * hop, 8, saving, true);
 					}
 				}
 				const auto& boxes = a.vm->particles().screen_rectangles();
@@ -3161,7 +3188,7 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 					game::write_menu_name(*a.vm, a.menu_controller, a.typed_name);
 					return SDL_APP_CONTINUE;
 				}
-				if(event->key.key == SDLK_RETURN && a.name_input_started && a.typed_name.empty()) return SDL_APP_CONTINUE;
+				if(event->key.key == SDLK_RETURN && !a.menu_back.selected && a.name_input_started && a.typed_name.empty()) return SDL_APP_CONTINUE;
 			}
 			if(event->key.key == SDLK_F8 && !event->key.repeat)
 			{

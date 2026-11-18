@@ -19,7 +19,7 @@ namespace openrayman::game
 	bool write_options(const std::filesystem::path& root, const engine_options& options);
 
 	enum class option_id { sound, display, game, back, music, effects, fullscreen, display_mode, vsync, fps, loading, language, autosave };
-	struct option_entry { option_id id; const char* label; };
+	struct option_entry { option_id id; };
 	// Future entries belong here: cutscene bars #5, widescreen/HDR #43,
 	// antialiasing #51, controller #101 and rumble #102. No placeholder controls.
 	class options_page
