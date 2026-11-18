@@ -419,3 +419,12 @@ the recorded point's sector relationship and the unflagged inward-facing roof.
 No executable code or game geometry was copied.
 
 Condition 54's scene ray (0x48ABF0 -> 0x45D8F0 -> 0x48EE70) traverses the two actors' sectors and the first sector's drawn-with list, skips actor children, ignores collide flags 0xC000, and tests one-sided triangles as well as sphere and box elements. OpenRayman's equivalent is limited to its sector-tagged static triangles. Own reading of the executable at those addresses and 0x4914D0.
+
+### Generated actor initial sector (card 127 follow-up)
+
+Own read-only analysis of Rayman2.exe `0x40BCC0` shows that a generated actor initially inherits its creator's stored sector if the spawn point lies in that sector's box; otherwise the executable searches the world (`0x44BE50`). The runtime previously selected a sector independently. The handler now initializes membership using the creator first. The Bast_20 pirate (node 40) can retain sector 208 at the recorded throw position, while a fresh search selects overlapping sector 215. A real-data test checks this initialization and the subsequent activation update. No executable code was copied.
+
+This correction does **not** resolve the reported leak. A diagnostic throw aimed at the cave still changes sector during flight and reaches the cave. In a separate diagnostic path, the unfiltered radius-0.6 sweep intersects node 209's unflagged, upward-facing slope while sector 215 excludes it. Initial position and target were diagnostic approximations, so the exact real trajectory remains to be matched. The executable's subsequent sector update at `0x4128D0` uses the placement plus a scaled local Z axis for its sector query, whereas the current runtime follows the placement origin; the scale and the impact of this difference still require verification. No general sector broadening or two-sided collision was added.
+
+The executable constant at `0x49C328` is `0.2f`, read directly from the installed GOG executable's `.rdata`: the later query uses position plus 0.2 times the placement's Z axis. The effect on this throw and on player movement has not yet been established.
+Own reading of `0x40A5C0` also places that update after mechanics and shows a skip when basic-dynamics bit 2, resolver bit 2, and byte `base+0x1D8` are all set. The barrel template's byte is initially zero; its value during an actual throw has not been established. OpenRayman's activation pass currently precedes mechanics.

@@ -809,7 +809,7 @@ static int cmd_collide(const fs::path& folder, const std::string& name)
 					float cy = (t.corners[0][1] + t.corners[1][1] + t.corners[2][1]) / 3;
 					if(std::hypot(cx - nx, cy - ny) > nr)
 						continue;
-					std::cout << std::format("  tri flags {:04X} normal ({:.2f} {:.2f} {:.2f})", t.flags, t.normal[0], t.normal[1], t.normal[2]);
+					std::cout << std::format("  tri node {} sector {:08X} material {:08X} flags {:04X} normal ({:.2f} {:.2f} {:.2f})", t.node, t.sector, t.material, t.flags, t.normal[0], t.normal[1], t.normal[2]);
 					for(const auto& c : t.corners)
 						std::cout << std::format(" ({:.1f} {:.1f} {:.1f})", c[0], c[1], c[2]);
 					std::cout << "\n";

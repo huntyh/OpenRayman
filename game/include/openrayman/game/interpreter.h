@@ -384,6 +384,7 @@ namespace openrayman::game
 		// Actors the scripts created (function 66): a generated actor reuses a freed slot's super
 		// object, which then is back in the world.
 		generated_actors& generated() { return m_generated; }
+		void initialize_generated_sector(std::uint32_t self, std::uint32_t creator);
 		const generated_actors& generated() const { return m_generated; }
 		void restore(std::uint32_t super_object) { m_removed.erase(super_object); }
 		// Puts a placed actor back as the level started it (the exe's mode-4 reset, 0x405E50 with

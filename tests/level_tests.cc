@@ -5357,3 +5357,29 @@ TEST_CASE("batch four collision boxes overlap after transformation")
  affine identity; game::set_global_placement(f.m,f.so,identity); game::set_global_placement(f.m,other,identity);
  CHECK(f.condition(22,{f.me(),f.object(other)})); f.m.write<float>(tb+4,3); CHECK_FALSE(f.condition(22,{f.me(),f.object(other)}));
 }
+
+TEST_CASE("real data: generated Bast_20 actor inherits its creator sector at spawn")
+{
+ auto dir = real_game_dir(); if(!dir) return;
+ auto data = game_data::locate(*dir); REQUIRE(data);
+ auto files = load_level_files(*data, "Bast_20");
+ auto header = read_level_header(files); scene tree(files.memory, header);
+ game::live_memory m(files.memory);
+ game::interpreter vm(m, header.placements.at(0).super_object.address());
+ std::vector<std::uint32_t> actors;
+ for(const auto& n : tree.nodes()) if(n.type == super_object_type::actor) actors.push_back(n.at.address());
+ vm.set_actors(actors); vm.update_activation(actors);
+ auto creator = tree.node(40).at.address();
+ auto placement = *game::global_placement(m, creator);
+ placement.m[0][3] = 71.327f; placement.m[1][3] = 55.504f; placement.m[2][3] = -30.721f;
+ game::set_global_placement(m, creator, placement); vm.update_activation(actors);
+ auto creator_sectors = vm.collision_sectors(creator); REQUIRE_FALSE(creator_sectors.empty());
+ CHECK(creator_sectors.front() == tree.node(208).at.address());
+ const auto* templates = files.memory.find({4, 1}); REQUIRE(templates);
+ auto barrel = vm.generated().create(m, templates->base + 0x1F04, creator, {71.327f, 55.504f, -30.721f}, 0);
+ REQUIRE(barrel);
+ vm.initialize_generated_sector(barrel, creator);
+ vm.update_activation(actors);
+ auto barrel_sectors = vm.collision_sectors(barrel); REQUIRE_FALSE(barrel_sectors.empty());
+ CHECK(barrel_sectors.front() == creator_sectors.front());
+}

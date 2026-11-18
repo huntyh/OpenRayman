@@ -152,6 +152,34 @@ namespace openrayman::game
 		}
 	}
 
+	void interpreter::initialize_generated_sector(std::uint32_t self, std::uint32_t creator)
+	{
+		// 0x40BCC0 starts in the creator's sector when it contains the spawn point;
+		// otherwise 0x44BE50 selects a sector from the world.
+		auto p = global_placement(m_memory, self);
+		if(!p || m_sectors.empty()) return;
+		const std::array<float, 3> position{p->m[0][3], p->m[1][3], p->m[2][3]};
+		std::uint32_t owner = 0;
+		auto found = m_actor_sectors.find(creator);
+		if(found != m_actor_sectors.end())
+		{
+			auto i = std::ranges::find(m_sectors, found->second);
+			if(i != m_sectors.end() && m_activation_sectors.sectors[i - m_sectors.begin()].contains(position))
+				owner = *i;
+		}
+		if(!owner)
+			if(auto i = m_activation_sectors.follow({}, position)) owner = m_sectors[*i];
+		if(auto previous = m_actor_sectors.find(self); previous != m_actor_sectors.end())
+			std::erase(m_sector_members[previous->second], self);
+		m_actor_sectors[self] = owner;
+		auto actor = actor_of(self), info = actor ? m_memory.u32(actor + 0x20) : 0;
+		if(info && m_memory.contains(info, 4)) m_memory.write<std::uint32_t>(info, owner);
+		auto standard = actor ? m_memory.u32(actor + 4) : 0;
+		auto& members = m_sector_members[owner];
+		if(standard && m_memory.u8(standard + 0x28)) members.insert(members.begin(), self);
+		else members.push_back(self);
+	}
+
 	void interpreter::update_activation(std::span<const std::uint32_t> actors)
 	{
 		auto& m = m_memory;
