@@ -6,6 +6,23 @@
 
 namespace openrayman::game
 {
+	void install_menu_back_routing(interpreter& vm, input& keys, std::uint32_t controller)
+	{
+		auto previous = vm.on_input_condition;
+		vm.on_input_condition = [&vm, &keys, controller, previous](std::uint32_t actor, unsigned condition, std::uint32_t action) -> std::optional<bool> {
+			if(previous) if(auto result = previous(actor, condition, action)) return result;
+			if(actor != controller || condition != 45 || (action != keys.action(7) && action != keys.action(8))) return std::nullopt;
+			auto& m = vm.memory();
+			const auto mind = m.u32(m.u32(m.u32(controller + 4) + 0xC));
+			const auto list = m.u32(m.u32(m.u32(mind)));
+			const auto current = m.u32(m.u32(mind + 4) + 8);
+			bool page = false;
+			for(unsigned i : {3u, 4u, 5u, 6u, 7u, 8u, 9u, 10u, 12u, 13u, 14u})
+				if(current == list + i * 12) { page = true; break; }
+			if(!page || m.read<std::int32_t>(keys.action(7) + input_action::counter) != 1) return std::nullopt;
+			return action == keys.action(8);
+		};
+	}
 	bool menu_back_entry::select(interpreter& vm, std::uint32_t controller, bool back)
 	{
 		if(!active || selected == back) return false;

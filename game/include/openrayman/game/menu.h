@@ -4,6 +4,8 @@ namespace openrayman::game
 {
 	class interpreter;
 	class input;
+	// Route Escape on script sub-pages to their own Backspace action.
+	void install_menu_back_routing(interpreter& vm, input& keys, std::uint32_t controller);
 	inline constexpr std::uint32_t menu_move_sound = 29, menu_confirm_sound = 28;
 	// Adds a virtual last row without changing the scripts' save-slot arrays.
 	class menu_back_entry

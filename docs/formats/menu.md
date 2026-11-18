@@ -831,3 +831,9 @@ and bank 0, plus runtime font-object inspection. New UI behavior and translation
 are OpenRayman's design. Regression tests compare Load/Delete Back against Esc
 and check that leaving name entry never writes a save. No game code or assets
 were copied. Captures and isolated test saves are described in NOTES_MENU3.md.
+
+Menu node 6's sub-page rules distinguish action 7 (Escape, global exit via behaviour 1)
+from action 8 (Backspace, the page's parent transition). OpenRayman routes Escape to
+action 8 on sub-pages as a deliberate improvement; the main-page exit is unchanged.
+This finding comes from our own `ortool brain` and `ortool input` inspection of the
+installed GOG Menu scripts (2026-11-18).

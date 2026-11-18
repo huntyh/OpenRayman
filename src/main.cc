@@ -2059,6 +2059,7 @@ namespace
 				const auto controller = tree.node(6).at.address();
 				a.menu_camera_anchor = tree.node(7).at.address();
 			a.menu_controller = controller;
+				game::install_menu_back_routing(*a.vm, *a.input, controller);
 				a.vm->before_think = [&a, controller](std::uint32_t self) {
 					if(self == a.menu_camera_anchor) {
 						auto& vm = *a.vm;

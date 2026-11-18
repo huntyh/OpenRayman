@@ -104,7 +104,7 @@ TEST_CASE("real data: Name Back delivers Esc without saving and main menu has no
 TEST_CASE("real data: Load and Delete Back return through the same branch as Esc")
 {
 	auto dir=real_game_dir(); if(!dir) return; auto data=game_data::locate(*dir); REQUIRE(data);
-	for(int entry:{1,2}) {
+	for(int entry:{1,2}) for(bool loaded:{false,true}) {
 		std::uint32_t escaped=0;
 		for(bool use_back:{false,true}) {
 			INFO("entry ",entry," use Back ",use_back);
@@ -115,9 +115,11 @@ TEST_CASE("real data: Load and Delete Back return through the same branch as Esc
 			game::write_save_slot(root,*dir,1,{}, {}, "ONE",0);
 			game::write_save_slot(root,*dir,2,{}, {}, "TWO",0);
 			auto session=std::make_shared<game::save_session>(); game::install_save_handlers(vm,files,header,tree,*dir,session);
+			if(loaded) session->slot=1;
 			std::vector<std::uint32_t> actors; for(const auto& n:tree.nodes()) if(n.type==super_object_type::actor) actors.push_back(n.at.address());
 			vm.set_actors(actors); game::input keys(memory,read_input_actions(files)); const auto controller=tree.node(6).at.address();
 			game::menu_back_entry back;
+			game::install_menu_back_routing(vm,keys,controller);
 			vm.before_think=[&](std::uint32_t actor) {return actor==controller && back.update(vm,keys,controller);};
 			for(int tick=0;tick<1300;++tick) {
 				if(tick==550) {
@@ -134,7 +136,8 @@ TEST_CASE("real data: Load and Delete Back return through the same branch as Esc
 				keys.set_key(1,!use_back && tick==1000); keys.step();
 				game::step(vm,actors,[](std::uint32_t,const std::exception& e){FAIL(e.what());});
 			}
-			CHECK_FALSE(back.active); CHECK_FALSE(session->confirmation); CHECK(session->slot==0);
+			CHECK_FALSE(back.active); CHECK_FALSE(session->confirmation); CHECK(session->slot==(loaded ? 1u : 0u));
+			CHECK(vm.level_request.empty());
 			CHECK(std::filesystem::exists(root/"Slot1/General.sav"));
 			const auto mind=memory.u32(memory.u32(memory.u32(controller+4)+0xC));
 			const auto behaviour=memory.u32(memory.u32(mind+4)+8);
