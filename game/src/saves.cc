@@ -295,7 +295,7 @@ namespace openrayman::game
 		screen_text slots;
 		const auto kind = session.confirmation_kind;
 		auto tr = [language](ui_key key) { return ui_text(key, language); };
-		std::string title = kind == 1 || kind == 2 ? session.name + tr(ui_key::exists) : tr(kind == 3 ? ui_key::load_question : kind == 4 ? ui_key::delete_question : kind == 6 && session.confirmation_save ? ui_key::save_question : kind == 5 || kind == 7 ? ui_key::abandon_question : ui_key::quit_question);
+		std::string title = kind == 1 || kind == 2 ? session.name + tr(ui_key::exists) : tr(kind == 3 ? ui_key::load_question : kind == 4 ? ui_key::delete_question : kind == 8 ? ui_key::save_abandon_question : kind == 6 && session.confirmation_save ? ui_key::save_question : kind == 5 || kind == 7 ? ui_key::abandon_question : ui_key::quit_question);
 		slots.set(0, 500, 360, "/C:" + title, 255, 13);
 		if(kind == 1 || kind == 2) slots.set(1, 500, 440, "/C:" + tr(ui_key::overwrite_question), 255, 12);
 		slots.set(2, 390, 580, tr(ui_key::yes), 255, 14);
@@ -335,6 +335,55 @@ namespace openrayman::game
 			auto mind = m.u32(m.u32(m.u32(actor + 4) + 0xC));
 			return m.u32(m.u32(mind + 4) + 8);
 		};
+		// Shared by function 90 and the save-before-abandon prompt.
+		auto save_game = [=, &vm](unsigned index, unsigned slot, std::uint32_t actor) {
+				try
+				{
+					auto general = capture_save_entries(vm.memory(), registry.general, registry.general_size);
+					if(index == 93)
+					{
+						// 0x4054D0 -> 0x47D9C0 -> 0x466950 resets designer values at
+						// the following level change. Save those values for the new slot now.
+						auto& m = vm.memory();
+						for(const auto& e : registry.general)
+						{
+							if(e.standard_offset)
+							{
+								// Menu behaviour 16 sets Rayman's health/max to 15/30 on continue.
+								if(*e.standard_offset == 0x21) general[e.offset] = std::byte(15);
+								if(*e.standard_offset == 0x22) general[e.offset] = std::byte(30);
+								continue;
+							}
+							auto mind = m.u32(m.u32(e.actor.address() + 0x0C));
+							auto vars = m.u32(mind + 0x0C);
+							auto initial = m.u32(vars + 4);
+							if(!initial) initial = m.u32(m.u32(m.u32(mind) + 8));
+							auto source = initial + e.address - m.u32(vars + 8);
+							std::ranges::copy(m.span(source, e.size), general.begin() + e.offset);
+						}
+					}
+
+					auto levels = index == 93 ? std::map<std::string, std::vector<std::byte>>{} : session->levels;
+					levels[level] = capture_save_entries(vm.memory(), registry.level, registry.level_size);
+					write_save_slot(root, game_folder, slot, general, levels, session->name, session->completion, index == 93);
+					session->slot = slot;
+					if(index == 93)
+					{
+						// A new game in this slot asks again on its first success screen.
+						forget_autosave(root, slot);
+						session->autosave = std::nullopt;
+						session->settings_slot = slot;
+					}
+					else settings();
+					session->levels = std::move(levels);
+					session->new_game = index == 93;
+					session->first_save = index == 93;
+					if(session->automatic_actor == actor) session->saving_ticks = 270; // 4.5 s, the last half second fading (user, 2026-11-16)
+					session->error.clear();
+					return true;
+				}
+				catch(const std::exception& e) { session->error = e.what(); session->automatic_actor = 0; return false; }
+		};
 		vm.skip_reflex = [=](std::uint32_t actor) {
 			if(!session->confirmation || actor != session->confirmation_actor) return false;
 			if(current_behaviour(actor) == session->confirmation_behaviour) return true;
@@ -354,7 +403,7 @@ namespace openrayman::game
 					session->confirmation = true; session->confirmation_choice = false; session->confirmation_submitted = false;
 					session->confirmation_behaviour = current_behaviour(actor);
 					session->confirmation_answer.reset(); session->confirmation_actor = actor;
-					session->confirmation_kind = vm.paused() ? 7 : vm.get_variable(actor, 55).as_int();
+					session->confirmation_kind = vm.paused() ? (session->slot ? 8 : 7) : vm.get_variable(actor, 55).as_int();
 					session->confirmation_save = !vm.paused() && vm.get_variable(actor, 40).as_int() != 0;
 					session->confirmation_variable = vm.paused() ? 77 : 41;
 					vm.set_variable(actor, unsigned(session->confirmation_variable), value::integer(0));
@@ -401,7 +450,32 @@ namespace openrayman::game
 				}
 			}
 			if(session->confirmation && actor == session->confirmation_actor) {
+				if(session->confirmation_kind == 8 && session->confirmation_answer.has_value()) {
+					const bool save = *session->confirmation_answer;
+					session->confirmation_answer.reset();
+					// Menu's save-before-quit script updates the slot's completion first.
+					std::vector<std::uint32_t> fix_actors;
+					for(const auto& placed : header.placements) fix_actors.push_back(placed.super_object.address());
+					const auto words = vm.story_words(fix_actors);
+					const auto old_completion = session->completion;
+					if(save && !words.empty()) {
+						unsigned count = 0;
+						for(unsigned bit = 1; bit <= 1400; ++bit)
+							if((bit <= 800 || bit == 1014 || bit >= 1201) && (bit - 1) / 32 < words.size())
+								count += (words[(bit - 1) / 32] >> ((bit - 1) % 32)) & 1u;
+						session->completion = std::min(count, 1000u);
+					}
+					if(!save || save_game(90, session->slot, actor)) {
+						session->confirmation_kind = 7;
+						session->confirmation_choice = false;
+					} else session->completion = old_completion;
+					return false;
+				}
 				if(!session->confirmation_submitted && condition == 45 && action == confirm_action && session->confirmation_answer.has_value()) {
+					if(session->confirmation_kind == 7 && *session->confirmation_answer) {
+						session->slot = 0; session->settings_slot = 0; session->autosave.reset();
+						session->levels.clear();
+					}
 					vm.set_variable(actor, unsigned(session->confirmation_variable), value::integer(*session->confirmation_answer));
 					session->confirmation_submitted = true;
 					return true;
@@ -416,60 +490,13 @@ namespace openrayman::game
 			}
 			return std::nullopt;
 		};
-		// 90/93/94: 0x47D830. Both success paths return a nonzero byte.
+		// 90/93: original script save operations.
 		for(unsigned index : {90u, 93u})
 			vm.on_function(index, [=](call& c, value& out) {
-				value arg;
-				c.args = c.vm.eval(c.self, c.args, arg);
+				value arg; c.args = c.vm.eval(c.self, c.args, arg);
 				unsigned slot = unsigned(arg.as_int());
 				if(!slot) slot = session->slot ? session->slot : 1;
-				out = value::integer(0);
-				try
-				{
-					auto general = capture_save_entries(c.vm.memory(), registry.general, registry.general_size);
-					if(index == 93)
-					{
-						// 0x4054D0 -> 0x47D9C0 -> 0x466950 resets designer values at
-						// the following level change. Save those values for the new slot now.
-						auto& m = c.vm.memory();
-						for(const auto& e : registry.general)
-						{
-							if(e.standard_offset)
-							{
-								// Menu behaviour 16 sets Rayman's health/max to 15/30 on continue.
-								if(*e.standard_offset == 0x21) general[e.offset] = std::byte(15);
-								if(*e.standard_offset == 0x22) general[e.offset] = std::byte(30);
-								continue;
-							}
-							auto mind = m.u32(m.u32(e.actor.address() + 0x0C));
-							auto vars = m.u32(mind + 0x0C);
-							auto initial = m.u32(vars + 4);
-							if(!initial) initial = m.u32(m.u32(m.u32(mind) + 8));
-							auto source = initial + e.address - m.u32(vars + 8);
-							std::ranges::copy(m.span(source, e.size), general.begin() + e.offset);
-						}
-					}
-
-					auto levels = index == 93 ? std::map<std::string, std::vector<std::byte>>{} : session->levels;
-					levels[level] = capture_save_entries(c.vm.memory(), registry.level, registry.level_size);
-					write_save_slot(root, game_folder, slot, general, levels, session->name, session->completion, index == 93);
-					session->slot = slot;
-					if(index == 93)
-					{
-						// A new game in this slot asks again on its first success screen.
-						forget_autosave(root, slot);
-						session->autosave = std::nullopt;
-						session->settings_slot = slot;
-					}
-					else settings();
-					session->levels = std::move(levels);
-					session->new_game = index == 93;
-					session->first_save = index == 93;
-					if(session->automatic_actor == c.self) session->saving_ticks = 270; // 4.5 s, the last half second fading (user, 2026-11-16)
-					session->error.clear();
-					out = value::integer(1);
-				}
-				catch(const std::exception& e) { session->error = e.what(); session->automatic_actor = 0; }
+				out = value::integer(save_game(index, slot, c.self) ? 1 : 0);
 				return c.args;
 			});
 		// 91: 0x47D830 case 0x5B. Load a slot: 0x410F20 copies it to the working slot, 0x410410

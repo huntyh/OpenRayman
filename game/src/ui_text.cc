@@ -38,6 +38,7 @@ namespace openrayman::game
 			{{"Load this saved game?", "Charger cette partie?", "Dieses Spiel laden?", "¿Cargar esta partida?", "Caricare questa partita?"}},
 			{{"Delete this saved game?", "Effacer cette partie?", "Dieses Spiel löschen?", "¿Borrar esta partida?", "Eliminare questa partita?"}},
 			{{"Save before leaving?", "Sauvegarder avant de quitter?", "Vor dem Verlassen speichern?", "¿Guardar antes de salir?", "Salvare prima di uscire?"}},
+			{{"Save before abandoning?", "Sauvegarder avant d'abandonner?", "Vor dem Verlassen speichern?", "¿Guardar antes de abandonar?", "Salvare prima di abbandonare?"}},
 			{{"Abandon the current game?", "Abandonner la partie?", "Aktuelles Spiel verlassen?", "¿Abandonar la partida?", "Abbandonare la partita?"}},
 			{{"Quit OpenRayman?", "Quitter OpenRayman?", "OpenRayman beenden?", "¿Salir de OpenRayman?", "Uscire da OpenRayman?"}},
 			{{"Overwrite this saved game?", "Remplacer cette partie?", "Dieses Spiel überschreiben?", "¿Sobrescribir esta partida?", "Sovrascrivere la partita?"}},

@@ -35,6 +35,11 @@ of them off may come later.
 | Cameras riding an animation part | Function 210 (a part's world position) reads the part at the whole frame the animation has reached, so a camera tied to it moves only when a new frame comes: in Jail_20 the camera following Globox down the chute (animation 354, about half a frame per tick) moved on 2 of every 3 or 4 ticks and stuttered | Our fallback poses the part at the in-between frame (elapsed ms x rate, the same frame the renderer draws), so the camera moves every tick. Held last frames stay whole | 3c |
 ## The scripts
 
+Abandoning a loaded game asks whether to save first, then asks for confirmation.
+Escape answers No on either prompt. Confirming abandonment clears the active slot,
+so quitting from the resulting main menu asks only for quit confirmation. The save
+choice stays explicit even when autosave is enabled (user request, 2026-11-18).
+
 In the main menu's script-driven sub-pages, Escape (including right-click, Android Back and
 OpenRayman's Back row) follows the page's Backspace action to its parent. The original menu
 scripts route Escape to the global exit instead, which returns to the Hall of Doors when a

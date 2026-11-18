@@ -559,3 +559,36 @@ TEST_CASE("real data: pointer pause selection and Abandon Esc return through the
  for(int tick=0;tick<80;++tick) { keys.step(); game::update_save_ui(*session,vm.save_folder,false,false,false,keys.key(1)); game::step(vm,actors); }
  CHECK_FALSE(session->confirmation); CHECK(vm.paused()); CHECK(vm.level_request.empty()); CHECK(vm.get_variable(owner,77).as_int()==0);
 }
+
+TEST_CASE("real data: save before abandoning and clear the active slot only on confirmation")
+{
+ auto dir=real_game_dir(); if(!dir) return; auto data=game_data::locate(*dir); REQUIRE(data);
+ for(bool save : {false,true}) for(bool abandon : {false,true}) {
+  INFO("save ",save," abandon ",abandon);
+  auto files=load_level_files(*data,"Learn_10"); auto header=read_level_header(files); scene tree(files.memory,header);
+  game::live_memory memory(files.memory); game::interpreter vm(memory,header.main_actor->address());
+  game::register_handlers(vm); game::register_dialog_handlers(vm); game::set_dialog_resolver(vm,files);
+  auto root=game::save_root()/("abandon-test-"+std::to_string(std::random_device{}()));
+  game::write_save_slot(root,*dir,1,{}, {}, "ONE",0);
+  REQUIRE(game::write_autosave(root,1,true));
+  vm.save_folder=root.string(); auto session=std::make_shared<game::save_session>(); session->slot=1;
+  game::install_save_handlers(vm,files,header,tree,*dir,session);
+  std::vector<std::uint32_t> actors; for(const auto& n:tree.nodes()) if(n.type==super_object_type::actor) actors.push_back(n.at.address());
+  game::apply_revisit_state(vm,tree,"Learn_10"); vm.set_actors(actors); game::input keys(memory,read_input_actions(files));
+  auto tick=[&] { keys.step(); game::update_save_ui(*session,root,keys.key(0xcb),false,keys.key(0x1c),keys.key(1)); game::step(vm,actors); };
+  for(int i=0;i<450;++i) { keys.set_key(1,i>=240 && i<245); tick(); }
+  REQUIRE(vm.paused()); auto owner=vm.screen_text().at(0).owner; REQUIRE(owner);
+  REQUIRE(game::select_script_menu_entry(vm,owner,4,true)); keys.pulse_key(0x1c);
+  for(int i=0;i<80;++i) tick();
+  REQUIRE(session->confirmation); REQUIRE(session->confirmation_kind==8);
+  if(save) { keys.pulse_key(0xcb); keys.pulse_key(0x1c); } else keys.pulse_key(1);
+  for(int i=0;i<80;++i) tick();
+  REQUIRE(session->confirmation); REQUIRE(session->confirmation_kind==7); CHECK(session->slot==1);
+  CHECK((std::filesystem::file_size(root/"Slot1/General.sav")>12)==save);
+  if(abandon) { keys.pulse_key(0xcb); keys.pulse_key(0x1c); } else keys.pulse_key(1);
+  for(int i=0;i<100;++i) tick();
+  CHECK(session->slot==(abandon ? 0u : 1u));
+  if(abandon) CHECK(vm.level_request=="menu"); else { CHECK(vm.level_request.empty()); CHECK(vm.paused()); }
+  std::filesystem::remove_all(root);
+ }
+}

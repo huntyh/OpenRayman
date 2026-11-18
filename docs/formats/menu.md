@@ -698,7 +698,7 @@ Name storage is three bytes; typed name entry (card 74) remains unchanged.
 
 Our optional autosave asks once below the first success message. Left/right selects Yes/No,
 Enter persists it and continues; a known preference adds no question. `--autosave on|off`
-changes it later. When on, the Hall and save-before-exit questions use automatic confirmation
+changes it later. When on, the Hall save questions use automatic confirmation
 only for the actor handling the save. Its original write and cleanup branches still run;
 a runtime green Lum and Saving... replace the prompts. When off the original prompts run.
 
@@ -777,6 +777,14 @@ continue to use var41. Provenance: own bytecode/layout analysis; all new UI code
 is OpenRayman's deliberate addition.
 
 For kind 6, var40 distinguishes Save before leaving (1) from Quit (0); the replacement preserves that distinction. Kind 3 is a load confirmation, kind 4 delete; kind 5 and the pause question abandon the active game.
+
+For a loaded game, the pause Abandon confirmation is preceded by our own save-before-abandon
+screen. Yes writes the active slot using the same save operation and completion-bit ranges as
+Menu's save-before-quit path; No or Escape skips that write. The original Abandon Yes/No
+screen follows. Only its Yes clears the active slot and cached session levels before the
+pause script requests Menu, so Menu function 94 reports no active save. Autosave does not
+answer either prompt. This is an OpenRayman improvement: our own inspection of Fix's pause
+controller shows its Yes branch requests Menu without a save step (2026-11-18).
 
 Confirmation answers are latched through the original meta-action delay. A narrow
 skip_reflex hook suspends only the controller's directional reflex while the
