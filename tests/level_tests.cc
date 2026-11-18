@@ -1258,10 +1258,27 @@ TEST_CASE("procedure 135 integrates rotation and respects the dynamics lock")
 	f.procedure(135, {f.integer(90)});
 	float angle = 90.0f * float(f.vm.frame_ms()) * 0.0174532925199433f / 1000;
 	CHECK(f.m.f32(f.base + 0xE0) == doctest::Approx(std::cos(angle)));
-	CHECK(f.m.f32(f.base + 0xE4) == doctest::Approx(-std::sin(angle)));
+	CHECK(f.m.f32(f.base + 0xE4) == doctest::Approx(std::sin(angle)));
 	f.m.write<std::uint32_t>(f.base + 0xC, 0x80);
 	f.procedure(135, {f.integer(90)});
-	CHECK(f.m.f32(f.base + 0xE4) == doctest::Approx(-std::sin(angle)));
+	CHECK(f.m.f32(f.base + 0xE4) == doctest::Approx(std::sin(angle)));
+}
+
+TEST_CASE("procedure 415 turns toward the point from the current actor orientation")
+{
+	handler_fixture f;
+	auto t = f.m.allocate(0x58);
+	f.m.write(f.so + 0x24, t);
+	game::set_global_placement(f.m, f.so, affine{});
+	// A stale cache facing the opposite direction must not replace the actor frame.
+	f.m.write<std::uint32_t>(f.base + 0xD0, 3);
+	f.m.write(f.base + 0xE0, vec3{-1, 0, 0});
+	f.m.write(f.base + 0xEC, vec3{0, -1, 0});
+	f.m.write(f.base + 0xF8, vec3{0, 0, 1});
+	f.procedure(415, {game::value::vector(1, -1, 0), f.integer(10)});
+	CHECK(f.m.f32(t + 0x10) == doctest::Approx(std::cos(10 * 0.0174532925199433f)));
+	CHECK(f.m.f32(t + 0x14) == doctest::Approx(std::sin(10 * 0.0174532925199433f)));
+	CHECK(f.m.f32(t + 0x1C) == doctest::Approx(-std::sin(10 * 0.0174532925199433f)));
 }
 
 TEST_CASE("wave, health, input and request handlers")

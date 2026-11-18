@@ -5090,6 +5090,11 @@ namespace openrayman::game
 		{
 			auto& m = vm.memory(); if(!base || (m.u32(base + 0xc) & 0x80) || angle == 0) return;
 			auto t = base + 0xD0;
+			// The original mechanics keeps this matrix current. Our actor transform is
+			// authoritative, including turns made by script procedures since the last move.
+			if(auto transform = transform_of(vm, self); transform && m.contains(transform, 0x58))
+				for(std::uint32_t i = 0; i < 0x58; i += 4)
+					m.write<std::uint32_t>(t + i, m.u32(transform + i));
 			vec3 x = read3(m, t + 0x10), y = read3(m, t + 0x1C), z = read3(m, t + 0x28);
 			if(m.u32(t) < 3) { x = {1,0,0}; y = {0,1,0}; z = {0,0,1}; m.write<std::uint32_t>(t, 1); }
 			float cs = std::cos(angle), sn = std::sin(angle);
@@ -5101,7 +5106,7 @@ namespace openrayman::game
 			else
 			{
 				vec3 old = x;
-				for(unsigned i = 0; i < 3; ++i) { x[i] = cs*old[i] - sn*y[i]; y[i] = sn*old[i] + cs*y[i]; }
+				for(unsigned i = 0; i < 3; ++i) { x[i] = cs*old[i] + sn*y[i]; y[i] = -sn*old[i] + cs*y[i]; }
 			}
 			set_axes(m, t, x, y, z);
 			// Our mechanics publishes the actor transform directly instead of base +0xD0.
