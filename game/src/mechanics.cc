@@ -1263,6 +1263,20 @@ namespace openrayman::game
 			}
 			vec target = read_vec(m, t + 4);
 			const vec start = target;
+			if(vm)
+				if(auto it = vm->attachments().find(super_object); it != vm->attachments().end())
+				{
+					auto support = global_placement(m, it->second.actor), rider = global_placement(m, super_object);
+					auto inverse = inverse_frame(it->second.placement);
+					if(support && rider && inverse)
+					{
+						auto moved = *support * *inverse * *rider;
+						target = { moved.m[0][3], moved.m[1][3], moved.m[2][3] };
+						set_global_placement(m, super_object, moved);
+						write_vec(m, t + 4, start);
+						it->second.placement = *support;
+					}
+				}
 			for(std::size_t i = 0; i < 3; i++)
 				target[i] += speed[i] * dt;
 			target = vadd(target, pivot_move);
@@ -1280,7 +1294,7 @@ namespace openrayman::game
 			return;
 		}
 		bool gravity =(flags & has_gravity) && !(m.u32(b + base::end_flags) & no_gravity);
-		if(!gravity && !(flags & (has_animation_motion | uses_imposed | uses_proposed | uses_third | 0x20000000)) && !(vm && vm->supports().contains(super_object)))
+		if(!gravity && !(flags & (has_animation_motion | uses_imposed | uses_proposed | uses_third | 0x20000000)) && !(vm && (vm->supports().contains(super_object) || vm->attachments().contains(super_object))))
 			return;
 		auto actor_triangles = vm && (flags & collides) && !basic_sweep_enabled(m, b, flags) ? actor_collision_triangles(*vm, super_object) : std::vector<collision_triangle>{};
 		bool support_active = false;
@@ -1321,12 +1335,15 @@ namespace openrayman::game
 		// Teleporting or removing the support breaks that relationship before it can move the rider.
 		vec carried{};
 		if(vm)
-			if(auto it = vm->supports().find(super_object); it != vm->supports().end())
+		{
+			auto& map = vm->attachments().contains(super_object) ? vm->attachments() : vm->supports();
+			if(auto it = map.find(super_object); it != map.end())
 			{
+				const bool explicit_attachment = vm->attachments().contains(super_object);
 				auto support = global_placement(m, it->second.actor);
 				auto rider = global_placement(m, super_object);
 				auto inverse = inverse_frame(it->second.placement);
-				if(!placed && support_active && support && rider && inverse)
+				if((explicit_attachment || (!placed && support_active)) && support && rider && inverse)
 				{
 					affine moved = *support * *inverse * *rider;
 					carried = vsub({ moved.m[0][3], moved.m[1][3], moved.m[2][3] }, current);
@@ -1346,10 +1363,12 @@ namespace openrayman::game
 						}
 					}
 					set_global_placement(m, super_object, moved);
+					it->second.placement = *support;
 					write_vec(m, t + 4, current); // collision still measures the full move from here
 				}
-				else vm->supports().erase(it);
+				else if(!explicit_attachment) map.erase(it);
 			}
+		}
 		if(placed && vm && m.contains(b + 0x1B4, 12)) write_vec(m, b + 0x1B4, {});
 
 		// A script speed (units per second) sets the axes of this tick's move the script chose (one
@@ -1783,13 +1802,15 @@ namespace openrayman::game
 			const bool movable = standard && m.contains(standard + 0x28) && m.u8(standard + 0x28) == 1;
 			const bool rider_movable = own_standard && m.contains(own_standard + 0x28) && m.u8(own_standard + 0x28) == 1;
 			// 0x413730: only class-1 supports carry riders; a class-1 actor isn't itself attached.
-			if(movable && !rider_movable && (m.u32(b + base::end_flags) & 4) && !(flags & 0x40000000))
+			if(vm->attachments().contains(super_object))
+				support = vm->attachments().at(super_object).actor;
+			else if(movable && !rider_movable && (m.u32(b + base::end_flags) & 4) && !(flags & 0x40000000))
 			{
 				if(auto placement = global_placement(m, support)) vm->supports()[super_object] = { support, *placement };
 			}
 			else vm->supports().erase(super_object);
 			if(m.contains(b + 0x284, 4))
-				m.write<std::uint32_t>(b + 0x284, vm->supports().contains(super_object) ? vm->supports().at(super_object).actor : 0);
+				m.write<std::uint32_t>(b + 0x284, vm->attachments().contains(super_object) ? vm->attachments().at(super_object).actor : (vm->supports().contains(super_object) ? vm->supports().at(super_object).actor : 0));
 		}
 		// 0x431AD0 -> 0x437AF0: end flag 2 records the pivot translation
 		// with external motion at +0x1B4. 0x43DDA0 removes it from the next

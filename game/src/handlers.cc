@@ -883,6 +883,66 @@ namespace openrayman::game
 			return c.args;
 		}
 
+		// 301/302 (0x46DA50, 0x43DA30/0x43DA60), 304 (0x467970).
+		// Placements in this engine are world-space, so preserve the script tree separately.
+		std::uint32_t carrier_procedure(call& c)
+		{
+			auto& vm = c.vm; auto& m = vm.memory();
+			const auto self = c.index == 304 ? c.self : vm.target(c.self, true);
+			auto actor = vm.actor_of(self);
+			if(!actor) return c.args;
+			auto dyn = m.u32(actor + 8);
+			auto base = dyn && m.contains(dyn, 4) ? m.u32(dyn) : 0;
+			auto kind = base && m.contains(base + 4, 4) ? m.u32(base + 4) : 0;
+			const bool kind1 = kind && m.contains(kind, 4) && m.u32(kind) == 1 && m.contains(base, 0x288);
+			auto release = [&](std::uint32_t child) {
+				vm.attachments().erase(child); vm.supports().erase(child);
+				auto a = vm.actor_of(child); auto d = a ? m.u32(a + 8) : 0;
+				auto b = d && m.contains(d, 4) ? m.u32(d) : 0;
+				auto k = b && m.contains(b + 4, 4) ? m.u32(b + 4) : 0;
+				if(b && m.contains(b, 0x288) && k && m.contains(k, 4) && m.u32(k) == 1) {
+					m.write<std::uint32_t>(b + 8, m.u32(b + 8) & ~0x40000000u); m.write<std::uint32_t>(b + 0x284, 0);
+				}
+				auto st = a ? m.u32(a + 4) : 0;
+				if(st && std::ranges::find(vm.run_order, child) == vm.run_order.end()) {
+					if(m.u8(st + 0x28)) vm.run_order.insert(vm.run_order.begin(), child); else vm.run_order.push_back(child);
+				}
+			};
+			if(c.index == 302) { release(self); return c.args; }
+			value arg; next_arg(c, arg);
+			if(c.index == 304) {
+				auto st = m.u32(actor + 4); if(!st) return c.args;
+				auto old = m.u8(st + 0x28), now = std::uint8_t(arg.as_int());
+				if(old != now) {
+					if(old) {
+						std::vector<std::uint32_t> children;
+						for(auto& [child, parent] : vm.attachments()) if(parent.actor == self) children.push_back(child);
+						for(auto child = m.u32(self + 8); child && m.contains(child, 0x20); child = m.u32(child + 0x14))
+							if(m.u32(child) == 2 && std::ranges::find(children, child) == children.end()) children.push_back(child);
+						for(auto child : children) release(child);
+					}
+					m.write<std::uint8_t>(st + 0x28, now);
+					std::erase(vm.run_order, self); if(now) vm.run_order.insert(vm.run_order.begin(), self); else vm.run_order.push_back(self);
+				}
+				return c.args;
+			}
+			auto carrier = super_object_value(vm, arg);
+			if(!carrier) {
+				auto st = m.u32(actor + 4);
+				if(st && std::ranges::find(vm.run_order, self) != vm.run_order.end()) {
+					std::erase(vm.run_order, self);
+					if(m.u8(st + 0x28) == 1) vm.run_order.insert(vm.run_order.begin(), self); else vm.run_order.push_back(self);
+				}
+				return c.args;
+			}
+			if(carrier != self && (!kind1 || !(m.u32(base + 8) & 0x40000000))) {
+				if(auto placement = global_placement(m, carrier)) { vm.attachments()[self] = {carrier, *placement}; vm.supports().erase(self); }
+				if(kind1) m.write<std::uint32_t>(base + 0x284, carrier);
+			}
+			if(carrier && kind1) m.write<std::uint32_t>(base + 8, m.u32(base + 8) | 0x40000000u);
+			return c.args;
+		}
+
 		// 312 (0x46D920): set or clear bit n (0-based) of the super object's flags (+0x30).
 		std::uint32_t super_object_flag(call& c)
 		{
@@ -7135,6 +7195,9 @@ namespace openrayman::game
 		vm.on_procedure(409, place_screen_object);
 		vm.on_procedure(411, remove_screen_object);
 		vm.on_procedure(413, stack_screen_objects);
+		vm.on_procedure(301, carrier_procedure);
+		vm.on_procedure(302, carrier_procedure);
+		vm.on_procedure(304, carrier_procedure);
 		vm.on_procedure(306, pause_game);
 		vm.on_procedure(504, pause_effects);
 		vm.on_condition(76, actor_in_world);

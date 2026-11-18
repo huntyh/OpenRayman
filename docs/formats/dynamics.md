@@ -540,3 +540,11 @@ scripts via `ortool brain`; the user's engine recording above. Regression
 checks pin the failed point's surface Z and upward normal, paired-triangle
 order, submerged ascent in both river regions, and the complete jump/re-entry.
 Exact original-game sensor timing remains a visual comparison.
+
+
+Script carrier latch: 0x43DA30 calls 0x43D950 then sets dynamics +0x08 bit
+0x40000000. On the first attach, 0x43D950 records the carrier super object at
++0x284; 0x43DA60 clears the latch and 0x43DA00 clears that pointer. The
+relationship is distinct from a contact-selected support. OpenRayman keeps a
+separate explicit attachment map and uses the carrier placement delta for
+carried motion. Own read of the local executable decompilation, 2026-11-18.

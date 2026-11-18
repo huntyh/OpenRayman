@@ -105,6 +105,7 @@ namespace openrayman::game
 		m_wake_sectors.clear();
 		m_actors = std::move(actors);
 		m_supports.clear();
+		m_attachments.clear();
 		m_sectors.clear();
 		std::vector<std::uint32_t> pending = m_actors;
 		std::set<std::uint32_t> seen;
@@ -329,6 +330,10 @@ namespace openrayman::game
 			auto owner = m_actor_sectors[self];
 			wake(self, first || (owner && fresh(owner)));
 		}
+		// Attached actors travel with an active carrier, even across sector changes.
+		for(std::size_t pass = 0; pass < m_attachments.size(); ++pass)
+			for(const auto& [child, parent] : m_attachments)
+				if(std::ranges::find(run_order, parent.actor) != run_order.end()) wake(child, first);
 		// 0x45B990's explicitly detached actors (procedures 410/411).
 		for(auto self : actors) if(m.u32(self + 0x30) & 0x20) wake(self, first);
 		for(auto self : actors)
@@ -1691,6 +1696,7 @@ namespace openrayman::game
 		run_order.clear();
 		run_order_source = 0;
 		m_supports.clear();
+		m_attachments.clear();
 		m_surface_cache = {};
 		m_channel_placements.clear();
 		m_screen_objects.clear();

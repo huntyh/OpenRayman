@@ -670,7 +670,14 @@ namespace openrayman::game
 		vm.apply_pending_main_actor();
 		vm.update_activation(super_objects);
 		// Snapshot traversal: a script may restore another actor during this pass.
-		const auto order = vm.run_order;
+		auto order = vm.run_order;
+		// 0x40A7C0 traverses carriers before children. Keep the equivalent order for
+		// script attachments while placements remain world-space in our renderer.
+		for(std::size_t pass = 0; !vm.attachments().empty() && pass < vm.attachments().size(); ++pass)
+			for(std::size_t i = 0; i < order.size(); ++i)
+				if(auto it = vm.attachments().find(order[i]); it != vm.attachments().end())
+					if(auto parent = std::ranges::find(order, it->second.actor); parent != order.end() && std::size_t(parent - order.begin()) > i)
+						std::rotate(order.begin() + i, parent, parent + 1);
 		for(std::uint32_t self : order)
 			if(!is_camera(self)) update(self);
 		// Actors the scripts created, after the level's own (the game links them into the dynamic
