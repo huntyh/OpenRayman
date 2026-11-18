@@ -1180,6 +1180,41 @@ struct handler_fixture
 	bool condition(unsigned n, std::initializer_list<game::value> args = {}) { return invoke(node_type::condition, n, args).word() != 0; }
 };
 
+TEST_CASE("script carrier survives missing collision geometry and detaches")
+{
+	handler_fixture f;
+	auto transform = f.m.allocate(0x58), carrier = f.m.allocate(0x48), actor = f.m.allocate(0x38);
+	auto standard = f.m.allocate(0x34), ct = f.m.allocate(0x58), kind = f.m.allocate(4);
+	f.m.write(f.so + 0x24, transform); f.m.write<std::uint32_t>(carrier, 2);
+	f.m.write(carrier + 4, actor); f.m.write(carrier + 0x24, ct);
+	f.m.write(actor + 4, standard); f.m.write(standard + 0xC, carrier);
+	f.m.write(f.base + 4, kind); f.m.write<std::uint32_t>(kind, 1);
+	game::set_global_placement(f.m, f.so, affine{}); game::set_global_placement(f.m, carrier, affine{});
+	f.procedure(301, {game::value::of(game::value_type::actor, actor)});
+	CHECK(f.m.u32(f.base + 0x284) == carrier);
+	CHECK((f.m.u32(f.base + 8) & 0x40000000) != 0);
+	affine moved; moved.m[0][3] = 4; game::set_global_placement(f.m, carrier, moved);
+	game::move_actor(f.m, f.so, f.actor, 1000.0 / 60, f.vm.world(), &f.vm);
+	CHECK(game::global_placement(f.m, f.so)->m[0][3] == doctest::Approx(4));
+	CHECK(f.m.u32(f.base + 0x284) == carrier);
+	f.procedure(302, {});
+	CHECK(f.m.u32(f.base + 0x284) == 0);
+	CHECK((f.m.u32(f.base + 8) & 0x40000000) == 0);
+	moved.m[0][3] = 8; game::set_global_placement(f.m, carrier, moved);
+	game::move_actor(f.m, f.so, f.actor, 1000.0 / 60, f.vm.world(), &f.vm);
+	CHECK(game::global_placement(f.m, f.so)->m[0][3] == doctest::Approx(4));
+	// 304 releases children only when the carrier's old moving byte was nonzero.
+	f.procedure(301, {game::value::of(game::value_type::actor, actor)});
+	f.m.write<std::uint8_t>(standard + 0x28, 1);
+	f.m.write<std::uint32_t>(f.script, 304); f.m.write<std::uint8_t>(f.script + 6, 1);
+	f.m.write<std::uint8_t>(f.script + 7, std::uint8_t(node_type::procedure));
+	f.m.write<std::uint32_t>(f.script + 8, 0); f.m.write<std::uint8_t>(f.script + 14, 2);
+	f.m.write<std::uint8_t>(f.script + 15, std::uint8_t(node_type::integer));
+	game::value result; f.vm.eval(carrier, f.script, result);
+	CHECK_FALSE(f.vm.attachments().contains(f.so));
+	CHECK(f.m.u32(f.base + 0x284) == 0);
+}
+
 TEST_CASE("condition 54 treats missing sectors as clear")
 {
 	handler_fixture f;
@@ -3533,6 +3568,35 @@ TEST_CASE("real data: Rayman stands on Learn_10's closed tutorial trapdoor")
 		CHECK(recovery_height < -20);
 	}
 	CHECK(errors == 0);
+}
+
+TEST_CASE("real data: Seat_11 carrier attachment follows and releases")
+{
+	auto dir = real_game_dir(); if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Seat_11");
+	auto header = read_level_header(files); scene tree(files.memory, header);
+	auto bank = read_animation_bank(files); game::live_memory m(files.memory);
+	auto carrier = tree.node(3).at.address(), rider = tree.node(72).at.address();
+	game::interpreter vm(m, rider); game::register_handlers(vm);
+	for(const auto& e : read_actors(files.memory, tree, bank).actors)
+		game::set_global_placement(m, tree.node(e.node).at.address(), e.world);
+	auto script = m.allocate(32);
+	auto invoke = [&](unsigned number, bool argument) {
+		m.write(script, number); m.write<std::uint8_t>(script + 6, 1); m.write<std::uint8_t>(script + 7, std::uint8_t(node_type::procedure));
+		if(argument) { m.write<std::uint32_t>(script + 8, vm.actor_of(carrier)); m.write<std::uint8_t>(script + 14, 2); m.write<std::uint8_t>(script + 15, std::uint8_t(node_type::actor)); }
+		game::value out; vm.eval(rider, script, out);
+	};
+	invoke(301, true); REQUIRE(vm.attachments().contains(rider));
+	auto before = *game::global_placement(m, rider), moved = *game::global_placement(m, carrier);
+	moved.m[0][3] += 3; game::set_global_placement(m, carrier, moved);
+	game::move_actor(m, rider, vm.actor_of(rider), 1000.0 / 60, vm.world(), &vm);
+	CHECK(game::global_placement(m, rider)->m[0][3] == doctest::Approx(before.m[0][3] + 3));
+	invoke(302, false); CHECK_FALSE(vm.attachments().contains(rider));
+	auto detached = *game::global_placement(m, rider);
+	moved.m[0][3] += 3; game::set_global_placement(m, carrier, moved);
+	game::move_actor(m, rider, vm.actor_of(rider), 1000.0 / 60, vm.world(), &vm);
+	CHECK(game::global_placement(m, rider)->m[0][3] == doctest::Approx(detached.m[0][3]));
 }
 
 TEST_CASE("real data: Fairy Glade mushroom launches Rayman")

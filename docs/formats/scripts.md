@@ -1224,3 +1224,14 @@ Condition 54 (0x48ACE0 -> 0x48ABF0 -> 0x45D8F0/0x48EE70) evaluates the target an
 Function 313 (0x488E20) returns the camera object's world position when its recovery request byte is clear. When set, it backs up the camera block and searches for a recovery candidate, clearing the request on success. OpenRayman reuses its approximate camera obstacle search; its collision and sector limitations are described in camera.md. Own analysis of 0x488E20, 0x486EA0 and the existing camera solve.
 
 Procedure 135 (0x4697D0 -> 0x432EE0) integrates the argument as degrees per second and rotates the dynamics matrix at +0xD0 unless end flag 0x80 is set, preserving translation. Flag 8 chooses the world-Z branch; otherwise the rotation is composed in local axes. OpenRayman also publishes the result to the actor transform because its mechanics does not otherwise hand off the dynamics matrix. This handoff is an approximation pending a matched movement replay. Own analysis of 0x4697D0, 0x432EE0, 0x4454A0 and 0x43E870.
+
+
+Procedures 301 and 302 (0x46DA50; 0x43DA30/0x43DA60) attach and release the
+target actor. Kind-1 dynamics store the carrier at +0x284 and latch bit
+0x40000000 at +0x08; a second attach leaves the existing carrier intact.
+Procedure 304 (0x467970 case 0x130) changes the running actor's moving byte
+(+0x28), releasing actor children when the previous byte was nonzero.
+OpenRayman keeps explicit relationships separately from collision supports because
+its renderer and mechanics use world placements. It does not yet reproduce all
+super-object sibling links or native mutable traversal. Own analysis of the
+local executable decompilation, 2026-11-18.
