@@ -883,8 +883,11 @@ namespace
 		{
 			auto folder = a.game->directory("levels");
 			if(!folder) return {};
-			const fs::path file = *folder / level / (level + ".dsb");
-			if(!fs::exists(file)) return {};
+			// The scripts' level names don't match the disk's casing ("learn_10" vs Learn_10/Learn_10.dsb),
+			// which only matters on Linux and Android.
+			const auto found = find_case_insensitive(*folder, level + "/" + level + ".dsb");
+			if(!found) return {};
+			const fs::path file = *found;
 			std::vector<std::string> candidates;
 			for(const auto& vignette : parse_dsb(read_file(file)).vignettes)
 				for(const auto& picture : vignette.pictures)
