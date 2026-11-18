@@ -23,7 +23,7 @@ at the same time now: making it a game (Phase 3) and building the whole game aro
 | 3. Making it a game | Sounds, collision, the game's scripts, Rayman walking around | ⬅ **In progress** |
 | 4. The whole game | Saves, menus, cutscenes, every level, widescreen | ⬅ **In progress, alongside Phase 3** |
 | 5. Android | Touch controls, phone performance | Planned |
-| Later | Vulkan or Direct3D 12, modern lighting and HDR, controller icons | Planned |
+| Later | Vulkan, modern lighting and HDR, controller icons | Planned |
 
 What works today:
 
@@ -57,7 +57,7 @@ real intro cutscene in front of the first visit, the Hall of Doors, and most of 
 the pirate ship (Jail_10, Jail_20) and The Woods of Light (Learn_10). A few details are still off:
 the dialog text's exact size and padding, the HUD counters' spot, the slope's acceleration. See
 [docs/ROADMAP.md](docs/ROADMAP.md) for the details; the open work is on the project's task board.
-It renders with OpenGL today; the plan is Vulkan or Direct3D 12, keeping OpenGL for older devices.
+It renders with OpenGL today; the plan is Vulkan, keeping OpenGL for older devices.
 
 Where OpenRayman deliberately does something differently from the game (no shadow limit, soft leaf
 edges, smoother animation loops, ...), it's listed in [docs/IMPROVEMENTS.md](docs/IMPROVEMENTS.md).

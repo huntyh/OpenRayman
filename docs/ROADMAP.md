@@ -225,7 +225,7 @@ Vikunja is the source of truth for the open work; the card numbers point to the 
 
 ## Later
 
-- A modern renderer: Vulkan or Direct3D 12, keeping OpenGL (3.3 / ES 3.0) for older devices
+- A modern renderer: Vulkan (only: one backend for Windows, Linux and Android; no Direct3D 12), keeping OpenGL (3.3 / ES 3.0) for older devices
   (board #47); the current OpenGL renderer is the first step and the fallback
 - A modern lighting mode that keeps the art direction, and HDR, designed together (board #48;
   both change how the lights are used). Two separate things to research first: rendering in high
