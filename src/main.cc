@@ -201,6 +201,7 @@ namespace
 		float loading_time = 0; // seconds into the phase
 		std::string loading_picture;
 		float sound_gain = 1; // the sound player's output while a loading screen fades
+		bool sound_held = false; // the sound player is paused under the loading picture
 		std::uint32_t screen_font_actor = 0;
 		std::size_t level_index = 0;
 		std::string start_level = "Learn_10"; // --level <name>
@@ -2347,6 +2348,7 @@ namespace
 			a.game = std::move(game);
 			a.sounds = std::make_unique<sound_player>(*a.game);
 			a.sound_gain = 1;
+			a.sound_held = false;
 			a.archives = std::move(archives);
 			a.loading = std::make_unique<loading_screen>(a.archives, a.api);
 			a.loading_at = app::loading_phase::none;
@@ -3467,6 +3469,15 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 			{
 				a.sounds->set_master_gain(gain);
 				a.sound_gain = gain;
+			}
+			// Under the picture the sound stands still too, not just silent: the new level's music
+			// and sounds start where the level does, as the picture fades out, instead of having
+			// played on unheard for the hold (the intro lost its first seconds; user, 2026-11-18).
+			const bool hold = a.loading_at == app::loading_phase::hold;
+			if(hold != a.sound_held)
+			{
+				a.sounds->set_paused(hold);
+				a.sound_held = hold;
 			}
 		}
 		game::profiler::scope timed(game::profiler::zone::posing);
