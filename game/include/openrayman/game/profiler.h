@@ -38,6 +38,7 @@ namespace openrayman::game::profiler
 		ticks,         // 60 Hz ticks run
 		actors,        // actors that thought
 		collision_gathers, // actor-surface searches (one per moving, colliding actor)
+		program_binds, texture_binds, blend_changes, uniform_updates, buffer_binds, vao_binds,
 		count,
 	};
 
