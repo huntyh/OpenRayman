@@ -3185,6 +3185,7 @@ namespace openrayman::game
 				{ at.component(0), at.component(1), at.component(2) }, c.vm.clock());
 			if(!so)
 				return c.args;
+			c.vm.initialize_generated_sector(so, c.self);
 			c.vm.restore(so);
 			out = value::of(value_type::actor, c.vm.actor_of(so));
 			return c.args;
