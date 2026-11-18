@@ -1,0 +1,47 @@
+name: Build and test
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            preset: linux-debug
+          - os: windows-latest
+            preset: windows-debug
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # SDL builds its platform backends from source.
+      - name: Install Linux development packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev libwayland-dev wayland-protocols libegl-dev libgl-dev libasound2-dev libpulse-dev
+
+      - name: Set up MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # Cache FetchContent sources and dependency builds, separately for each OS.
+      - uses: actions/cache@v4
+        with:
+          path: build/${{ matrix.preset }}/_deps
+          key: ${{ runner.os }}-${{ matrix.preset }}-deps-${{ hashFiles('cmake/Dependencies.cmake', 'CMakePresets.json') }}
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+      - name: Test
+        # Keep all save locations on the runner, even if real-data tests are enabled later.
+        env:
+          OPENRAYMAN_GAME_DIR: ''
+          OPENRAYMAN_SAVE_DIR: ${{ runner.temp }}/openrayman-saves
+          APPDATA: ${{ runner.temp }}/openrayman-appdata
+          XDG_DATA_HOME: ${{ runner.temp }}/openrayman-data
+        run: ctest --preset ${{ matrix.preset }}
