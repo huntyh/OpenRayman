@@ -56,6 +56,24 @@ namespace openrayman::game
 	{
 		return bit && (bit - 1) / 32 < words.size() && (words[(bit - 1) / 32] & (1u << ((bit - 1) % 32)));
 	}
+
+	inline void initialize_level_cage_counter(interpreter& vm, const level_header& header, std::string_view level)
+	{
+		if(!std::ranges::equal(level, std::string_view("Learn_30"),
+			[](unsigned char a, unsigned char b) { return std::tolower(a) == std::tolower(b); }) || header.fix_actors.size() < 3)
+			return;
+		const auto global = vm.super_object_of(header.fix_actors[2].address());
+		if(!global) return;
+		// Mapmonde portal node 8 supplies these transient values when entering the Fairy Glade.
+		// The save registry keeps the story bits, so restore the count from them on level load.
+		constexpr int first = 842, last = 848;
+		const auto words = vm.story_words(std::span{&global, 1});
+		int freed = 0;
+		for(int bit = first; bit <= last; ++bit)
+			freed += story_has(words, bit);
+		vm.set_variable(global, 4, value::integer(last - first + 1));
+		vm.set_variable(global, 5, value::integer(freed));
+	}
 	inline constexpr std::uint32_t revisit_story_bits[] = {
 		840, 841, 1089, 1091, 1092, 1133, 1175, 1176, 1177, 1396, 1397, 1398, 1399, 1400,
 	};

@@ -1281,6 +1281,26 @@ TEST_CASE("procedure 415 turns toward the point from the current actor orientati
 	CHECK(f.m.f32(t + 0x1C) == doctest::Approx(-std::sin(10 * 0.0174532925199433f)));
 }
 
+TEST_CASE("turning upright after a sloped wall hold preserves the actor's scale")
+{
+	handler_fixture f;
+	auto t = f.m.allocate(0x58);
+	f.m.write(f.so + 0x24, t);
+	f.m.write<std::uint32_t>(t, 4);
+	const vec3 tilt[] = {{0.95f, 0, 0}, {0, 0.95f, 0.3122499f}, {0, -0.2966374f, 0.9025f}};
+	const float scale[] = {1.25f, 1, 0.75f};
+	for(std::uint32_t axis = 0; axis < 3; ++axis)
+	{
+		f.m.write(t + 0x10 + 12 * axis, tilt[axis]);
+		for(std::uint32_t component = 0; component < 3; ++component)
+			f.m.write(t + 0x34 + 12 * axis + 4 * component, tilt[axis][component] * scale[axis]);
+	}
+	f.procedure(433, {game::value::vector(0, -1, 0)});
+	for(std::uint32_t axis = 0; axis < 3; ++axis)
+		for(std::uint32_t component = 0; component < 3; ++component)
+			CHECK(f.m.f32(t + 0x34 + 12 * axis + 4 * component) == doctest::Approx(axis == component ? scale[axis] : 0.0f));
+}
+
 TEST_CASE("wave, health, input and request handlers")
 {
 	handler_fixture f;
@@ -3616,7 +3636,7 @@ TEST_CASE("real data: Seat_11 carrier attachment follows and releases")
 	CHECK(game::global_placement(m, rider)->m[0][3] == doctest::Approx(detached.m[0][3]));
 }
 
-TEST_CASE("real data: Fairy Glade mushroom launches Rayman")
+TEST_CASE("real data: Fairy Glade mushroom launches Rayman onto the overhead vines")
 {
 	auto dir = real_game_dir(); if(!dir) return;
 	auto data = game_data::locate(*dir); REQUIRE(data);
@@ -3639,9 +3659,17 @@ TEST_CASE("real data: Fairy Glade mushroom launches Rayman")
 	float highest = -100; bool supported = false; std::size_t errors = 0;
 	const auto mushroom = tree.node(4).at.address();
 	const auto base = m.u32(m.u32(vm.actor_of(rayman) + 8));
-	for(int tick = 0; tick < 310; tick++)
+	const auto contact = m.u32(base + 0x150);
+	REQUIRE(contact);
+	for(int tick = 0; tick <= 1260; tick++)
 	{
-		if(tick == 240) game::write_transform(m, rayman, {-104.7f, 216.1f, -2}, {1,0,0,0,1,0,0,0,1});
+		if(tick == 240)
+		{
+			vm.camera_motion().tracked_target = 0;
+			game::write_transform(m, rayman, {-104.7f, 216.1f, -2}, {0,1,0,-1,0,0,0,0,1});
+		}
+		keys.set_key(0xC8, tick >= 320 && tick < 1200); // Up, across the vines
+		keys.set_key(0x1E, tick >= 1220 && tick < 1226); // A, let go
 		keys.step();
 		game::step(vm, actors, [&](std::uint32_t, const std::exception& e) {
 			if(errors++ == 0) MESSAGE(std::format("tick {}: {}", tick, e.what()));
@@ -3657,10 +3685,102 @@ TEST_CASE("real data: Fairy Glade mushroom launches Rayman")
 			supported |= m.u32(base + 0x284) == mushroom;
 			highest = std::max(highest, game::global_placement(m, rayman)->m[2][3]);
 		}
+		if(tick == 315 || tick == 1200)
+			CHECK((m.u32(contact + 4) & 0x10) != 0);
+		if(tick == 1200 || tick == 1260)
+		{
+			auto position = game::global_placement(m, rayman);
+			REQUIRE(position);
+			CHECK(position->m[0][3] > -73.0f); // past the far lip of the riverbank
+			if(tick == 1260)
+			{
+				CHECK((m.u32(contact + 4) & 0x11) == 0x01);
+				CHECK(position->m[2][3] < 0.0f);
+			}
+		}
 	}
 	CHECK(errors == 0);
 	CHECK(supported);
 	CHECK(highest > 1.0f);
+}
+
+TEST_CASE("real data: Fairy Glade cage HUD uses chapter total and saved progress")
+{
+	auto dir = real_game_dir(); if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Learn_30");
+	auto header = read_level_header(files);
+	scene tree(files.memory, header);
+	game::live_memory memory(files.memory);
+	game::interpreter vm(memory, header.placements.at(0).super_object.address());
+	game::register_handlers(vm);
+	game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+
+	const auto global = tree.node(6).at.address();
+	const auto hud = tree.node(65).at.address();
+	const auto cage = tree.node(13).at.address();
+	const std::array fix{global};
+	REQUIRE(vm.set_story_bit(fix, 841)); // a Woods of Light cage
+	bool revisit = false;
+	SUBCASE("fresh chapter") {}
+	SUBCASE("a cage from another Fairy Glade section was saved") { revisit = true; }
+	if(revisit) REQUIRE(vm.set_story_bit(fix, 848));
+	game::initialize_level_cage_counter(vm, header, "Learn_30");
+	CHECK(vm.get_variable(global, 4).as_int() == 7);
+	CHECK(vm.get_variable(global, 5).as_int() == int(revisit));
+	vm.think(tree.node(2).at.address()); // the Lum counter startup rule
+	CHECK(vm.get_variable(global, 44).as_int() == 50);
+	CHECK(vm.get_variable(global, 43).as_int() == 50);
+
+	// Run the cage's break bookkeeping and the normal HUD rule that formats the counter.
+	auto set_behaviour = [&](std::size_t node, std::size_t behaviour) {
+		const auto actor = *tree.node(node).data;
+		const auto brains = read_brain_at(files.memory, actor);
+		const auto& model = brains.model(brains.actors.at(0));
+		const auto mind = memory.u32(memory.u32(actor.address() + 0x0C));
+		const auto normal = memory.u32(mind + 4);
+		vm.change_behaviour(normal, model.behaviours.at(behaviour).at.address(), false);
+	};
+	vm.next_tick();
+	set_behaviour(13, 6);
+	vm.think(cage);
+	CHECK(vm.get_variable(global, 5).as_int() == 1 + int(revisit));
+	set_behaviour(65, 1);
+	vm.think(hud);
+	CHECK(vm.screen_text().at(16).text.find(revisit ? "2;7" : "1;7") != std::string::npos);
+}
+
+TEST_CASE("real data: Fairy Glade one-time oxygen Lum sparkles follow visual improvements")
+{
+	auto dir = real_game_dir(); if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Learn_30");
+	auto header = read_level_header(files); scene tree(files.memory, header);
+	game::live_memory m(files.memory);
+	auto rayman = header.placements.at(0).super_object.address();
+	game::interpreter vm(m, rayman); game::register_handlers(vm);
+	game::apply_sound_slots(m, *data, "Learn_30");
+	vm.set_oxygen_pickup_material(files.memory);
+	SUBCASE("visual improvements on") { vm.visual_improvements = true; }
+	SUBCASE("visual improvements off") {}
+	const auto lum = tree.node(57).at.address();
+	auto placement = game::global_placement(m, lum);
+	REQUIRE(placement);
+	game::set_global_placement(m, rayman, *placement);
+	vm.camera().gauge = 10;
+	vm.camera().gauge_max = 100;
+	for(int tick = 0; tick < 5 && !vm.removed(lum); ++tick)
+	{
+		vm.next_tick();
+		vm.think(lum);
+	}
+	CHECK(vm.removed(lum));
+	CHECK(vm.camera().gauge == 60);
+	const auto sounds = vm.take_sounds();
+	CHECK(std::ranges::count(sounds, 0x00320000u, &game::interpreter::sound_request::event) == 1);
+	CHECK(std::ranges::count(sounds, 0x00170000u, &game::interpreter::sound_request::event) == 1);
+	CHECK(vm.particles().all().size() == (vm.visual_improvements ? 9 : 0));
 }
 
 TEST_CASE("real data: Murfy's tablet tip comes back each time Rayman returns")
@@ -4168,16 +4288,22 @@ TEST_CASE("real data: Learn_30 oxygen source refills repeatedly while ordinary o
 	CHECK(vm.missing_by_actor[single].empty());
 }
 
-TEST_CASE("real data: Learn_30 deadly water returns Rayman to the entry")
+TEST_CASE("real data: Fairy Glade deadly water returns Rayman to a playable state")
 {
 	auto dir = real_game_dir(); if(!dir) return;
 	auto data = game_data::locate(*dir); REQUIRE(data);
-	auto files = load_level_files(*data, "Learn_30");
+	bool checkpoint = false, same_sector = false;
+	SUBCASE("Learn_30 level entry") {}
+	SUBCASE("Learn_30 checkpoint marker") { checkpoint = true; }
+	SUBCASE("Learn_31 checkpoint in the sector of the deadly water") { checkpoint = same_sector = true; }
+	const auto level = same_sector ? "Learn_31" : "Learn_30";
+	auto files = load_level_files(*data, level);
 	auto header = read_level_header(files);
 	scene tree(files.memory, header);
 	auto bank = read_animation_bank(files);
 	game::live_memory m(files.memory);
-	auto rayman = tree.node(90).at.address();
+	REQUIRE(header.main_actor);
+	auto rayman = header.main_actor->address();
 	game::interpreter vm(m, rayman);
 	game::register_handlers(vm); game::register_dialog_handlers(vm);
 	game::set_dialog_resolver(vm, files);
@@ -4189,16 +4315,14 @@ TEST_CASE("real data: Learn_30 deadly water returns Rayman to the entry")
 	for(const auto& e : read_actors(files.memory, tree, bank).actors)
 		game::set_global_placement(m, tree.node(e.node).at.address(), e.world);
 	for(auto bit : game::revisit_story_bits) REQUIRE(vm.set_story_bit(actors, bit));
-	game::apply_revisit_state(vm, tree, "Learn_30");
+	game::apply_revisit_state(vm, tree, level);
 	game::input keys(m, read_input_actions(files));
 	auto standard = m.u32(vm.actor_of(rayman) + 4);
-	bool checkpoint = false;
-	SUBCASE("level entry") {}
-	SUBCASE("checkpoint marker") { checkpoint = true; }
-	auto marker = tree.node(35).at.address();
+	auto marker = tree.node(same_sector ? 25 : 35).at.address();
 	auto checkpoint_pose = game::global_placement(m, marker); REQUIRE(checkpoint_pose);
 	int health = 0; bool dying = false, returned = false;
-	for(int tick = 0; tick < 550; ++tick)
+	const int final_tick = same_sector ? 700 : 550;
+	for(int tick = 0; tick < final_tick; ++tick)
 	{
 		if(checkpoint && tick == 320)
 			game::set_global_placement(m, rayman, *checkpoint_pose);
@@ -4206,8 +4330,11 @@ TEST_CASE("real data: Learn_30 deadly water returns Rayman to the entry")
 		{
 			health = m.u8(standard + 0x21);
 			if(checkpoint)
-				CHECK(vm.get_variable(tree.node(6).at.address(), 29).word() == vm.actor_of(marker));
-			game::write_transform(m, rayman, {-19.467f, 194.857f, -5}, {0, 1, 0, -1, 0, 0, 0, 0, 1});
+				CHECK(vm.get_variable(tree.node(same_sector ? 7 : 6).at.address(), 29).word() == vm.actor_of(marker));
+			if(same_sector)
+				game::write_transform(m, rayman, {-165.0f, 500.0f, 11.0f}, {0, 1, 0, -1, 0, 0, 0, 0, 1});
+			else
+				game::write_transform(m, rayman, {-19.467f, 194.857f, -5}, {0, 1, 0, -1, 0, 0, 0, 0, 1});
 		}
 		keys.step(); game::step(vm, actors);
 		if(tick >= 400 && vm.get_variable(rayman, 68).as_int() == 52) dying = true;
@@ -4215,10 +4342,21 @@ TEST_CASE("real data: Learn_30 deadly water returns Rayman to the entry")
 	}
 	CHECK(dying); CHECK(returned);
 	CHECK(m.u8(standard + 0x21) == health - 2);
+	if(same_sector)
+	{
+		CHECK(vm.active(rayman));
+		const auto data_3d = m.u32(vm.actor_of(rayman));
+		CHECK(m.u32(data_3d + 4) != m.u32(data_3d)); // left the invisible spawn state
+		const auto base = m.u32(m.u32(vm.actor_of(rayman) + 8));
+		const auto contacts = m.u32(base + 0x150);
+		REQUIRE(contacts);
+		CHECK((m.u32(contacts + 4) & 1) != 0);
+	}
 	auto pose = game::global_placement(m, rayman); REQUIRE(pose);
 	CHECK(pose->m[0][3] == doctest::Approx(checkpoint ? checkpoint_pose->m[0][3] : -94.21f).epsilon(0.001));
 	CHECK(pose->m[1][3] == doctest::Approx(checkpoint ? checkpoint_pose->m[1][3] : 171.32f).epsilon(0.001));
-	CHECK(pose->m[2][3] == doctest::Approx(checkpoint ? checkpoint_pose->m[2][3] : -6.06f).epsilon(0.002));
+	const float expected_z = same_sector ? 12.372f : checkpoint ? checkpoint_pose->m[2][3] : -6.06f;
+	CHECK(pose->m[2][3] == doctest::Approx(expected_z).epsilon(0.002));
 }
 
 TEST_CASE("real data: Bast_20 piranhas only catch Rayman in their wake region")
@@ -5100,6 +5238,12 @@ TEST_CASE("real data: bottom-right pirate shot casts through the back of the lau
 TEST_CASE("real data: Learn_31 climbable tree reports its wall material and holds Rayman")
 {
 	auto dir = real_game_dir(); if(!dir) return;
+	bool overhang = false;
+	int sideways = 0;
+	SUBCASE("tree base") {}
+	SUBCASE("recorded sideways vine overhang") { overhang = true; }
+	SUBCASE("recorded sideways vine bend toward increasing X") { overhang = true; sideways = 1; }
+	SUBCASE("recorded sideways vine bend toward decreasing X") { overhang = true; sideways = -1; }
 	auto data = game_data::locate(*dir); REQUIRE(data);
 	auto files = load_level_files(*data, "Learn_31");
 	auto header = read_level_header(files);
@@ -5125,17 +5269,27 @@ TEST_CASE("real data: Learn_31 climbable tree reports its wall material and hold
 	game::input keys(m, read_input_actions(files));
 	bool entered = false;
 	float entry_height = 0, high = -1e6f;
-	for(int tick = 0; tick < 300; ++tick)
+	for(int tick = 0; tick < (sideways ? 326 : 300); ++tick)
 	{
 		if(tick == 150)
 		{
-			game::write_transform(m, rayman, {-205, 376, 35}, {0, 1, 0, -1, 0, 0, 0, 0, 1});
+			if(sideways)
+				game::write_transform(m, rayman, {-158.05f, 475.134f, 21.332f}, {0.7986355f, -0.6018150f, 0, 0.6018150f, 0.7986355f, 0, 0, 0, 1});
+			else if(overhang)
+				game::write_transform(m, rayman, {-157.69f, 474.95f, 21.45f}, {0.8660254f, -0.5f, 0, 0.5f, 0.8660254f, 0, 0, 0, 1});
+			else
+				game::write_transform(m, rayman, {-205, 376, 35}, {0, 1, 0, -1, 0, 0, 0, 0, 1});
 			vm.camera_motion().tracked_target = 0;
 		}
-		keys.set_key(0xC8, tick >= 100 && tick < 290);
+		keys.set_key(0xC8, tick >= (overhang ? 155 : 100) && tick < (sideways ? 186 : 290));
+		keys.set_key(0xCB, sideways > 0 && tick >= 188);
+		keys.set_key(0xCD, sideways < 0 && tick >= 188);
 		keys.step(); game::step(vm, actors);
 		if(tick < 150) continue;
-		if(vm.get_variable(rayman, 9).as_int() == 22)
+		const bool attached = vm.get_variable(rayman, 9).as_int() == 22;
+		if(sideways && tick >= 185)
+			REQUIRE(attached);
+		if(attached)
 		{
 			auto pose = game::global_placement(m, rayman); REQUIRE(pose);
 			// 0x4394A0/0x436E40: the wall rotation must not compound scale.
@@ -5157,7 +5311,72 @@ TEST_CASE("real data: Learn_31 climbable tree reports its wall material and hold
 		}
 	}
 	CHECK(entered);
-	CHECK(high > entry_height + 0.1f);
+	CHECK(high > entry_height + (sideways > 0 ? 1.0f : overhang ? 3.0f : 0.1f));
+	if(sideways)
+	{
+		auto pose = game::global_placement(m, rayman); REQUIRE(pose);
+		if(sideways > 0)
+			CHECK(pose->m[0][3] > -150.0f);
+		else
+		{
+			CHECK(pose->m[0][3] < -162.0f);
+			CHECK(pose->m[1][3] > 479.7f);
+		}
+	}
+}
+
+TEST_CASE("real data: Bast_20 enables the lower web and Rayman climbs the whole shaft")
+{
+	auto dir = real_game_dir(); if(!dir) return;
+	auto data = game_data::locate(*dir); REQUIRE(data);
+	auto files = load_level_files(*data, "Bast_20");
+	auto header = read_level_header(files); scene tree(files.memory, header);
+	auto bank = read_animation_bank(files);
+	game::live_memory m(files.memory);
+	auto rayman = header.main_actor->address();
+	game::interpreter vm(m, rayman);
+	game::register_handlers(vm); game::register_dialog_handlers(vm);
+	game::set_dialog_resolver(vm, files);
+	vm.set_world(game::world_collision(static_collision(files.memory, tree, true), m));
+	vm.set_animations(&bank); game::install_level_events(m, bank);
+	std::vector<std::uint32_t> actors;
+	for(const auto& node : tree.nodes())
+		if(node.type == super_object_type::actor) actors.push_back(node.at.address());
+	vm.set_actors(actors);
+	for(const auto& entry : read_actors(files.memory, tree, bank).actors)
+		game::set_global_placement(m, tree.node(entry.node).at.address(), entry.world);
+	for(auto bit : game::start_story_bits("Bast_20", true)) vm.set_story_bit(actors, bit);
+	const auto web = tree.node(190).at.address();
+	auto probe_web = [&] { return vm.world().first_hit({60, -38, -77}, {60, -42, -77}, 0x40, true); };
+	REQUIRE((m.u32(web + 0x30) & 1) != 0);
+	CHECK_FALSE(probe_web());
+	game::input keys(m, read_input_actions(files));
+	bool held_lower = false, held_upper = false;
+	for(int tick = 0; tick <= 1800; ++tick)
+	{
+		if(tick == 960)
+		{
+			REQUIRE((m.u32(web + 0x30) & 1) == 0); // controller 113 ran procedure 311
+			REQUIRE(probe_web());
+			game::write_transform(m, rayman, {60, -38.5f, -79.4f}, {1, 0, 0, 0, 1, 0, 0, 0, 1});
+			vm.camera_motion().tracked_target = 0;
+		}
+		keys.set_key(0x1C, (tick >= 80 && tick < 90) || (tick >= 200 && tick < 210) || (tick >= 480 && tick < 490));
+		keys.set_key(0xC8, tick >= 965);
+		keys.set_key(0x1E, tick >= 969 && tick < 994);
+		keys.set_key(0xCD, tick >= 1045 && tick < 1180);
+		keys.step(); game::step(vm, actors);
+		if(tick >= 965 && vm.get_variable(rayman, 9).as_int() == 22)
+		{
+			const auto pose = game::global_placement(m, rayman); REQUIRE(pose);
+			held_lower |= pose->m[2][3] < -68.0f;
+			held_upper |= pose->m[2][3] > -50.0f;
+		}
+	}
+	CHECK(held_lower);
+	CHECK(held_upper);
+	const auto pose = game::global_placement(m, rayman); REQUIRE(pose);
+	CHECK(pose->m[2][3] > -4.0f); // stepped off onto the upper platform
 }
 
 TEST_CASE("real data: Bast_20 recorded barrel approaches the cave from a different collision sector")

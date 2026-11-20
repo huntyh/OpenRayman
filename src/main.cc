@@ -1253,7 +1253,7 @@ namespace
 			}
 			if(std::exchange(a.vm->stop_sounds_requested, false))
 			{
-				if(a.sounds) a.sounds->stop_all();
+				if(a.sounds) a.sounds->stop_effects();
 				a.sound_sources.clear();
 			}
 			// A level change waits for the frame to finish (change_requested_level).
@@ -1898,7 +1898,7 @@ namespace
 				}
 			}
 			a.level_stats = a.level->load(geometry, a.actors.meshes, a.archives, std::move(lights), sectors, shadow_material);
-			a.level->set_backdrop(levels[index]);
+			a.level->set_visual_improvements(levels[index], a.options.visual_improvements);
 
 			// The materials scripts draw particles with (procedure 503's game materials).
 			std::map<std::uint32_t, visual_material> effect_materials;
@@ -1929,9 +1929,10 @@ namespace
 			// What the level collides with, for the C overlay: one colour per surface kind (the
 			// lowest flag bit; grey for plain surfaces). Green (0x0004) is grabbable, blue (0x4000) water.
 			std::vector<openrayman::level_renderer::collision_face> faces;
-			std::vector<openrayman::collision_triangle> collision = openrayman::static_collision(files.memory, tree);
+			std::vector<openrayman::collision_triangle> collision = openrayman::static_collision(files.memory, tree, true);
 			for(const openrayman::collision_triangle& t : collision)
 			{
+				if(t.object_flags & 1) continue;
 				static const glm::vec3 palette[16] = { { 1.0f, 0.55f, 0.1f }, { 1.0f, 0.2f, 0.8f }, { 0.2f, 0.9f, 0.2f }, { 0.6f, 0.3f, 1.0f },
 					{ 1.0f, 1.0f, 0.2f }, { 0.2f, 1.0f, 1.0f }, { 0.6f, 1.0f, 0.4f }, { 1.0f, 0.4f, 0.4f },
 					{ 1.0f, 0.1f, 0.1f }, { 0.9f, 0.6f, 0.9f }, { 1.0f, 0.5f, 0.0f }, { 0.5f, 0.0f, 0.0f },
@@ -1953,6 +1954,8 @@ namespace
 			a.live = std::make_unique<openrayman::game::live_memory>(files.memory);
 			std::uint32_t main_actor = header.main_actor ? header.main_actor->address() : 0;
 			a.vm = std::make_unique<openrayman::game::interpreter>(*a.live, main_actor);
+			a.vm->visual_improvements = a.options.visual_improvements;
+			a.vm->set_oxygen_pickup_material(files.memory);
 			openrayman::game::register_handlers(*a.vm);
 			if(a.carried_entry) a.vm->menu_request = *std::exchange(a.carried_entry, {});
 			openrayman::game::register_dialog_handlers(*a.vm);
@@ -1974,7 +1977,7 @@ namespace
 					SDL_Log("Could not open %s: %s", url.c_str(), SDL_GetError());
 			};
 			a.vm->save_folder = openrayman::game::save_root().string();
-			a.vm->set_world(openrayman::game::world_collision(std::move(collision)));
+			a.vm->set_world(openrayman::game::world_collision(std::move(collision), *a.live));
 			a.vm->set_animations(&a.bank);
 			// The level's animation events, then the sound events the scripts and animations name
 			// (Fix.snd and the level's .snd).
@@ -2147,6 +2150,11 @@ namespace
 									a.vsync = app::vsync_mode(a.options.vsync); apply_vsync(a);
 									a.fps_limit = a.options.fps; a.next_frame_ns = 0;
 									a.loading_screens = a.options.loading_screens;
+									if(previous.visual_improvements != a.options.visual_improvements)
+									{
+										vm.visual_improvements = a.options.visual_improvements;
+										a.level->set_visual_improvements(a.game->game_dsb().levels[a.level_index], a.options.visual_improvements);
+									}
 								}
 								vm.play_sound(key < 4 ? game::menu_move_sound : game::menu_confirm_sound, 0, 119, -1);
 								break;
@@ -2156,7 +2164,7 @@ namespace
 					{
 						a.options_ui.draw(vm.screen_text(), a.options, a.saves->autosave.value_or(false), a.saves->slot);
 						vm.set_variable(self, 53, game::value::integer(60));
-						vm.set_variable(self, 54, game::value::integer(350 + a.options_ui.selected * 100));
+						vm.set_variable(self, 54, game::value::integer(a.options_ui.row_y(std::size_t(a.options_ui.selected), a.options)));
 					}
 					else
 					{
@@ -2193,6 +2201,7 @@ namespace
 				openrayman::game::apply_revisit_state(*a.vm, tree, levels[index]);
 			if(a.save_slot)
 				for(std::int32_t bit : a.story_bits) a.vm->set_story_bit(a.fix_actors, bit);
+			openrayman::game::initialize_level_cage_counter(*a.vm, header, levels[index]);
 			a.camera_super_object = 0;
 			for(const fix_actor_placement& placed : header.placements)
 			{

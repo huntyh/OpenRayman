@@ -1040,7 +1040,10 @@ namespace openrayman::game
 			{
 			case 378: case 380: g.gauge = x; break;
 			case 379: case 381: g.gauge_max = x; break;
-			case 382: g.gauge = std::clamp(g.gauge + x, 0.0f, g.gauge_max); break;
+			case 382:
+				g.gauge = std::clamp(g.gauge + x, 0.0f, g.gauge_max);
+				if(x == 50.0f) c.vm.note_oxygen_refill(c.self);
+				break;
 			case 383: g.gauge_max = std::max(g.gauge_max + x, 0.0f); g.gauge = std::min(g.gauge, g.gauge_max); break;
 			case 384: g.gauge = std::clamp(g.gauge - x, 0.0f, g.gauge_max); break;
 			case 385: g.gauge_max = std::max(g.gauge_max - x, 0.0f); g.gauge = std::min(g.gauge, g.gauge_max); break;
@@ -1540,10 +1543,18 @@ namespace openrayman::game
 			return { v[0] * x[0] + v[1] * y[0] + v[2] * z[0], v[0] * x[1] + v[1] * y[1] + v[2] * z[1], v[0] * x[2] + v[1] * y[2] + v[2] * z[2] };
 		}
 
-		// Writes new axes into a transform, keeping each axis' scale in the second copy (0x445D00).
+		// Coordinates in a basis, including scale or shear.
+		vec3 basis_coordinates(const vec3& v, const vec3& x, const vec3& y, const vec3& z)
+		{
+			float determinant = dot(x, cross(y, z));
+			if(std::abs(determinant) < 1e-12f)
+				return {};
+			return { dot(v, cross(y, z)) / determinant, dot(v, cross(z, x)) / determinant, dot(v, cross(x, y)) / determinant };
+		}
+
 		// 0x445D00: new axes for a transform. Types 1..3 get them as their only matrix (both copies,
 		// type 3). Otherwise the scale part is kept as the exe keeps it (0x4462A0): each row of the
-		// combined matrix in the old rotation's rows (s_j[i] = r_i . c_j), rebuilt on the new rows.
+		// combined matrix in the old rotation's basis, rebuilt on the new rows.
 		// Taking each combined row's length as its scale instead let a fan that turns every tick
 		// (Jail_20 node 29, procedure 165) grow by about 2% every 30 s until it poked out of its
 		// enclosure (with unit rows, see below).
@@ -1568,13 +1579,17 @@ namespace openrayman::game
 			vec3 rotation[3], combined[3];
 			for(std::uint32_t i = 0; i < 3; i++)
 			{
-				rotation[i] = unit(read3(m, t + 0x10 + i * 12));
+				rotation[i] = read3(m, t + 0x10 + i * 12);
 				combined[i] = read3(m, t + 0x34 + i * 12);
 			}
-			float scale[3][3]; // scale[j][i] = rotation row i . combined row j
+			vec3 scale[3]{};
 			for(int j = 0; j < 3; j++)
-				for(int i = 0; i < 3; i++)
-					scale[j][i] = type ? dot(rotation[i], combined[j]) : (i == j ? 1.0f : 0.0f);
+			{
+				// The wall resolver can leave shorter X and Z rotation rows on a tilt.
+				// Solve in the saved basis so straightening up recovers the original scale.
+				if(type) scale[j] = basis_coordinates(combined[j], rotation[0], rotation[1], rotation[2]);
+				else scale[j][std::size_t(j)] = 1.0f;
+			}
 			for(std::uint32_t i = 0; i < 3; i++)
 				write3(m, t + 0x10 + i * 12, axes[i]);
 			for(std::uint32_t j = 0; j < 3; j++)
@@ -3303,15 +3318,6 @@ namespace openrayman::game
 					out[std::size_t(j)] += p[std::size_t(i)] * axis[std::size_t(j)];
 			}
 			return out;
-		}
-
-		// Coordinates in a basis, including scale or shear, for collision-centre offsets.
-		vec3 basis_coordinates(const vec3& v, const vec3& x, const vec3& y, const vec3& z)
-		{
-			float determinant = dot(x, cross(y, z));
-			if(std::abs(determinant) < 1e-12f)
-				return {};
-			return { dot(v, cross(y, z)) / determinant, dot(v, cross(z, x)) / determinant, dot(v, cross(x, y)) / determinant };
 		}
 
 		// 0x476880: only the first element supplies the centre. 0x40C7C0 tests all the zone's

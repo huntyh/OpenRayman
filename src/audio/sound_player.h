@@ -31,6 +31,7 @@ namespace openrayman
 		void request(std::uint32_t id, std::uint32_t source, float gain, float pan, std::int32_t selector = -1);
 		void place(std::uint32_t source, float gain, float pan);
 		void stop_all();
+		void stop_effects();
 		void stop_source(std::uint32_t source, bool all_voices = false);
 		void set_paused(bool paused);
 		void pause_group(bool pause);

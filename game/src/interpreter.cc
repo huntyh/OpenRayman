@@ -1035,11 +1035,28 @@ namespace openrayman::game
 		}
 	}
 
+	void interpreter::set_oxygen_pickup_material(const memory_image& image)
+	{
+		// The shared Lum script uses this Fix game material for the reusable oxygen Lum.
+		constexpr std::uint32_t offset = 0x624A4C;
+		const auto* fix = image.find({0x05, 0x01});
+		m_oxygen_pickup_material = fix && fix->data.size() >= offset + 8 ? fix->base + offset : 0;
+	}
+
 	// 0x4062A0: shared removal path for procedures 139 and 140.
 	void interpreter::remove_script_actor(std::uint32_t self, std::uint32_t actor)
 	{
 		auto target = super_object_of(actor);
 		if(!target) return;
+		// The one-time oxygen Lum refills the gauge and removes itself in one rule.
+		// Reusable oxygen Lums stay in the world and already emit their own particles.
+		if(visual_improvements && m_oxygen_pickup_material && target == self && target == m_oxygen_refill_source && !removed(target))
+		{
+			m_oxygen_refill_source = 0;
+			if(auto at = global_placement(m_memory, target))
+				m_particles.start(9, {at->m[0][3], at->m[1][3], at->m[2][3]}, {0.2f, 5.0f, 0.0f},
+					m_oxygen_pickup_material, 1.0f, clock() / 1000.0, target);
+		}
 		auto standard = actor_of(target) ? m_memory.u32(actor_of(target) + 4) : 0;
 		if(standard && m_memory.u32(standard + 8) < 0x10000 && m_memory.u32(standard + 0x14) == 1)
 			reset_actor(target);
@@ -1723,6 +1740,7 @@ namespace openrayman::game
 		m_actor_sectors.clear();
 		run_order.clear();
 		run_order_source = 0;
+		run_order_sector = 0xFFFFFFFF;
 		m_supports.clear();
 		m_attachments.clear();
 		m_surface_cache = {};

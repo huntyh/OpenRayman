@@ -128,9 +128,18 @@ and checksum the compressed stream. The temporary revisit snapshot is not a save
 
 ## The HUD's counters
 
-Node 44 shows Fix actor 6's variables: the cages as vars 4 / 5 (freed / in the level), the Lums as
-var 44 − var 43 out of var 44. A new game starts Learn_10 with 2/0 cages and 5 − 5 Lums; the
-revisit start, through the story bits the level's actors check at startup, gives 2/2 and 5/5.
+The HUD (Learn_10 node 44, Learn_30 node 65) shows the world controller's variables. Cages are
+var 5 (freed) out of var 4 (chapter total). Lums are var 44 − var 43 out of var 44. Learn_10
+starts with 0/2 cages and 0/5 Lums. The completed revisit's story bits give 2/2 and 5/5.
+
+Learn_30's own startup script (node 2) sets the 50-Lum total and counts collected Lums from
+bits 1–50. The Fairy Glade cage total normally comes from Mapmonde's portal (node 8): its vars
+5–6 select bits 842–848 inclusive, and its departure rule writes both the total and the number
+of set bits to the world controller. These two counters are transient and are absent from
+`General.sav`. OpenRayman rebuilds them from the same range after the story and save data have
+been restored on Learn_30 load. The cage script still sets its bit and increments var 5 when
+broken. Own analysis of the installed GOG scripts and Mapmonde's variable data with `ortool brain`
+and `ortool peek`.
 
 ## Which actor checks which bit (Learn_10)
 

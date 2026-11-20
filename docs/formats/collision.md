@@ -48,6 +48,11 @@ Confirmed in the game (Learn_10, by comparing the collision overlay with what Ra
 | 0x4000 | water |
 | 0x0008 | on an actor's own zone: a ledge probe. Rayman's are four spheres (radius 1) 2 units ahead, behind and to each side at 1.9 up; only the front one is in use in the observed state |
 
+Learn_30's overhead vines (scenery node 114) use `0x0020` on their downward-facing triangles.
+Rayman's macro 52 tests this bit on the ceiling contact, then casts to the same material to start
+hanging. See [dynamics.md](dynamics.md) for the contact report and the mushroom replay. Own
+analysis of the installed GOG level's collision and scripts via `ortool collide` and `ortool brain`.
+
 ## Actor zones and ledges
 
 The 0x43B360 resolver gathers contacts in multiple searches and passes them through
@@ -348,9 +353,23 @@ Limits: full visual replay of the pirate fight has not been verified. The
 recording alone does not identify which visually reported projectile crossed a
 surface; the geometry and script regressions establish the query differences
 and the tested explosion behavior. Receiving actor spheres/boxes/capsules and
-exact sector-activity traversal for script casts remain incomplete. Scenery
-ignore flags are captured when geometry is built, so later scripted changes to
-those branch flags are not yet reflected dynamically.
+exact sector-activity traversal for script casts remain incomplete. The runtime
+collision world checks the live scenery branch flags. The collision overlay
+shows the saved collision.
+
+### Bast_20 lower spider web
+
+The bottom web is scenery node 190 (05/02 +0x4E28), with collide flag
+`0x40`. It loads with super-object flag 1 set, so it is initially excluded
+from collision. Controller node 113 clears that flag through procedure 311
+with its scenery reference in variable 9. OpenRayman now retains those
+triangles in the runtime grid and checks `+0x30` on the live scenery branch.
+The previously active upper web (node 194) connects at about Z = −56.8.
+
+Where this came from: the GOG level memory and script via `ortool scene`,
+`ortool refs` and `ortool brain`, and independent analysis of Rayman2.exe
+at `0x46D8A0` (procedure 311) and `0x4948A0` (collision branch traversal).
+A headless climb from the bottom web reaches the platform above node 194.
 
 ### Fairy Glade mushroom (card 128)
 

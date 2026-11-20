@@ -13,6 +13,7 @@ namespace openrayman::game
 {
 	namespace
 	{
+		constexpr surface_flags climbable_wall = 0x40;
 		// The dynamics base ([[actor+8]], 0x419B90).
 		namespace base
 		{
@@ -23,7 +24,7 @@ namespace openrayman::game
 			constexpr std::uint32_t size = 0x1A8;
 		}
 		// Flags at base +8.
-		constexpr std::uint32_t has_animation_motion = 0x1, has_gravity = 0x4, has_limit = 0x200, has_inertia = 0x400;
+		constexpr std::uint32_t has_animation_motion = 0x1, has_gravity = 0x4, resolver_439730 = 0x10, has_limit = 0x200, has_inertia = 0x400;
 		constexpr std::uint32_t uses_imposed = 0xE0000, uses_proposed = 0x700000, uses_third = 0x3800000;
 		// The resolvers 0x439730, 0x431A10, 0x43A260 (0x10, 0x20, 0x40) and Rayman's mechanics, which has
 		// none of them but 0x2 (what resolves his is still to read).
@@ -35,7 +36,8 @@ namespace openrayman::game
 		constexpr std::uint32_t on_ground = 0x1;
 		constexpr std::uint32_t in_water = 0x40;   // slot 4 (0x43F940)
 		constexpr std::uint32_t against_wall = 0x4; // slot 2 (condition 28)
-		constexpr std::uint32_t water_slot = 4, wall_slot = 2;
+		constexpr std::uint32_t against_ceiling = 0x10; // slot 5 (condition 64)
+		constexpr std::uint32_t water_slot = 4, wall_slot = 2, ceiling_slot = 5;
 		// After the two words come six 0x28-byte contact slots (0 the tick's first contact, 1 ground,
 		// 2 wall, 3 the primary contact, 4 water, 5). An entry holds its surface's outward unit
 		// normal at +4, the point it was touched at +0x10 and the surface's game material at +0x20
@@ -251,9 +253,29 @@ namespace openrayman::game
 		return view;
 	}
 
-	bool world_collision::accepts(const collision_triangle& triangle) const
+	world_collision::world_collision(std::vector<collision_triangle> triangles, const live_memory& memory)
+		: world_collision(std::move(triangles))
 	{
-		return !triangle.sector || m_sectors.empty() || std::ranges::find(m_sectors, triangle.sector) != m_sectors.end();
+		m_scenery_memory = &memory;
+	}
+
+	bool world_collision::accepts(const collision_triangle& triangle, std::uint32_t ignored_objects) const
+	{
+		if(triangle.sector && !m_sectors.empty() && std::ranges::find(m_sectors, triangle.sector) == m_sectors.end())
+			return false;
+		if(!m_scenery_memory || !triangle.scenery)
+			return !(triangle.object_flags & ignored_objects);
+		// Procedure 311 edits the live super object. Read the branch flags so the next
+		// query sees the script change, including a wall that was disabled in the level file.
+		auto& m = *m_scenery_memory;
+		for(auto so = triangle.scenery; so && m.contains(so, 0x34); so = m.u32(so + 0x1C))
+		{
+			const auto flags = m.u32(so + 0x30);
+			if(flags & ignored_objects) return false;
+			if((flags & 1) && (so == triangle.scenery || !(flags & 0x200)))
+				return false;
+		}
+		return true;
 	}
 
 	std::optional<world_collision::surface_hit> world_collision::floor_at(float x, float y, float top, float bottom) const
@@ -293,7 +315,8 @@ namespace openrayman::game
 		{
 			const collision_triangle& t = m_geometry->triangles[i];
 			// Ordinary casts ignore water; a flag-filtered cast can explicitly request it.
-			if(!accepts(t) || ((!script || visibility) && (t.flags & surface::no_contact & ~any_of)) || (any_of && !(t.flags & any_of)) || (t.object_flags & ignored_objects))
+			if(((!script || visibility) && (t.flags & surface::no_contact & ~any_of)) ||
+				(any_of && !(t.flags & any_of)) || !accepts(t, ignored_objects))
 				continue;
 			if((script || visibility) && d[0] * t.normal[0] + d[1] * t.normal[1] + d[2] * t.normal[2] >= 0)
 				continue;
@@ -622,7 +645,8 @@ namespace openrayman::game
 		return found == m_geometry->cells.end() ? none : found->second;
 	}
 
-	std::array<float, 2> world_collision::wall_push(float x, float y, float bottom, float top, float radius, wall_hit* contact) const
+	std::array<float, 2> world_collision::wall_push(float x, float y, float bottom, float top, float radius,
+		wall_hit* contact, bool holding_wall) const
 	{
 		if(radius <= 0 || top <= bottom)
 			return { 0.0f, 0.0f };
@@ -648,6 +672,8 @@ namespace openrayman::game
 				const collision_triangle& t = m_geometry->triangles[i];
 				if(!accepts(t) || std::abs(t.normal[2]) >= floor_normal || (t.flags & surface::no_contact))
 					continue; // floors, ceilings, and water (actors swim through it) or surfaces without contact
+				if(holding_wall && (t.flags & climbable_wall))
+					continue; // the body sphere resolves these faces, including bends in the vine
 				std::vector<vec> slice = height_slice(t, bottom, top);
 				if(slice.size() < 2)
 					continue; // it doesn't meet the cylinder's height
@@ -1200,9 +1226,17 @@ namespace openrayman::game
 		// down a step (follow_down) needs it. Read after the clear it was always false (since
 		// c24796a), so a 0.2-unit step down a stone's edge left the ground, fell and played the
 		// landing roll (Learn_10, user 2026-11-15).
-		bool stood_last_tick = false;
+		bool stood_last_tick = false, held_ceiling_last_tick = false;
 		if(std::uint32_t report = m.u32(b + base::contacts); report && m.contains(report + 4, 4))
-			stood_last_tick = (m.u32(report + 4) & on_ground) != 0;
+		{
+			const auto word = m.u32(report + 4);
+			stood_last_tick = (word & on_ground) != 0;
+			if((word & against_ceiling) && m.contains(report, contacts_size))
+			{
+				const auto material = m.u32(report + slots_at + ceiling_slot * slot_size + slot_material);
+				held_ceiling_last_tick = (material_flags(m, material) & surface::ceiling_grip) != 0;
+			}
+		}
 		if(m.u32(b + base::end_flags) & 0x4000)
 			if(std::uint32_t report = m.u32(b + base::contacts); report && m.contains(report + 4, 4))
 				m.write<std::uint32_t>(report + 4, (m.u32(report + 4) & 0x80) << 9);
@@ -1309,13 +1343,14 @@ namespace openrayman::game
 			if(other && (!a || (lowest ? other->height < a->height : other->height > a->height))) a = other;
 			return a;
 		};
+		std::optional<world_collision::wall_hit> wall_grip;
 		auto wall_push = [&](float x, float y, float bottom, float top, float radius, world_collision::wall_hit* contact = nullptr) {
-			if(actors.empty()) return world.wall_push(x, y, bottom, top, radius, contact);
+			if(actors.empty()) return world.wall_push(x, y, bottom, top, radius, contact, wall_grip.has_value());
 			vec start{ x, y, 0 };
 			for(int pass = 0; pass < 3; pass++)
 				for(const world_collision* geometry : { &world, &actors })
 				{
-					auto push = geometry->wall_push(x, y, bottom, top, radius, contact);
+					auto push = geometry->wall_push(x, y, bottom, top, radius, contact, geometry == &world && wall_grip.has_value());
 					x += push[0]; y += push[1];
 				}
 			return std::array<float, 2>{ x - start[0], y - start[1] };
@@ -1541,9 +1576,26 @@ namespace openrayman::game
 				return std::abs(s.normal[2]) < steep && vdot(s.normal, y_axis) >= -0.707f;
 			};
 			const vec centre = vadd(target, vmul(axes[2], 0.9f));
-			if(auto wall = world.sphere_touch(centre, body_radius(zone_spheres(m, actor)) + h, 0x40, holdable))
+			const float radius = body_radius(zone_spheres(m, actor));
+			if(auto wall = world.sphere_touch(centre, radius + h, climbable_wall, holdable))
 			{
 				const vec& w = wall->normal;
+				// Follow the contact plane at the sphere's radius, then resolve overlap with
+				// neighboring climbable triangles using the same sphere. The upright cylinder
+				// reaches above it and can push it out of grab range at a bend in the wall.
+				vec held_centre = vadd(centre, vmul(w, radius - vdot(vsub(centre, wall->point), w)));
+				for(int pass = 0; pass < 3; ++pass)
+				{
+					auto overlap = world.sphere_touch(held_centre, radius, climbable_wall);
+					if(!overlap) break;
+					const vec offset = vsub(held_centre, overlap->point);
+					const float distance = vlen(offset);
+					if(radius - distance < 0.0001f) break;
+					const vec outward = distance > 0.0001f ? vmul(offset, 1 / distance) : overlap->normal;
+					held_centre = vadd(held_centre, vmul(outward, radius - distance));
+				}
+				target = vadd(target, vsub(held_centre, centre));
+				wall_grip = world_collision::wall_hit{wall->point, w, wall->material};
 				write_vec(m, b + 0x1CC, w);
 				if(std::abs(w[0] - y_axis[0]) >= 0.001f || std::abs(w[1] - y_axis[1]) >= 0.001f || std::abs(w[2] - y_axis[2]) >= 0.001f)
 				{
@@ -1612,6 +1664,13 @@ namespace openrayman::game
 				touch = wall_push(target[0], target[1], wall_bottom, target[2] + body_height, radius + wall_touch, &wall_contact);
 			if(float l = std::sqrt(touch[0] * touch[0] + touch[1] * touch[1]); l > 1e-6f)
 				wall_normal = { touch[0] / l, touch[1] / l, 0.0f };
+			else if(wall_grip)
+			{
+				wall_contact = *wall_grip;
+				const vec& n = wall_grip->normal;
+				if(float horizontal = std::hypot(n[0], n[1]); horizontal > 0)
+					wall_normal = {n[0] / horizontal, n[1] / horizontal, 0.0f};
+			}
 		}
 		const bool on_wall = wall_normal[0] != 0 || wall_normal[1] != 0;
 
@@ -1624,12 +1683,29 @@ namespace openrayman::game
 		// 2026-11-08). So any surface facing down between the step height and the top of the head at
 		// the target counts: in the air it pushes the actor down under it, on the ground it stops
 		// the move across instead (a low roof mustn't press it into the floor).
+		std::optional<world_collision::surface_hit> ceiling;
+		vec ceiling_point{};
 		if(!swept && (flags & collides) && has_collision && !climbing)
 		{
 			const bool rising = target[2] > current[2];
 			const float bottom = std::min(current[2] + head_height - 0.05f, target[2] + climb_up);
-			if(auto ceiling = surface_at(&world_collision::ceiling_at, target[0], target[1], target[2] + head_height, bottom, true))
+			const float top = target[2] + head_height;
+			// Hanging states use the 0x10 resolver with gravity off. Follow the vine
+			// surface up and down as the hanging animation moves across it.
+			if(held_ceiling_last_tick && (flags & (resolver_439730 | has_gravity)) == resolver_439730)
 			{
+				auto grip = surface_at(&world_collision::ceiling_at, target[0], target[1], top + climb_up, top - climb_up, true);
+				if(grip && (material_flags(m, grip->material) & surface::ceiling_grip))
+				{
+					ceiling = grip;
+					target[2] = grip->height - head_height;
+				}
+			}
+			if(!ceiling)
+				ceiling = surface_at(&world_collision::ceiling_at, target[0], target[1], top, bottom, true);
+			if(ceiling)
+			{
+				ceiling_point = {target[0], target[1], ceiling->height};
 				std::uint32_t report = m.u32(b + base::contacts);
 				const bool grounded = report && m.contains(report + 4, 4) && (m.u32(report + 4) & on_ground);
 				if(rising || !grounded)
@@ -1760,9 +1836,9 @@ namespace openrayman::game
 		// (0x49C78C), keeping the previous Z and removing vertical response.
 		// Include the swept body interval so a large upward move cannot skip it.
 		if((m.u32(b + base::end_flags) & 0x100000) && (flags & collides) && has_collision)
-			if(auto ceiling = surface_at(&world_collision::water_at, target[0], target[1],
+			if(auto water_ceiling = surface_at(&world_collision::water_at, target[0], target[1],
 				std::max(current[2], target[2]) + body_height, std::min(current[2], target[2]));
-				ceiling && target[2] > ceiling->height - 1.2f)
+				water_ceiling && target[2] > water_ceiling->height - 1.2f)
 			{
 				target[2] = current[2];
 				water = surface_at(&world_collision::water_at, target[0], target[1], target[2] + body_height, target[2]);
@@ -1872,7 +1948,8 @@ namespace openrayman::game
 			// word's 0x40 bit alongside the ground's. Out of the water both are cleared.
 			// Slot 2 is a wall (bit 0x4): the way it pushed the actor out, and where. Rayman's macro 40
 			// bounces his push (var87) off it, which ends the portal hop against the tablet's wall.
-			std::uint32_t word = (landed || probe ? on_ground : 0) | (water ? in_water : 0) | (on_wall ? against_wall : 0);
+			std::uint32_t word = (landed || probe ? on_ground : 0) | (water ? in_water : 0) |
+				(on_wall ? against_wall : 0) | (ceiling ? against_ceiling : 0);
 			// The same diagnostic at the point the contact is written, for every way of losing it:
 			// whether the floor search ran at all (collides flag, collision present, not climbing).
 			if(stood_last_tick && !(word & on_ground) && vm && super_object == vm->main_actor())
@@ -1897,6 +1974,12 @@ namespace openrayman::game
 			write_vec(m, entry + slot_normal, water ? water->normal : vec{});
 			write_vec(m, entry + slot_point, water ? water_point : vec{});
 			m.write<std::uint32_t>(entry + slot_material, water ? water->material : 0);
+			entry = block + slots_at + ceiling_slot * slot_size;
+			write_vec(m, entry + slot_normal, ceiling ? ceiling->normal : vec{});
+			write_vec(m, entry + slot_point, ceiling_point);
+			m.write<std::uint32_t>(entry + slot_own, ceiling && !zones.empty() ? zones.front().material : 0);
+			m.write<std::uint32_t>(entry + slot_material, ceiling ? ceiling->material : 0);
+			m.write<std::uint32_t>(entry + 0x24, ceiling ? ceiling->actor : 0);
 		}
 		// The script speeds last one tick (0x4327D9).
 		m.write<std::uint32_t>(b + base::flags, flags & kept_after_tick);

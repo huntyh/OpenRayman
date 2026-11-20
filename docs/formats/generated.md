@@ -178,6 +178,15 @@ blocked before the target. This line-of-sight check stays in the script. The sea
 and after bounces, rather than continuously during flight; the correction is a change of launch
 direction, not a per-frame turn.
 
+In the Learn_30 recording `rec_20261119_210157`, the cage under the wooden
+building is node 13 at (−141.18, 178.22, 29.23). Both its saved and recorded
+custom bits omit `0x20`. A headless replay matches the recorded horizontal
+launch and returns no target. A diagnostic run setting the bit makes the same
+shot acquire node 13 and hit it. This isolates the eligibility flag from the
+cone and line-of-sight checks. Source: GOG level data via `ortool peek` and a
+replay with `ORTOOL_SHOTS`, compared with Rayman2.exe ranking at `0x476300`.
+The original game's live eligibility at this spot is unverified.
+
 ### Reproduction and evidence (2026-11-02)
 
 The last Learn_10 cage is **node 53**, origin approximately (32.6,106.1,33.9). Use the default

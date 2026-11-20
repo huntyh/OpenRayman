@@ -456,6 +456,27 @@ surface and need investigation. Sources: the Learn_31 scene, collision and
 Rayman scripts via `ortool`, contact replay and own analysis of the executable
 at 0x48B000, 0x479910 and 0x4394A0. This is not a live-game verification.
 
+## Fairy Glade overhead vines (card #134)
+
+Learn_30 scenery node 114 forms the vine canopy over the mushroom. Its `0x20` triangles face
+down, so the grab goes through macro 52, condition 64 and function 201. Behaviours 30 and 31
+handle hanging and traversal, and macro 59 releases the grip on A or loss of that material.
+
+The full-dynamics approximation already stopped upward movement at ceilings. It now publishes
+the ceiling's normal, hit point and materials in contact slot 5 and sets report bit `0x10`. Once
+the next state selects resolver bit `0x10` with gravity disabled, the approximation follows the
+height of `0x20` surfaces under the moving Rayman from tick to tick. The height probe follows the
+existing head clearance and allows up to half a unit of height change per tick. It clears the
+contact on departure from the canopy. This reuses the existing point-cast collision model.
+
+Own analysis of GOG collision data and Rayman's scripts with `ortool collide` and `ortool brain`,
+and a headless `ortool run` replay starting above mushroom node 4. The real-data test launches
+onto the vines, holds Up to cross the river, and presses A to land on the opposite bank.
+
+Behaviour 31 requests a forward speed of `2.4 × clamp(input magnitude × 0.02, 0.5, 1.2)`
+and scales the animation by the same factor. The full-input headless replay covers about 2.40
+horizontal units in 50 ticks on an unobstructed part of the canopy, matching the 2.88 units/s cap.
+
 ## Swimming pivot inertia and leaving the river floor (card 118, follow-up)
 
 The queued translation must collide, but it must **not become lasting inertia**.
@@ -511,6 +532,30 @@ in the tilt repeatedly.
 
 Where this came from: independent reading of Rayman2.exe at `0x4394A0`, `0x436E40` and
 `0x445F90`, compared with the Learn_31 recording, 2026-11-16.
+
+The Learn_31 overhang recording `rec_20261119_203945` exposed two further failures.
+After a grab, the upright collision cylinder pushed the body centre 1.414 units from
+the sloping face, beyond the grip search's 1.35 units. The wall hold now keeps its
+body sphere a radius from the contact plane. The cylinder still checks other faces.
+Rayman also lost X and Z scale when a script rebuilt his axes upright after letting
+go. The transform setter now recovers the scale in the saved rotation basis before
+normalizing the new axes.
+
+Where this came from: the OpenRayman recording and a replay from the same face,
+compared with independent analysis of Rayman2.exe at `0x43A260`, `0x4394A0` and
+`0x436E40`.
+
+The follow-up recording `rec_20261119_205528` showed the same handling was needed
+at a bend. The sphere was holding a face with normal (0.486, 0.817, −0.310)
+while the upright cylinder collided with an adjacent climbable face with normal
+(0.523, 0.818, −0.239). The cylinder pushed the body centre another half unit
+sideways just before the first repeated drops. While a grip is active, the sphere
+now resolves overlap with the neighboring climbable faces too. The upright
+cylinder still checks other walls and actor geometry.
+
+Where this came from: the follow-up recording and a replay across both sides
+of the bend. The sphere contact and cylinder filtering are OpenRayman's
+approximation of the original wall-hold collision sweep at `0x43A260`.
 
 ## Card 118: paired water faces and jump re-entry
 

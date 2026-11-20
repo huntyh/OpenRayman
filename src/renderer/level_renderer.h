@@ -135,7 +135,7 @@ namespace openrayman
 		void set_luminosity(float luminosity) { m_luminosity = luminosity; }
 		float luminosity() const { return m_luminosity; }
 		// Select the optional, draw-only far scenery recipe for this level (empty for all others).
-		void set_backdrop(const std::string& level);
+		void set_visual_improvements(const std::string& level, bool enabled);
 
 	private:
 		// Drawn in this order: solid surfaces first, then see-through ones over them.
@@ -263,6 +263,7 @@ namespace openrayman
 		std::optional<glm::vec2> m_fall_foot; // the Hall's waterfall column, its centre seen from above
 		GLint m_u_swirl = -1;
 		bool m_swirl_centre = true;
+		bool m_soft_lightning = true;
 		bool m_well = false;
 		bool m_falls_reversed = false; // the Hall's waterfall foot flows away from the fall (OPENRAYMAN_FALLS=0 off)
 		bool m_star_flat = false;   // the Hall's star field as flat planes below its bowl (OPENRAYMAN_STAR_FLOOR=0 off)

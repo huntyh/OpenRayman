@@ -1014,7 +1014,8 @@ schedule/actions and stops/restarts its script; **82** clears the cast ignore ma
 identity (`0x4447E0`), clear the saved-placement byte at **0x500FAB**, stop the
 sound playback group (`0x453080`), and request game mode **8** (`0x404BF0`).
 It does not change behaviour, clear a dynamics flag, or interrupt the current
-script. Our handler records a return request and a host sound-stop request.
+script. Our handler records a return request and asks the host to clear sound effects.
+The adaptive theme continues through the return.
 The next game step consumes the return before running another frame of actors.
 
 The return path with health remaining is **0x403150 -> 0x406600**, resetting the
@@ -1024,7 +1025,8 @@ their initial placement, brain behaviours, reset-level-4 variables, state, draw
 flags and opacity; persistent variables and custom-bit-31 health survive.
 **0x412F20 -> 0x435B70/0x435AC0** clears transient dynamics while retaining the
 block kind/contact allocation. Generated actors and movement/animation caches
-are cleared, then sector activation is rebuilt at the restored position.
+are cleared, then sector activation is rebuilt at the restored position, even when the
+checkpoint is in the same sector as the death (Learn_31 checkpoint node 25).
 The current runtime keeps its monotonic tick clock across this return.
 
 Bast_20's piranha capture illustrates why this matters: held behaviour 9/10 is
@@ -1235,3 +1237,30 @@ OpenRayman keeps explicit relationships separately from collision supports becau
 its renderer and mechanics use world placements. It does not yet reproduce all
 super-object sibling links or native mutable traversal. Own analysis of the
 local executable decompilation, 2026-11-18.
+
+### Bast_20 timed Lum trail (#296)
+
+The five tunnel Lums are scene nodes 55, 57, 58, 59 and 60. The sector wake pass schedules
+them, and their distance flag (custom 0x80000) defers the init rule until Rayman gets closer.
+At the reported camera coordinates the headless run schedules all five but the first Lum stays
+in its saved animation 276. From the next point in the tunnel it selects state 2 (animation 278).
+Controller node 56
+links the five actors through its variable array. Each pickup increments its counter (variable 5).
+The first pickup makes the controller enable the other Lums' kind-9 particle bursts and start the
+clock on the camera actor. It requests bank 140 event 0 (`TITAC2.WAV`, resource +0x30 is 1).
+Five pickups trigger the completion sound. After 8 seconds, the timeout path instead spawns a
+burst at each remaining Lum and removes it. Both paths send bank 140 event 1 to stop the clock.
+
+Own analysis of the GOG level scripts and bank data using `ortool brain`, `ortool bank` and
+`ortool run` with Rayman placed at the tunnel approach and pickup positions. The headless run
+confirms the state changes, clock requests, completion and timeout. The rendered appearance and
+audible clock still need a gameplay comparison.
+
+The chosen state is a small animated sprite by design in the installed
+scripts. Animation 278 has one channel, object 12 of the Fix Lum object list,
+which points to physical object `05/01+0x65F440`. Its only element is a
+four-frame sprite starting with `gra01r_my_ad.tga`. The saved animation 276
+uses four parts, including the wing mesh. The second screenshot
+`Bast_20_20261119_210510.bmp` therefore establishes the reported appearance
+but does not identify which state is playing. Source: the GOG data inspected
+with `ortool anim`, `ortool peek` and `ortool mesh`.

@@ -383,6 +383,13 @@ namespace openrayman
 		m_loading_theme = 0;
 	}
 
+	void sound_player::stop_effects()
+	{
+		std::lock_guard lock(m_mutex);
+		m_voices.clear();
+		m_pause_group = 1;
+	}
+
 	void sound_player::stop_source(std::uint32_t source, bool all_voices)
 	{
 		std::lock_guard lock(m_mutex);

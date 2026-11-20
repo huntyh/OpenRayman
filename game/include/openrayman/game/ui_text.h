@@ -7,7 +7,7 @@ namespace openrayman::game
 {
 	// Columns are English, French, German, Spanish, Italian. VM language order differs.
 	enum class ui_key { sound, display, game, back, music, effects, fullscreen, display_mode,
-		vsync, fps, loading, language, autosave, options, sound_title, display_title, game_title,
+		vsync, fps, loading, language, autosave, visual_improvements, options, sound_title, display_title, game_title,
 		windowed, borderless, exclusive, desktop, on, strict, off, no_save, save_error, display_error,
 		yes, no, exists, load_question, delete_question, save_question, save_abandon_question, abandon_question, quit_question,
 		overwrite_question, autosave_question, lum_hint, saving_hint, power_hint, continue_hint, saving,

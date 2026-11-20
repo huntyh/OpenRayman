@@ -15,8 +15,8 @@ namespace openrayman::game
 			{"refresh_millihz", &engine_options::refresh_millihz, 0, 1000000}, {"vsync", &engine_options::vsync, 0, 2}, {"fps_limit", &engine_options::fps, 0, 1000}, {"language", &engine_options::language, -1, 4}};
 		constexpr option_entry root[] = {{option_id::sound}, {option_id::display}, {option_id::game}, {option_id::back}};
 		constexpr option_entry sound[] = {{option_id::music}, {option_id::effects}, {option_id::back}};
-		constexpr option_entry display[] = {{option_id::fullscreen}, {option_id::vsync}, {option_id::fps}, {option_id::loading}, {option_id::back}};
-		constexpr option_entry exclusive[] = {{option_id::fullscreen}, {option_id::display_mode}, {option_id::vsync}, {option_id::fps}, {option_id::loading}, {option_id::back}};
+		constexpr option_entry display[] = {{option_id::fullscreen}, {option_id::vsync}, {option_id::fps}, {option_id::loading}, {option_id::visual_improvements}, {option_id::back}};
+		constexpr option_entry exclusive[] = {{option_id::fullscreen}, {option_id::display_mode}, {option_id::vsync}, {option_id::fps}, {option_id::loading}, {option_id::visual_improvements}, {option_id::back}};
 		constexpr option_entry game[] = {{option_id::language}, {option_id::autosave}, {option_id::back}};
 	}
 	engine_options read_options(const std::filesystem::path& root)
@@ -35,6 +35,7 @@ namespace openrayman::game
 			for(auto s : integers) if(key == s.name && value >= s.low && value <= s.high) result.*(s.member) = value;
 			if(value != 0 && value != 1) continue;
 			if(key == "loading_screens") result.loading_screens = value != 0;
+			if(key == "visual_improvements") result.visual_improvements = value != 0;
 		}
 		return result;
 	}
@@ -47,6 +48,7 @@ namespace openrayman::game
 		std::ofstream out(temporary, std::ios::trunc);
 		for(auto s : integers) out << s.name << '=' << values.*(s.member) << '\n';
 		out << "loading_screens=" << values.loading_screens << '\n';
+		out << "visual_improvements=" << values.visual_improvements << '\n';
 		out.close();
 		if(!out) return false;
 		// copy_file replaces the old file only after the complete staging file was closed.
@@ -58,6 +60,10 @@ namespace openrayman::game
 	std::span<const option_entry> options_page::entries(const engine_options& values) const
 	{
 		switch(current) { case page::sound: return sound; case page::display: if(!desktop_display) return std::span(display).subspan(1); return values.fullscreen == 2 ? std::span<const option_entry>(exclusive) : std::span<const option_entry>(display); case page::game: return game; default: return root; }
+	}
+	int options_page::row_y(std::size_t row, const engine_options& values) const
+	{
+		return 350 + int(row) * (entries(values).size() > 6 ? 90 : 100);
 	}
 	bool options_page::navigate(action input, engine_options& v, bool& autosave, bool has_slot)
 	{
@@ -105,6 +111,7 @@ namespace openrayman::game
 			v.fps = rates[(index + delta + 8) % 8]; break;
 		}
 		case option_id::loading: v.loading_screens = !v.loading_screens; break;
+		case option_id::visual_improvements: v.visual_improvements = !v.visual_improvements; break;
 		case option_id::language: v.language = (std::max(v.language, 0) + delta + 5) % 5; break;
 		case option_id::autosave: if(has_slot) { autosave = !autosave; return true; } break;
 		default: break;
@@ -131,6 +138,7 @@ namespace openrayman::game
 			case option_id::vsync: value = tr(v.vsync == 0 ? ui_key::on : v.vsync == 1 ? ui_key::strict : ui_key::off); break;
 			case option_id::fps: value = v.fps ? std::to_string(v.fps) : tr(ui_key::off); break;
 			case option_id::loading: value = tr(v.loading_screens ? ui_key::on : ui_key::off); break;
+			case option_id::visual_improvements: value = tr(v.visual_improvements ? ui_key::on : ui_key::off); break;
 			case option_id::language: value = ui_language_name(language); break;
 			case option_id::autosave: value = tr(slot ? (autosave ? ui_key::on : ui_key::off) : ui_key::no_save); break;
 			default: break;
@@ -143,7 +151,7 @@ namespace openrayman::game
 				for(char c : label) width += c == ' ' ? metrics.space : metrics.advance;
 				if(width <= 720) break;
 			}
-			slots.set(index, 500, 350.0f + float(row - 1) * 100, "/C:" + label, 255, size);
+			slots.set(index, 500, float(row_y(index - 1, v)), "/C:" + label, 255, size);
 			slots.set_field(index, 7, row - 1 == selected ? 3.0f : 1.0f);
 			slots.set_field(index, 1, row - 1 == selected ? 1.0f : 0.0f);
 		}

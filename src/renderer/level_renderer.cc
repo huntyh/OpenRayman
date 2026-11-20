@@ -626,8 +626,6 @@ namespace openrayman
 		m_u_falls = glGetUniformLocation(m_program, "u_falls");
 		m_u_twinkle = glGetUniformLocation(m_program, "u_twinkle");
 		m_u_swirl = glGetUniformLocation(m_program, "u_swirl");
-		if(const auto* option = std::getenv("OPENRAYMAN_SWIRL_CENTRE"))
-			m_swirl_centre = std::strcmp(option, "0") != 0;
 		m_u_sky_haze = glGetUniformLocation(m_program, "u_sky_haze");
 		m_u_fog_model = glGetUniformLocation(m_program, "u_fog_model");
 		m_u_sky_eye = glGetUniformLocation(m_program, "u_sky_eye");
@@ -1420,22 +1418,25 @@ namespace openrayman
 		return out;
 	}
 
-	void level_renderer::set_backdrop(const std::string& level)
+	void level_renderer::set_visual_improvements(const std::string& level, bool enabled)
 	{
-		const char* well = std::getenv("OPENRAYMAN_WELL");
+		auto option = [enabled](const char* name) {
+			const char* value = std::getenv(name);
+			return value ? std::strcmp(value, "0") != 0 : enabled;
+		};
+		m_swirl_centre = option("OPENRAYMAN_SWIRL_CENTRE");
+		const char* classic = std::getenv("OPENRAYMAN_LIGHTNING_CLASSIC");
+		m_soft_lightning = classic ? std::strcmp(classic, "1") != 0 : enabled;
 		const bool hall = level == "Mapmonde" || level == "mapmonde"; // the game's own name is "Mapmonde"
-		m_well = (level == "Learn_10" || hall) && !(well && std::strcmp(well, "0") == 0);
+		m_well = (level == "Learn_10" || hall) && option("OPENRAYMAN_WELL");
 		m_well_depth = 1.0f;
-		const char* falls = std::getenv("OPENRAYMAN_FALLS");
-		m_falls_reversed = hall && !(falls && std::strcmp(falls, "0") == 0);
-		const char* flat = std::getenv("OPENRAYMAN_STAR_FLOOR");
-		m_star_flat = m_well && !(flat && std::strcmp(flat, "0") == 0);
+		m_falls_reversed = hall && option("OPENRAYMAN_FALLS");
+		m_star_flat = m_well && option("OPENRAYMAN_STAR_FLOOR");
 		// Learn_10's well: its stars twinkle (the Hall's lake has its own twinkling overlay).
-		const char* twinkle = std::getenv("OPENRAYMAN_TWINKLE");
-		m_twinkle = m_well && !hall && !(twinkle && std::strcmp(twinkle, "0") == 0);
+		m_twinkle = m_well && !hall && option("OPENRAYMAN_TWINKLE");
 		const char* lake = std::getenv("OPENRAYMAN_LAKE");
 		// On in the Hall of Doors; OPENRAYMAN_LAKE=0 off, =2 also in the Learn_10 well.
-		m_lake = m_well && (hall || (lake && std::strcmp(lake, "2") == 0)) && !(lake && std::strcmp(lake, "0") == 0);
+		m_lake = m_well && (hall || (lake && std::strcmp(lake, "2") == 0)) && option("OPENRAYMAN_LAKE");
 		if(const char* depth = std::getenv("OPENRAYMAN_WELL_DEPTH"))
 		{
 			char* end = nullptr;
@@ -1445,8 +1446,7 @@ namespace openrayman
 		}
 		m_backdrop_sectors.clear();
 		m_backdrop_skies.clear();
-		const char* enabled = std::getenv("OPENRAYMAN_BACKDROP");
-		if(enabled && std::strcmp(enabled, "0") == 0)
+		if(!option("OPENRAYMAN_BACKDROP"))
 			return;
 		for(const auto& r : backdrop_recipes)
 		{
@@ -1756,11 +1756,7 @@ namespace openrayman
 				glDepthMask(cores || ((mode == blend::none || screen_depth) && b.depth_write) ? GL_TRUE : GL_FALSE);
 				const GLuint texture = texture_at(b.animation, b.texture);
 				submission::BindTexture(GL_TEXTURE_2D, texture);
-				static const bool classic_lightning = [] {
-					const char* v = std::getenv("OPENRAYMAN_LIGHTNING_CLASSIC");
-					return v && std::strcmp(v, "1") == 0;
-				}();
-				const bool lightning = mode == blend::alpha && !classic_lightning && m_lightning_textures.contains(texture);
+				const bool lightning = mode == blend::alpha && m_soft_lightning && m_lightning_textures.contains(texture);
 				submission::Uniform1f(m_u_lightning, lightning ? 1.0f : 0.0f);
 				if(lightning) submission::BlendFunc(GL_DST_COLOR, GL_ONE);
 				// Lightning cards stay where the game puts them, seen from the real camera: drawn from
@@ -2052,8 +2048,8 @@ namespace openrayman
 					glm::vec2 d = glm::vec2(p) - c;
 					return glm::vec2(1 + glm::dot(d, x) / s.size.x, glm::dot(d, y) / s.size.y);
 				};
-				// Every solid triangle under the blob, near the ground's height, gets a copy lifted a
-				// little along its normal: the blob follows the ground over creases and steps.
+				// Copy the opaque geometry under the blob at its original depth, so the shadow can
+				// follow creases and steps and test against pixels the receiver actually covered.
 				for(std::size_t i = 0; i + 2 < m_floor.size(); i += 3)
 				{
 					if(!catches_shadow(i / 3))
@@ -2073,9 +2069,8 @@ namespace openrayman
 					const float plane_z = a.z - (face.x * (c.x - a.x) + face.y * (c.y - a.y)) / face.z;
 					if(std::abs(plane_z - at.z) > 0.75f)
 						continue;
-					glm::vec3 lift = glm::normalize(face.z < 0 ? -face : face) * 0.02f;
 					for(const glm::vec3* p : { &a, &b, &d })
-						quads.push_back({ *p + lift, uv(*p), n, bounds });
+						quads.push_back({ *p, uv(*p), n, bounds });
 				}
 			}
 			if(!quads.empty())
@@ -2085,14 +2080,14 @@ namespace openrayman
 				set_model(identity);
 				submission::Uniform2f(m_u_uv_offset, 0, 0);
 				submission::Uniform1f(m_u_edge_clamp, 2.0f);
-				glEnable(GL_POLYGON_OFFSET_FILL);
-				glPolygonOffset(-1, -1);
+				// Cut-out foliage leaves holes in the opaque depth, which cannot receive a shadow.
+				glDepthFunc(GL_EQUAL);
 				submission::BindVertexArray(m_sprite_vao);
 				submission::BindBuffer(GL_ARRAY_BUFFER, m_sprite_vbo);
 				glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(quads.size() * sizeof(vertex)), quads.data(), GL_STREAM_DRAW);
 				submission::BindTexture(GL_TEXTURE_2D, m_shadow_texture);
 				draw_triangles(0, GLsizei(quads.size()));
-				glDisable(GL_POLYGON_OFFSET_FILL);
+				glDepthFunc(GL_LESS);
 				submission::Uniform1f(m_u_edge_clamp, m_edge_clamp ? 1.0f : 0.0f);
 				submission::BindVertexArray(m_vao);
 			}

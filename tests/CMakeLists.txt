@@ -63,3 +63,7 @@ ortool_check(brain_learn_10_rayman
 ortool_check(brain_all
 	2bb89eb2af4a3ac3bb2fab563becd3401015ee4897f491b56db81f52a18ae82f
 	brain <game> all)
+
+add_test(NAME ortool_bast_20_timed_lums
+	COMMAND ${CMAKE_COMMAND} -DORTOOL=$<TARGET_FILE:ortool> -P ${CMAKE_CURRENT_SOURCE_DIR}/ortool_timed_lums.cmake)
+set_tests_properties(ortool_bast_20_timed_lums PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED:")

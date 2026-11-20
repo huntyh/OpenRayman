@@ -27,6 +27,7 @@ namespace openrayman::game
 	public:
 		world_collision() = default;
 		explicit world_collision(std::vector<collision_triangle> triangles, bool actor_geometry = false);
+		world_collision(std::vector<collision_triangle> triangles, const live_memory& memory);
 
 		bool empty() const { return m_geometry->triangles.empty(); }
 		// Cheap query view: the executable gathers scenery only from the mover's
@@ -63,7 +64,9 @@ namespace openrayman::game
 			std::array<float, 3> point{}, normal{};
 			std::uint32_t material = 0, actor = 0;
 		};
-		std::array<float, 2> wall_push(float x, float y, float bottom, float top, float radius, wall_hit* contact = nullptr) const;
+		// A climber's body sphere resolves climbable walls.
+		std::array<float, 2> wall_push(float x, float y, float bottom, float top, float radius,
+			wall_hit* contact = nullptr, bool holding_wall = false) const;
 
 		// The first surface the segment from `start` to `end` meets (water and 0x8000 surfaces let
 		// it through), with the point it meets it at, or nothing (0x474780 over the level geometry).
@@ -119,7 +122,8 @@ namespace openrayman::game
 		};
 		std::shared_ptr<const geometry> m_geometry = std::make_shared<geometry>();
 		std::vector<std::uint32_t> m_sectors; // empty: unrestricted (tools and synthetic worlds)
-		bool accepts(const collision_triangle& triangle) const;
+		bool accepts(const collision_triangle& triangle, std::uint32_t ignored_objects = 0) const;
+		const live_memory* m_scenery_memory = nullptr;
 		bool m_actor_geometry = false;
 	};
 

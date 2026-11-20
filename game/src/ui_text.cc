@@ -18,6 +18,7 @@ namespace openrayman::game
 			{{"Loading", "Chargement", "Ladebilder", "Carga", "Caricamento"}},
 			{{"Language", "Langue", "Sprache", "Idioma", "Lingua"}},
 			{{"Autosave", "Sauvegarde auto", "Autospeichern", "Autoguardado", "Salvataggio auto"}},
+			{{"Visual improvements", "Améliorations visuelles", "Optische Verbesserungen", "Mejoras visuales", "Migliorie visive"}},
 			{{"Options", "Options", "Optionen", "Opciones", "Opzioni"}},
 			{{"Options - Sound", "Options - Son", "Optionen - Ton", "Opciones - Sonido", "Opzioni - Audio"}},
 			{{"Options - Display", "Options - Affichage", "Optionen - Anzeige", "Opciones - Pantalla", "Opzioni - Schermo"}},

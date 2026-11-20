@@ -12,7 +12,7 @@ TEST_CASE("engine config round trip, missing and malformed settings")
 	CHECK(read_options(root) == engine_options{});
 	engine_options expected;
 	expected.music = 3; expected.effects = 0; expected.fullscreen = 2; expected.display_width = 1920; expected.display_height = 1080; expected.refresh_millihz = 59940;
-	expected.vsync = 2; expected.fps = 144; expected.loading_screens = false; expected.language = 4;
+	expected.vsync = 2; expected.fps = 144; expected.loading_screens = false; expected.visual_improvements = false; expected.language = 4;
 	REQUIRE(write_options(root, expected));
 	CHECK(read_options(root) == expected);
 	expected.music = 9;
@@ -48,6 +48,8 @@ TEST_CASE("Options navigation wraps, edits only with arrows and backs out one pa
 	CHECK(ui.current == options_page::page::display);
 	CHECK(press(action::right)); CHECK(values.fullscreen);
 	press(action::down); press(action::left); CHECK(values.vsync == 2);
+	press(action::down); press(action::down); press(action::down);
+	CHECK(press(action::left)); CHECK_FALSE(values.visual_improvements);
 	press(action::back); press(action::down); press(action::confirm);
 	CHECK(ui.current == options_page::page::game);
 	press(action::down);
@@ -66,14 +68,14 @@ TEST_CASE("Exclusive mode row follows fullscreen choice and display modes round 
  options_page ui; ui.active = true; ui.current = options_page::page::display;
  engine_options v; bool autosave = false;
  ui.modes = {{1280,720,60000}, {1920,1080,59940}};
- CHECK(ui.entries(v).size() == 5);
+ CHECK(ui.entries(v).size() == 6);
  ui.navigate(options_page::action::right, v, autosave, false); CHECK(v.fullscreen == 1);
  ui.navigate(options_page::action::right, v, autosave, false); CHECK(v.fullscreen == 2);
- CHECK(ui.entries(v).size() == 6);
+ CHECK(ui.entries(v).size() == 7);
  ui.selected = 1;
  CHECK(ui.navigate(options_page::action::right, v, autosave, false));
  CHECK(v.display_width == 1920); CHECK(v.refresh_millihz == 59940);
- ui.desktop_display = false; CHECK(ui.entries(v).size() == 4);
+ ui.desktop_display = false; CHECK(ui.entries(v).size() == 5);
 }
 
 TEST_CASE("Fullscreen config accepts all three choices and legacy on means borderless")

@@ -122,7 +122,7 @@ namespace openrayman
 		return set ? memory.follow(*set + collide_set_geometry) : std::nullopt;
 	}
 
-	std::vector<collision_triangle> static_collision(const memory_image& memory, const scene& tree)
+	std::vector<collision_triangle> static_collision(const memory_image& memory, const scene& tree, bool include_disabled)
 	{
 		std::vector<collision_triangle> result;
 		auto visit = [&](auto& self, std::size_t index, const affine& parent) -> void {
@@ -132,14 +132,17 @@ namespace openrayman
 			if(node.type == super_object_type::sector && node.data && reader_at(*node.data + 0x7C, 1).u8() != 0)
 				return;
 			// 0x4948A0 excludes a branch with super-object flag 1 from static contacts.
-			if(node.draw_flags & 1) return;
+			if(!include_disabled && (node.draw_flags & 1)) return;
 			affine world = node.matrix ? parent * affine::from(read_transform(memory, *node.matrix)) : parent;
 			if(node.type == super_object_type::ipo && node.data)
-			{
 				if(auto physical = memory.follow(*node.data))
 					if(auto geometry = physical_object_collision(memory, *physical))
+					{
+						const auto first = result.size();
 						add_triangles(memory, *geometry, world, index, result);
-			}
+						for(auto i = first; i < result.size(); ++i)
+							result[i].scenery = node.at.address();
+					}
 			for(std::size_t child : node.children)
 				self(self, child, world);
 		};

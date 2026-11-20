@@ -1604,7 +1604,7 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	vm.save_folder = game::save_root().string();
 	auto saves = std::make_shared<game::save_session>();
 	game::install_save_handlers(vm, files, header, tree, folder, saves);
-	vm.set_world(game::world_collision(static_collision(files.memory, tree)));
+	vm.set_world(game::world_collision(static_collision(files.memory, tree, true), memory));
 	vm.set_animations(&bank);
 	// As the viewer does (first_visit.h): a revisit, unless ORTOOL_START=new asks for a first visit
 	// (the viewer's --start new).
@@ -1714,6 +1714,7 @@ static int cmd_run(const fs::path& folder, const std::string& name, int frames, 
 	if(save_slot)
 		game::load_save_slot(vm, game::save_root(), files, header, tree, save_slot);
 	else if(!first_visit) game::apply_revisit_state(vm, tree, name);
+	game::initialize_level_cage_counter(vm, header, name);
 	// ORTOOL_IDS=1: each actor's id, flags and type (standard game +8, +0x29, +0x14).
 	if(std::getenv("ORTOOL_IDS"))
 		for(std::uint32_t so : actors)

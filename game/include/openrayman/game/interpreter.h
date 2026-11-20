@@ -182,6 +182,7 @@ namespace openrayman::game
 		// Call once per tick (1/60 s), before the actors think.
 		void next_tick()
 		{
+			m_oxygen_refill_source = 0;
 			std::uint32_t before = m_clock;
 			m_ticks++;
 			m_clock = std::uint32_t(m_ticks * 1000 / 60 - m_clock_skipped);
@@ -239,6 +240,9 @@ namespace openrayman::game
 		// without any.
 		std::int32_t ground_sound_type(std::uint32_t super_object) const;
 		std::vector<sound_request> take_sounds() { return std::exchange(m_sounds, {}); }
+		bool visual_improvements = false;
+		void set_oxygen_pickup_material(const memory_image& image);
+		void note_oxygen_refill(std::uint32_t source) { m_oxygen_refill_source = source; }
 		// Sound channel factors and group volume (422..424, 256/257); the host mixer
 		// multiplies these with the user's music/effects preference, including existing voices.
 		std::map<std::uint32_t, std::int32_t> sound_channel_0_factors;
@@ -540,6 +544,7 @@ namespace openrayman::game
 		std::map<std::uint32_t, affine> m_start_placements; // where each actor first thought
 		generated_actors m_generated;
 		std::vector<sound_request> m_sounds;
+		std::uint32_t m_oxygen_pickup_material = 0, m_oxygen_refill_source = 0;
 		std::uint64_t m_ticks = 0;
 		std::uint64_t m_clock_skipped = 0;
 		std::uint32_t m_paused_clock = 0;

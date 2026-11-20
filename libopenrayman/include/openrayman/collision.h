@@ -17,6 +17,7 @@ namespace openrayman
 	namespace surface
 	{
 		constexpr surface_flags grabbable = 0x0004; // Rayman can hang from its edge (ledges, column tops)
+		constexpr surface_flags ceiling_grip = 0x0020; // Rayman can hang underneath it (overhead vines)
 		// Water: the movement solvers never resolve it as floor or wall (0x43EEC0, 0x43F510); it
 		// becomes a contact of its own instead (contact slot 4, report bit 0x40). Actors sink
 		// into it (docs/formats/collision.md).
@@ -40,6 +41,7 @@ namespace openrayman
 		std::size_t node = 0;        // the super object it belongs to, in the scene
 		std::uint32_t sector = 0;    // owning sector super object; 0 for unscoped/actor geometry
 		std::uint32_t object_flags = 0; // scenery branch flags, for script casts' object ignore mask
+		std::uint32_t scenery = 0; // scenery super object's address for live flag changes
 	};
 
 	// The geometric object a physical object collides with: its collide set's fourth slot (+0xC).
@@ -48,6 +50,7 @@ namespace openrayman
 
 	// Every collision triangle of the level's static geometry (instantiated physical objects in the
 	// sector tree), placed in the world. Element types other than triangles are skipped: the level
-	// geometry has none that collide. Throws format_error.
-	std::vector<collision_triangle> static_collision(const memory_image& memory, const scene& tree);
+	// geometry has none that collide. Include disabled branches for live, script-controlled collision.
+	// Throws format_error.
+	std::vector<collision_triangle> static_collision(const memory_image& memory, const scene& tree, bool include_disabled = false);
 }

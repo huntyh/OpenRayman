@@ -659,3 +659,13 @@ the events in this recording. The scene's `0x00C30000` is a separate cry event;
 the return-state animation does not contain it. The kids have
 no reflex or script branch that returns behaviour 1 to 0. Headless repeated-return
 sound verification and regression details are in `build/helpers/wake110b_report.md`.
+
+### Learn_30 one-time oxygen Lum
+
+The ordinary and reusable oxygen Lum branches request two effects on pickup. In the ordinary
+pickup recorded at tick 3213 in `rec_20261118_145746`, bank 50 event 0 (`RIGOL8.wav`) played from
+the Lum at placement gain 0.976, and bank 23 event 0 (`air6.wav`) played from the camera actor at
+1.000. Both bank resources use volume 127. Those gains describe distance attenuation before the
+effects mix, which also applies the global and per-source script factors. A matched original-game
+recording is needed to compare audible levels. Own analysis of the OpenRayman F10 capture, the
+shared Lum model in Learn_30, and the installed banks with `ortool brain`, `sound` and `bank`.
